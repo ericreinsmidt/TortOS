@@ -501,7 +501,7 @@ static int run_one_game(int slot, char *rom_path)
 	/* The same grab, written out as the autosave's preview. The launcher puts
 	 * it on the game's card, so a game you have played shows the frame you
 	 * stopped on. Free with the fade's capture -- no second screen read. */
-	Menu_savePreview(rawSurface, 9);
+	Menu_savePreview(rawSurface, AUTO_RESUME_SLOT);
 	SDL_Surface* converted = SDL_ConvertSurfaceFormat(rawSurface, screen->format->format, 0);
 	screen = converted;
 	SDL_FreeSurface(rawSurface);
