@@ -146,9 +146,13 @@ bool lib_scan(const char *roms_root, const char *folder, const char *exts,
 		snprintf(full, sizeof full, "%s/%s", dirpath, e->d_name);
 		if (!is_file(full, e)) continue;
 		if (n == cap) {
-			game_entry *bigger = realloc(list, (size_t)(cap *= 2) * sizeof *list);
+			/* Grow cap only once the memory is actually there. Doubling it
+			 * first and then bailing would leave the second pass believing
+			 * there is room in a buffer that never grew. */
+			game_entry *bigger = realloc(list, (size_t)cap * 2 * sizeof *list);
 			if (!bigger) break;
 			list = bigger;
+			cap *= 2;
 		}
 		memset(&list[n], 0, sizeof list[n]);
 		snprintf(list[n].file, sizeof list[n].file, "%s", e->d_name);
@@ -175,9 +179,13 @@ bool lib_scan(const char *roms_root, const char *folder, const char *exts,
 		if (shadowed) continue;
 		if (!folder_launch_file(full, inside, sizeof inside)) continue;
 		if (n == cap) {
-			game_entry *bigger = realloc(list, (size_t)(cap *= 2) * sizeof *list);
+			/* Grow cap only once the memory is actually there. Doubling it
+			 * first and then bailing would leave the second pass believing
+			 * there is room in a buffer that never grew. */
+			game_entry *bigger = realloc(list, (size_t)cap * 2 * sizeof *list);
 			if (!bigger) break;
 			list = bigger;
+			cap *= 2;
 		}
 		memset(&list[n], 0, sizeof list[n]);
 		snprintf(list[n].file, sizeof list[n].file, "%s/%s", e->d_name, inside);

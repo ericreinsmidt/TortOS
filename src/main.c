@@ -511,6 +511,38 @@ static void build_child_env(void)
 	minarch_env[n] = NULL;
 }
 
+/* Bring the resident emulator back.
+ *
+ * With one process per game a core that segfaults takes down that game and
+ * nothing else. With a resident emulator it takes down the emulator, and every
+ * launch for the rest of the session would fall back to the slow path -- until
+ * the launcher itself exits and launch.sh starts a new one. So the launcher
+ * starts one too, once the fallback game has given the display back. Never
+ * while a game is running: two GL contexts and a launcher is one more than
+ * this device should be asked for. */
+static void respawn_resident(app *a)
+{
+	char elf[CFG_STR * 2];
+	char spec[CFG_MAX_SYSTEMS][CFG_STR * 2];
+	char *argv[CFG_MAX_SYSTEMS + 3];
+	int n = 0, i;
+
+	if (plat_resident_ready()) return;
+	snprintf(elf, sizeof elf, "%s/minarch.elf", P_ROOT);
+	if (access(elf, X_OK) != 0) return;
+
+	argv[n++] = elf;
+	argv[n++] = (char *)"--resident";
+	for (i = 0; i < a->sys.count; i++) {
+		snprintf(spec[i], sizeof spec[i], "%s=%s/cores/%s_libretro.so",
+		         a->sys.systems[i].tag, P_ROOT, a->sys.systems[i].core);
+		argv[n++] = spec[i];
+	}
+	argv[n] = NULL;
+	fprintf(stderr, "resident emulator is gone, starting one\n");
+	plat_spawn_detached(argv, minarch_env, P_ROOT);
+}
+
 static void launch(app *a)
 {
 	sysview *v = &a->view[a->sys_cursor];
@@ -574,6 +606,9 @@ static void launch(app *a)
 		ui_init(a->r, P_FONT);
 		prime_sys_window(a);
 		prime_window(a, a->sys_cursor);
+		/* The display is ours again and no game is running: the safe moment
+		 * to put a resident emulator back, so the NEXT launch is fast. */
+		respawn_resident(a);
 	}
 
 	/* The game has just written a fresh autosave preview; make the card pick

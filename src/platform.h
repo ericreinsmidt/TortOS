@@ -59,6 +59,11 @@ bool in_repeat(in_state *st, in_button b);
 int  plat_run(char *const argv[], const char *const envkv[], const char *workdir);
 bool plat_run_power_pressed(void);
 
+/* Start a child and forget it: it outlives this process and leaves no zombie
+ * behind. This is how a resident emulator that has died gets started again. */
+bool plat_spawn_detached(char *const argv[], const char *const envkv[],
+                         const char *workdir);
+
 /* The resident emulator. plat_resident_send() hands over a game and returns
  * at once, so the launcher can animate while it loads; plat_resident_wait()
  * blocks until the game is over. */

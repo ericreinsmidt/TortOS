@@ -342,6 +342,29 @@ int plat_run(char *const argv[], const char *const envkv[], const char *workdir)
 	return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
 }
 
+/* Start a child that outlives this process. Double-forked, so the middle
+ * child is reaped here and the grandchild is inherited by init rather than
+ * becoming a zombie nobody waits for. */
+bool plat_spawn_detached(char *const argv[], const char *const envkv[],
+                         const char *workdir)
+{
+	pid_t pid = fork();
+	if (pid < 0) return false;
+	if (pid == 0) {
+		if (fork() == 0) {
+			setsid();
+			if (workdir) { if (chdir(workdir) != 0) { /* still try */ } }
+			for (int i = 0; envkv && envkv[i]; i++)
+				putenv((char *)envkv[i]);
+			execv(argv[0], argv);
+			_exit(127);
+		}
+		_exit(0);
+	}
+	waitpid(pid, NULL, 0);
+	return true;
+}
+
 /* ---- the resident emulator ----------------------------------------------
  * A resident minarch holds the GL context and all three cores between games,
  * which takes a launch from ~1100ms to ~200ms. The launcher talks to it over

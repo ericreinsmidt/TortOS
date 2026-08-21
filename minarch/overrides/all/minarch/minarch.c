@@ -338,7 +338,16 @@ static int run_one_game(int slot, char *rom_path)
 	Input_reset();   /* the button map is per core; see ma_input.c */
 
 	Game_open(rom_path); // nes tries to load gamegenie setting before this returns ffs
-	if (!game.is_open) { LOG_warn("could not open %s\n", rom_path); return -1; }
+	if (!game.is_open) {
+		/* Upstream jumped to its teardown here and then exited. A resident
+		 * process goes back to waiting instead, so a ROM that will not open
+		 * has to leave nothing behind for the next game -- Game_open can have
+		 * allocated the ROM buffer before giving up. Nothing after this point
+		 * has run, so Game_close is the whole of the cleanup. */
+		LOG_warn("could not open %s\n", rom_path);
+		Game_close();
+		return -1;
+	}
 
 	simple_mode = exists(SIMPLE_MODE_PATH);
 
