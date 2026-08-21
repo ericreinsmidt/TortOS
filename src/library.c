@@ -1,0 +1,194 @@
+/* SPDX-License-Identifier: 0BSD */
+#include "library.h"
+
+#include <dirent.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+#include <sys/stat.h>
+
+/* Disc-image extensions, in launch preference. A folder holding one of these
+ * is a disc-based game -- a PC Engine CD title, typically -- and becomes one
+ * entry launching the image inside it. .m3u wins so a multi-disc set is a
+ * single entry with disc switching. */
+static const char *DISC_EXTS[] = {
+	"m3u", "chd", "cue", "ccd", "toc", "iso", "img", "pbp", "bin", NULL
+};
+
+static const char *ext_of(const char *name)
+{
+	const char *dot = strrchr(name, '.');
+	return (dot && dot != name) ? dot + 1 : NULL;
+}
+
+/* Is ext one of the (comma or space separated) extensions in list? An empty
+ * list means everything is allowed. */
+static bool ext_allowed(const char *ext, const char *list)
+{
+	const char *p = list;
+	size_t n;
+
+	if (!list || !*list) return true;
+	if (!ext) return false;
+	n = strlen(ext);
+	while (*p) {
+		const char *start = p;
+		while (*p && *p != ',' && *p != ' ') p++;
+		if ((size_t)(p - start) == n && strncasecmp(start, ext, n) == 0) return true;
+		while (*p == ',' || *p == ' ') p++;
+	}
+	return false;
+}
+
+static int disc_rank(const char *name)
+{
+	const char *ext = ext_of(name);
+	if (!ext) return -1;
+	for (int i = 0; DISC_EXTS[i]; i++)
+		if (strcasecmp(ext, DISC_EXTS[i]) == 0) return i;
+	return -1;
+}
+
+/* Pick the file to launch inside a game folder: the best-ranked disc image,
+ * ties broken alphabetically so a discs-only folder lands on Disc 1. */
+static bool folder_launch_file(const char *dirpath, char *out, size_t outsz)
+{
+	DIR *d = opendir(dirpath);
+	struct dirent *e;
+	int best = 9999;
+	char pick[LIB_NAME] = "";
+
+	if (!d) return false;
+	while ((e = readdir(d))) {
+		int r;
+		if (e->d_name[0] == '.') continue;
+		r = disc_rank(e->d_name);
+		if (r < 0) continue;
+		if (r < best || (r == best && strcasecmp(e->d_name, pick) < 0)) {
+			best = r;
+			snprintf(pick, sizeof pick, "%s", e->d_name);
+		}
+	}
+	closedir(d);
+	if (!pick[0]) return false;
+	snprintf(out, outsz, "%s", pick);
+	return true;
+}
+
+static int game_cmp(const void *pa, const void *pb)
+{
+	return strcasecmp(((const game_entry *)pa)->name, ((const game_entry *)pb)->name);
+}
+
+void lib_free(game_list *l)
+{
+	free(l->items);
+	l->items = NULL;
+	l->count = 0;
+	l->scanned = false;
+}
+
+/* readdir tells us the type on ext4; on the FAT32 card it usually does not,
+ * and then a stat is the only way. Asking d_type first saves one syscall per
+ * entry on the filesystems that answer. */
+static bool is_dir(const char *full, const struct dirent *e)
+{
+#ifdef DT_DIR
+	if (e->d_type == DT_DIR) return true;
+	if (e->d_type != DT_UNKNOWN) return false;
+#else
+	(void)e;
+#endif
+	{
+		struct stat st;
+		return stat(full, &st) == 0 && S_ISDIR(st.st_mode);
+	}
+}
+
+static bool is_file(const char *full, const struct dirent *e)
+{
+#ifdef DT_REG
+	if (e->d_type == DT_REG) return true;
+	if (e->d_type != DT_UNKNOWN) return false;
+#else
+	(void)e;
+#endif
+	{
+		struct stat st;
+		return stat(full, &st) == 0 && S_ISREG(st.st_mode);
+	}
+}
+
+bool lib_scan(const char *roms_root, const char *folder, const char *exts,
+              game_list *out)
+{
+	char dirpath[LIB_PATH * 2];
+	DIR *d;
+	struct dirent *e;
+	int cap = 64, n = 0, files_n;
+	game_entry *list;
+
+	lib_free(out);
+	out->scanned = true;
+	snprintf(dirpath, sizeof dirpath, "%s/%s", roms_root, folder);
+	d = opendir(dirpath);
+	if (!d) return false;
+	list = malloc((size_t)cap * sizeof *list);
+	if (!list) { closedir(d); return false; }
+
+	/* Pass 1: a file at the top level is a game, launched directly. */
+	while ((e = readdir(d))) {
+		char full[LIB_PATH * 3];
+		char *dot;
+		if (e->d_name[0] == '.') continue;
+		if (!ext_allowed(ext_of(e->d_name), exts)) continue;
+		snprintf(full, sizeof full, "%s/%s", dirpath, e->d_name);
+		if (!is_file(full, e)) continue;
+		if (n == cap) {
+			game_entry *bigger = realloc(list, (size_t)(cap *= 2) * sizeof *list);
+			if (!bigger) break;
+			list = bigger;
+		}
+		memset(&list[n], 0, sizeof list[n]);
+		snprintf(list[n].file, sizeof list[n].file, "%s", e->d_name);
+		snprintf(list[n].name, sizeof list[n].name, "%s", e->d_name);
+		dot = strrchr(list[n].name, '.');
+		if (dot && dot != list[n].name) *dot = '\0';
+		n++;
+	}
+
+	/* Pass 2: a subfolder holding a disc image is a game too -- one entry
+	 * named after the folder, launching the image inside it. Skip a folder
+	 * shadowed by a same-named top-level file so the two layouts cannot
+	 * double up. */
+	files_n = n;
+	rewinddir(d);
+	while ((e = readdir(d))) {
+		char full[LIB_PATH * 3], inside[LIB_NAME];
+		bool shadowed = false;
+		if (e->d_name[0] == '.') continue;
+		snprintf(full, sizeof full, "%s/%s", dirpath, e->d_name);
+		if (!is_dir(full, e)) continue;
+		for (int k = 0; k < files_n; k++)
+			if (strcasecmp(list[k].name, e->d_name) == 0) { shadowed = true; break; }
+		if (shadowed) continue;
+		if (!folder_launch_file(full, inside, sizeof inside)) continue;
+		if (n == cap) {
+			game_entry *bigger = realloc(list, (size_t)(cap *= 2) * sizeof *list);
+			if (!bigger) break;
+			list = bigger;
+		}
+		memset(&list[n], 0, sizeof list[n]);
+		snprintf(list[n].file, sizeof list[n].file, "%s/%s", e->d_name, inside);
+		snprintf(list[n].name, sizeof list[n].name, "%s", e->d_name);
+		n++;
+	}
+	closedir(d);
+
+	if (n == 0) { free(list); return false; }
+	qsort(list, (size_t)n, sizeof *list, game_cmp);
+	out->items = list;
+	out->count = n;
+	return true;
+}

@@ -1,0 +1,24 @@
+#!/bin/sh
+# PlayOS SD-boot entry. The stock runtrimui.sh runs this when it is present on
+# the card.
+
+INFO=$(cat /proc/cpuinfo 2> /dev/null)
+case $INFO in
+*TG5040*|*TG3040*) ;;
+*)
+	# Not a Brick / Brick Hammer: fall back to stock rather than half-booting.
+	if [ -f /usr/trimui/bin/runtrimui-original.sh ]; then
+		exec /usr/trimui/bin/runtrimui-original.sh
+	fi
+	exit 1
+	;;
+esac
+
+/mnt/SDCARD/.tmp_update/tg5040.sh
+
+# The launch loop only returns for a power-off; make sure it sticks. This also
+# means killing launch.sh by hand powers the device off -- do not do that while
+# developing on hardware.
+echo s > /proc/sysrq-trigger
+echo u > /proc/sysrq-trigger
+echo o > /proc/sysrq-trigger

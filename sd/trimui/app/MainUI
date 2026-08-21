@@ -1,0 +1,24 @@
+#!/bin/sh
+# First-boot installer. On a stock device there is no .tmp_update on the card
+# yet, so the firmware runs this in place of its own MainUI binary. It installs
+# the runtrimui.sh hook, moves .tmp_update to the SD root, and hands off to
+# PlayOS. Every boot after this one goes straight to PlayOS.
+
+SDCARD=/mnt/SDCARD
+cd "$SDCARD/trimui/app"
+
+if [ -f /usr/trimui/bin/runtrimui.sh ] && [ ! -f /usr/trimui/bin/runtrimui-original.sh ]; then
+	mv /usr/trimui/bin/runtrimui.sh /usr/trimui/bin/runtrimui-original.sh
+	cp ./runtrimui.sh /usr/trimui/bin/
+	chmod +x /usr/trimui/bin/runtrimui.sh
+fi
+
+if [ ! -d "$SDCARD/.tmp_update" ] && [ -d ./.tmp_update ]; then
+	cp -rf ./.tmp_update "$SDCARD/"
+fi
+rm -rf "$SDCARD/trimui"
+sync
+
+"$SDCARD/.tmp_update/updater"
+
+poweroff

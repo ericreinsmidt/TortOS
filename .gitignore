@@ -1,0 +1,18 @@
+# Build products
+/build/
+/build-native/
+/out/
+
+# Redistributed binaries: the cores, minarch's runtime libraries, the NextUI
+# assets it resolves from compile-time paths, and the minarch.elf built by
+# minarch/build.sh. All of it is fetched or generated -- mk/fetch-vendor.sh and
+# minarch/build.sh -- so none of it belongs in the history.
+/vendor/
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+._*
