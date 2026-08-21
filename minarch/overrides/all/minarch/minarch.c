@@ -163,9 +163,16 @@ void hdmimon(void) {
  * dlopens on every system change (~170ms, better than 1100 but paid on every
  * switch). Keeping all three open is the only one where switching from a NES
  * game to a GBA game costs the same as launching another NES game, and the
- * cost of holding them is a few MB of mapped, untouched pages. Cores are
- * dlopen'd RTLD_LOCAL, so three libretro cores exporting the same twenty
- * retro_* symbols cannot see each other; only one is ever retro_init'd.
+ * cost of holding them is a few MB of mapped, untouched pages.
+ *
+ * Three cores in one address space is safe here because of how they are
+ * built. Checked with nm -D on the three shipped cores: every defined text
+ * symbol in each one is a retro_* entry point and there is nothing else --
+ * 45 of 45 in fceumm, 53 of 53 in mednafen_pce_fast, 25 of 25 in mgba. So the
+ * only names they could possibly collide on are the entry points, and
+ * dlopen's default RTLD_LOCAL keeps even those out of the global namespace,
+ * so no core can bind to another's. Only one is ever retro_init'd; the rest
+ * are mapped and idle.
  *
  * The launcher falls back to running this program the old way, one game per
  * process, whenever residency is not answering -- which is why the classic
