@@ -274,7 +274,12 @@ void Menu_init(void) {
 				strcpy(tmp, line);
 				
 				// found a valid disc path
-				if (exists(disc_path)) {
+				// PlayOS: and there is room for it. The table is nine
+				// entries and nothing was checking -- an m3u with more, or
+				// (before the reset below) a second disc game in the same
+				// resident process, wrote past the end of the struct.
+				if (exists(disc_path) &&
+				    menu.total_discs < (int)(sizeof menu.disc_paths / sizeof *menu.disc_paths)) {
 					menu.disc_paths[menu.total_discs] = strdup(disc_path);
 					// matched our current disc
 					if (exactMatch(disc_path, game.path)) {
@@ -293,6 +298,24 @@ void Menu_quit(void) {
 	 * pointer afterwards could not matter, and in a resident one it is a
 	 * second free waiting to happen. */
 	if (menu.overlay) { SDL_FreeSurface(menu.overlay); menu.overlay = NULL; }
+
+	/* PlayOS: the disc list belongs to the game that was just playing, and
+	 * Menu_init only ever appends to it. Left alone in a resident process the
+	 * strings leak, the count climbs past the end of a nine-entry table, and
+	 * -- the part you would actually notice -- the NEXT game still thinks it
+	 * has discs: pressing right on Continue reaches Game_changeDisc() with
+	 * the previous game's path, and a save writes that path into this game's
+	 * slot file. The slot cursor goes with it, so a new game opens on slot 1
+	 * rather than on whichever slot the last game happened to use. */
+	for (int i = 0; i < (int)(sizeof menu.disc_paths / sizeof *menu.disc_paths); i++) {
+		if (menu.disc_paths[i]) { free(menu.disc_paths[i]); menu.disc_paths[i] = NULL; }
+	}
+	menu.total_discs = 0;
+	menu.disc = -1;
+	menu.slot = 0;
+	menu.save_exists = 0;
+	menu.preview_exists = 0;
+	menu.base_path[0] = '\0';
 }
 void Menu_beforeSleep() {
 	SRAM_write();

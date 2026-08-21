@@ -550,7 +550,7 @@ static void launch(app *a)
 	char core[CFG_STR * 2], elf[CFG_STR * 2], rom[LIB_PATH * 2], tagenv[64];
 	const char *env[28];
 	char *argv[4];
-	bool resident = false;
+	bool resident = false, animated = false;
 	int n = 0;
 	FILE *f;
 
@@ -571,14 +571,23 @@ static void launch(app *a)
 	if (plat_resident_ready()) {
 		/* The emulator is already up, holding the GL context and all three
 		 * cores, so this is ~200ms rather than ~1100. Nothing here is torn
-		 * down: this process keeps its own context too, and only one of the
-		 * two draws at a time because this one is about to block. */
+		 * down -- this process keeps its own context through the whole game,
+		 * which is why coming back is a frame rather than a second and a
+		 * half. The two do overlap for the length of this animation, while
+		 * the game loads behind it; after that only the emulator draws,
+		 * because this process is blocked. */
 		char req[LIB_PATH * 2 + CFG_STR * 2 + 64];
 		snprintf(req, sizeof req, "%s\t%s\t%s\n", s->tag, core, rom);
 		if (plat_resident_send(req)) {
+			animated = true;
 			anim_launch(a, 190);       /* runs WHILE the game loads */
-			plat_resident_wait();
-			resident = true;
+			/* False means it stopped answering -- it died, or was never
+			 * really there. The game did not run, so say so by falling
+			 * through to the path that runs it the slow way, rather than
+			 * fading the shelf back up as though it had. */
+			resident = plat_resident_wait();
+			if (!resident)
+				fprintf(stderr, "resident emulator stopped answering, falling back\n");
 		} else {
 			fprintf(stderr, "resident emulator did not answer, falling back\n");
 		}
@@ -588,7 +597,7 @@ static void launch(app *a)
 		/* One game per process, the old way: the fallback for a resident that
 		 * is missing or has died. It has to take the display, so the
 		 * animation plays first rather than during. */
-		anim_launch(a, 190);
+		if (!animated) anim_launch(a, 190);
 		free_all_textures(a);
 		ui_quit();
 		plat_input_quit();
@@ -661,8 +670,11 @@ static void update_games(app *a)
 	if (n <= 0) { a->screen = SCREEN_SYSTEMS; return; }
 	if (in_repeat(&a->in, IN_LEFT))  v->cursor = (v->cursor - 1 + n) % n;
 	if (in_repeat(&a->in, IN_RIGHT)) v->cursor = (v->cursor + 1) % n;
-	/* L1/R1 jump a screenful, so a long shelf is crossable. */
-	if (in_repeat(&a->in, IN_L1))    v->cursor = (v->cursor - CF_WINDOW + n * 2) % n;
+	/* L1/R1 jump a screenful, so a long shelf is crossable. Wrapped the long
+	 * way round on purpose: C's % truncates toward zero, so on a shelf of
+	 * three games the obvious `(cursor - CF_WINDOW + n*2) % n` lands on -1 and
+	 * the draw walks off the front of the list. */
+	if (in_repeat(&a->in, IN_L1))    v->cursor = ((v->cursor - CF_WINDOW) % n + n) % n;
 	if (in_repeat(&a->in, IN_R1))    v->cursor = (v->cursor + CF_WINDOW) % n;
 	if (a->in.pressed[IN_BACK]) {
 		a->screen = SCREEN_SYSTEMS;
@@ -684,6 +696,13 @@ static void scan_all(app *a)
 			v->tex = calloc((size_t)v->list.count, sizeof *v->tex);
 			v->tw = calloc((size_t)v->list.count, sizeof *v->tw);
 			v->th = calloc((size_t)v->list.count, sizeof *v->th);
+			/* A count with no array behind it would be dereferenced on the
+			 * next frame. An empty shelf is the honest answer. */
+			if (!v->tex || !v->tw || !v->th) {
+				free(v->tex); free(v->tw); free(v->th);
+				v->tex = NULL; v->tw = NULL; v->th = NULL;
+				lib_free(&v->list);
+			}
 		}
 		fprintf(stderr, "scan: %-16s %d games\n", a->sys.systems[i].folder,
 		        v->list.count);

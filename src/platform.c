@@ -393,11 +393,29 @@ static pid_t resident_pid(void)
 }
 #endif
 
+/* Is there a resident emulator to talk to?
+ *
+ * The fifos alone do not answer that. They are only unlinked on a clean exit,
+ * so a resident that crashed leaves both nodes behind and a check that just
+ * stats them says yes forever -- which is worse than saying no, because the
+ * launcher would then never start a replacement and would spend the rest of
+ * the session on the slow path. Ask whether the process it wrote down is
+ * still alive. */
 bool plat_resident_ready(void)
 {
 	struct stat st;
-	return stat(PLAYOS_REQ, &st) == 0 && S_ISFIFO(st.st_mode) &&
-	       stat(PLAYOS_REP, &st) == 0 && S_ISFIFO(st.st_mode);
+	pid_t pid;
+
+	if (stat(PLAYOS_REQ, &st) != 0 || !S_ISFIFO(st.st_mode)) return false;
+	if (stat(PLAYOS_REP, &st) != 0 || !S_ISFIFO(st.st_mode)) return false;
+#ifdef __linux__
+	pid = resident_pid();
+	if (pid <= 0) return false;
+	if (kill(pid, 0) != 0) return false;
+#else
+	(void)pid;
+#endif
+	return true;
 }
 
 static int res_fd_rep = -1;
@@ -443,6 +461,7 @@ bool plat_resident_wait(void)
 	{
 		struct input_event ev;
 		int sent_stop = 0;
+		int no_pid_ms = 0;
 		pid_t res = resident_pid();
 
 		while (fd_power >= 0 && read(fd_power, &ev, sizeof ev) == (ssize_t)sizeof ev)
@@ -451,6 +470,20 @@ bool plat_resident_wait(void)
 		for (;;) {
 			if (read(fd_rep, &c, 1) == 1) { ok = true; break; }
 			usleep(20 * 1000);
+
+			/* Without a pid there is no way to end the game and no way to
+			 * notice the emulator dying, so this loop would sit on a black
+			 * screen with a dead power button until the battery went. Keep
+			 * looking for it, and give up rather than hang. */
+			if (res <= 0) {
+				res = resident_pid();
+				no_pid_ms += 20;
+				if (res <= 0 && no_pid_ms > 2000) {
+					fprintf(stderr, "resident: no pid file, giving up on the wait\n");
+					break;
+				}
+			}
+
 			while (fd_power >= 0 &&
 			       read(fd_power, &ev, sizeof ev) == (ssize_t)sizeof ev) {
 				if (ev.type == EV_KEY && ev.code == KEY_POWER &&
@@ -459,9 +492,11 @@ bool plat_resident_wait(void)
 					sent_stop = 1;
 					/* End the game, not the process. */
 					if (res > 0) kill(res, SIGUSR1);
+					else break;   /* nothing to signal -- hand control back */
 				}
 			}
 			if (res > 0 && kill(res, 0) != 0) break;   /* it died */
+			if (sent_stop && res <= 0) break;
 		}
 	}
 #else

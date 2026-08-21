@@ -330,6 +330,19 @@ static int run_one_game(int slot, char *rom_path)
 	rewinding = 0; ff_paused_by_rewind_hold = 0;
 	rewind_init_ready = 0; shader_reset_suppressed = 0;
 
+	/* Set by the environment callback, and only by cores that bother. A core
+	 * that says nothing would otherwise inherit the last core's answer:
+	 * libretro's default pixel format is 0RGB1555, so a silent core after an
+	 * XRGB8888 one gets its video read through the wrong converter, and a
+	 * core with no disk-control interface would keep the previous core's
+	 * function pointers and be called through them with no game loaded. All
+	 * three shipped cores set the format, so this is insurance -- but it is
+	 * exactly the kind of thing residency turns from impossible into subtle. */
+	fmt = RETRO_PIXEL_FORMAT_0RGB1555;
+	memset(&disk_control_ext, 0, sizeof disk_control_ext);
+	has_custom_controllers = 0;
+	gamepad_type = 0;
+
 	/* Were statics in NextUI, where the process only ever ran one game. As
 	 * locals they reset per game, so a launch cannot flash the settings line
 	 * left over from the last one. */
@@ -515,6 +528,13 @@ static int run_one_game(int slot, char *rom_path)
 	free(pixels);
 	GFX_animateSurfaceOpacity(converted, 0, 0, cw, ch, 255, 0, CFG_getMenuTransitions() ? 200 : 20, 1);
 	SDL_FreeSurface(converted);
+	/* `screen` pointed at that temporary surface and now points at freed
+	 * memory. Upstream exited next so nothing noticed; here the caller clears
+	 * the screen the moment this returns -- GFX_clear is an SDL_FillRect
+	 * straight through the pointer -- and the next game's Menu_init() reads
+	 * screen->format. Put the real one back here, at the point it goes
+	 * stale, rather than at the top of the next game. */
+	if (playos_screen) screen = playos_screen;
 
 	Video_cleanup();
 
@@ -615,18 +635,23 @@ static int resident_loop(void)
 	char line[MAX_PATH * 3], rom[MAX_PATH];
 	int fd_req, fd_rep;
 
+	signal(SIGUSR1, playos_end_game);
+
+	{	/* How the launcher reaches this process to end a game. Written
+		 * BEFORE the fifos exist, because the fifos are what the launcher
+		 * takes as "there is a resident to talk to" -- the other order leaves
+		 * a window where it will send a game and then have no way to stop
+		 * it, which reads as a black screen with a dead power button. */
+		FILE *pf = fopen(PLAYOS_PID, "w");
+		if (pf) { fprintf(pf, "%ld\n", (long)getpid()); fclose(pf); }
+	}
+
 	fd_req = playos_fifo_open(PLAYOS_REQ);
 	fd_rep = playos_fifo_open(PLAYOS_REP);
 	if (fd_req < 0 || fd_rep < 0) {
 		LOG_error("resident: cannot create fifos\n");
+		unlink(PLAYOS_PID);
 		return EXIT_FAILURE;
-	}
-
-	signal(SIGUSR1, playos_end_game);
-
-	{	/* how the launcher reaches this process to end a game */
-		FILE *pf = fopen(PLAYOS_PID, "w");
-		if (pf) { fprintf(pf, "%ld\n", (long)getpid()); fclose(pf); }
 	}
 
 	resident_init();
