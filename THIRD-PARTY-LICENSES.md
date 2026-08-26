@@ -8,42 +8,26 @@ A built PlayOS card (`out/sd/`) also redistributes third-party software that
 keeps its own license. This file lists those components and their terms, and is
 copied onto the card as `PlayOS/THIRD-PARTY-LICENSES.md` by `mk/payload.sh`.
 
-None of the three cores PlayOS ships carries a non-commercial restriction, so
-unlike some larger core sets a PlayOS card is redistributable under the terms
-below.
-
 ---
 
-## minarch (the in-game libretro host)
+## Diatom (the in-game libretro host)
 
-- **Origin:** built from **NextUI** source (LoveRetro/NextUI), which PlayOS
-  patches and rebuilds — see `minarch/` and `minarch/build.sh`.
-- **License:** **GPL-3.0**. https://github.com/LoveRetro/NextUI
-- The eight files under `minarch/overrides/all/` are copied-and-patched NextUI
-  GPL-3.0 source and remain GPL-3.0. They are listed, with what each changes,
-  in `minarch/overrides/README.md`.
-- PlayOS's launcher is a separate 0BSD program. It runs `minarch.elf` as a
-  child process and talks to it over a fifo; it does not link against it.
-- **Source availability (GPL §6):** the corresponding source for the shipped
-  `minarch.elf`, the cores, and the NextUI-derived runtime libraries is the
-  upstream repositories listed here at the release tag pulled by
-  `mk/fetch-vendor.sh` (currently NextUI `v6.11.2`), plus the PlayOS patches in
-  `minarch/overrides/`.
+- **Origin:** an independent frontend, built in its own repository and shipped
+  as `PlayOS/diatom`. https://github.com/ericreinsmidt/diatom
+- **License:** **MIT.** Its vendored `libretro.h` is MIT under the RetroArch
+  team's own scoped notice.
+- PlayOS's launcher runs it as a resident process and talks to it over a Unix
+  socket; it does not link against it. Diatom ships no cores of its own.
 
-## NextUI runtime libraries and assets
+## NextUI runtime libraries
 
 Pulled by `mk/fetch-vendor.sh` from a NextUI release into `vendor/`:
 
 - `vendor/lib/libmsettings.so`, `libgametimedb.so`, `libbatmondb.so` —
-  NextUI/MinUI device libraries.
-- `vendor/system/res/` — NextUI UI image assets, which minarch loads from its
-  hardcoded `/.system/res` path: the in-game menu glyph sheet and the
-  scanline/grid overlays. PlayOS does not use the NextUI fonts — the in-game
-  menu is forced to PlayOS's own `menu.ttf` — nor the MinUI launcher assets,
-  since PlayOS ships its own launcher.
-- `vendor/bin/governor.sh` — called by name by minarch.
-- These follow their NextUI upstream licensing (GPL-3.0 / MinUI MIT, plus the
-  individual asset and font licenses). https://github.com/LoveRetro/NextUI
+  NextUI/MinUI device libraries, used by the launcher for the device's volume,
+  brightness and battery interfaces.
+- These follow their NextUI upstream licensing.
+  https://github.com/LoveRetro/NextUI
 
 ---
 
@@ -53,7 +37,16 @@ Pulled by `mk/fetch-vendor.sh` from a NextUI release into `vendor/`:
 |------|--------|---------|
 | `fceumm_libretro.so` | NES | GPL-2.0-or-later |
 | `mednafen_pce_fast_libretro.so` | TurboGrafx-16 / PC Engine | GPL-2.0-or-later (Mednafen-derived) |
-| `mgba_libretro.so` | Game Boy Advance | MPL-2.0 |
+| `mgba_libretro.so` | Game Boy, Game Boy Color, Game Boy Advance | MPL-2.0 |
+| `snes9x2010_libretro.so` | SNES | **Non-commercial** |
+| `genesis_plus_gx_libretro.so` | Genesis, Master System, Game Gear | **Non-commercial** |
+
+**The last two carry a non-commercial restriction.** They are not open source
+under either the OSI or FSF definition and they restrict commercial
+redistribution outright, which constrains what a card carrying them may be
+sold as - hobby redistribution is what every firmware shipping them relies
+on. The reasoning is worked through in Diatom's ADR-0023. A card built
+without SNES and the Sega systems carries no such restriction.
 
 Core source: the libretro organization and each core's upstream repository
 (https://github.com/libretro).

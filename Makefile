@@ -2,8 +2,8 @@ IMAGE := ghcr.io/loveretro/tg5040-toolchain:latest
 BRICK ?= 192.168.1.101
 SSH := sshpass -p 'tina' ssh -o StrictHostKeyChecking=no root@$(BRICK)
 
-.PHONY: all clean native minarch vendor boot cards payload release install-card \
-        adb adb-elf adb-res adb-minarch adb-vendor adb-restart adb-run adb-log \
+.PHONY: all clean native vendor boot cards payload release install-card \
+        adb adb-elf adb-res adb-vendor adb-restart adb-run adb-log \
         deploy restart logs
 
 all: build/playos.elf
@@ -15,11 +15,6 @@ build/playos.elf: $(wildcard src/*.c) $(wildcard src/*.h) tools/setbright.c mk/c
 # Host build of the launcher, for working on how the shelf looks.
 native:
 	$(MAKE) -f mk/native.mk
-
-# minarch: NextUI source + the overrides in minarch/, built in the toolchain
-# container. This is where the resident emulator comes from.
-minarch:
-	./minarch/build.sh
 
 # The cores and runtime libraries PlayOS redistributes, pulled from a NextUI
 # release. Needed once, before the first payload.
@@ -52,8 +47,6 @@ adb-elf: all
 	./mk/adb-deploy.sh elf
 adb-res:
 	./mk/adb-deploy.sh res
-adb-minarch:
-	./mk/adb-deploy.sh minarch
 adb-vendor:
 	./mk/adb-deploy.sh vendor
 
@@ -63,9 +56,9 @@ adb-vendor:
 adb-restart:
 	adb shell 'killall -q playos.elf; exit 0'
 
-# Restart the resident emulator too -- needed after pushing a new minarch.
+# Restart the resident emulator too -- needed after pushing a new diatom.
 adb-restart-all:
-	adb shell 'killall -q minarch.elf; killall -q playos.elf; exit 0'
+	adb shell 'killall -q diatom; killall -q playos.elf; exit 0'
 
 # Run the launcher by hand with its output on your terminal: the fastest way
 # to tell "the scan is wrong" from "the display is wrong".

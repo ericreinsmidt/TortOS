@@ -1,6 +1,12 @@
 # Replacing minarch with Diatom
 
-Written 2026-08-26. A plan, not a record: nothing here has been done yet.
+Written 2026-08-26 as a plan; executed the same night. Each phase below is
+marked with what its verification actually was. The deviation worth naming up
+front: the plan said Phase 5 should wait for "a week of ordinary use" after
+Phase 4, and it did not - the migration was run to completion in one sitting
+on explicit instruction, with the phase-4 production checks standing in for
+the soak. minarch remains one `git revert` away, and the pre-migration card
+contents are backed up on the device as `PlayOS.pre-diatom/`.
 
 ## Why
 
@@ -63,6 +69,16 @@ That is not a coincidence. Diatom was designed against the same device and the
 same complaints; the overrides are largely a record of what minarch could not do
 without being patched.
 
+## What first contact actually found
+
+The plan predicted Phase 2 would surface what protodrive could not, and it
+did, in under a minute: **the entire ROM library is zipped**, and Diatom had
+never been handed a zip - its own test ROMs never were. The fix (host-side
+extraction, zlib by dlopen) landed on the Diatom side. Second find: the launch
+animation, harmless GL-on-GL with minarch, is a display-safety hazard against
+an fbdev presenter, so the Diatom transport launches without it - a warm
+launch is ~15ms, so there was nothing to animate over.
+
 ## The two gaps
 
 ### 1. The autosave preview
@@ -93,14 +109,14 @@ that. But it is the one substantial piece of new PlayOS code in this plan.
 Each phase leaves a working device. The order is chosen so the risky part is
 reversible and the irreversible part is last.
 
-### Phase 1 - close the gaps in Diatom
+### Phase 1 - close the gaps in Diatom  ✅ done (Diatom ADR-0024)
 No PlayOS changes. Emit `PREVIEW`, writing where PlayOS already looks, and
 confirm the exit path gives slot-9 parity with minarch's autosave funnel.
 
 *Exit criteria:* a Diatom session driven by `protodrive` leaves a `.9.bmp` where
 PlayOS would find it, and a state PlayOS's resume path accepts.
 
-### Phase 2 - socket transport behind the existing seam
+### Phase 2 - socket transport behind the existing seam  ✅ done
 Reimplement the three `plat_resident_*` bodies against the socket. Map
 `"<tag>\t<core>\t<rom>\n"` onto `RUN core= rom= tag= slot=`, `SIGUSR1` onto
 `STOP`, and the pid check onto a failed `connect()`. Select with an environment
@@ -114,20 +130,24 @@ path is one flag away.
 *Exit criteria:* a game launches, runs and exits through Diatom with the
 variable set, and through minarch without it, on the same build.
 
-### Phase 3 - PlayOS draws the in-game menu
+### Phase 3 - PlayOS draws the in-game menu  ✅ done
 Handle `PAUSED`: draw, and answer with `RESUME`, `STOP`, `SAVE` or `LOAD`.
 
 *Exit criteria:* every row minarch's menu offers is reachable, including Reset,
 and the autosave still happens on every way out.
 
-### Phase 4 - swap the resident
+### Phase 4 - swap the resident  ✅ done
 `start_resident()` in `sd/playos/launch.sh` runs `diatom` rather than
 `minarch.elf --resident`. minarch stays installed as the one-shot fallback, so a
 Diatom failure degrades to a slow launch instead of a dead device.
 
-*Exit criteria:* a week of ordinary use with no fallback triggered.
+*Exit criteria as planned:* a week of ordinary use with no fallback
+triggered. *As executed:* a clean reboot into the swapped stack, then a full
+cycle driven through the production supervisor - shelf, launch, play, menu,
+quit, shelf - with the same resident surviving and the launcher never
+restarting.
 
-### Phase 5 - delete minarch
+### Phase 5 - delete minarch  ✅ done (early - see the header)
 Remove `minarch/`, `vendor/minarch.elf`, the NextUI dependency in
 `mk/fetch-vendor.sh`, and the GPL-3.0 section of `THIRD-PARTY-LICENSES.md`.
 

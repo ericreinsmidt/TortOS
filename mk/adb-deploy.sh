@@ -5,7 +5,7 @@
 # when it has fallen back to stock. The SD card has to be IN the device and
 # mounted at /mnt/SDCARD -- that is where everything lives.
 #
-# Usage: mk/adb-deploy.sh [all|elf|res|minarch]
+# Usage: mk/adb-deploy.sh [all|elf|res|diatom]
 set -e
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 WHAT=${1:-all}
@@ -59,19 +59,16 @@ case $WHAT in res|all)
 	$A push "$ROOT/res/boot/playos-boot.mp4" "$P/" > /dev/null
 	echo "  + assets"
 esac
-case $WHAT in minarch|all)
-	[ -f "$ROOT/vendor/minarch.elf" ] || { echo "run make minarch first"; exit 1; }
-	$A push "$ROOT/vendor/minarch.elf" "$P/" > /dev/null
-	$A shell "chmod +x $P/minarch.elf"
-	echo "  + minarch"
+case $WHAT in diatom|all)
+	D=${DIATOM_ELF:-$ROOT/../diatom/build/brick/diatom}
+	[ -f "$D" ] || { echo "no diatom at $D (set DIATOM_ELF)"; exit 1; }
+	$A push "$D" "$P/diatom" > /dev/null
+	$A shell "chmod +x $P/diatom"
+	echo "  + diatom"
 esac
 case $WHAT in vendor)
 	$A push "$ROOT/vendor/cores/."  "$P/cores/" > /dev/null
 	$A push "$ROOT/vendor/lib/."    "$P/lib/" > /dev/null
-	$A push "$ROOT/vendor/bin/governor.sh" "$P/bin/" > /dev/null
-	$A push "$ROOT/vendor/system/res/."             /mnt/SDCARD/.system/res/ > /dev/null
-	$A push "$ROOT/vendor/system/tg5040/shaders/."  /mnt/SDCARD/.system/tg5040/shaders/ > /dev/null
-	$A shell "chmod +x $P/bin/governor.sh"
 	echo "  + cores and runtime"
 esac
 $A shell sync

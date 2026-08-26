@@ -10,14 +10,14 @@ OUT=$ROOT/out/sd
 P=$OUT/PlayOS
 
 [ -f "$ROOT/build/playos.elf" ] || { echo "run make first"; exit 1; }
-[ -f "$ROOT/vendor/minarch.elf" ] || { echo "run make minarch first"; exit 1; }
+DIATOM_ELF=${DIATOM_ELF:-$ROOT/../diatom/build/brick/diatom}
+[ -f "$DIATOM_ELF" ] || { echo "no diatom at $DIATOM_ELF (set DIATOM_ELF)"; exit 1; }
 [ -f "$ROOT/vendor/cores/fceumm_libretro.so" ] || { echo "run mk/fetch-vendor.sh first"; exit 1; }
 
 rm -rf "$OUT"
-mkdir -p "$P/cards" "$P/cores" "$P/lib" "$P/bin" \
+mkdir -p "$P/cards" "$P/cores" "$P/lib" \
          "$OUT/.tmp_update" "$OUT/trimui/app" \
-         "$OUT/Roms" "$OUT/Bios" "$OUT/Saves" \
-         "$OUT/.system/res" "$OUT/.system/tg5040/shaders"
+         "$OUT/Roms" "$OUT/Bios" "$OUT/Saves"
 
 cp "$ROOT/build/playos.elf" "$P/"
 cp "$ROOT/build/setbright" "$P/"          # brightness before the boot animation
@@ -29,23 +29,16 @@ cp "$ROOT/res/boot/playos-boot.mp4" "$P/"
 cp "$ROOT/res/boot/bootlogo.bmp" "$P/"    # u-boot splash, applied on first boot
 cp "$ROOT/res/boot/splash.png" "$P/"      # the pic2fb loading splash, likewise
 cp "$ROOT/THIRD-PARTY-LICENSES.md" "$P/"  # notices for the redistributed software
-cp "$ROOT/vendor/minarch.elf" "$P/"
+cp "$DIATOM_ELF" "$P/diatom"
 cp "$ROOT/vendor/cores/"*.so "$P/cores/"
 cp "$ROOT/vendor/lib/"* "$P/lib/"
-cp "$ROOT/vendor/bin/governor.sh" "$P/bin/"
-
-# minarch resolves res/ (fonts, the menu glyph sheet) and the shader folder
-# from compile-time /.system paths and segfaults at startup without them.
-cp "$ROOT/vendor/system/res/"* "$OUT/.system/res/"
-cp "$ROOT/vendor/system/tg5040/shaders/"* "$OUT/.system/tg5040/shaders/"
 
 cp "$ROOT/sd/.tmp_update/updater" "$ROOT/sd/.tmp_update/tg5040.sh" "$OUT/.tmp_update/"
 cp "$ROOT/sd/trimui/app/MainUI" "$ROOT/sd/trimui/app/runtrimui.sh" "$OUT/trimui/app/"
 
 chmod +x "$OUT/.tmp_update/updater" "$OUT/.tmp_update/tg5040.sh" \
          "$OUT/trimui/app/MainUI" "$OUT/trimui/app/runtrimui.sh" \
-         "$P/launch.sh" "$P/playos.elf" "$P/minarch.elf" "$P/setbright" \
-         "$P/bin/governor.sh"
+         "$P/launch.sh" "$P/playos.elf" "$P/diatom" "$P/setbright"
 
 # One ROM folder per system, with the .media folder box art goes in. Read from
 # systems.cfg (awk, not sed: folder names contain spaces).

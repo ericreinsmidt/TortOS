@@ -30,32 +30,30 @@ does not start one.
 
 ### The resident emulator
 
-`minarch.elf --resident NES=… PCE=… GBA=…` comes up during the boot animation
-and stays up for the life of the session. It holds the GL context and all three
-cores, and blocks on a fifo between games. The launcher hands it a game as one
-line — `<tag>\t<core path>\t<rom path>` — and waits for `done`.
+[Diatom](https://github.com/ericreinsmidt/diatom) - an MIT libretro frontend
+built for this device - comes up on a Unix socket during the boot animation
+and stays up for the life of the session. The launcher hands it a game as a
+`RUN` line carrying the core, the ROM, and the paths where the resume state
+and the card preview live, and reads back what actually happened: `RUNNING`,
+`EXIT reason=`, or an `ERROR code=` it can show.
 
-A launch is then the ~36ms of opening the ROM, plus the per-game setup that
-cannot be shared, and lands at roughly **200 ms**.
+A warm launch - the process up, the core already mapped - is **~15 ms** to
+`RUNNING`. Cores are mapped the first time a game needs one and kept for the
+life of the process (`RTLD_LOCAL`, so libraries exporting the same twenty
+`retro_*` symbols cannot see each other), which makes switching systems cost
+what launching another game on the same system costs, with no core list
+configured anywhere.
 
-**Three cores in one process** was a deliberate choice over the two
-alternatives:
+The in-game menu is the launcher's own: MENU makes Diatom hand the display
+over with a preview of the paused frame, and Continue, Save, Load, Reset and
+Quit act through one protocol line each. Volume and brightness set in a game
+come back to the launcher's settings when the game ends, because the two
+sides share one levels channel instead of overwriting each other.
 
-- *One resident process per core* — three EGL contexts on a device with one
-  framebuffer. The failure mode is not a slow launch, it is no picture.
-- *One resident that swaps cores* — `dlclose` + `dlopen` on every system
-  change, ~170ms. Better than 1100, but paid every time you change machine.
-
-Holding all three open costs a few MB of mapped, untouched pages and makes
-switching from a NES game to a GBA game cost exactly what launching another NES
-game costs. Cores are opened `RTLD_LOCAL`, so three libraries exporting the
-same twenty `retro_*` symbols cannot see each other, and only one is ever
-`retro_init`'d. `PLAYOS_PRELOAD=0` turns preloading off, so the two designs can
-be measured against each other on hardware.
-
-Nothing depends on the resident emulator. If its fifos are not there — in the
-first second after boot, or if it has died — the launcher runs `minarch.elf`
-the old way, one process per game.
+Nothing depends on the resident emulator. If the socket is not there — in the
+first second after boot, or if it has died — the launcher runs the same
+`diatom` binary standalone, one process for that game, and starts a fresh
+resident once the display is back.
 
 ### The boot animation runs *behind* startup
 
@@ -113,9 +111,9 @@ Pressing A on it does not start it, it continues it.
 ## Saves
 
 - **Autosave.** Every way out of a game — the Quit row, the power button, a
-  signal from the launcher — leaves through one point in `minarch.c`, and that
-  is where slot 9 is written. One funnel, so no exit can forget and none can
-  save twice.
+  stop from the launcher — writes the state and the preview at the paths the
+  launch handed over. One funnel, so no exit can forget and none can save
+  twice.
 - **Auto-resume.** The launcher asks for slot 9 before every launch. If a state
   is there the game comes up exactly where it was left; if not it starts fresh.
 - **Manual save and load**, eight slots, from the in-game menu (`MENU`). Silent
@@ -149,10 +147,12 @@ feedback.
 ## Install
 
 1. `make vendor` once, to pull the cores and runtime libraries.
-2. `make && make minarch && make payload`
-3. Copy the **contents** of `out/sd/` to the root of a FAT32 SD card
+2. Build Diatom in its own repository (`tools/brick-make.sh` there), or point
+   `DIATOM_ELF` at a built binary.
+3. `make && make payload`
+4. Copy the **contents** of `out/sd/` to the root of a FAT32 SD card
    (`make install-card CARD=/Volumes/YOURCARD` does it and ejects properly).
-4. Put the card in a stock Brick and power on. The first boot installs the
+5. Put the card in a stock Brick and power on. The first boot installs the
    `runtrimui.sh` hook; every boot after that comes straight up in PlayOS.
 
 Then put ROMs in:
@@ -212,7 +212,6 @@ ffmpeg.
 
 ```sh
 make            # the launcher            -> build/playos.elf
-make minarch    # NextUI + PlayOS patches -> vendor/minarch.elf
 make vendor     # cores + runtime libs    -> vendor/
 make payload    # the installable card    -> out/sd/ and out/PlayOS-v1.0.zip
 make native     # host build of the launcher, for working on how it looks
@@ -220,12 +219,9 @@ make boot       # regenerate the boot animation
 make cards      # regenerate the system cards
 ```
 
-`make minarch` is the one target that needs another project on disk: it builds
-from a NextUI checkout with the overlays in `minarch/overrides/`, which is also
-why the shipped image carries GPL-3.0 that PlayOS itself does not use.
-[DIATOM-MIGRATION.md](DIATOM-MIGRATION.md) is a plan for removing both, by
-replacing minarch with an MIT frontend written against the same device. Nothing
-in it has been done yet.
+`make payload` needs a built Diatom binary (`DIATOM_ELF`, defaulting to a
+sibling checkout). The move from the GPL minarch it used to ship is recorded
+in [DIATOM-MIGRATION.md](DIATOM-MIGRATION.md), phase by phase.
 
 The host build renders exactly what the handheld renders, and can be asked for
 a single frame:
@@ -253,21 +249,20 @@ off when the launch loop exits.
 
 ```
 src/            the launcher (0BSD)
-minarch/        NextUI overrides + the container build (GPL-3.0, see below)
 mk/             cross build, payload, deployment
 tools/          the boot-animation and card generators, and setbright
 res/            the boot animation, the system cards, the font
 config/         systems.cfg and playos.cfg as shipped
 sd/             the boot hook and launch.sh as they land on the card
-vendor/         fetched: cores, runtime libraries, built minarch.elf
+vendor/         fetched: cores and runtime libraries
 ```
 
 ## License
 
 PlayOS's own code is **0BSD** (`LICENSE`).
 
-`minarch.elf` is built from **NextUI** source and is **GPL-3.0** — a separate
-program that PlayOS runs as a child process. The patches are in
-`minarch/overrides/`, which has [its own README](minarch/overrides/README.md)
-saying what each one changes and why. Full notices for everything
-redistributed on a card are in `THIRD-PARTY-LICENSES.md`.
+The emulator is [Diatom](https://github.com/ericreinsmidt/diatom), **MIT**, a
+separate program the launcher runs and talks to over a socket. The cores keep
+their own licenses - two of them non-commercial, which is what actually
+constrains a card - and full notices for everything redistributed are in
+`THIRD-PARTY-LICENSES.md`.

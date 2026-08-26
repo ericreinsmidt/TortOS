@@ -124,9 +124,10 @@ static SDL_Texture *sys_get_tex(void *ctx, int i, int *w, int *h)
 	return a->sys_tex[i];
 }
 
-/* Where minarch keeps a game's autosave preview: the frame the player was
- * looking at when they stopped. minarch names that directory after the ROM's
- * folder under Roms/ (getEmuName), which is not the same as the save tag. */
+/* Where a game's autosave preview lives: the frame the player was looking at
+ * when they stopped. The directory is named after the ROM's folder under
+ * Roms/ - a layout inherited from minarch and kept, so the previews users
+ * already have stayed on their cards across the emulator change. */
 static void preview_path(app *a, int s, const game_entry *g, char *out, size_t n)
 {
 	const char *base = strrchr(g->file, '/');
@@ -508,7 +509,7 @@ static void power_off(app *a)
 /* ---------- launching ----------------------------------------------------- */
 
 static char env_buf[10][CFG_STR * 2];
-static const char *minarch_env[24];
+static const char *child_env[24];
 
 static void build_child_env(void)
 {
@@ -521,7 +522,7 @@ static void build_child_env(void)
 	};
 	size_t i;
 	int n = 0;
-	for (i = 0; i < sizeof fixed / sizeof *fixed; i++) minarch_env[n++] = fixed[i];
+	for (i = 0; i < sizeof fixed / sizeof *fixed; i++) child_env[n++] = fixed[i];
 	snprintf(env_buf[0], sizeof env_buf[0], "ROMS_PATH=%s", P_ROMS);
 	snprintf(env_buf[1], sizeof env_buf[1], "SYSTEM_PATH=%s", P_ROOT);
 	snprintf(env_buf[2], sizeof env_buf[2], "CORES_PATH=%s/cores", P_ROOT);
@@ -530,8 +531,8 @@ static void build_child_env(void)
 	snprintf(env_buf[5], sizeof env_buf[5], "LOGS_PATH=%s/logs", P_USERDATA);
 	snprintf(env_buf[6], sizeof env_buf[6], "HOME=%s", P_USERDATA);
 	snprintf(env_buf[7], sizeof env_buf[7], "LD_LIBRARY_PATH=%s/lib:/usr/trimui/lib", P_ROOT);
-	for (i = 0; i <= 7; i++) minarch_env[n++] = env_buf[i];
-	minarch_env[n] = NULL;
+	for (i = 0; i <= 7; i++) child_env[n++] = env_buf[i];
+	child_env[n] = NULL;
 }
 
 /* The in-game menu - the launcher's, over Diatom's pause.
@@ -651,66 +652,55 @@ static void game_menu(app *a, const char *state9)
  * this device should be asked for. */
 static void respawn_resident(app *a)
 {
-	char elf[CFG_STR * 2];
-	char spec[CFG_MAX_SYSTEMS][CFG_STR * 2];
-	char *argv[CFG_MAX_SYSTEMS + 3];
-	int n = 0, i;
+	char elf[CFG_STR * 2], save[CFG_STR * 2], bios[CFG_STR * 2];
+	char *argv[8];
+	(void)a;
 
 	if (plat_resident_ready()) return;
 
-	/* Diatom transport: the resident is diatom itself, and it preloads
-	 * nothing - a core is mapped the first time a game needs it and kept
-	 * (its ADR-0006), so there is no core list to hand over. */
-	if (getenv("PLAYOS_DIATOM_SOCKET")) {
-		char *dargv[4];
-		snprintf(elf, sizeof elf, "%s/diatom", P_ROOT);
-		if (access(elf, X_OK) != 0) return;
-		dargv[0] = elf;
-		dargv[1] = (char *)"--socket";
-		dargv[2] = (char *)getenv("PLAYOS_DIATOM_SOCKET");
-		dargv[3] = NULL;
-		fprintf(stderr, "resident emulator is gone, starting diatom\n");
-		plat_spawn_detached(dargv, minarch_env, P_ROOT);
-		return;
-	}
-
-	snprintf(elf, sizeof elf, "%s/minarch.elf", P_ROOT);
+	/* The resident is Diatom, and it preloads nothing - a core is mapped the
+	 * first time a game needs it and kept (its ADR-0006), so there is no
+	 * core list to hand over and nothing here changes when a system is
+	 * added. */
+	snprintf(elf, sizeof elf, "%s/diatom", P_ROOT);
 	if (access(elf, X_OK) != 0) return;
-
-	argv[n++] = elf;
-	argv[n++] = (char *)"--resident";
-	for (i = 0; i < a->sys.count; i++) {
-		snprintf(spec[i], sizeof spec[i], "%s=%s/cores/%s_libretro.so",
-		         a->sys.systems[i].tag, P_ROOT, a->sys.systems[i].core);
-		argv[n++] = spec[i];
-	}
-	argv[n] = NULL;
-	fprintf(stderr, "resident emulator is gone, starting one\n");
-	plat_spawn_detached(argv, minarch_env, P_ROOT);
+	snprintf(save, sizeof save, "%s/Saves", P_CARD);
+	snprintf(bios, sizeof bios, "%s/Bios", P_CARD);
+	argv[0] = elf;
+	argv[1] = (char *)"--socket";
+	argv[2] = (char *)plat_resident_socket();
+	argv[3] = (char *)"--save";   argv[4] = save;
+	argv[5] = (char *)"--system"; argv[6] = bios;
+	argv[7] = NULL;
+	fprintf(stderr, "resident emulator is gone, starting diatom\n");
+	plat_spawn_detached(argv, child_env, P_ROOT);
 }
 
 static void launch(app *a)
 {
 	sysview *v = &a->view[a->sys_cursor];
 	const system_cfg *s = &a->sys.systems[a->sys_cursor];
-	char core[CFG_STR * 2], elf[CFG_STR * 2], rom[LIB_PATH * 2], tagenv[64];
-	const char *env[28];
-	char *argv[4];
-	bool resident = false, animated = false;
+	char core[CFG_STR * 2], elf[CFG_STR * 2], rom[LIB_PATH * 2];
+	char st[LIB_PATH * 2], pv[LIB_PATH * 2];
+	char save[CFG_STR * 2], bios[CFG_STR * 2];
+	char *argv[20];
+	bool resident = false;
 	int n = 0;
-	FILE *f;
 
 	if (v->list.count == 0) return;
 
 	snprintf(core, sizeof core, "%s/cores/%s_libretro.so", P_ROOT, s->core);
-	snprintf(elf, sizeof elf, "%s/minarch.elf", P_ROOT);
+	snprintf(elf, sizeof elf, "%s/diatom", P_ROOT);
 	snprintf(rom, sizeof rom, "%s/%s/%s", P_ROMS, s->folder, v->list.items[v->cursor].file);
+	snprintf(save, sizeof save, "%s/Saves", P_CARD);
+	snprintf(bios, sizeof bios, "%s/Bios", P_CARD);
 
-	/* Ask for the auto-resume slot. minarch loads slot 9 if a state is there
-	 * and starts fresh if it is not, and it writes that slot on every way out
-	 * of a game -- so a game always comes up where it was left. */
-	f = fopen("/tmp/resume_slot.txt", "w");
-	if (f) { fputs("9", f); fclose(f); }
+	/* The slot-9 story, by path rather than by convention: the state and the
+	 * preview live beside each other, the launch hands both over, and a game
+	 * always comes up where it was left. */
+	state_path(a, a->sys_cursor, &v->list.items[v->cursor], st, sizeof st);
+	preview_path(a, a->sys_cursor, &v->list.items[v->cursor], pv, sizeof pv);
+	persist_dir_ensure(a, a->sys_cursor);
 
 	remember_place(a);
 
@@ -724,26 +714,16 @@ static void launch(app *a)
 		 * because this process is blocked - except when the player opens
 		 * the in-game menu, which is drawn HERE now, over the frame the
 		 * emulator hands us on the way into its pause. */
-		char st[LIB_PATH * 2], pv[LIB_PATH * 2];
-
-		state_path(a, a->sys_cursor, &v->list.items[v->cursor], st, sizeof st);
-		preview_path(a, a->sys_cursor, &v->list.items[v->cursor], pv, sizeof pv);
-		persist_dir_ensure(a, a->sys_cursor);
-
 		if (plat_resident_send(s->tag, core, rom, st, st, pv)) {
 			int r;
-			/* No launch animation on the Diatom transport, and it is a
-			 * display-safety rule, not a taste call: Diatom presents through
-			 * fbdev, this process through GL, and the handoff spike's one
-			 * invariant is that they never present concurrently - the 190ms
-			 * overlap that was harmless GL-on-GL with minarch is the exact
-			 * case that wedges the display engine. A warm Diatom launch is
-			 * ~15ms, so there is nothing to animate over anyway; the shelf
-			 * simply holds until the game's first frame replaces it. */
-			if (!getenv("PLAYOS_DIATOM_SOCKET")) {
-				animated = true;
-				anim_launch(a, 190);   /* runs WHILE the game loads */
-			}
+			/* No launch animation, and it is a display-safety rule, not a
+			 * taste call: Diatom presents through fbdev, this process
+			 * through GL, and the handoff spike's one invariant is that
+			 * they never present concurrently - the 190ms overlap that was
+			 * harmless GL-on-GL with minarch is the exact case that wedges
+			 * the display engine. A warm launch is ~15ms, so there is
+			 * nothing to animate over anyway; the shelf simply holds until
+			 * the game's first frame replaces it. */
 			for (;;) {
 				r = plat_resident_wait();
 				if (r == RES_PAUSED) { game_menu(a, st); continue; }
@@ -763,20 +743,26 @@ static void launch(app *a)
 
 	if (!resident) {
 		/* One game per process, the old way: the fallback for a resident that
-		 * is missing or has died. It has to take the display, so the
-		 * animation plays first rather than during. */
-		if (!animated) anim_launch(a, 190);
+		 * is missing or has died. Diatom standalone IS the one-shot mode -
+		 * same binary, no socket - so the fallback stopped being a different
+		 * emulator and became the same one held differently. It has to take
+		 * the display, so this side tears its own down first. */
+		anim_launch(a, 190);
 		free_all_textures(a);
 		ui_quit();
 		plat_input_quit();
 		plat_video_quit();
 
-		while (minarch_env[n]) { env[n] = minarch_env[n]; n++; }
-		snprintf(tagenv, sizeof tagenv, "PLAYOS_TAG=%s", s->tag);
-		env[n++] = tagenv;
-		env[n] = NULL;
-		argv[0] = elf; argv[1] = core; argv[2] = rom; argv[3] = NULL;
-		fprintf(stderr, "minarch exited %d\n", plat_run(argv, env, P_ROOT));
+		argv[n++] = elf;
+		argv[n++] = (char *)"--core";            argv[n++] = core;
+		argv[n++] = (char *)"--rom";             argv[n++] = rom;
+		argv[n++] = (char *)"--save";            argv[n++] = save;
+		argv[n++] = (char *)"--system";          argv[n++] = bios;
+		argv[n++] = (char *)"--load-state";      argv[n++] = st;
+		argv[n++] = (char *)"--state-on-exit";   argv[n++] = st;
+		argv[n++] = (char *)"--preview-on-exit"; argv[n++] = pv;
+		argv[n] = NULL;
+		fprintf(stderr, "diatom exited %d\n", plat_run(argv, child_env, P_ROOT));
 
 		if (!plat_video_init() || !plat_input_init()) { a->running = false; return; }
 		a->r = plat_renderer();

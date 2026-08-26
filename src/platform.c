@@ -20,7 +20,7 @@
 #include <unistd.h>
 
 /* The front function keys report on the gamepad node as BTN_THUMBL/BTN_THUMBR
- * (317/318). SDL maps them to joystick buttons 9 and 10, which minarch calls
+ * (317/318). SDL maps them to joystick buttons 9 and 10, which emulators call
  * L3/R3 -- which is why the in-game input map has to drop L3/R3, or every
  * brightness press also reaches the core. */
 #define CODE_FN_LEFT  317
@@ -369,33 +369,6 @@ bool plat_spawn_detached(char *const argv[], const char *const envkv[],
 	return true;
 }
 
-/* ---- the resident emulator ----------------------------------------------
- * A resident minarch holds the GL context and all three cores between games,
- * which takes a launch from ~1100ms to ~200ms. The launcher talks to it over
- * two fifos rather than forking it per game.
- *
- * Both are opened O_RDWR and held: a fifo opened for reading alone blocks
- * until a writer appears and returns EOF when the last one leaves, which
- * turns a request/reply into a race that deadlocks whichever side opens
- * first. Holding a write descriptor of our own removes both behaviours. */
-#define PLAYOS_PID "/tmp/playos_res.pid"
-#define PLAYOS_REQ "/tmp/playos_req"
-#define PLAYOS_REP "/tmp/playos_rep"
-
-/* The resident process writes its pid here at startup; it is how the power
- * button reaches the running game. Only the device build has a power button
- * to watch, which is why this is behind the same guard as its caller. */
-#ifdef __linux__
-static pid_t resident_pid(void)
-{
-	FILE *f = fopen(PLAYOS_PID, "r");
-	long v = 0;
-	if (!f) return -1;
-	if (fscanf(f, "%ld", &v) != 1) v = 0;
-	fclose(f);
-	return v > 0 ? (pid_t)v : -1;
-}
-#endif
 
 /* ---------------- the Diatom transport ---------------------------------- */
 
@@ -409,7 +382,11 @@ static char   d_preview[1024];
 static int    d_pend_vol = -1, d_pend_vol_n;      /* LEVEL events, held until */
 static int    d_pend_bri = -1, d_pend_bri_n;      /* EXIT hands levels back  */
 
-static const char *diatom_socket_path(void) { return getenv("PLAYOS_DIATOM_SOCKET"); }
+const char *plat_resident_socket(void)
+{
+	const char *v = getenv("PLAYOS_DIATOM_SOCKET");
+	return v ? v : "/tmp/diatom.sock";
+}
 
 static void dclose(void)
 {
@@ -494,7 +471,7 @@ static pid_t diatom_pid(void)
 static bool dconnect(void)
 {
 	struct sockaddr_un a;
-	const char *path = diatom_socket_path();
+	const char *path = plat_resident_socket();
 	char *l;
 
 	if (dsock >= 0) return true;
@@ -524,36 +501,12 @@ static bool dconnect(void)
 	return false;
 }
 
-/* ---------------- the fifo transport (minarch) --------------------------- */
-
-/* Is there a resident emulator to talk to?
- *
- * The fifos alone do not answer that. They are only unlinked on a clean exit,
- * so a resident that crashed leaves both nodes behind and a check that just
- * stats them says yes forever -- which is worse than saying no, because the
- * launcher would then never start a replacement and would spend the rest of
- * the session on the slow path. Ask whether the process it wrote down is
- * still alive. */
 bool plat_resident_ready(void)
 {
-	struct stat st;
-	pid_t pid;
-
-	if (diatom_socket_path()) return dconnect();
-
-	if (stat(PLAYOS_REQ, &st) != 0 || !S_ISFIFO(st.st_mode)) return false;
-	if (stat(PLAYOS_REP, &st) != 0 || !S_ISFIFO(st.st_mode)) return false;
-#ifdef __linux__
-	pid = resident_pid();
-	if (pid <= 0) return false;
-	if (kill(pid, 0) != 0) return false;
-#else
-	(void)pid;
-#endif
-	return true;
+	return dconnect();
 }
 
-static int res_fd_rep = -1;
+
 
 /* Ask for a game. Returns immediately -- the caller draws its launch
  * animation while the game loads, which is most of what a launch costs. */
@@ -561,12 +514,9 @@ bool plat_resident_send(const char *tag, const char *core, const char *rom,
                         const char *resume, const char *exit_state,
                         const char *preview)
 {
-	int fd_req;
-	char c;
-
 	run_power_pressed = false;
 
-	if (diatom_socket_path()) {
+	{
 		char *l;
 		int vol, bri;
 
@@ -594,26 +544,6 @@ bool plat_resident_send(const char *tag, const char *core, const char *rom,
 		return true;
 	}
 
-	if (res_fd_rep >= 0) { close(res_fd_rep); res_fd_rep = -1; }
-
-	fd_req = open(PLAYOS_REQ, O_WRONLY | O_NONBLOCK);
-	if (fd_req < 0) return false;              /* nobody listening */
-	res_fd_rep = open(PLAYOS_REP, O_RDWR | O_NONBLOCK);
-	if (res_fd_rep < 0) { close(fd_req); return false; }
-
-	/* Drop anything left over from a previous game before asking for one. */
-	while (read(res_fd_rep, &c, 1) == 1) { }
-
-	{
-		char req[2048];
-		snprintf(req, sizeof req, "%s\t%s\t%s\n", tag, core, rom);
-		if (write(fd_req, req, strlen(req)) < 0) {
-			close(fd_req); close(res_fd_rep); res_fd_rep = -1;
-			return false;
-		}
-	}
-	close(fd_req);
-	return true;
 }
 
 bool plat_resident_line(const char *fmt, ...)
@@ -741,62 +671,7 @@ static int diatom_wait(void)
 
 int plat_resident_wait(void)
 {
-	int fd_rep = res_fd_rep;
-	bool ok = false;
-	char c;
-
-	if (diatom_socket_path()) return diatom_wait();
-
-	if (fd_rep < 0) return RES_DEAD;
-
-#ifdef __linux__
-	{
-		struct input_event ev;
-		int sent_stop = 0;
-		int no_pid_ms = 0;
-		pid_t res = resident_pid();
-
-		while (fd_power >= 0 && read(fd_power, &ev, sizeof ev) == (ssize_t)sizeof ev)
-			; /* drain stale presses */
-
-		for (;;) {
-			if (read(fd_rep, &c, 1) == 1) { ok = true; break; }
-			usleep(20 * 1000);
-
-			/* Without a pid there is no way to end the game and no way to
-			 * notice the emulator dying, so this loop would sit on a black
-			 * screen with a dead power button until the battery went. Keep
-			 * looking for it, and give up rather than hang. */
-			if (res <= 0) {
-				res = resident_pid();
-				no_pid_ms += 20;
-				if (res <= 0 && no_pid_ms > 2000) {
-					fprintf(stderr, "resident: no pid file, giving up on the wait\n");
-					break;
-				}
-			}
-
-			while (fd_power >= 0 &&
-			       read(fd_power, &ev, sizeof ev) == (ssize_t)sizeof ev) {
-				if (ev.type == EV_KEY && ev.code == KEY_POWER &&
-				    ev.value == 1 && !sent_stop) {
-					run_power_pressed = true;
-					sent_stop = 1;
-					/* End the game, not the process. */
-					if (res > 0) kill(res, SIGUSR1);
-					else break;   /* nothing to signal -- hand control back */
-				}
-			}
-			if (res > 0 && kill(res, 0) != 0) break;   /* it died */
-			if (sent_stop && res <= 0) break;
-		}
-	}
-#else
-	(void)c;
-#endif
-	close(fd_rep);
-	res_fd_rep = -1;
-	return ok ? RES_EXIT : RES_DEAD;
+	return diatom_wait();
 }
 
 void plat_request_poweroff(void)
@@ -870,8 +745,8 @@ static int clampi(int v, int lo, int hi)
 }
 
 /* The settings indicator: a thin near-white line across the very top on any
- * volume or brightness change. minarch draws the identical line in game (see
- * PLAYOS_drawSettingLine in the api.c override), so the feedback is one thing
+ * volume or brightness change. Diatom draws its
+ * own thin bar in game for the same reason, so the feedback is one thing
  * everywhere instead of a launcher line here and another firmware's pill
  * there. No glyph and no number -- you know which button you just pressed. */
 #define OSD_LINE_H     6

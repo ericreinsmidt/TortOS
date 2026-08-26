@@ -1,10 +1,9 @@
 #!/bin/sh
 # Populate vendor/ with the prebuilt tg5040 runtime PlayOS ships alongside its
-# own binary: the three libretro cores, minarch's runtime libraries, and the
-# handful of NextUI assets minarch resolves from compile-time paths.
+# own binary: the libretro cores and the device runtime libraries.
 #
-# minarch.elf itself is NOT taken from here -- it is built from source by
-# minarch/build.sh, because PlayOS's whole launch story is in the patches.
+# The emulator itself is Diatom, built in its own repository; payload.sh takes
+# the binary from DIATOM_ELF (default ../diatom/build/brick/diatom).
 #
 # Everything this pulls keeps its own license; see THIRD-PARTY-LICENSES.md.
 #
@@ -42,13 +41,21 @@ unzip -o -j "$EXTRAS" \
 	Emus/tg5040/PCE.pak/mednafen_pce_fast_libretro.so \
 	-d "$VENDOR/cores" > /dev/null
 
-# minarch resolves /.system/res (its fonts and glyph sheet) and
-# /.system/tg5040/shaders at COMPILE time and crashes at startup without them;
-# governor.sh it calls by name out of $SYSTEM_PATH/bin.
-mkdir -p "$VENDOR/system/res" "$VENDOR/system/tg5040/shaders" "$VENDOR/bin"
-unzip -o -j "$DL/MinUI.zip" '.system/res/*' -d "$VENDOR/system/res" > /dev/null
-unzip -o -j "$DL/MinUI.zip" '.system/tg5040/shaders/*' -d "$VENDOR/system/tg5040/shaders" > /dev/null
-unzip -o -j "$DL/MinUI.zip" .system/tg5040/bin/governor.sh -d "$VENDOR/bin" > /dev/null
+# The SNES and Sega cores come from libretro's own buildbot rather than the
+# NextUI release, pinned by sha256 - the same hashes Diatom's CORES.md pins,
+# because they are the same verified binaries. The buildbot path is unpinned;
+# the hashes are the pin.
+BB=https://buildbot.libretro.com/nightly/linux/aarch64/latest
+fetch_core() { # name sha256
+	[ -f "$VENDOR/cores/${1}_libretro.so" ] && \
+		[ "$(shasum -a 256 "$VENDOR/cores/${1}_libretro.so" | cut -d' ' -f1)" = "$2" ] && return
+	curl -sSfL -o "$DL/$1.zip" "$BB/${1}_libretro.so.zip"
+	unzip -o -j "$DL/$1.zip" -d "$VENDOR/cores" > /dev/null
+	GOT=$(shasum -a 256 "$VENDOR/cores/${1}_libretro.so" | cut -d' ' -f1)
+	[ "$GOT" = "$2" ] || { echo "$1: hash mismatch: $GOT"; exit 1; }
+}
+fetch_core snes9x2010      3933890f520abb9dbb0e5276460785b20ce54d25f552b369cafeca270b9dd44c
+fetch_core genesis_plus_gx 3673a22b906509461e23a5a118b1d1bec15cbda105f260cbcbc08a16b2124e48
 
 echo "vendor/ ready:"
 ls "$VENDOR/cores" "$VENDOR/lib"

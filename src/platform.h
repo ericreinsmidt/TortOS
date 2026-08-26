@@ -70,13 +70,14 @@ bool plat_spawn_detached(char *const argv[], const char *const envkv[],
  * player opens the in-game menu, which the launcher draws (the emulator hands
  * the display over rather than drawing its own).
  *
- * Two transports behind one seam. The fifo pair drives minarch and is the
- * default; setting PLAYOS_DIATOM_SOCKET selects Diatom's socket protocol,
- * where peer death is EOF, the stop signal is a message, and the reply is a
- * line saying what actually happened. */
+ * One transport: Diatom's socket protocol, where peer death is EOF, the stop
+ * signal is a message, and the reply is a line saying what actually happened.
+ * PLAYOS_DIATOM_SOCKET overrides the path for tests. The fifo transport that
+ * drove minarch left with minarch. */
 #define RES_DEAD   0   /* emulator missing, dead, or the game never started */
 #define RES_EXIT   1   /* the game ran and is over */
 #define RES_PAUSED 2   /* Diatom only: menu open, the launcher owns the display */
+const char *plat_resident_socket(void);
 bool plat_resident_ready(void);
 bool plat_resident_send(const char *tag, const char *core, const char *rom,
                         const char *resume, const char *exit_state,
