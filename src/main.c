@@ -71,6 +71,7 @@ typedef struct {
 
 	screen_id screen;
 	int sys_cursor;
+	int menu_w;             /* cached shelf-menu content width; 0 = unmeasured */
 	coverflow cf_sys;
 	unsigned tint;          /* eased toward the focused system's accent */
 	in_state in;
@@ -634,11 +635,19 @@ typedef struct {
 
 #define MENU_RADIUS 20
 
+/* The unit every menu measurement is in. Row height, padding and the gap
+ * between the two columns are all cut from it, so the whole panel scales with
+ * the type rather than with a set of numbers that have to be retuned together. */
+static int menu_row_h(void) { return ui_font_line(UI_F_MENU) * 3 / 2; }
+
+/* `fixed_w` is the content width to use, or 0 to size to these rows. The shelf
+ * menus pass a width measured across both of them so the panel never resizes;
+ * the in-game menu has no values to cycle and sizes to itself. */
 static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
-                      int sel)
+                      int sel, int fixed_w)
 {
 	TTF_Font *fm = ui_font(UI_F_MENU), *fh = ui_font(UI_F_LABEL);
-	int row_h = ui_font_line(UI_F_MENU) * 3 / 2;
+	int row_h = menu_row_h();
 	int pad = row_h * 3 / 4;
 	int gap = row_h;                 /* between the label and value columns */
 	int text_h = fm ? TTF_FontHeight(fm) : row_h;
@@ -677,6 +686,7 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 		int w = ui_text_width(fh, heading);
 		if (w > content_w) content_w = w;
 	}
+	if (fixed_w > 0) content_w = fixed_w;
 	if (content_w > PLAYOS_SCREEN_W - margin * 2 - pad * 2)
 		content_w = PLAYOS_SCREEN_W - margin * 2 - pad * 2;
 
@@ -798,12 +808,13 @@ typedef struct { char a[24], b[CFG_STR]; } menu_bufs;
 
 /* Build whichever menu the current screen calls for. Returns the row count, so
  * the input loop never needs to know which of the two it is driving. */
-static int menu_build(app *a, menu_row *out, menu_bufs *b, const char **heading)
+static int menu_build(app *a, screen_id screen, int sys,
+                      menu_row *out, menu_bufs *b, const char **heading)
 {
-	if (a->screen == SCREEN_GAMES) {
-		const system_cfg *s = &a->sys.systems[a->sys_cursor];
+	if (screen == SCREEN_GAMES) {
+		const system_cfg *s = &a->sys.systems[sys];
 
-		snprintf(b->a, sizeof b->a, "%d", a->view[a->sys_cursor].list.count);
+		snprintf(b->a, sizeof b->a, "%d", a->view[sys].list.count);
 		snprintf(b->b, sizeof b->b, "%s", s->core);
 		*heading = s->name;
 		out[SM_GAMES]   = (menu_row){ "Games",          b->a,            false };
@@ -811,8 +822,7 @@ static int menu_build(app *a, menu_row *out, menu_bufs *b, const char **heading)
 		out[SM_SORT]    = (menu_row){ "Sort by",        "Name",          false };
 		out[SM_SHOW]    = (menu_row){ "Show",           "All games",     false };
 		out[SM_DISPLAY] = (menu_row){ "Display mode",
-		                              DMODES[a->view[a->sys_cursor].dmode].label,
-		                              true };
+		                              DMODES[a->view[sys].dmode].label, true };
 		out[SM_BUTTONS] = (menu_row){ "Button mapping", NULL,            false };
 		out[SM_BOXART]  = (menu_row){ "Box art",        "not yet",       false };
 		out[SM_RESCAN]  = (menu_row){ "Rescan folder",  NULL,            false };
@@ -832,17 +842,72 @@ static int menu_build(app *a, menu_row *out, menu_bufs *b, const char **heading)
 	return PM_ROWS;
 }
 
+/* The widest row of one built menu. */
+static int menu_measure(const menu_row *rows, int n, const char *heading)
+{
+	TTF_Font *fm = ui_font(UI_F_MENU), *fh = ui_font(UI_F_LABEL);
+	int gap = menu_row_h(), w = 0, i;
+	bool two_col = false;
+
+	for (i = 0; i < n; i++) if (rows[i].value) two_col = true;
+	for (i = 0; i < n; i++) {
+		int rw = ui_text_width(fm, rows[i].label);
+		if (two_col && rows[i].value) rw += gap + ui_text_width(fm, rows[i].value);
+		if (rw > w) w = rw;
+	}
+	if (heading) {
+		int hw = ui_text_width(fh, heading);
+		if (hw > w) w = hw;
+	}
+	return w;
+}
+
+/* One width for both shelf menus, every system, and every value their rows can
+ * cycle to. The panel is a frame the lists sit inside rather than something
+ * that resizes to whatever is selected: without this, cycling display mode from
+ * "Fill" to "Integer tall" widens the slab under the cursor, and walking from
+ * the systems row into a system resizes it again.
+ *
+ * Measured across all of that rather than picked, so a longer label, another
+ * system or a larger font scale widens the frame instead of overflowing it.
+ * Cached because it is a few hundred text measurements and none of its inputs
+ * change while a menu is open. */
+static int menu_shelf_width(app *a)
+{
+	menu_row rows[MENU_MAX_ROWS];
+	menu_bufs bufs;
+	const char *heading;
+	int w, n, i, k;
+
+	if (a->menu_w) return a->menu_w;
+
+	n = menu_build(a, SCREEN_SYSTEMS, a->sys_cursor, rows, &bufs, &heading);
+	w = menu_measure(rows, n, heading);
+
+	for (i = 0; i < a->sys.count; i++) {
+		n = menu_build(a, SCREEN_GAMES, i, rows, &bufs, &heading);
+		for (k = 0; k < DMODE_COUNT; k++) {
+			int mw;
+			rows[SM_DISPLAY].value = DMODES[k].label;
+			mw = menu_measure(rows, n, heading);
+			if (mw > w) w = mw;
+		}
+	}
+	a->menu_w = w;
+	return w;
+}
+
 static void playos_menu_draw(app *a, int sel)
 {
 	menu_row rows[MENU_MAX_ROWS];
 	menu_bufs bufs;
 	const char *heading;
-	int n = menu_build(a, rows, &bufs, &heading);
+	int n = menu_build(a, a->screen, a->sys_cursor, rows, &bufs, &heading);
 
 	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 	SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
 	SDL_RenderFillRect(a->r, NULL);
-	menu_draw(a, heading, rows, n, sel);
+	menu_draw(a, heading, rows, n, sel, menu_shelf_width(a));
 }
 
 static void playos_menu(app *a)
@@ -852,7 +917,7 @@ static void playos_menu(app *a)
 	const char *heading;
 	/* The screen cannot change while the menu is open, so the row count is
 	 * settled here and the loop below is the same loop for either menu. */
-	int n = menu_build(a, rows, &bufs, &heading);
+	int n = menu_build(a, a->screen, a->sys_cursor, rows, &bufs, &heading);
 	int sel = 0, done = 0;
 
 	plat_input_flush();
@@ -864,7 +929,7 @@ static void playos_menu(app *a)
 
 		/* Rebuilt every frame: a row that can be changed from inside the menu
 		 * has to show what it was changed to. */
-		n = menu_build(a, rows, &bufs, &heading);
+		n = menu_build(a, a->screen, a->sys_cursor, rows, &bufs, &heading);
 
 		if (in_repeat(&a->in, IN_UP))   sel = (sel + n - 1) % n;
 		if (in_repeat(&a->in, IN_DOWN)) sel = (sel + 1) % n;
@@ -1226,7 +1291,7 @@ static void game_menu(app *a)
 			int i;
 			for (i = 0; i < GM_ROWS; i++)
 				rows[i] = (menu_row){ label[i], NULL, true };
-			menu_draw(a, NULL, rows, GM_ROWS, sel);
+			menu_draw(a, NULL, rows, GM_ROWS, sel, 0);
 		}
 		SDL_RenderPresent(a->r);
 		SDL_Delay(8);
@@ -1372,6 +1437,7 @@ static void launch(app *a)
 		if (!plat_video_init() || !plat_input_init()) { a->running = false; return; }
 		a->r = plat_renderer();
 		ui_init(a->r, P_FONT);
+		a->menu_w = 0;   /* fonts reopened: remeasure the panel */
 		prime_sys_window(a);
 		prime_window(a, a->sys_cursor);
 		/* The display is ours again and no game is running: the safe moment
