@@ -628,7 +628,7 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 	ui_panel(a->r, &panel, MENU_RADIUS, a->tint);
 
 	if (heading) {
-		ui_text(a->r, fh, heading, cx, content_y, 0, UI_TEXT_DIM);
+		ui_text(a->r, fh, heading, cx, content_y, 0, UI_TEXT_SOFT);
 		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 		SDL_SetRenderDrawColor(a->r, (Uint8)(a->tint >> 16), (Uint8)(a->tint >> 8),
 		                       (Uint8)a->tint, 70);
@@ -652,14 +652,16 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 		}
 
 		/* A placeholder row still highlights - it is a real place on the list -
-		 * but never brightens to the colour a working row gets. That is the
-		 * whole signal that it does not do anything yet. */
-		if (rows[i].live) lc = i == sel ? UI_TEXT : UI_TEXT_DIM;
-		else              lc = i == sel ? UI_TEXT_DIM : UI_TEXT_OFF;
+		 * and stays one step quieter than a working row, which is the whole
+		 * signal that it does nothing yet. One step, though, not two: most of
+		 * this list is placeholders, and ranking them against an unselected
+		 * working row as well left the entire menu reading as greyed out. */
+		if (rows[i].live) lc = i == sel ? UI_TEXT      : UI_TEXT_SOFT;
+		else              lc = i == sel ? UI_TEXT_SOFT : UI_TEXT_DIM;
 		vc = rows[i].live && i == sel
 		     ? (SDL_Color){ (Uint8)(a->tint >> 16), (Uint8)(a->tint >> 8),
 		                    (Uint8)a->tint, 255 }
-		     : UI_TEXT_OFF;
+		     : UI_TEXT_DIM;
 
 		if (two_col) {
 			ui_text(a->r, fm, rows[i].label, content_x, ty, -1, lc);

@@ -248,8 +248,10 @@ void ui_panel(SDL_Renderer *r, const SDL_Rect *q, int radius, unsigned border)
 	ui_round_rect(r, q, radius, (SDL_Color){
 		(Uint8)(border >> 16), (Uint8)(border >> 8), (Uint8)border, 110 });
 	/* Opaque enough that a card title behind it does not ghost through the
-	 * list, which at 95% it did. */
-	ui_round_rect(r, &in, radius - 2, (SDL_Color){ 10, 11, 16, 252 });
+	 * list, which at 95% it did. Lifted off the background's own near-black:
+	 * at 10,11,16 the panel was a hole in the screen rather than a surface on
+	 * it, and every row drawn on it inherited that as looking unlit. */
+	ui_round_rect(r, &in, radius - 2, (SDL_Color){ 22, 24, 32, 252 });
 }
 
 unsigned ui_mix(unsigned a, unsigned b, float t)

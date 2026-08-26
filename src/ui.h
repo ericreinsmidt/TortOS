@@ -14,9 +14,14 @@
 #define UI_BG_G 8
 #define UI_BG_B 12
 
+/* Four steps, brightest first. A list is read at all of them at once, so the
+ * gaps have to be wide enough to rank the rows and narrow enough that the
+ * quietest step is still text rather than texture. SOFT is where an ordinary
+ * unselected row sits: selection is said by the highlight behind it, not by
+ * dimming everything else down to it. */
 #define UI_TEXT      ((SDL_Color){ 237, 237, 242, 255 })
-#define UI_TEXT_DIM  ((SDL_Color){ 138, 143, 163, 255 })
-#define UI_TEXT_OFF  ((SDL_Color){  96, 100, 118, 255 })   /* present, not live */
+#define UI_TEXT_SOFT ((SDL_Color){ 198, 201, 214, 255 })
+#define UI_TEXT_DIM  ((SDL_Color){ 148, 153, 172, 255 })
 
 /* PlayOS cyan: 0x3DD6FF. The system accents come from systems.cfg. */
 #define UI_CYAN_R 61
