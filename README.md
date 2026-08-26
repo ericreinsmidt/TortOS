@@ -215,6 +215,13 @@ is what every boot restores, because it is the level someone actually chose.
 the brightness rungs are shared verbatim with Diatom, so a level set inside a
 game and a level set on the shelf mean the same thing on both sides.
 
+**Display mode** is per system, set from that system's own menu and kept in
+`.userdata/<platform>/display.cfg` keyed on the system's tag. The seven modes
+are Diatom's, named as it names them, and the launcher hands the chosen one
+over with every launch — the emulator's mode is global and outlives a game, so
+a system that has never been set would otherwise inherit whatever the last one
+chose. An unrecognised name in that file falls back to `aspect`.
+
 `font_scale` moves every size together. The sizes themselves are one base and
 a multiplier per role — title, menu row, heading, the quiet line of counts and
 timestamps — in `src/ui.c`, so the proportions between them are stated in one
