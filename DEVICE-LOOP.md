@@ -45,8 +45,18 @@ Injected presses reach the game too, so a stray A is a stray jump.
   adb itself stalls intermittently, and one stalled long chain leaves the UI
   in an unknown state.
 - Any headless game run makes SOUND at the shelf's volume. Mute first, restore
-  after:  sed -i "s/^volume=40/volume=0/" /mnt/SDCARD/PlayOS/playos.cfg
-  (applies at launcher restart; the launcher persists it into libmsettings).
+  after - and mute the right file. `.userdata/tg5040/levels.cfg` holds the
+  level the player last chose and WINS over playos.cfg, so editing playos.cfg
+  does nothing on a device that has ever had its volume touched. It is also
+  all-or-nothing: a levels.cfg missing either key is ignored entirely, so
+  write both.
+
+      L=/mnt/SDCARD/.userdata/tg5040/levels.cfg
+      cat $L                                    # keep these to restore
+      printf 'volume=0\nbrightness=7\n' > $L
+
+  Applies at launcher restart. playos.cfg is only the default for a device
+  that has never had a level set on it.
 - The device clock is wrong until network time syncs; file mtimes are honest
   but odd.
 - FAT mtimes have two-second granularity and `ls -t` ordering lies.

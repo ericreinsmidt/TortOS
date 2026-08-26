@@ -1,7 +1,7 @@
 # PlayOS
 
 A custom firmware for the **TrimUI Brick / Brick Hammer** (tg5040) that plays
-NES, TurboGrafx-16 and Game Boy Advance games, and does nothing else.
+nine 8- and 16-bit consoles, and does nothing else.
 
 No store, no scraper, no achievements, no music player, no settings screen. No
 WiFi and no Bluetooth — both radios are shut down at boot and never come back.
@@ -60,7 +60,7 @@ resident once the display is back.
 An animation that adds its own length to the boot is a delay with a picture on
 it. PlayOS plays its 2.4s animation in the background while the launcher does
 its entire startup — the card scan, GL init, font and card decode — and while
-the resident emulator builds its context and opens three cores.
+the resident emulator builds its context and maps the cores it needs.
 
 `ffmpeg` and the launcher both write to `/dev/fb0`, and it is last-writer-wins,
 so they must never draw at the same time. A marker file is the handshake: the
@@ -162,11 +162,21 @@ Then put ROMs in:
 
 ```
 Roms/NES/                     .nes .fds .unf .unif .zip
+Roms/Master System/           .sms .zip
+Roms/Genesis/                 .md .gen .bin .smd .zip
+Roms/Game Boy/                .gb .dmg .zip
 Roms/TurboGrafx-16/           .pce .sgx .cue .ccd .chd .toc .m3u .zip
+Roms/Game Gear/               .gg .zip
+Roms/SNES/                    .sfc .smc .zip
+Roms/Game Boy Color/          .gbc .cgb .zip
 Roms/Game Boy Advance/        .gba .agb .zip
 Roms/<system>/.media/<name>.png     box art, optional
 Bios/GBA/                     optional GBA BIOS
 ```
+
+The shelf is `systems.cfg`, so that list is the shipped one rather than a fixed
+one: a system with no ROMs in its folder still gets a card, and a line removed
+from the config takes its shelf with it.
 
 A folder inside a system folder that contains a disc image counts as one game,
 launching the image inside it — that is how a multi-disc PC Engine CD set stays
@@ -189,13 +199,20 @@ Two files, and they are the whole settings screen.
 `PlayOS/playos.cfg`:
 
 ```
-volume=40           # 0..100, applied at boot
-brightness=8        # 0..10, applied at boot and to the animation before it
+volume=40           # 0..100, the default before one has ever been set
+brightness=7        # 0..11, twelve geometric rungs; 0 is the panel's floor
 startup_system=NES  # only decides the very first boot; after that PlayOS
                     # comes back to wherever you were
 font_scale=1.0      # 0.75..1.50, multiplies the whole type scale at once
 wifi=1              # keeps WiFi up on a development unit, for ssh
 ```
+
+The two levels are **defaults, not settings**. Once the volume rocker or F1/F2
+has been touched, the level lives in `.userdata/<platform>/levels.cfg` and that
+is what every boot restores, because it is the level someone actually chose.
+`launch.sh` reads the same file to light the panel for the boot animation, and
+the brightness rungs are shared verbatim with Diatom, so a level set inside a
+game and a level set on the shelf mean the same thing on both sides.
 
 `font_scale` moves every size together. The sizes themselves are one base and
 a multiplier per role — title, menu row, heading, the quiet line of counts and
@@ -215,13 +232,16 @@ longer one is silently truncated.
 
 ## Building
 
-Everything cross-compiles in the tg5040 toolchain container, so the only host
-requirements are Docker and (for regenerating art) Python with Pillow, plus
-ffmpeg.
+Everything cross-compiles in PlayOS's own toolchain image - a stock Debian
+cross-compiler pinned by digest, built by `mk/toolchain.Dockerfile`, linking
+against the device's own SDL2 in `sysroot/`. So the only host requirements are
+Docker and (for regenerating art) Python with Pillow, plus ffmpeg.
 
 ```sh
+make toolchain  # the cross-compiler      -> playos-toolchain   (once)
+mk/fetch-sysroot.sh  # the device's SDL2  -> sysroot/           (once, needs adb)
 make            # the launcher            -> build/playos.elf
-make vendor     # cores + runtime libs    -> vendor/
+make vendor     # the libretro cores      -> vendor/
 make payload    # the installable card    -> out/sd/ and out/PlayOS-v1.0.zip
 make native     # host build of the launcher, for working on how it looks
 make boot       # regenerate the boot animation

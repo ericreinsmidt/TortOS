@@ -586,15 +586,20 @@ static void d_note_level(const char *l)
 static void d_apply_levels(void)
 {
 	/* Through the public setters (defined below, past this point in the
-	 * file): they own the device handles. Both sides now use the same
-	 * ladders, so `count` matches and the rescale is the identity - but it
-	 * is written as a rescale anyway, because a launcher should not break if
-	 * the emulator ever changes its scale. */
+	 * file): they own the device handles. Both sides use the same ladders, so
+	 * `count` matches and the rescale is the identity - but it is written as a
+	 * rescale anyway, because a launcher should not break if the emulator ever
+	 * changes its scale.
+	 *
+	 * The rescale has to target THIS side's top of range. It read 10 while the
+	 * brightness ladder had grown to twelve rungs, which is not the identity:
+	 * a level of 7 came back as 6, and every brightness set inside a game lost
+	 * a rung on the way out. That is why the maxima are in platform.h now. */
 	if (d_pend_vol >= 0 && d_pend_vol_n > 1)
 		plat_volume_set_pct((d_pend_vol * 100 + (d_pend_vol_n - 1) / 2)
 		                    / (d_pend_vol_n - 1));
 	if (d_pend_bri >= 0 && d_pend_bri_n > 1)
-		plat_brightness_set((d_pend_bri * 10 + (d_pend_bri_n - 1) / 2)
+		plat_brightness_set((d_pend_bri * PLAT_BRIGHT_MAX + (d_pend_bri_n - 1) / 2)
 		                    / (d_pend_bri_n - 1));
 	d_pend_vol = d_pend_bri = -1;
 }
@@ -786,7 +791,7 @@ struct pl_ctl_elem_value {
 #define GAIN_CTL     "digital volume"
 #define GAIN_RAW_MAX 63          /* 0 is loudest, 63 quietest */
 #define SPEAKER_CTL  "HpSpeaker Switch"   /* the only true mute on this codec */
-#define VOL_MAX      20          /* 21 positions, 0..20 - Diatom's scale */
+#define VOL_MAX      PLAT_VOL_MAX         /* 21 positions, 0..20 - Diatom's scale */
 
 #define DISP_LCD_SET_BRIGHTNESS 0x102
 #define DISP_LCD_GET_BRIGHTNESS 0x103
@@ -799,6 +804,10 @@ static const unsigned char bright_ladder[] = {
 	2, 4, 8, 16, 32, 48, 72, 96, 128, 160, 192, 255
 };
 #define BRIGHT_MAX ((int)(sizeof bright_ladder / sizeof bright_ladder[0]) - 1)
+/* The table is the definition; the header only publishes its extent. If they
+ * ever disagree this stops the build rather than shipping a rescale that is
+ * quietly off by a rung, which is the bug that put the maximum in a header. */
+_Static_assert(BRIGHT_MAX == PLAT_BRIGHT_MAX, "bright_ladder vs PLAT_BRIGHT_MAX");
 
 static int clampi(int v, int lo, int hi)
 {
@@ -861,7 +870,7 @@ static void apply_brightness(int b)
 	ioctl(disp_fd, DISP_LCD_SET_BRIGHTNESS, a);
 }
 
-void plat_settings_init(void)
+void plat_settings_init(int cfg_volume_pct, int cfg_brightness)
 {
 	FILE *f;
 	int v = -1, b = -1;
@@ -871,6 +880,11 @@ void plat_settings_init(void)
 	if (mixer_fd < 0) fprintf(stderr, "settings: no /dev/snd/controlC0\n");
 	if (disp_fd  < 0) fprintf(stderr, "settings: no /dev/disp\n");
 
+	/* The player's last choice, and it wins: a level the player set with the
+	 * rocker survives a restart, which is the whole reason every nudge writes
+	 * this file. All or nothing on purpose - a half-written file describes no
+	 * level anyone chose, so it falls through to the defaults below rather
+	 * than pairing one saved level with one config default. */
 	snprintf(levels_file, sizeof levels_file, "%s/levels.cfg", P_USERDATA);
 	f = fopen(levels_file, "r");
 	if (f) {
@@ -878,9 +892,19 @@ void plat_settings_init(void)
 		fclose(f);
 	}
 
-	/* Whatever the panel is already at, so the launcher's first OSD tells the
-	 * truth even before anything is set - launch.sh applied a brightness
-	 * before this process existed. */
+	/* Then playos.cfg, which is a default for a device that has never had a
+	 * level set on it - not an instruction to be obeyed at every boot. It used
+	 * to be applied over the top of the above by main(), which put the config
+	 * ahead of the player and disagreed with launch.sh into the bargain. */
+	if (v < 0 && cfg_volume_pct >= 0)
+		v = (cfg_volume_pct * VOL_MAX + 50) / 100;
+	if (b < 0 && cfg_brightness >= 0)
+		b = cfg_brightness;
+
+	/* Last, whatever the panel is already at, so the launcher's first OSD
+	 * tells the truth even with nothing configured anywhere - launch.sh set a
+	 * brightness before this process existed. Nearest rung, because the panel
+	 * reports raw values and only the ladder has rungs. */
 	if (b < 0 && disp_fd >= 0) {
 		int raw = ioctl(disp_fd, DISP_LCD_GET_BRIGHTNESS, (unsigned long[4]){ 0, 0, 0, 0 });
 		int i;
@@ -902,15 +926,25 @@ void plat_settings_init(void)
  * (mk/native.mk). There is no codec and no display engine here, so the
  * settings are state and nothing more - enough that the OSD draws and the
  * levels the launcher reports are consistent. */
-#define VOL_MAX    20
-#define BRIGHT_MAX 11
+#define VOL_MAX    PLAT_VOL_MAX
+#define BRIGHT_MAX PLAT_BRIGHT_MAX
 static int cur_vol = 8, cur_bright = 7;
 static int mixer_fd = 0, disp_fd = 0;    /* "present", so the nudges run */
 static int clampi(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
 static void levels_save(void) { }
 static void apply_volume(int v) { cur_vol = v; }
 static void apply_brightness(int b) { cur_bright = b; }
-void plat_settings_init(void) { }
+
+/* No levels.cfg to read on the host, so the config defaults are all there is.
+ * Taken anyway rather than ignored: a shelf rendered by --shot should show the
+ * OSD at the levels the card is configured for. */
+void plat_settings_init(int cfg_volume_pct, int cfg_brightness)
+{
+	if (cfg_volume_pct >= 0)
+		cur_vol = clampi((cfg_volume_pct * VOL_MAX + 50) / 100, 0, VOL_MAX);
+	if (cfg_brightness >= 0)
+		cur_bright = clampi(cfg_brightness, 0, BRIGHT_MAX);
+}
 
 #endif  /* __linux__ */
 

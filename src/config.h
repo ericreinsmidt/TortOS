@@ -11,9 +11,10 @@ typedef struct {
 	char name[CFG_STR];   /* display name, e.g. "TurboGrafx-16" */
 	char folder[CFG_STR]; /* ROM folder under Roms/            */
 	char core[CFG_STR];   /* core short name, e.g. "mednafen_pce_fast" */
-	char tag[8];          /* minarch tag: saves, states and configs hang off
-	                       * this. Three characters at most -- struct Core
-	                       * declares tag[8] and it is not negotiable. */
+	char tag[8];          /* saves, states and per-game configs hang off this,
+	                       * so it is also the folder name under Saves/. Three
+	                       * characters at most: this array is the limit, and a
+	                       * longer tag is silently truncated into it. */
 	char card[CFG_STR];   /* card art filename under PlayOS/cards/ */
 	unsigned accent;      /* 0xRRGGBB, tints the focus glow and the rail */
 	char exts[CFG_STR];   /* which extensions in that folder are games; empty
@@ -27,8 +28,10 @@ typedef struct {
 } systems_cfg;
 
 typedef struct {
-	int volume;             /* 0..100, -1 = leave alone */
-	int brightness;         /* 0..10,  -1 = leave alone */
+	/* Defaults, not settings: the settings code prefers the level the player
+	 * last chose in levels.cfg and falls back to these. -1 = not configured. */
+	int volume;             /* 0..100 */
+	int brightness;         /* a rung, 0..PLAT_BRIGHT_MAX */
 	float font_scale;       /* multiplies the whole type scale; 1.0 = as designed */
 	char startup_system[CFG_STR];
 } playos_cfg;

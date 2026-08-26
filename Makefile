@@ -28,8 +28,9 @@ toolchain:
 native:
 	$(MAKE) -f mk/native.mk
 
-# The cores and runtime libraries PlayOS redistributes, pulled from a NextUI
-# release. Needed once, before the first payload.
+# The libretro cores PlayOS redistributes, hash-pinned from libretro's own
+# buildbot. Needed once, before the first payload. No runtime libraries: the
+# cores need only what the device's firmware already has.
 vendor:
 	./mk/fetch-vendor.sh
 

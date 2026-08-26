@@ -1445,7 +1445,11 @@ int main(int argc, char *argv[])
 	IMG_Init(IMG_INIT_PNG);
 	a.r = plat_renderer();
 	plat_input_init();
-	plat_settings_init();
+	/* The config values are defaults handed to the settings code, which
+	 * prefers the player's saved levels over them. They are NOT reapplied
+	 * afterwards: doing that put playos.cfg ahead of the level the player last
+	 * chose and undid every nudge on the next restart. */
+	plat_settings_init(a.cfg.volume, a.cfg.brightness);
 	plat_leds_off();
 	t_mark("video+input");
 
@@ -1453,11 +1457,6 @@ int main(int argc, char *argv[])
 	 * the ui_quit/ui_init pair the standalone-emulator fallback goes through. */
 	ui_set_font_scale(a.cfg.font_scale);
 	if (!ui_init(a.r, P_FONT)) fprintf(stderr, "font init failed\n");
-	if (a.cfg.volume >= 0) plat_volume_set_pct(a.cfg.volume);
-	/* Always reapply brightness after InitSettings: it can come back with a
-	 * stale, dimmer value than the one launch.sh set for the boot animation,
-	 * and the step down is visible. */
-	plat_brightness_set(a.cfg.brightness >= 0 ? a.cfg.brightness : 8);
 	t_mark("font+settings");
 
 	a.sys_cursor = 0;

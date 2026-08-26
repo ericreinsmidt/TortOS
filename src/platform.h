@@ -91,7 +91,22 @@ const char *plat_resident_last_preview(void);
 void plat_request_poweroff(void);
 void plat_leds_off(void);
 
-void plat_settings_init(void);
+/* The two level scales, stated once. PlayOS shares them verbatim with
+ * launch.sh and with Diatom, so a level crossing the socket needs no
+ * conversion - which only holds while every place that rescales a level agrees
+ * on the top of the range, so they live here rather than beside the ladder
+ * table that only the settings code can see. */
+#define PLAT_VOL_MAX     20   /* 21 positions, 0..20 */
+#define PLAT_BRIGHT_MAX  11   /* a 12-rung geometric ladder, 0..11 */
+
+/* Levels come from .userdata/levels.cfg when the player has ever set one, and
+ * from playos.cfg otherwise: the saved level is a choice, the config value is
+ * only a default. launch.sh applies the same precedence to the boot animation
+ * before this process exists, so passing the config defaults in here keeps the
+ * rule in one place instead of two that can disagree.
+ * cfg_volume_pct is 0..100; cfg_brightness is a rung, 0..PLAT_BRIGHT_MAX.
+ * Either may be negative for "not configured". */
+void plat_settings_init(int cfg_volume_pct, int cfg_brightness);
 int  plat_volume_get(void);
 int  plat_brightness_get(void);
 void plat_volume_nudge(int delta);
