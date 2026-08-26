@@ -906,7 +906,7 @@ static void slot_draw(app *a, const slot_view *sv, int sel)
 	 * colour - a 240x160 GBA frame and a 256x224 NES frame are different
 	 * shapes, and neither should be padded out into the same rectangle. */
 	const SDL_Rect area = { (PLAYOS_SCREEN_W - 560) / 2, 170, 560, 400 };
-	const int bw = 3;
+	const int bw = 12;
 	SDL_Rect img = area, frame;
 	char slotname[16];
 	int line_menu = ui_font_line(UI_F_MENU), line_meta = ui_font_line(UI_F_META);

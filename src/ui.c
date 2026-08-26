@@ -20,7 +20,7 @@ static const float font_mul[UI_F_COUNT] = {
 	[UI_F_TITLE] = 1.62f,   /* 52 */
 	[UI_F_MENU]  = 1.34f,   /* 43 */
 	[UI_F_LABEL] = 1.50f,   /* 48 */
-	[UI_F_META]  = 0.88f,   /* 28 */
+	[UI_F_META]  = 1.00f,   /* 32 */
 	[UI_F_CARD]  = 1.38f,   /* 44, in card pixels */
 };
 
