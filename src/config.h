@@ -4,7 +4,7 @@
 
 #include <stdbool.h>
 
-#define CFG_MAX_SYSTEMS 8
+#define CFG_MAX_SYSTEMS 12   /* nine shipped; room to breathe */
 #define CFG_STR 256
 
 typedef struct {
