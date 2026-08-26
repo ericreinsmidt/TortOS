@@ -704,49 +704,87 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 	}
 }
 
-/* The PlayOS menu: MENU on the shelf, for everything that is about the
- * firmware rather than about a game. Most of it is a placeholder - the list is
- * here to hold the shape of what PlayOS grows into, and a row that is drawn
- * but does nothing is a more honest statement of that than an empty menu. */
+/* MENU has two menus behind it, chosen by where it was pressed.
+ *
+ * From the systems row it is about the firmware. From inside a system it is
+ * about THAT system, because a menu that repeated the firmware's settings
+ * while a shelf of NES games sat behind it would be answering a question
+ * nobody asked. Almost every row in both is a placeholder: the lists are here
+ * to hold the shape of what PlayOS grows into, and a row that is drawn but
+ * does nothing states that more honestly than an empty menu does. */
 typedef enum {
 	PM_WIFI, PM_BT, PM_ACHIEVEMENTS, PM_SCRAPE,
 	PM_TEXT, PM_SLEEP, PM_ABOUT, PM_POWER, PM_ROWS
 } pm_row;
 
-static void playos_menu_rows(app *a, menu_row *out, char *tbuf, size_t tn)
+/* The system menu. Games and Core carry real values rather than invented ones,
+ * because a placeholder that lies about the machine it is describing is worse
+ * than no row. The rest name capabilities that already exist on the emulator
+ * side - Diatom has per-system display modes and core-supplied button labels -
+ * so these are hooks waiting to be wired, not wishes. */
+typedef enum {
+	SM_GAMES, SM_CORE, SM_SORT, SM_SHOW,
+	SM_DISPLAY, SM_BUTTONS, SM_BOXART, SM_RESCAN, SM_ROWS
+} sm_row;
+
+#define MENU_MAX_ROWS 12
+typedef struct { char a[24], b[CFG_STR]; } menu_bufs;
+
+/* Build whichever menu the current screen calls for. Returns the row count, so
+ * the input loop never needs to know which of the two it is driving. */
+static int menu_build(app *a, menu_row *out, menu_bufs *b, const char **heading)
 {
-	snprintf(tbuf, tn, "%d%%", (int)(ui_get_font_scale() * 100.0f + 0.5f));
+	if (a->screen == SCREEN_GAMES) {
+		const system_cfg *s = &a->sys.systems[a->sys_cursor];
+
+		snprintf(b->a, sizeof b->a, "%d", a->view[a->sys_cursor].list.count);
+		snprintf(b->b, sizeof b->b, "%s", s->core);
+		*heading = s->name;
+		out[SM_GAMES]   = (menu_row){ "Games",          b->a,            false };
+		out[SM_CORE]    = (menu_row){ "Core",           b->b,            false };
+		out[SM_SORT]    = (menu_row){ "Sort by",        "Name",          false };
+		out[SM_SHOW]    = (menu_row){ "Show",           "All games",     false };
+		out[SM_DISPLAY] = (menu_row){ "Display mode",   "Fit to screen", false };
+		out[SM_BUTTONS] = (menu_row){ "Button mapping", NULL,            false };
+		out[SM_BOXART]  = (menu_row){ "Box art",        "not yet",       false };
+		out[SM_RESCAN]  = (menu_row){ "Rescan folder",  NULL,            false };
+		return SM_ROWS;
+	}
+
+	snprintf(b->a, sizeof b->a, "%d%%", (int)(ui_get_font_scale() * 100.0f + 0.5f));
+	*heading = "PlayOS";
 	out[PM_WIFI]         = (menu_row){ "Wi-Fi",             "not yet", false };
 	out[PM_BT]           = (menu_row){ "Bluetooth",         "not yet", false };
 	out[PM_ACHIEVEMENTS] = (menu_row){ "RetroAchievements", "not yet", false };
 	out[PM_SCRAPE]       = (menu_row){ "Box art scraping",  "not yet", false };
-	out[PM_TEXT]         = (menu_row){ "Text size",         tbuf,      false };
+	out[PM_TEXT]         = (menu_row){ "Text size",         b->a,      false };
 	out[PM_SLEEP]        = (menu_row){ "Sleep timer",       "not yet", false };
 	out[PM_ABOUT]        = (menu_row){ "About PlayOS",      NULL,      false };
 	out[PM_POWER]        = (menu_row){ "Power off",         NULL,      true  };
-	(void)a;
+	return PM_ROWS;
 }
 
 static void playos_menu_draw(app *a, int sel)
 {
-	menu_row rows[PM_ROWS];
-	char tbuf[16];
-	/* Opened from the systems row the menu is about the firmware, so it says
-	 * PlayOS. Opened inside a system it says which one, because that is the
-	 * thing on screen behind it and the heading should agree with where you
-	 * are rather than repeat what the firmware is called. */
-	const char *heading = a->screen == SCREEN_GAMES
-	                    ? a->sys.systems[a->sys_cursor].name : "PlayOS";
+	menu_row rows[MENU_MAX_ROWS];
+	menu_bufs bufs;
+	const char *heading;
+	int n = menu_build(a, rows, &bufs, &heading);
 
-	playos_menu_rows(a, rows, tbuf, sizeof tbuf);
 	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 	SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
 	SDL_RenderFillRect(a->r, NULL);
-	menu_draw(a, heading, rows, PM_ROWS, sel);
+	menu_draw(a, heading, rows, n, sel);
 }
 
 static void playos_menu(app *a)
 {
+	menu_row rows[MENU_MAX_ROWS];
+	menu_bufs bufs;
+	const char *heading;
+	/* The screen cannot change while the menu is open, so the row count is
+	 * settled here and the loop below is the same loop for either menu. */
+	int n = menu_build(a, rows, &bufs, &heading);
 	int sel = 0, done = 0;
 
 	plat_input_flush();
@@ -756,8 +794,8 @@ static void playos_menu(app *a)
 		plat_input_poll(&a->in);
 		if (a->in.quit_requested) { a->running = false; return; }
 
-		if (in_repeat(&a->in, IN_UP))   sel = (sel + PM_ROWS - 1) % PM_ROWS;
-		if (in_repeat(&a->in, IN_DOWN)) sel = (sel + 1) % PM_ROWS;
+		if (in_repeat(&a->in, IN_UP))   sel = (sel + n - 1) % n;
+		if (in_repeat(&a->in, IN_DOWN)) sel = (sel + 1) % n;
 		/* Volume and brightness keep working here, as they do everywhere. */
 		if (in_repeat(&a->in, IN_VOLUP))    plat_volume_nudge(+1);
 		if (in_repeat(&a->in, IN_VOLDN))    plat_volume_nudge(-1);
@@ -766,7 +804,11 @@ static void playos_menu(app *a)
 
 		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = 1;
 		if (a->in.pressed[IN_POWER]) { power_off(a); return; }
-		if (a->in.pressed[IN_ACCEPT] && sel == PM_POWER) { power_off(a); return; }
+		/* The only row either menu acts on, and it exists in one of them - the
+		 * screen has to be checked as well as the index, or row 7 of the
+		 * system menu would power the device off. */
+		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
+		    sel == PM_POWER) { power_off(a); return; }
 
 		tick_tint(a);
 		draw_shelf(a);
