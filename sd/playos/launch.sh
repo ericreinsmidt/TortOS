@@ -133,7 +133,8 @@ if [ -f "$PLAYOS_DIR/playos-boot.mp4" ]; then
 	# page cache while nothing else is using the disk. Cold reads of the
 	# emulator, the cores and their libraries measure ~190ms against ~30ms warm.
 	(
-		cat "$PLAYOS_DIR/minarch.elf" "$PLAYOS_DIR/cores/"*.so "$PLAYOS_DIR/lib/"* > /dev/null 2>&1
+		cat "$PLAYOS_DIR/diatom" "$PLAYOS_DIR/minarch.elf" \
+		    "$PLAYOS_DIR/cores/"*.so "$PLAYOS_DIR/lib/"* > /dev/null 2>&1
 	) &
 fi
 
@@ -196,14 +197,18 @@ LOG=$LOGS_PATH/playos.log
 # Nothing depends on it: the launcher checks for its fifos and runs a game the
 # old way, one process per game, when they are not there. That is what happens
 # for a launch in the first second after boot, and if this ever dies.
-CORES=$PLAYOS_DIR/cores
+# The resident emulator is Diatom now. It preloads nothing: a core is mapped
+# the first time a game needs it and kept for the life of the process, so
+# there is no core list to hand over and nothing here changes when a system
+# is added. minarch.elf stays on the card as the one-shot fallback the
+# launcher runs if this ever dies mid-session.
+export PLAYOS_DIATOM_SOCKET=/tmp/diatom.sock
 start_resident() {
-	pgrep -f "minarch.elf --resident" > /dev/null && return
-	"$PLAYOS_DIR/minarch.elf" --resident \
-		"NES=$CORES/fceumm_libretro.so" \
-		"PCE=$CORES/mednafen_pce_fast_libretro.so" \
-		"GBA=$CORES/mgba_libretro.so" \
-		>> "$LOG" 2>&1 &
+	pgrep -f "PlayOS/diatom --socket" > /dev/null && return
+	rm -f "$PLAYOS_DIATOM_SOCKET"
+	LD_LIBRARY_PATH="$PLAYOS_DIR/lib:/usr/trimui/lib" \
+		"$PLAYOS_DIR/diatom" --socket "$PLAYOS_DIATOM_SOCKET" >> "$LOG" 2>&1 &
+	echo $! > /tmp/diatom.pid
 }
 start_resident
 
