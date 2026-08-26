@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: 0BSD */
 #include "platform.h"
 
+#include "ui.h"   /* the settings line shares the rail's weight and palette */
+
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -744,12 +746,14 @@ static int clampi(int v, int lo, int hi)
 	return v < lo ? lo : (v > hi ? hi : v);
 }
 
-/* The settings indicator: a thin near-white line across the very top on any
- * volume or brightness change. Diatom draws its
- * own thin bar in game for the same reason, so the feedback is one thing
- * everywhere instead of a launcher line here and another firmware's pill
- * there. No glyph and no number -- you know which button you just pressed. */
-#define OSD_LINE_H     6
+/* The settings indicator: a thin line across the very top on any volume or
+ * brightness change, tinted by which of the two it is -- warm for brightness,
+ * cyan for volume. Diatom draws its own thin bar in game for the same reason,
+ * so the feedback is one thing everywhere instead of a launcher line here and
+ * another firmware's pill there; the tint is the part Diatom has to be taught
+ * to match. Still no glyph and no number: the colour and the button you just
+ * pressed agree, and neither needs a label. */
+#define OSD_LINE_H     UI_BAR_H
 #define OSD_PAD        3    /* half-black scrim above and below */
 #define OSD_WINDOW_MS  900  /* visible this long after the last change */
 
@@ -776,13 +780,14 @@ void plat_draw_osd(SDL_Renderer *r)
 	float pct = (float)osd_val / osd_max;
 	if (pct < 0) pct = 0; else if (pct > 1) pct = 1;
 
+	SDL_Color fill = osd_kind == 1 ? UI_OSD_BRIGHT : UI_OSD_VOLUME;
 	int W = PLAYOS_SCREEN_W;
 	SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
 	SDL_SetRenderDrawColor(r, 0, 0, 0, 128);                 /* scrim */
 	SDL_RenderFillRect(r, &(SDL_Rect){ 0, 0, W, OSD_LINE_H + OSD_PAD * 2 });
 	SDL_SetRenderDrawColor(r, 60, 62, 72, 255);              /* faint track */
 	SDL_RenderFillRect(r, &(SDL_Rect){ 0, OSD_PAD, W, OSD_LINE_H });
-	SDL_SetRenderDrawColor(r, 235, 235, 240, 255);           /* near-white fill */
+	SDL_SetRenderDrawColor(r, fill.r, fill.g, fill.b, 255);
 	SDL_RenderFillRect(r, &(SDL_Rect){ 0, OSD_PAD, (int)(W * pct), OSD_LINE_H });
 }
 

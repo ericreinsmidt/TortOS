@@ -33,6 +33,24 @@ cp "$DIATOM_ELF" "$P/diatom"
 cp "$ROOT/vendor/cores/"*.so "$P/cores/"
 cp "$ROOT/vendor/lib/"* "$P/lib/"
 
+# Every system on the shelf must have its core on the card.
+#
+# The copy above is a glob: it ships whatever vendor/cores happens to hold and
+# says nothing about what is missing. That is how a card was nearly built with
+# four of nine systems dead - systems.cfg gained SNES and the Sega machines,
+# vendor/ still held the original three, and nothing failed. A shelf whose
+# cards open onto nothing is a worse failure than a build that refuses.
+missing=
+for core in $(awk -F'|' '$1=="sys"{gsub(/^[ \t]+|[ \t]+$/,"",$4); print $4}' \
+              "$ROOT/config/systems.cfg" | sort -u); do
+	[ -f "$P/cores/${core}_libretro.so" ] || missing="$missing $core"
+done
+if [ -n "$missing" ]; then
+	echo "payload: systems.cfg needs cores that vendor/ does not have:$missing" >&2
+	echo "payload: run mk/fetch-vendor.sh" >&2
+	exit 1
+fi
+
 cp "$ROOT/sd/.tmp_update/updater" "$ROOT/sd/.tmp_update/tg5040.sh" "$OUT/.tmp_update/"
 cp "$ROOT/sd/trimui/app/MainUI" "$ROOT/sd/trimui/app/runtrimui.sh" "$OUT/trimui/app/"
 

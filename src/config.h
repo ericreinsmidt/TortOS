@@ -29,6 +29,7 @@ typedef struct {
 typedef struct {
 	int volume;             /* 0..100, -1 = leave alone */
 	int brightness;         /* 0..10,  -1 = leave alone */
+	float font_scale;       /* multiplies the whole type scale; 1.0 = as designed */
 	char startup_system[CFG_STR];
 } playos_cfg;
 

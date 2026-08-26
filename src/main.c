@@ -386,7 +386,7 @@ static void draw_systems(app *a)
 		snprintf(line, sizeof line, "%d games", a->view[a->sys_cursor].list.count);
 	else
 		snprintf(line, sizeof line, "no games in Roms/%s", s->folder);
-	ui_text(a->r, ui_font_small(), line, PLAYOS_SCREEN_W / 2, 694, 0, UI_TEXT_DIM);
+	ui_text(a->r, ui_font(UI_F_META), line, PLAYOS_SCREEN_W / 2, 690, 0, UI_TEXT_DIM);
 	ui_rail(a->r, PLAYOS_SCREEN_W, PLAYOS_SCREEN_H, a->sys_cursor, a->sys.count,
 	        s->accent);
 }
@@ -406,37 +406,64 @@ static void draw_games(app *a)
 
 	if (v->list.count > 0) {
 		game_entry *g = &v->list.items[v->cursor];
-		int tw = ui_text_width(ui_font_big(), g->name);
+		int tw = ui_text_width(ui_font(UI_F_TITLE), g->name);
 		int tx = PLAYOS_SCREEN_W / 2;
 		/* A game with an autosave gets a dot in the system's colour beside
-		 * its name: pressing A on it does not start it, it continues it. */
+		 * its name: pressing A on it does not start it, it continues it.
+		 * Sized and centred off the title's own line, so it keeps sitting
+		 * with the text when the type scale moves. */
 		if (game_has_state(a, a->sys_cursor, g)) {
-			int dx = tx - tw / 2 - 26, dy = 74;
+			int line = ui_font_line(UI_F_TITLE);
+			int rad = line / 8, dx = tx - tw / 2 - rad * 3, dy = 40 + line / 2;
 			SDL_SetRenderDrawColor(a->r, (Uint8)(s->accent >> 16),
 			                       (Uint8)(s->accent >> 8), (Uint8)s->accent, 255);
-			for (int k = -5; k <= 5; k++) {
-				int w = (int)(sqrt((double)(25 - k * k)) + 0.5);
+			for (int k = -rad; k <= rad; k++) {
+				int w = (int)(sqrt((double)(rad * rad - k * k)) + 0.5);
 				SDL_RenderDrawLine(a->r, dx - w, dy + k, dx + w, dy + k);
 			}
 		}
-		ui_text(a->r, ui_font_big(), g->name, tx, 46, 0, UI_TEXT);
+		ui_text(a->r, ui_font(UI_F_TITLE), g->name, tx, 40, 0, UI_TEXT);
 		snprintf(count, sizeof count, "%d / %d", v->cursor + 1, v->list.count);
-		ui_text(a->r, ui_font_small(), count, PLAYOS_SCREEN_W / 2, 700, 0, UI_TEXT_DIM);
+		ui_text(a->r, ui_font(UI_F_META), count, PLAYOS_SCREEN_W / 2, 690, 0,
+		        UI_TEXT_DIM);
 	} else {
-		ui_text(a->r, ui_font_big(), s->name, PLAYOS_SCREEN_W / 2, 46, 0, UI_TEXT);
+		ui_text(a->r, ui_font(UI_F_TITLE), s->name, PLAYOS_SCREEN_W / 2, 40, 0,
+		        UI_TEXT);
 	}
 	ui_rail(a->r, PLAYOS_SCREEN_W, PLAYOS_SCREEN_H, v->cursor, v->list.count,
 	        s->accent);
 }
 
-static void render(app *a)
+/* The shelf, without presenting it: the options menu draws over a live one, so
+ * the cards keep their tint easing behind the panel rather than freezing into
+ * a still. */
+static void draw_shelf(app *a)
 {
 	draw_background(a);
 	if (a->screen == SCREEN_SYSTEMS) draw_systems(a);
 	else draw_games(a);
 	if (battery_low()) draw_low_battery_dot(a->r);
+}
+
+static void render(app *a)
+{
+	draw_shelf(a);
 	plat_draw_osd(a->r);
 	SDL_RenderPresent(a->r);
+}
+
+/* Ease the background tint toward the focused system rather than snapping: the
+ * colour is meant to feel like the light the machine gives off, and light does
+ * not cut. Called from every loop that draws the shelf. */
+static unsigned last_tint_ms;
+static void tick_tint(app *a)
+{
+	unsigned now = plat_now_ms();
+	float dt = (float)(now - last_tint_ms) / 1000.0f;
+	last_tint_ms = now;
+	if (dt > 0.1f) dt = 0.1f;
+	a->tint = ui_mix(a->tint, a->sys.systems[a->sys_cursor].accent,
+	                 1.0f - expf(-dt * 9.0f));
 }
 
 /* ---------- transitions --------------------------------------------------- */
@@ -526,6 +553,207 @@ static void power_off(app *a)
 	a->running = false;
 }
 
+/* ---------- menus --------------------------------------------------------- */
+
+/* Both menus in PlayOS are the same shape - a short list on a slab, over a
+ * paused game frame or over the shelf - so they are drawn by one function and
+ * cannot drift apart. The slab is sized to its own widest row with the same
+ * padding on every side, rather than to a number picked once and left behind
+ * by the next label someone adds. */
+typedef struct {
+	const char *label;
+	const char *value;  /* the right column, or NULL for a row that is only a label */
+	bool live;          /* false: a placeholder, drawn quiet and doing nothing */
+} menu_row;
+
+#define MENU_RADIUS 20
+
+static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
+                      int sel)
+{
+	TTF_Font *fm = ui_font(UI_F_MENU), *fh = ui_font(UI_F_LABEL);
+	int row_h = ui_font_line(UI_F_MENU) * 3 / 2;
+	int pad = row_h * 3 / 4;
+	int gap = row_h;                 /* between the label and value columns */
+	int text_h = fm ? TTF_FontHeight(fm) : row_h;
+	int head_h = heading ? ui_font_line(UI_F_LABEL) + pad / 2 : 0;
+	bool two_col = false;
+	int content_w = 0, i, k;
+	SDL_Rect panel;
+	int cx, content_x, content_y;
+	/* The list can outgrow the screen from either end - the type scale turns
+	 * up, and this menu is meant to gain rows - so the panel is capped to the
+	 * screen and the rows window around the selection when they do not all
+	 * fit. A menu that runs off the top is worse than one that scrolls. */
+	const int margin = 24;
+	int vis = n, first = 0;
+
+	for (i = 0; i < n; i++) if (rows[i].value) two_col = true;
+	for (i = 0; i < n; i++) {
+		int w = ui_text_width(fm, rows[i].label);
+		if (two_col && rows[i].value) w += gap + ui_text_width(fm, rows[i].value);
+		if (w > content_w) content_w = w;
+	}
+	if (heading) {
+		int w = ui_text_width(fh, heading);
+		if (w > content_w) content_w = w;
+	}
+	if (content_w > PLAYOS_SCREEN_W - margin * 2 - pad * 2)
+		content_w = PLAYOS_SCREEN_W - margin * 2 - pad * 2;
+
+	if (head_h + n * row_h + pad * 2 > PLAYOS_SCREEN_H - margin * 2) {
+		vis = (PLAYOS_SCREEN_H - margin * 2 - head_h - pad * 2) / row_h;
+		if (vis < 1) vis = 1;
+		if (vis > n) vis = n;
+		first = sel - vis / 2;
+		if (first < 0) first = 0;
+		if (first > n - vis) first = n - vis;
+	}
+
+	panel.w = content_w + pad * 2;
+	panel.h = head_h + vis * row_h + pad * 2;
+	panel.x = (PLAYOS_SCREEN_W - panel.w) / 2;
+	panel.y = (PLAYOS_SCREEN_H - panel.h) / 2;
+	cx = panel.x + panel.w / 2;
+	content_x = panel.x + pad;
+	content_y = panel.y + pad;
+
+	ui_glow(a->r, &panel, a->tint, 60, 1.5f);
+	ui_panel(a->r, &panel, MENU_RADIUS, a->tint);
+
+	if (heading) {
+		ui_text(a->r, fh, heading, cx, content_y, 0, UI_TEXT_DIM);
+		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+		SDL_SetRenderDrawColor(a->r, (Uint8)(a->tint >> 16), (Uint8)(a->tint >> 8),
+		                       (Uint8)a->tint, 70);
+		SDL_RenderFillRect(a->r, &(SDL_Rect){ content_x,
+		                                      content_y + head_h - pad / 4,
+		                                      content_w, 2 });
+		content_y += head_h;
+	}
+
+	for (k = 0; k < vis; k++) {
+		int y = content_y + k * row_h;
+		int ty = y + (row_h - text_h) / 2;
+		SDL_Color lc, vc;
+
+		i = first + k;
+		if (i == sel) {
+			SDL_Rect plate = { panel.x + pad / 2, y, panel.w - pad, row_h };
+			ui_glow(a->r, &plate, a->tint, 55, 1.5f);
+			ui_round_rect(a->r, &plate, row_h / 4, (SDL_Color){
+				(Uint8)(a->tint >> 16), (Uint8)(a->tint >> 8), (Uint8)a->tint, 46 });
+		}
+
+		/* A placeholder row still highlights - it is a real place on the list -
+		 * but never brightens to the colour a working row gets. That is the
+		 * whole signal that it does not do anything yet. */
+		if (rows[i].live) lc = i == sel ? UI_TEXT : UI_TEXT_DIM;
+		else              lc = i == sel ? UI_TEXT_DIM : UI_TEXT_OFF;
+		vc = rows[i].live && i == sel
+		     ? (SDL_Color){ (Uint8)(a->tint >> 16), (Uint8)(a->tint >> 8),
+		                    (Uint8)a->tint, 255 }
+		     : UI_TEXT_OFF;
+
+		if (two_col) {
+			ui_text(a->r, fm, rows[i].label, content_x, ty, -1, lc);
+			if (rows[i].value)
+				ui_text(a->r, fm, rows[i].value, content_x + content_w, ty, 1, vc);
+		} else {
+			ui_text(a->r, fm, rows[i].label, cx, ty, 0, lc);
+		}
+	}
+
+	/* Three dim dots where the list carries on, in the same vocabulary the
+	 * slot carousel's rail uses. Hung just off the rows rather than centred in
+	 * the padding: with a heading above, the padding is already spoken for by
+	 * the separator, and the indicator belongs to the list in any case. */
+	if (vis < n) {
+		const int dw = 8, dsz = 3, off = 8;
+		int x0 = cx - dw;
+		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+		SDL_SetRenderDrawColor(a->r, 138, 143, 163, 200);
+		for (k = 0; k < 3; k++) {
+			if (first > 0)
+				SDL_RenderFillRect(a->r, &(SDL_Rect){ x0 + k * dw,
+				                   content_y - off - dsz, dsz, dsz });
+			if (first + vis < n)
+				SDL_RenderFillRect(a->r, &(SDL_Rect){ x0 + k * dw,
+				                   content_y + vis * row_h + off, dsz, dsz });
+		}
+	}
+}
+
+/* The PlayOS menu: MENU on the shelf, for everything that is about the
+ * firmware rather than about a game. Most of it is a placeholder - the list is
+ * here to hold the shape of what PlayOS grows into, and a row that is drawn
+ * but does nothing is a more honest statement of that than an empty menu. */
+typedef enum {
+	PM_WIFI, PM_BT, PM_ACHIEVEMENTS, PM_SCRAPE,
+	PM_TEXT, PM_SLEEP, PM_ABOUT, PM_POWER, PM_ROWS
+} pm_row;
+
+static void playos_menu_rows(app *a, menu_row *out, char *tbuf, size_t tn)
+{
+	snprintf(tbuf, tn, "%d%%", (int)(ui_get_font_scale() * 100.0f + 0.5f));
+	out[PM_WIFI]         = (menu_row){ "Wi-Fi",             "not yet", false };
+	out[PM_BT]           = (menu_row){ "Bluetooth",         "not yet", false };
+	out[PM_ACHIEVEMENTS] = (menu_row){ "RetroAchievements", "not yet", false };
+	out[PM_SCRAPE]       = (menu_row){ "Box art scraping",  "not yet", false };
+	out[PM_TEXT]         = (menu_row){ "Text size",         tbuf,      false };
+	out[PM_SLEEP]        = (menu_row){ "Sleep timer",       "not yet", false };
+	out[PM_ABOUT]        = (menu_row){ "About PlayOS",      NULL,      false };
+	out[PM_POWER]        = (menu_row){ "Power off",         NULL,      true  };
+	(void)a;
+}
+
+static void playos_menu_draw(app *a, int sel)
+{
+	menu_row rows[PM_ROWS];
+	char tbuf[16];
+
+	playos_menu_rows(a, rows, tbuf, sizeof tbuf);
+	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+	SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
+	SDL_RenderFillRect(a->r, NULL);
+	menu_draw(a, "PlayOS", rows, PM_ROWS, sel);
+}
+
+static void playos_menu(app *a)
+{
+	int sel = 0, done = 0;
+
+	plat_input_flush();
+	memset(&a->in, 0, sizeof a->in);
+
+	while (!done && !want_quit && a->running) {
+		plat_input_poll(&a->in);
+		if (a->in.quit_requested) { a->running = false; return; }
+
+		if (in_repeat(&a->in, IN_UP))   sel = (sel + PM_ROWS - 1) % PM_ROWS;
+		if (in_repeat(&a->in, IN_DOWN)) sel = (sel + 1) % PM_ROWS;
+		/* Volume and brightness keep working here, as they do everywhere. */
+		if (in_repeat(&a->in, IN_VOLUP))    plat_volume_nudge(+1);
+		if (in_repeat(&a->in, IN_VOLDN))    plat_volume_nudge(-1);
+		if (in_repeat(&a->in, IN_BRIGHTUP)) plat_brightness_nudge(+1);
+		if (in_repeat(&a->in, IN_BRIGHTDN)) plat_brightness_nudge(-1);
+
+		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = 1;
+		if (a->in.pressed[IN_POWER]) { power_off(a); return; }
+		if (a->in.pressed[IN_ACCEPT] && sel == PM_POWER) { power_off(a); return; }
+
+		tick_tint(a);
+		draw_shelf(a);
+		playos_menu_draw(a, sel);
+		plat_draw_osd(a->r);
+		SDL_RenderPresent(a->r);
+		SDL_Delay(8);
+	}
+
+	plat_input_flush();
+	memset(&a->in, 0, sizeof a->in);
+}
+
 /* ---------- launching ----------------------------------------------------- */
 
 static char env_buf[10][CFG_STR * 2];
@@ -586,14 +814,100 @@ static void copy_file(const char *from, const char *to)
  * time, large - the paused frame at a size you can actually read - with the
  * save's own timestamp under it and a dot rail for where you are. Left and
  * right cycle; Load skips slots with nothing behind them, Save cannot aim at
- * Auto, which belongs to the exit funnel alone. Returns the chosen slot
- * (9 = Auto) or 0 for backed out. */
+ * Auto, which belongs to the exit funnel alone. */
 #define GM_SLOTS 8
+
+typedef struct {
+	SDL_Texture *thumb[GM_SLOTS + 1];   /* [0]=Auto, [1..8] */
+	int have[GM_SLOTS + 1];
+	char when[GM_SLOTS + 1][40];
+	/* Every slot of one game holds the same machine's frame, so one aspect
+	 * describes all nine and the picture can be framed exactly rather than
+	 * dropped into a fixed box with bars down its sides. 4:3 until a slot
+	 * with a picture in it says otherwise. */
+	float aspect;
+	int saving;
+} slot_view;
+
+/* Drawing only, so one frame of it can be rendered by --shot without a game
+ * running or a device in hand. */
+static void slot_draw(app *a, const slot_view *sv, int sel)
+{
+	/* `area` is the layout slot the picture is fitted into; nothing is ever
+	 * drawn to it. The border is the picture's own edge in the system's
+	 * colour - a 240x160 GBA frame and a 256x224 NES frame are different
+	 * shapes, and neither should be padded out into the same rectangle. */
+	const SDL_Rect area = { (PLAYOS_SCREEN_W - 560) / 2, 170, 560, 400 };
+	const int bw = 3;
+	SDL_Rect img = area, frame;
+	char slotname[16];
+	int line_menu = ui_font_line(UI_F_MENU), line_meta = ui_font_line(UI_F_META);
+	int i;
+
+	ui_text(a->r, ui_font(UI_F_LABEL), sv->saving ? "Save to" : "Load from",
+	        PLAYOS_SCREEN_W / 2, 96, 0, UI_TEXT_DIM);
+
+	if ((float)area.w / sv->aspect <= (float)area.h) {
+		img.w = area.w;
+		img.h = (int)(area.w / sv->aspect + 0.5f);
+	} else {
+		img.h = area.h;
+		img.w = (int)(area.h * sv->aspect + 0.5f);
+	}
+	img.x = area.x + (area.w - img.w) / 2;
+	img.y = area.y + (area.h - img.h) / 2;
+	frame = (SDL_Rect){ img.x - bw, img.y - bw, img.w + bw * 2, img.h + bw * 2 };
+
+	ui_glow(a->r, &img, a->tint, 85, 1.35f);
+	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+	SDL_SetRenderDrawColor(a->r, (Uint8)(a->tint >> 16), (Uint8)(a->tint >> 8),
+	                       (Uint8)a->tint, 150);
+	SDL_RenderFillRect(a->r, &frame);
+	if (sv->thumb[sel]) {
+		SDL_SetTextureColorMod(sv->thumb[sel], 255, 255, 255);
+		SDL_RenderCopy(a->r, sv->thumb[sel], NULL, &img);
+	} else {
+		/* An empty slot is the same frame with nothing in it, so the strip
+		 * does not change shape as you cycle past one. */
+		SDL_SetRenderDrawColor(a->r, 12, 13, 18, 238);
+		SDL_RenderFillRect(a->r, &img);
+		ui_text(a->r, ui_font(UI_F_MENU), "Empty", img.x + img.w / 2,
+		        img.y + (img.h - line_menu) / 2, 0, UI_TEXT_DIM);
+	}
+
+	if (sel == 0) snprintf(slotname, sizeof slotname, "Auto");
+	else          snprintf(slotname, sizeof slotname, "Slot %d", sel);
+	ui_text(a->r, ui_font(UI_F_MENU), slotname,
+	        PLAYOS_SCREEN_W / 2, img.y + img.h + 28, 0, UI_TEXT);
+	ui_text(a->r, ui_font(UI_F_META),
+	        sv->have[sel] ? sv->when[sel] : (sv->saving ? "\xE2\x80\x94" : ""),
+	        PLAYOS_SCREEN_W / 2, img.y + img.h + 32 + line_menu, 0, UI_TEXT_DIM);
+
+	/* The dot rail: where you are among nine, without showing nine pictures.
+	 * A hollow-dim dot is a slot you cannot land on. */
+	{
+		int dots = GM_SLOTS + 1, dw = 18;
+		int x0 = (PLAYOS_SCREEN_W - dots * dw) / 2 + dw / 2;
+		int y  = img.y + img.h + 50 + line_menu + line_meta;
+
+		for (i = 0; i < dots; i++) {
+			int can = sv->saving ? i >= 1 : sv->have[i];
+			int r2  = i == sel ? 6 : 4;
+			SDL_Rect d = { x0 + i * dw - r2, y - r2, r2 * 2, r2 * 2 };
+			if (i == sel)
+				SDL_SetRenderDrawColor(a->r, (a->tint >> 16) & 255,
+				                       (a->tint >> 8) & 255, a->tint & 255, 255);
+			else
+				SDL_SetRenderDrawColor(a->r, 90, 94, 110, can ? 255 : 90);
+			SDL_RenderFillRect(a->r, &d);
+		}
+	}
+}
+
+/* Returns the chosen slot (9 = Auto) or 0 for backed out. */
 static int slot_strip(app *a, SDL_Texture *bg, int saving)
 {
-	SDL_Texture *thumb[GM_SLOTS + 1] = { 0 };   /* [0]=Auto, [1..8] */
-	int have[GM_SLOTS + 1] = { 0 };
-	char when[GM_SLOTS + 1][40] = { { 0 } };
+	slot_view sv = { .aspect = 4.0f / 3.0f, .saving = saving };
 	sysview *v = &a->view[a->sys_cursor];
 	game_entry *g = &v->list.items[v->cursor];
 	int i, sel = -1, chosen = 0, done = 0;
@@ -604,22 +918,30 @@ static int slot_strip(app *a, SDL_Texture *bg, int saving)
 		struct stat st;
 
 		slot_state_path(a, a->sys_cursor, g, slot, pth, sizeof pth);
-		have[i] = (stat(pth, &st) == 0 && st.st_size > 0);
-		if (have[i]) {
+		sv.have[i] = (stat(pth, &st) == 0 && st.st_size > 0);
+		if (sv.have[i]) {
 			/* The state's own mtime: when this moment was captured. The
 			 * device clock is only as good as the device clock, and showing
 			 * what the filesystem says beats pretending to know better. */
 			struct tm *tm = localtime(&st.st_mtime);
-			if (tm) strftime(when[i], sizeof when[i], "%b %e  %H:%M", tm);
-		}
-		slot_preview_path(a, a->sys_cursor, g, slot, pth, sizeof pth);
-		if (have[i]) {
+			if (tm) strftime(sv.when[i], sizeof sv.when[i], "%b %e  %H:%M", tm);
+
+			slot_preview_path(a, a->sys_cursor, g, slot, pth, sizeof pth);
 			SDL_Surface *sf = IMG_Load(pth);
-			if (sf) { thumb[i] = SDL_CreateTextureFromSurface(a->r, sf); SDL_FreeSurface(sf); }
+			if (sf) {
+				sv.thumb[i] = SDL_CreateTextureFromSurface(a->r, sf);
+				SDL_FreeSurface(sf);
+			}
 		}
 		/* First selectable: saving starts on slot 1; loading starts on the
 		 * newest thing there is to load, which is almost always Auto. */
-		if (sel < 0 && (saving ? i >= 1 : have[i])) sel = i;
+		if (sel < 0 && (saving ? i >= 1 : sv.have[i])) sel = i;
+	}
+	for (i = 0; i <= GM_SLOTS; i++) {
+		int tw = 0, th = 0;
+		if (!sv.thumb[i]) continue;
+		SDL_QueryTexture(sv.thumb[i], NULL, NULL, &tw, &th);
+		if (tw > 0 && th > 0) { sv.aspect = (float)tw / (float)th; break; }
 	}
 	if (sel < 0) sel = saving ? 1 : -1;
 	if (sel < 0) done = -1;                     /* nothing to load at all */
@@ -634,7 +956,7 @@ static int slot_strip(app *a, SDL_Texture *bg, int saving)
 			int dir = in_repeat(&a->in, IN_RIGHT) ? 1 : -1, next = sel;
 			do {
 				next = (next + dir + GM_SLOTS + 1) % (GM_SLOTS + 1);
-			} while ((saving ? next == 0 : !have[next]) && next != sel);
+			} while ((saving ? next == 0 : !sv.have[next]) && next != sel);
 			sel = next;
 		}
 		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = -1;
@@ -647,75 +969,13 @@ static int slot_strip(app *a, SDL_Texture *bg, int saving)
 		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 185);
 		SDL_RenderFillRect(a->r, NULL);
 
-		ui_text(a->r, ui_font_big(), saving ? "Save to" : "Load from",
-		        PLAYOS_SCREEN_W / 2, 110, 0, UI_TEXT_DIM);
-		{
-			/* One slot, large: the paused frame at a size you can read. The
-			 * box is fixed; the thumbnail keeps its own shape inside it,
-			 * because a 240x160 GBA frame and a 256x224 NES frame should
-			 * not be stretched into the same rectangle. */
-			SDL_Rect box = { (PLAYOS_SCREEN_W - 560) / 2, 190, 560, 400 };
-			char slotname[16];
-
-			ui_glow(a->r, &box, a->tint, 85, 1.35f);
-			SDL_SetRenderDrawColor(a->r, 20, 22, 30, 255);
-			SDL_RenderFillRect(a->r, &box);
-			if (thumb[sel]) {
-				int tw2 = 0, th2 = 0;
-				SDL_Rect dst = box;
-				SDL_QueryTexture(thumb[sel], NULL, NULL, &tw2, &th2);
-				if (tw2 > 0 && th2 > 0) {
-					float k = (float)box.w / tw2;
-					if (th2 * k > box.h) k = (float)box.h / th2;
-					dst.w = (int)(tw2 * k);
-					dst.h = (int)(th2 * k);
-					dst.x = box.x + (box.w - dst.w) / 2;
-					dst.y = box.y + (box.h - dst.h) / 2;
-				}
-				SDL_SetTextureColorMod(thumb[sel], 255, 255, 255);
-				SDL_RenderCopy(a->r, thumb[sel], NULL, &dst);
-			} else {
-				ui_text(a->r, ui_font_big(), "Empty",
-				        box.x + box.w / 2, box.y + box.h / 2 - 24, 0,
-				        UI_TEXT_DIM);
-			}
-
-			if (sel == 0) snprintf(slotname, sizeof slotname, "Auto");
-			else          snprintf(slotname, sizeof slotname, "Slot %d", sel);
-			ui_text(a->r, ui_font_big(), slotname,
-			        PLAYOS_SCREEN_W / 2, box.y + box.h + 26, 0, UI_TEXT);
-			ui_text(a->r, ui_font_small(),
-			        have[sel] ? when[sel] : (saving ? "\xE2\x80\x94" : ""),
-			        PLAYOS_SCREEN_W / 2, box.y + box.h + 74, 0, UI_TEXT_DIM);
-
-			/* The dot rail: where you are among nine, without showing nine
-			 * pictures. A hollow-dim dot is a slot you cannot land on. */
-			{
-				int dots = GM_SLOTS + 1, dw = 18;
-				int x0 = (PLAYOS_SCREEN_W - dots * dw) / 2 + dw / 2;
-				int y  = box.y + box.h + 122;
-
-				for (i = 0; i < dots; i++) {
-					int can = saving ? i >= 1 : have[i];
-					int r2  = i == sel ? 6 : 4;
-					SDL_Rect d = { x0 + i * dw - r2, y - r2, r2 * 2, r2 * 2 };
-					if (i == sel)
-						SDL_SetRenderDrawColor(a->r,
-						    (a->tint >> 16) & 255, (a->tint >> 8) & 255,
-						    a->tint & 255, 255);
-					else
-						SDL_SetRenderDrawColor(a->r, 90, 94, 110,
-						                       can ? 255 : 90);
-					SDL_RenderFillRect(a->r, &d);
-				}
-			}
-		}
+		slot_draw(a, &sv, sel);
 		SDL_RenderPresent(a->r);
 		SDL_Delay(8);
 	}
 
 	for (i = 0; i <= GM_SLOTS; i++)
-		if (thumb[i]) SDL_DestroyTexture(thumb[i]);
+		if (sv.thumb[i]) SDL_DestroyTexture(sv.thumb[i]);
 	return done == 1 ? chosen : 0;
 }
 
@@ -805,24 +1065,15 @@ static void game_menu(app *a)
 		SDL_RenderClear(a->r);
 		if (bg) SDL_RenderCopy(a->r, bg, NULL, NULL);
 		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
-		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 165);
+		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
 		SDL_RenderFillRect(a->r, NULL);
 
 		{
-			int rows_h = GM_ROWS * 84;
-			int y0 = (PLAYOS_SCREEN_H - rows_h) / 2;
+			menu_row rows[GM_ROWS];
 			int i;
-
-			for (i = 0; i < GM_ROWS; i++) {
-				int y = y0 + i * 84;
-				if (i == sel) {
-					SDL_Rect r = { PLAYOS_SCREEN_W / 2 - 170, y - 14, 340, 64 };
-					ui_glow(a->r, &r, a->tint, 70, 1.6f);
-				}
-				ui_text(a->r, ui_font_big(), label[i],
-				        PLAYOS_SCREEN_W / 2, y, 0,
-				        i == sel ? UI_TEXT : UI_TEXT_DIM);
-			}
+			for (i = 0; i < GM_ROWS; i++)
+				rows[i] = (menu_row){ label[i], NULL, true };
+			menu_draw(a, NULL, rows, GM_ROWS, sel);
 		}
 		SDL_RenderPresent(a->r);
 		SDL_Delay(8);
@@ -1061,15 +1312,64 @@ static void scan_all(app *a)
  * the host build renders exactly what the handheld renders. */
 static const char *shot_path;
 static int shot_screen = -1;
+static int shot_menu, shot_menu_sel;
+static int shot_slots, shot_slot_sel;
+static float shot_slot_aspect = 4.0f / 3.0f;
+
+/* A stand-in for a paused game frame, at whatever shape was asked for: the
+ * slot carousel frames the picture to its own aspect, so looking at that
+ * without a device means being able to hand it one. */
+static SDL_Texture *fake_frame(SDL_Renderer *r, float aspect)
+{
+	int h = 224, w = (int)(224 * aspect + 0.5f);
+	SDL_Surface *s = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32,
+	                                                SDL_PIXELFORMAT_ARGB8888);
+	SDL_Texture *t;
+	int x, y;
+
+	if (!s) return NULL;
+	for (y = 0; y < h; y++)
+		for (x = 0; x < w; x++) {
+			Uint32 *px = (Uint32 *)((Uint8 *)s->pixels + (size_t)y * s->pitch);
+			int checker = ((x / 16) + (y / 16)) & 1;
+			px[x] = SDL_MapRGBA(s->format,
+			                    (Uint8)(30 + 180 * x / w),
+			                    (Uint8)(40 + 150 * y / h),
+			                    (Uint8)(checker ? 150 : 90), 255);
+		}
+	t = SDL_CreateTextureFromSurface(r, s);
+	SDL_FreeSurface(s);
+	return t;
+}
+
+static void shot_draw_slots(app *a)
+{
+	slot_view sv = { .aspect = shot_slot_aspect, .saving = 0 };
+	int i;
+
+	for (i = 0; i <= GM_SLOTS; i++) {
+		/* Slot 5 left empty, so the empty state is in the picture too. */
+		if (i == 5) continue;
+		sv.have[i] = 1;
+		snprintf(sv.when[i], sizeof sv.when[i], "Aug %2d  09:%02d", 20 + i, i * 7);
+		sv.thumb[i] = fake_frame(a->r, shot_slot_aspect);
+	}
+	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+	SDL_SetRenderDrawColor(a->r, 0, 0, 0, 185);
+	SDL_RenderFillRect(a->r, NULL);
+	slot_draw(a, &sv, shot_slot_sel);
+	for (i = 0; i <= GM_SLOTS; i++)
+		if (sv.thumb[i]) SDL_DestroyTexture(sv.thumb[i]);
+}
 
 static void take_shot(app *a)
 {
 	SDL_Surface *out = SDL_CreateRGBSurfaceWithFormat(0, PLAYOS_SCREEN_W,
 	                                                  PLAYOS_SCREEN_H, 32,
 	                                                  SDL_PIXELFORMAT_RGBA32);
-	draw_background(a);
-	if (a->screen == SCREEN_SYSTEMS) draw_systems(a);
-	else draw_games(a);
+	draw_shelf(a);
+	if (shot_menu) playos_menu_draw(a, shot_menu_sel);
+	if (shot_slots) shot_draw_slots(a);
 	if (out) {
 		/* Read BEFORE presenting: the backbuffer is invalid afterwards. */
 		SDL_RenderReadPixels(a->r, NULL, SDL_PIXELFORMAT_RGBA32,
@@ -1085,13 +1385,29 @@ int main(int argc, char *argv[])
 {
 	app a = { 0 };
 	char path[CFG_STR * 2];
-	unsigned last_tint_ms;
 
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "--shot") && i + 1 < argc) shot_path = argv[++i];
 		else if (!strcmp(argv[i], "--screen") && i + 1 < argc)
 			shot_screen = strcmp(argv[++i], "games") == 0 ? SCREEN_GAMES
 			                                              : SCREEN_SYSTEMS;
+		/* --menu [row] draws the PlayOS menu over whichever screen --screen
+		 * asked for, so the panel can be looked at without a device. */
+		else if (!strcmp(argv[i], "--menu")) {
+			shot_menu = 1;
+			if (i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9')
+				shot_menu_sel = atoi(argv[++i]);
+		}
+		/* --slots <sel> [aspect] draws one frame of the save/load carousel
+		 * over synthetic frames, which is the only way to look at it without
+		 * a game running on a device. */
+		else if (!strcmp(argv[i], "--slots")) {
+			shot_slots = 1;
+			if (i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9')
+				shot_slot_sel = atoi(argv[++i]);
+			if (i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9')
+				shot_slot_aspect = (float)atof(argv[++i]);
+		}
 	}
 	signal(SIGTERM, on_sigterm);
 	signal(SIGINT, on_sigterm);
@@ -1133,6 +1449,9 @@ int main(int argc, char *argv[])
 	plat_leds_off();
 	t_mark("video+input");
 
+	/* Before ui_init, which is where the sizes are decided; it persists across
+	 * the ui_quit/ui_init pair the standalone-emulator fallback goes through. */
+	ui_set_font_scale(a.cfg.font_scale);
 	if (!ui_init(a.r, P_FONT)) fprintf(stderr, "font init failed\n");
 	if (a.cfg.volume >= 0) plat_volume_set_pct(a.cfg.volume);
 	/* Always reapply brightness after InitSettings: it can come back with a
@@ -1223,22 +1542,15 @@ int main(int argc, char *argv[])
 		if (in_repeat(&a.in, IN_BRIGHTUP)) plat_brightness_nudge(+1);
 		if (in_repeat(&a.in, IN_BRIGHTDN)) plat_brightness_nudge(-1);
 
+		/* MENU on the shelf is PlayOS's own menu, the counterpart to the one
+		 * MENU opens in a game. It draws over the shelf and returns here. */
+		if (a.in.pressed[IN_MENU]) { playos_menu(&a); continue; }
+
 		if (a.screen == SCREEN_SYSTEMS) update_systems(&a);
 		else update_games(&a);
 		if (!a.running) break;
 
-		/* Ease the background tint toward the focused system rather than
-		 * snapping: the colour is meant to feel like the light the machine
-		 * gives off, and light does not cut. */
-		{
-			unsigned now = plat_now_ms();
-			float dt = (float)(now - last_tint_ms) / 1000.0f;
-			last_tint_ms = now;
-			if (dt > 0.1f) dt = 0.1f;
-			a.tint = ui_mix(a.tint, a.sys.systems[a.sys_cursor].accent,
-			                1.0f - expf(-dt * 9.0f));
-		}
-
+		tick_tint(&a);
 		render(&a);
 	}
 

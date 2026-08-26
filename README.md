@@ -135,12 +135,14 @@ filename, so renaming a ROM folder cannot orphan a save.
 | **B** | back to the systems row |
 | **Volume rocker** | volume, everywhere, including in game |
 | **F1 / F2** | brightness, everywhere, including in game |
+| **MENU** (on the shelf) | the PlayOS menu — settings that are about the firmware |
 | **MENU** (in game) | the in-game menu: Continue, Save, Load, Options, Reset, Quit |
 | **POWER** | ends the game if one is running, otherwise powers off |
 
 Volume and brightness draw the same thin line across the top of the screen in
 the launcher, in a game, and in the in-game menu. One firmware, one piece of
-feedback.
+feedback — tinted by which of the two it is, warm for brightness and cyan for
+volume, so the line says what it is without a glyph or a number on it.
 
 ---
 
@@ -190,8 +192,14 @@ volume=40           # 0..100, applied at boot
 brightness=8        # 0..10, applied at boot and to the animation before it
 startup_system=NES  # only decides the very first boot; after that PlayOS
                     # comes back to wherever you were
+font_scale=1.0      # 0.75..1.50, multiplies the whole type scale at once
 wifi=1              # keeps WiFi up on a development unit, for ssh
 ```
+
+`font_scale` moves every size together. The sizes themselves are one base and
+a multiplier per role — title, menu row, heading, the quiet line of counts and
+timestamps — in `src/ui.c`, so the proportions between them are stated in one
+table rather than as numbers spread across the call sites.
 
 `PlayOS/systems.cfg` — one line per system:
 
@@ -230,6 +238,11 @@ a single frame:
 PLAYOS_ROOT=… PLAYOS_ROMS=… PLAYOS_FONT=res/fonts/menu.ttf \
   build-native/playos --shot /tmp/shelf.png --screen games
 ```
+
+`--menu [row]` draws the PlayOS menu over that shelf, and `--slots <n>
+[aspect]` draws one frame of the save/load carousel over synthetic game
+frames — the two screens that otherwise need a game running on a device before
+they can be looked at.
 
 ### On device
 

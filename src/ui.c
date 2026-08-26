@@ -9,7 +9,24 @@
 #define GLOW_SIZE 192      /* the glow is drawn stretched; small is enough */
 #define TEXT_CACHE 12
 
-static TTF_Font *f_big, *f_small, *f_card, *f_mark;
+/* The type scale: one base size and a multiplier per role. The panel is
+ * 1024x768 across about three inches, so the base is set for reading at arm's
+ * length on a handheld rather than for a screen at desk distance, and the
+ * ratios between the roles are what keeps a count from competing with a title.
+ * UI_F_CARD is in card pixels, not screen pixels -- the card face is drawn at
+ * 512 wide and shown at roughly two thirds of that. */
+#define FONT_BASE 32.0f
+static const float font_mul[UI_F_COUNT] = {
+	[UI_F_TITLE] = 1.62f,   /* 52 */
+	[UI_F_MENU]  = 1.34f,   /* 43 */
+	[UI_F_LABEL] = 1.12f,   /* 36 */
+	[UI_F_META]  = 0.88f,   /* 28 */
+	[UI_F_CARD]  = 1.38f,   /* 44, in card pixels */
+};
+
+static TTF_Font *fonts[UI_F_COUNT];
+static float font_scale = 1.0f;
+static TTF_Font *f_mark;
 static char font_path_kept[512];
 static SDL_Texture *glow_tex;
 
@@ -52,22 +69,34 @@ static SDL_Texture *make_glow(SDL_Renderer *r)
 	return t;
 }
 
+void ui_set_font_scale(float scale)
+{
+	/* The ceiling is where the longest menu label still fits across the panel;
+	 * past it the two columns start colliding rather than merely being large. */
+	if (scale < 0.75f) scale = 0.75f;
+	if (scale > 1.50f) scale = 1.50f;
+	font_scale = scale;
+}
+
+float ui_get_font_scale(void) { return font_scale; }
+
 bool ui_init(SDL_Renderer *r, const char *font_path)
 {
+	int i;
+
 	if (TTF_Init() != 0) {
 		fprintf(stderr, "ttf: %s\n", TTF_GetError());
 		return false;
 	}
 	snprintf(font_path_kept, sizeof font_path_kept, "%s", font_path);
-	f_big = TTF_OpenFont(font_path, 42);
-	f_small = TTF_OpenFont(font_path, 22);
-	/* The card face is drawn at 512px wide and shown at roughly two thirds of
-	 * that, so its type has to be sized for the card, not for the screen. */
-	f_card = TTF_OpenFont(font_path, 40);
-	if (!f_big || !f_small || !f_card)
-		fprintf(stderr, "font %s: %s\n", font_path, TTF_GetError());
+	for (i = 0; i < UI_F_COUNT; i++) {
+		int pt = (int)(FONT_BASE * font_mul[i] * font_scale + 0.5f);
+		fonts[i] = TTF_OpenFont(font_path, pt);
+		if (!fonts[i])
+			fprintf(stderr, "font %s @%d: %s\n", font_path, pt, TTF_GetError());
+	}
 	glow_tex = make_glow(r);
-	return f_big != NULL;
+	return fonts[UI_F_TITLE] != NULL;
 }
 
 void ui_quit(void)
@@ -75,15 +104,23 @@ void ui_quit(void)
 	for (int i = 0; i < TEXT_CACHE; i++)
 		if (cache[i].tex) { SDL_DestroyTexture(cache[i].tex); cache[i].tex = NULL; }
 	if (glow_tex) { SDL_DestroyTexture(glow_tex); glow_tex = NULL; }
-	if (f_big) { TTF_CloseFont(f_big); f_big = NULL; }
-	if (f_small) { TTF_CloseFont(f_small); f_small = NULL; }
-	if (f_card) { TTF_CloseFont(f_card); f_card = NULL; }
+	for (int i = 0; i < UI_F_COUNT; i++)
+		if (fonts[i]) { TTF_CloseFont(fonts[i]); fonts[i] = NULL; }
 	if (f_mark) { TTF_CloseFont(f_mark); f_mark = NULL; }
 	TTF_Quit();
 }
 
-TTF_Font *ui_font_big(void) { return f_big; }
-TTF_Font *ui_font_small(void) { return f_small; }
+TTF_Font *ui_font(ui_font_role role)
+{
+	if (role < 0 || role >= UI_F_COUNT) return NULL;
+	return fonts[role];
+}
+
+int ui_font_line(ui_font_role role)
+{
+	TTF_Font *f = ui_font(role);
+	return f ? TTF_FontLineSkip(f) : 0;
+}
 
 static struct text_entry *text_get(SDL_Renderer *r, TTF_Font *f, const char *s,
                                   SDL_Color col)
@@ -162,7 +199,9 @@ void ui_glow(SDL_Renderer *r, const SDL_Rect *rect, unsigned rgb, int alpha,
 void ui_rail(SDL_Renderer *r, int screen_w, int screen_h, int index, int count,
              unsigned rgb)
 {
-	int y = screen_h - 26, h = 3;
+	/* Grown upward from where the old 3px bar's bottom edge sat, so matching
+	 * the settings line's weight did not also move the rail. */
+	int h = UI_BAR_H, y = screen_h - 23 - h;
 	int track_x = 90, track_w = screen_w - track_x * 2;
 	int seg_w, seg_x;
 
@@ -172,10 +211,45 @@ void ui_rail(SDL_Renderer *r, int screen_w, int screen_h, int index, int count,
 	seg_x = track_x + (int)((float)index / (float)(count - 1) * (track_w - seg_w));
 
 	SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-	SDL_SetRenderDrawColor(r, 255, 255, 255, 26);
+	/* The track carries twice the weight it used to, so it takes less alpha to
+	 * say the same thing; brighter than this and an empty rail reads as a
+	 * drawn element rather than as the absence of one. */
+	SDL_SetRenderDrawColor(r, 255, 255, 255, 16);
 	SDL_RenderFillRect(r, &(SDL_Rect){ track_x, y, track_w, h });
 	SDL_SetRenderDrawColor(r, (Uint8)(rgb >> 16), (Uint8)(rgb >> 8), (Uint8)rgb, 235);
 	SDL_RenderFillRect(r, &(SDL_Rect){ seg_x, y, seg_w, h });
+}
+
+void ui_round_rect(SDL_Renderer *r, const SDL_Rect *q, int radius, SDL_Color col)
+{
+	int y;
+
+	if (q->w <= 0 || q->h <= 0) return;
+	if (radius * 2 > q->w) radius = q->w / 2;
+	if (radius * 2 > q->h) radius = q->h / 2;
+	if (radius < 0) radius = 0;
+
+	SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+	SDL_SetRenderDrawColor(r, col.r, col.g, col.b, col.a);
+	SDL_RenderFillRect(r, &(SDL_Rect){ q->x, q->y + radius, q->w, q->h - radius * 2 });
+	for (y = 0; y < radius; y++) {
+		int dy = radius - y;
+		int dx = radius - (int)(sqrt((double)(radius * radius - dy * dy)) + 0.5);
+		SDL_RenderFillRect(r, &(SDL_Rect){ q->x + dx, q->y + y, q->w - dx * 2, 1 });
+		SDL_RenderFillRect(r, &(SDL_Rect){ q->x + dx, q->y + q->h - 1 - y,
+		                                   q->w - dx * 2, 1 });
+	}
+}
+
+void ui_panel(SDL_Renderer *r, const SDL_Rect *q, int radius, unsigned border)
+{
+	SDL_Rect in = { q->x + 2, q->y + 2, q->w - 4, q->h - 4 };
+
+	ui_round_rect(r, q, radius, (SDL_Color){
+		(Uint8)(border >> 16), (Uint8)(border >> 8), (Uint8)border, 110 });
+	/* Opaque enough that a card title behind it does not ghost through the
+	 * list, which at 95% it did. */
+	ui_round_rect(r, &in, radius - 2, (SDL_Color){ 10, 11, 16, 252 });
 }
 
 unsigned ui_mix(unsigned a, unsigned b, float t)
@@ -326,7 +400,8 @@ SDL_Texture *ui_make_card(SDL_Renderer *r, const char *title, unsigned rgb,
 	             SDL_MapRGBA(s->format, (Uint8)(rgb >> 16), (Uint8)(rgb >> 8),
 	                         (Uint8)rgb, 170));
 
-	if (f_card) draw_wrapped(s, f_card, title, CARD_W - 76, (int)(CARD_H * 0.655f));
+	if (fonts[UI_F_CARD])
+		draw_wrapped(s, fonts[UI_F_CARD], title, CARD_W - 76, (int)(CARD_H * 0.655f));
 
 	round_corners(s, CARD_RADIUS);
 	t = SDL_CreateTextureFromSurface(r, s);

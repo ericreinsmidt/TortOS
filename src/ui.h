@@ -16,17 +16,52 @@
 
 #define UI_TEXT      ((SDL_Color){ 237, 237, 242, 255 })
 #define UI_TEXT_DIM  ((SDL_Color){ 138, 143, 163, 255 })
+#define UI_TEXT_OFF  ((SDL_Color){  96, 100, 118, 255 })   /* present, not live */
 
 /* PlayOS cyan: 0x3DD6FF. The system accents come from systems.cfg. */
 #define UI_CYAN_R 61
 #define UI_CYAN_G 214
 #define UI_CYAN_B 255
 
+/* One thickness for every horizontal indicator: the settings line across the
+ * top and the position rail across the bottom are the same bar in two places,
+ * so they are the same weight. */
+#define UI_BAR_H 6
+
+/* The settings line is tinted by which setting it is. Brightness is the colour
+ * of light, volume is the launcher's own cyan -- fixed per function rather
+ * than taken from the system accent, which would make one control change
+ * colour as you scrolled past it. */
+#define UI_OSD_BRIGHT ((SDL_Color){ 255, 206, 128, 255 })
+#define UI_OSD_VOLUME ((SDL_Color){  61, 214, 255, 255 })
+
 bool ui_init(SDL_Renderer *r, const char *font_path);
 void ui_quit(void);
 
-TTF_Font *ui_font_big(void);
-TTF_Font *ui_font_small(void);
+/* The type scale. One base size, a multiplier per role, and a global user
+ * scale over the top -- so retuning a role is one number here instead of a
+ * size hunted down at every call site, and the whole scale can move together,
+ * which on a panel this dense is usually what is wanted.
+ *
+ * UI_F_CARD is drawn into the 512px-wide generated card rather than onto the
+ * screen, so it is sized for the card and not for the panel. */
+typedef enum {
+	UI_F_TITLE,   /* the name of the thing under the cursor */
+	UI_F_MENU,    /* menu rows */
+	UI_F_LABEL,   /* headings, slot names */
+	UI_F_META,    /* counts, timestamps -- the quiet line */
+	UI_F_CARD,
+	UI_F_COUNT
+} ui_font_role;
+
+/* Multiply every role. Applied when the fonts are opened, so this has to be
+ * set before ui_init -- it persists across the ui_quit/ui_init pair that the
+ * standalone-emulator fallback path goes through. */
+void ui_set_font_scale(float scale);
+float ui_get_font_scale(void);
+TTF_Font *ui_font(ui_font_role role);
+/* Baseline-to-baseline distance for a role, the unit menu rows are laid out in. */
+int ui_font_line(ui_font_role role);
 
 /* Draw text with its top-left at (x,y). anchor: -1 left, 0 centre, 1 right,
  * applied to x. Returns the drawn width. Rendering is cached per (font,
@@ -45,6 +80,16 @@ void ui_glow(SDL_Renderer *r, const SDL_Rect *rect, unsigned rgb, int alpha,
  * accent segment showing where the cursor sits in a list of `count`. */
 void ui_rail(SDL_Renderer *r, int screen_w, int screen_h, int index, int count,
              unsigned rgb);
+
+/* A filled rounded rectangle. SDL has no such primitive; this is the middle as
+ * one rect and the two caps as one inset row each, so a panel costs a few
+ * dozen fills rather than one per scanline. */
+void ui_round_rect(SDL_Renderer *r, const SDL_Rect *q, int radius, SDL_Color col);
+
+/* A menu slab: near-opaque, so a list drawn on it reads against a paused game
+ * frame or a lit shelf without either showing through, with a hairline of the
+ * system accent around it. `border` is 0xRRGGBB. */
+void ui_panel(SDL_Renderer *r, const SDL_Rect *q, int radius, unsigned border);
 
 /* A card for a game with no art: a tinted slab with the title on it. Owned by
  * the caller. */

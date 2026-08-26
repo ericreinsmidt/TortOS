@@ -3,10 +3,10 @@
 /build-native/
 /out/
 
-# Redistributed binaries: the cores, minarch's runtime libraries, the NextUI
-# assets it resolves from compile-time paths, and the minarch.elf built by
-# minarch/build.sh. All of it is fetched or generated -- mk/fetch-vendor.sh and
-# minarch/build.sh -- so none of it belongs in the history.
+# Redistributed binaries: the libretro cores and the device runtime libraries.
+# All of it is fetched by mk/fetch-vendor.sh, so none of it belongs in the
+# history. The emulator binary is Diatom's, built in its own repository and
+# taken from DIATOM_ELF at payload time.
 /vendor/
 
 # Python
