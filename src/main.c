@@ -25,6 +25,7 @@
 #include <string.h>
 #include <strings.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 #define BATT_LOW_PCT   10   /* show the low-battery dot at or below this */
@@ -581,15 +582,18 @@ static void copy_file(const char *from, const char *to)
 	if (b) fclose(b);
 }
 
-/* The slot strip: Auto plus 1..8 for Load, 1..8 for Save. Returns the chosen
- * slot (9 = Auto) or 0 for backed-out. Slots draw their preview where one
- * exists and a numbered slab where none does; Load skips slots with nothing
- * behind them. */
+/* The slot carousel: Auto plus 1..8 for Load, 1..8 for Save. One slot at a
+ * time, large - the paused frame at a size you can actually read - with the
+ * save's own timestamp under it and a dot rail for where you are. Left and
+ * right cycle; Load skips slots with nothing behind them, Save cannot aim at
+ * Auto, which belongs to the exit funnel alone. Returns the chosen slot
+ * (9 = Auto) or 0 for backed out. */
 #define GM_SLOTS 8
 static int slot_strip(app *a, SDL_Texture *bg, int saving)
 {
 	SDL_Texture *thumb[GM_SLOTS + 1] = { 0 };   /* [0]=Auto, [1..8] */
 	int have[GM_SLOTS + 1] = { 0 };
+	char when[GM_SLOTS + 1][40] = { { 0 } };
 	sysview *v = &a->view[a->sys_cursor];
 	game_entry *g = &v->list.items[v->cursor];
 	int i, sel = -1, chosen = 0, done = 0;
@@ -601,6 +605,13 @@ static int slot_strip(app *a, SDL_Texture *bg, int saving)
 
 		slot_state_path(a, a->sys_cursor, g, slot, pth, sizeof pth);
 		have[i] = (stat(pth, &st) == 0 && st.st_size > 0);
+		if (have[i]) {
+			/* The state's own mtime: when this moment was captured. The
+			 * device clock is only as good as the device clock, and showing
+			 * what the filesystem says beats pretending to know better. */
+			struct tm *tm = localtime(&st.st_mtime);
+			if (tm) strftime(when[i], sizeof when[i], "%b %e  %H:%M", tm);
+		}
 		slot_preview_path(a, a->sys_cursor, g, slot, pth, sizeof pth);
 		if (have[i]) {
 			SDL_Surface *sf = IMG_Load(pth);
@@ -637,28 +648,66 @@ static int slot_strip(app *a, SDL_Texture *bg, int saving)
 		SDL_RenderFillRect(a->r, NULL);
 
 		ui_text(a->r, ui_font_big(), saving ? "Save to" : "Load from",
-		        PLAYOS_SCREEN_W / 2, 150, 0, UI_TEXT);
+		        PLAYOS_SCREEN_W / 2, 110, 0, UI_TEXT_DIM);
 		{
-			int tw = 96, th = 72, gap = 10;
-			int total = (GM_SLOTS + 1) * (tw + gap) - gap;
-			int x0 = (PLAYOS_SCREEN_W - total) / 2;
-			int y  = (PLAYOS_SCREEN_H - th) / 2;
+			/* One slot, large: the paused frame at a size you can read. The
+			 * box is fixed; the thumbnail keeps its own shape inside it,
+			 * because a 240x160 GBA frame and a 256x224 NES frame should
+			 * not be stretched into the same rectangle. */
+			SDL_Rect box = { (PLAYOS_SCREEN_W - 560) / 2, 190, 560, 400 };
+			char slotname[16];
 
-			for (i = 0; i <= GM_SLOTS; i++) {
-				SDL_Rect r = { x0 + i * (tw + gap), y, tw, th };
-				int dim = saving ? i == 0 : !have[i];
-
-				if (i == sel) ui_glow(a->r, &r, a->tint, 80, 1.5f);
-				SDL_SetRenderDrawColor(a->r, 24, 26, 34, 255);
-				SDL_RenderFillRect(a->r, &r);
-				if (thumb[i]) {
-					SDL_SetTextureColorMod(thumb[i], dim ? 70 : 255,
-					                       dim ? 70 : 255, dim ? 70 : 255);
-					SDL_RenderCopy(a->r, thumb[i], NULL, &r);
+			ui_glow(a->r, &box, a->tint, 85, 1.35f);
+			SDL_SetRenderDrawColor(a->r, 20, 22, 30, 255);
+			SDL_RenderFillRect(a->r, &box);
+			if (thumb[sel]) {
+				int tw2 = 0, th2 = 0;
+				SDL_Rect dst = box;
+				SDL_QueryTexture(thumb[sel], NULL, NULL, &tw2, &th2);
+				if (tw2 > 0 && th2 > 0) {
+					float k = (float)box.w / tw2;
+					if (th2 * k > box.h) k = (float)box.h / th2;
+					dst.w = (int)(tw2 * k);
+					dst.h = (int)(th2 * k);
+					dst.x = box.x + (box.w - dst.w) / 2;
+					dst.y = box.y + (box.h - dst.h) / 2;
 				}
-				ui_text(a->r, ui_font_small(), i == 0 ? "Auto" : (char[]){ '0' + i, 0 },
-				        r.x + tw / 2, y + th + 10, 0,
-				        i == sel ? UI_TEXT : UI_TEXT_DIM);
+				SDL_SetTextureColorMod(thumb[sel], 255, 255, 255);
+				SDL_RenderCopy(a->r, thumb[sel], NULL, &dst);
+			} else {
+				ui_text(a->r, ui_font_big(), "Empty",
+				        box.x + box.w / 2, box.y + box.h / 2 - 24, 0,
+				        UI_TEXT_DIM);
+			}
+
+			if (sel == 0) snprintf(slotname, sizeof slotname, "Auto");
+			else          snprintf(slotname, sizeof slotname, "Slot %d", sel);
+			ui_text(a->r, ui_font_big(), slotname,
+			        PLAYOS_SCREEN_W / 2, box.y + box.h + 26, 0, UI_TEXT);
+			ui_text(a->r, ui_font_small(),
+			        have[sel] ? when[sel] : (saving ? "\xE2\x80\x94" : ""),
+			        PLAYOS_SCREEN_W / 2, box.y + box.h + 74, 0, UI_TEXT_DIM);
+
+			/* The dot rail: where you are among nine, without showing nine
+			 * pictures. A hollow-dim dot is a slot you cannot land on. */
+			{
+				int dots = GM_SLOTS + 1, dw = 18;
+				int x0 = (PLAYOS_SCREEN_W - dots * dw) / 2 + dw / 2;
+				int y  = box.y + box.h + 122;
+
+				for (i = 0; i < dots; i++) {
+					int can = saving ? i >= 1 : have[i];
+					int r2  = i == sel ? 6 : 4;
+					SDL_Rect d = { x0 + i * dw - r2, y - r2, r2 * 2, r2 * 2 };
+					if (i == sel)
+						SDL_SetRenderDrawColor(a->r,
+						    (a->tint >> 16) & 255, (a->tint >> 8) & 255,
+						    a->tint & 255, 255);
+					else
+						SDL_SetRenderDrawColor(a->r, 90, 94, 110,
+						                       can ? 255 : 90);
+					SDL_RenderFillRect(a->r, &d);
+				}
 			}
 		}
 		SDL_RenderPresent(a->r);
@@ -1064,6 +1113,17 @@ int main(int argc, char *argv[])
 	 * a system is a frame rather than a wait. */
 	scan_all(&a);
 	t_mark("scan");
+
+	/* BEFORE the first frame this process ever draws: if a previous launcher
+	 * died while a game was running, the resident is still presenting through
+	 * fbdev right now, and drawing the shelf over it is the two-presenter
+	 * case that wedges the display engine in-kernel (Diatom's handoff spike;
+	 * it cost a power cycle to prove, twice). plat_resident_ready() connects,
+	 * and on READY state=running it stops the game and drains to EXIT - so by
+	 * the time video comes up, only one presenter exists. The check at launch
+	 * time was too late by definition: this process draws long before the
+	 * player launches anything. */
+	plat_resident_ready();
 
 	if (!plat_video_init()) { fprintf(stderr, "video init failed\n"); return 1; }
 	IMG_Init(IMG_INIT_PNG);
