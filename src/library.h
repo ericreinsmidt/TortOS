@@ -8,7 +8,13 @@
 #define LIB_PATH 544
 
 typedef struct {
-	char name[LIB_NAME];  /* display name: the filename without its extension */
+	char name[LIB_NAME];  /* the filename without its extension. Box art is
+	                       * looked up by this and the shelf is sorted by it,
+	                       * so it stays exactly as the file is named. */
+	char title[LIB_NAME]; /* what the shelf shows: `name` with the trailing
+	                       * region and dump tags cut off, so a card says
+	                       * "Chrono Trigger" rather than the cataloguing that
+	                       * follows it. */
 	char file[LIB_PATH];  /* launch path relative to Roms/<folder>: a filename,
 	                       * or "<folder>/<disc>" for a disc-folder game */
 	/* Whether an autosave exists for this game, so the card can say so and

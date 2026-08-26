@@ -81,6 +81,40 @@ static int game_cmp(const void *pa, const void *pb)
 	return strcasecmp(((const game_entry *)pa)->name, ((const game_entry *)pb)->name);
 }
 
+/* The display title: `name` up to the first bracketed group that follows a
+ * space. ROM sets carry their cataloguing in the filename - "(USA)", "(Rev 1)",
+ * "(En,Fr,De)", "[!]", "[T+Eng]" - and a shelf is not a catalogue, so the card
+ * shows the game and the file keeps the provenance.
+ *
+ * The space before the bracket is what makes this safe to do blindly: a name
+ * that OPENS with a bracket, which is how BIOS and disc-set folders are often
+ * marked, has nothing before it to cut and survives whole. Cutting to nothing
+ * falls back to the full name for the same reason - an empty card is worse
+ * than a noisy one.
+ *
+ * Sorting and box-art lookup deliberately keep using `name`: two dumps of one
+ * game share a title but not a filename, and collapsing them here would make
+ * their order arbitrary and point both at the same .media file. */
+static void make_title(const char *name, char *out, size_t n)
+{
+	const char *cut = NULL, *p;
+
+	/* Searching from the second character, never the first: a name that OPENS
+	 * with a bracket is how BIOS images and disc sets are usually marked, and
+	 * it has nothing in front of the bracket to keep, so it survives whole
+	 * instead of becoming nothing. */
+	for (p = name; *p; p++) {
+		if (p != name && (*p == '(' || *p == '[')) { cut = p; break; }
+	}
+	if (!cut) { snprintf(out, n, "%s", name); return; }
+
+	/* Take any run of spaces before the bracket with it. */
+	while (cut > name && (cut[-1] == ' ' || cut[-1] == '\t')) cut--;
+	if (cut == name) { snprintf(out, n, "%s", name); return; }
+
+	snprintf(out, n, "%.*s", (int)(cut - name), name);
+}
+
 void lib_free(game_list *l)
 {
 	free(l->items);
@@ -159,6 +193,7 @@ bool lib_scan(const char *roms_root, const char *folder, const char *exts,
 		snprintf(list[n].name, sizeof list[n].name, "%s", e->d_name);
 		dot = strrchr(list[n].name, '.');
 		if (dot && dot != list[n].name) *dot = '\0';
+		make_title(list[n].name, list[n].title, sizeof list[n].title);
 		n++;
 	}
 
@@ -190,6 +225,7 @@ bool lib_scan(const char *roms_root, const char *folder, const char *exts,
 		memset(&list[n], 0, sizeof list[n]);
 		snprintf(list[n].file, sizeof list[n].file, "%s/%s", e->d_name, inside);
 		snprintf(list[n].name, sizeof list[n].name, "%s", e->d_name);
+		make_title(list[n].name, list[n].title, sizeof list[n].title);
 		n++;
 	}
 	closedir(d);

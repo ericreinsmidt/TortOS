@@ -39,8 +39,27 @@ typedef struct {
 	SDL_Texture **tex;
 	int *tw, *th;
 	int cursor;
+	int dmode;              /* index into DMODES: how this system is scaled */
 	coverflow cf;
 } sysview;
+
+/* Diatom's display modes, in the order PlayOS offers them: the sensible
+ * default first, then whole-pixel scaling, then the ones that trade shape or
+ * edges for coverage, with 1:1 last as a reference rather than a choice.
+ *
+ * The names are Diatom's protocol strings and have to match its own table in
+ * src/scale.c exactly - it answers an unknown one with ERROR code=bad_display
+ * and changes nothing. The labels are ours, and are what the menu shows. */
+static const struct { const char *name, *label; } DMODES[] = {
+	{ "aspect",           "Aspect"       },
+	{ "integer",          "Integer"      },
+	{ "integer-vertical", "Integer tall" },
+	{ "overscale",        "Overscale"    },
+	{ "fill",             "Fill"         },
+	{ "stretch",          "Stretch"      },
+	{ "native",           "Native 1:1"   },
+};
+#define DMODE_COUNT ((int)(sizeof DMODES / sizeof DMODES[0]))
 
 typedef struct {
 	systems_cfg sys;
@@ -97,6 +116,53 @@ static void wait_for_boot_anim(void)
 		SDL_Delay(8);
 	}
 	t_mark("anim wait");
+}
+
+/* ---------- per-system display mode --------------------------------------- */
+
+/* Keyed on the system's tag rather than its folder or its place in the list,
+ * for the same reason saves are: renaming a ROM folder or reordering
+ * systems.cfg then cannot quietly hand a system somebody else's setting. */
+static void display_load(app *a)
+{
+	char p[CFG_STR * 2], line[256];
+	FILE *f;
+
+	snprintf(p, sizeof p, "%s/display.cfg", P_USERDATA);
+	f = fopen(p, "r");
+	if (!f) return;
+	while (fgets(line, sizeof line, f)) {
+		char *eq;
+		int i, k;
+
+		line[strcspn(line, "\r\n")] = '\0';
+		eq = strchr(line, '=');
+		if (!eq) continue;
+		*eq++ = '\0';
+		for (i = 0; i < a->sys.count; i++) {
+			if (strcmp(a->sys.systems[i].tag, line) != 0) continue;
+			for (k = 0; k < DMODE_COUNT; k++)
+				if (strcmp(DMODES[k].name, eq) == 0) { a->view[i].dmode = k; break; }
+			break;
+		}
+	}
+	fclose(f);
+}
+
+/* Every system every time: the file is one short line each, and rewriting the
+ * lot means there is no way for it to drift out of step with systems.cfg. */
+static void display_save(app *a)
+{
+	char p[CFG_STR * 2];
+	FILE *f;
+	int i;
+
+	snprintf(p, sizeof p, "%s/display.cfg", P_USERDATA);
+	f = fopen(p, "w");
+	if (!f) return;
+	for (i = 0; i < a->sys.count; i++)
+		fprintf(f, "%s=%s\n", a->sys.systems[i].tag, DMODES[a->view[i].dmode].name);
+	fclose(f);
 }
 
 /* ---------- textures ----------------------------------------------------- */
@@ -209,7 +275,7 @@ static SDL_Texture *game_get_tex(void *ctx, int i, int *w, int *h)
 			v->tex[i] = load_image(a->r, path, &v->tw[i], &v->th[i]);
 		}
 		if (!v->tex[i])
-			v->tex[i] = ui_make_card(a->r, v->list.items[i].name,
+			v->tex[i] = ui_make_card(a->r, v->list.items[i].title,
 			                         a->sys.systems[s].accent,
 			                         &v->tw[i], &v->th[i]);
 	}
@@ -406,7 +472,7 @@ static void draw_games(app *a)
 
 	if (v->list.count > 0) {
 		game_entry *g = &v->list.items[v->cursor];
-		int tw = ui_text_width(ui_font(UI_F_TITLE), g->name);
+		int tw = ui_text_width(ui_font(UI_F_TITLE), g->title);
 		int tx = PLAYOS_SCREEN_W / 2;
 		/* A game with an autosave gets a dot in the system's colour beside
 		 * its name: pressing A on it does not start it, it continues it.
@@ -422,7 +488,7 @@ static void draw_games(app *a)
 				SDL_RenderDrawLine(a->r, dx - w, dy + k, dx + w, dy + k);
 			}
 		}
-		ui_text(a->r, ui_font(UI_F_TITLE), g->name, tx, 40, 0, UI_TEXT);
+		ui_text(a->r, ui_font(UI_F_TITLE), g->title, tx, 40, 0, UI_TEXT);
 		snprintf(count, sizeof count, "%d / %d", v->cursor + 1, v->list.count);
 		ui_text(a->r, ui_font(UI_F_META), count, PLAYOS_SCREEN_W / 2, 690, 0,
 		        UI_TEXT_DIM);
@@ -744,7 +810,9 @@ static int menu_build(app *a, menu_row *out, menu_bufs *b, const char **heading)
 		out[SM_CORE]    = (menu_row){ "Core",           b->b,            false };
 		out[SM_SORT]    = (menu_row){ "Sort by",        "Name",          false };
 		out[SM_SHOW]    = (menu_row){ "Show",           "All games",     false };
-		out[SM_DISPLAY] = (menu_row){ "Display mode",   "Fit to screen", false };
+		out[SM_DISPLAY] = (menu_row){ "Display mode",
+		                              DMODES[a->view[a->sys_cursor].dmode].label,
+		                              true };
 		out[SM_BUTTONS] = (menu_row){ "Button mapping", NULL,            false };
 		out[SM_BOXART]  = (menu_row){ "Box art",        "not yet",       false };
 		out[SM_RESCAN]  = (menu_row){ "Rescan folder",  NULL,            false };
@@ -794,8 +862,25 @@ static void playos_menu(app *a)
 		plat_input_poll(&a->in);
 		if (a->in.quit_requested) { a->running = false; return; }
 
+		/* Rebuilt every frame: a row that can be changed from inside the menu
+		 * has to show what it was changed to. */
+		n = menu_build(a, rows, &bufs, &heading);
+
 		if (in_repeat(&a->in, IN_UP))   sel = (sel + n - 1) % n;
 		if (in_repeat(&a->in, IN_DOWN)) sel = (sel + 1) % n;
+
+		/* Left and right cycle the value on a row that has one. Display mode
+		 * is the only such row so far; it is saved the moment it changes,
+		 * because there is no confirm step to hang the write off. */
+		if (a->screen == SCREEN_GAMES && sel == SM_DISPLAY) {
+			int d = in_repeat(&a->in, IN_RIGHT) ? 1
+			      : in_repeat(&a->in, IN_LEFT)  ? -1 : 0;
+			if (d) {
+				sysview *v = &a->view[a->sys_cursor];
+				v->dmode = (v->dmode + d + DMODE_COUNT) % DMODE_COUNT;
+				display_save(a);
+			}
+		}
 		/* Volume and brightness keep working here, as they do everywhere. */
 		if (in_repeat(&a->in, IN_VOLUP))    plat_volume_nudge(+1);
 		if (in_repeat(&a->in, IN_VOLDN))    plat_volume_nudge(-1);
@@ -1228,6 +1313,13 @@ static void launch(app *a)
 		 * emulator hands us on the way into its pause. */
 		if (plat_resident_send(s->tag, core, rom, st, st, pv)) {
 			int r;
+
+			/* Straight after RUN and the levels, and for the same reason: the
+			 * mode is Diatom's own global and survives from the last game, so
+			 * a system that has never been set would otherwise inherit
+			 * whatever the previous one chose. Ordered on the same socket, so
+			 * it lands before the first frame. */
+			plat_resident_line("SETDISPLAY\tmode=%s", DMODES[v->dmode].name);
 			/* No launch animation, and it is a display-safety rule, not a
 			 * taste call: Diatom presents through fbdev, this process
 			 * through GL, and the handoff spike's one invariant is that
@@ -1270,6 +1362,7 @@ static void launch(app *a)
 		argv[n++] = (char *)"--rom";             argv[n++] = rom;
 		argv[n++] = (char *)"--save";            argv[n++] = save;
 		argv[n++] = (char *)"--system";          argv[n++] = bios;
+		argv[n++] = (char *)"--display";         argv[n++] = (char *)DMODES[v->dmode].name;
 		argv[n++] = (char *)"--load-state";      argv[n++] = st;
 		argv[n++] = (char *)"--state-on-exit";   argv[n++] = st;
 		argv[n++] = (char *)"--preview-on-exit"; argv[n++] = pv;
@@ -1350,12 +1443,12 @@ static char shelf_initial(const char *s)
 static int shelf_group_start(sysview *v, int idx)
 {
 	int n = v->list.count, i = idx;
-	char c = shelf_initial(v->list.items[idx].name);
+	char c = shelf_initial(v->list.items[idx].title);
 
 	for (;;) {
 		int p = (i - 1 + n) % n;
 		if (p == idx) return idx;             /* one initial, the whole shelf */
-		if (shelf_initial(v->list.items[p].name) != c) break;
+		if (shelf_initial(v->list.items[p].title) != c) break;
 		i = p;
 	}
 	return i;
@@ -1369,13 +1462,13 @@ static int shelf_group_start(sysview *v, int idx)
 static int shelf_letter_jump(sysview *v, int dir)
 {
 	int n = v->list.count, i, cur = v->cursor;
-	char c0 = shelf_initial(v->list.items[cur].name);
+	char c0 = shelf_initial(v->list.items[cur].title);
 
 	if (n <= 1) return cur;
 	if (dir > 0) {
 		for (i = 1; i < n; i++) {
 			int k = (cur + i) % n;
-			if (shelf_initial(v->list.items[k].name) != c0) return k;
+			if (shelf_initial(v->list.items[k].title) != c0) return k;
 		}
 		return cur;                           /* every name starts alike */
 	}
@@ -1385,7 +1478,7 @@ static int shelf_letter_jump(sysview *v, int dir)
 	 * then the shelf is one group and there is nowhere to go - the same answer
 	 * down gives, rather than shuffling back by one. */
 	i = (cur - 1 + n) % n;
-	if (shelf_initial(v->list.items[i].name) == c0) return cur;
+	if (shelf_initial(v->list.items[i].title) == c0) return cur;
 	return shelf_group_start(v, i);
 }
 
@@ -1514,7 +1607,7 @@ static void take_shot(app *a)
 		{
 			sysview *v = &a->view[a->sys_cursor];
 			const char *what = a->screen == SCREEN_GAMES && v->list.count > 0
-			                 ? v->list.items[v->cursor].name
+			                 ? v->list.items[v->cursor].title
 			                 : a->sys.systems[a->sys_cursor].name;
 			fprintf(stderr, "wrote %s  [%s] %s\n", shot_path,
 			        a->screen == SCREEN_GAMES ? "games" : "systems", what);
@@ -1575,6 +1668,9 @@ int main(int argc, char *argv[])
 	 * reads, it happens behind the boot animation, and it means walking into
 	 * a system is a frame rather than a wait. */
 	scan_all(&a);
+	/* After the scan, because it indexes by system, and before anything can
+	 * launch, because the mode has to reach Diatom with the first RUN. */
+	display_load(&a);
 	t_mark("scan");
 
 	/* BEFORE the first frame this process ever draws: if a previous launcher
