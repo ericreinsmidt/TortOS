@@ -1,61 +1,61 @@
 #!/bin/sh
-# Populate vendor/ with the prebuilt tg5040 runtime PlayOS ships alongside its
-# own binary: the libretro cores and the device runtime libraries.
+# Populate vendor/cores with the libretro cores PlayOS redistributes.
 #
-# The emulator itself is Diatom, built in its own repository; payload.sh takes
-# the binary from DIATOM_ELF (default ../diatom/build/brick/diatom).
+# That is the whole of it now. PlayOS used to pull a NextUI release for
+# minarch's runtime libraries and the assets it resolved from compile-time
+# paths; minarch is gone, and measurement says nothing else needed them:
 #
-# Everything this pulls keeps its own license; see THIRD-PARTY-LICENSES.md.
+#   the cores need  libc libm librt libstdc++ libgcc_s ld-linux
+#   playos.elf needs libSDL2 libSDL2_image libSDL2_ttf libm libdl libc
 #
-# Usage: mk/fetch-vendor.sh [download-dir]
-# Reuses NextUI-*-base.zip / NextUI-*-extras.zip in download-dir if present,
-# otherwise downloads them with gh from LoveRetro/NextUI.
+# Every one of those ships in the device's own firmware under /usr/trimui/lib
+# or /usr/lib. libmsettings, the last NextUI library PlayOS actually called,
+# is now PlayOS's own code in src/platform.c against the same two device
+# interfaces. libgametimedb and libbatmondb were shipped and never called at
+# all.
+#
+# Cores come from libretro's own buildbot, pinned by sha256 - the same hashes
+# Diatom's CORES.md verifies, because they are the same binaries. The
+# buildbot path is unpinned; these hashes are the pin.
+#
+# Usage: mk/fetch-vendor.sh
 set -e
-REL=v6.11.2
-DL=${1:-/tmp/playos-vendor}
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 VENDOR=$ROOT/vendor
-
-mkdir -p "$DL" "$VENDOR/cores" "$VENDOR/lib"
-
-cd "$DL"
-BASE=$(ls NextUI-*-base.zip 2> /dev/null | head -1 || true)
-EXTRAS=$(ls NextUI-*-extras.zip 2> /dev/null | head -1 || true)
-if [ -z "$BASE" ]; then
-	gh release download $REL -R LoveRetro/NextUI -p 'NextUI-*-base.zip'
-	BASE=$(ls NextUI-*-base.zip | head -1)
-fi
-if [ -z "$EXTRAS" ]; then
-	gh release download $REL -R LoveRetro/NextUI -p 'NextUI-*-extras.zip'
-	EXTRAS=$(ls NextUI-*-extras.zip | head -1)
-fi
-
-# the base zip nests the system payload as MinUI.zip
-unzip -o -j "$BASE" MinUI.zip -d "$DL" > /dev/null
-
-unzip -o -j "$DL/MinUI.zip" '.system/tg5040/lib/*' -d "$VENDOR/lib" > /dev/null
-unzip -o -j "$DL/MinUI.zip" .system/tg5040/cores/fceumm_libretro.so \
-	-d "$VENDOR/cores" > /dev/null
-unzip -o -j "$EXTRAS" \
-	Emus/tg5040/MGBA.pak/mgba_libretro.so \
-	Emus/tg5040/PCE.pak/mednafen_pce_fast_libretro.so \
-	-d "$VENDOR/cores" > /dev/null
-
-# The SNES and Sega cores come from libretro's own buildbot rather than the
-# NextUI release, pinned by sha256 - the same hashes Diatom's CORES.md pins,
-# because they are the same verified binaries. The buildbot path is unpinned;
-# the hashes are the pin.
+DL=${1:-/tmp/playos-vendor}
 BB=https://buildbot.libretro.com/nightly/linux/aarch64/latest
+
+command -v curl   > /dev/null || { echo "need curl" >&2; exit 1; }
+command -v unzip  > /dev/null || { echo "need unzip" >&2; exit 1; }
+command -v shasum > /dev/null || { echo "need shasum" >&2; exit 1; }
+
+mkdir -p "$DL" "$VENDOR/cores"
+
 fetch_core() { # name sha256
-	[ -f "$VENDOR/cores/${1}_libretro.so" ] && \
-		[ "$(shasum -a 256 "$VENDOR/cores/${1}_libretro.so" | cut -d' ' -f1)" = "$2" ] && return
+	if [ -f "$VENDOR/cores/${1}_libretro.so" ] &&
+	   [ "$(shasum -a 256 "$VENDOR/cores/${1}_libretro.so" | cut -d' ' -f1)" = "$2" ]; then
+		echo "  ok      $1"
+		return
+	fi
 	curl -sSfL -o "$DL/$1.zip" "$BB/${1}_libretro.so.zip"
 	unzip -o -j "$DL/$1.zip" -d "$VENDOR/cores" > /dev/null
 	GOT=$(shasum -a 256 "$VENDOR/cores/${1}_libretro.so" | cut -d' ' -f1)
-	[ "$GOT" = "$2" ] || { echo "$1: hash mismatch: $GOT"; exit 1; }
+	if [ "$GOT" != "$2" ]; then
+		echo "  MISMATCH $1" >&2
+		echo "    want $2" >&2
+		echo "    got  $GOT" >&2
+		echo "  The buildbot republished this core. Verify it, then update the" >&2
+		echo "  hash here and in Diatom's CORES.md together." >&2
+		exit 1
+	fi
+	echo "  fetched $1"
 }
-fetch_core snes9x2010      3933890f520abb9dbb0e5276460785b20ce54d25f552b369cafeca270b9dd44c
-fetch_core genesis_plus_gx 3673a22b906509461e23a5a118b1d1bec15cbda105f260cbcbc08a16b2124e48
 
-echo "vendor/ ready:"
-ls "$VENDOR/cores" "$VENDOR/lib"
+fetch_core fceumm            1b13b00d4680394dad8000d5175f97be727107e0945bc9b412da91d70c07b267
+fetch_core snes9x2010        3933890f520abb9dbb0e5276460785b20ce54d25f552b369cafeca270b9dd44c
+fetch_core mgba              abde7a0764f08fa0cc2c7d3d9a29b9d1245a9f3b7df0e7a594b74df642ee53c6
+fetch_core genesis_plus_gx   3673a22b906509461e23a5a118b1d1bec15cbda105f260cbcbc08a16b2124e48
+fetch_core mednafen_pce_fast aca90a14b18108c86398da2267ef40d5145eaddbc1c1b310614d745b258552b1
+
+echo "vendor/cores ready:"
+ls "$VENDOR/cores"

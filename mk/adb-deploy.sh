@@ -68,7 +68,6 @@ case $WHAT in diatom|all)
 esac
 case $WHAT in vendor)
 	$A push "$ROOT/vendor/cores/."  "$P/cores/" > /dev/null
-	$A push "$ROOT/vendor/lib/."    "$P/lib/" > /dev/null
 	echo "  + cores and runtime"
 esac
 $A shell sync

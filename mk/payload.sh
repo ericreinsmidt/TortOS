@@ -15,7 +15,7 @@ DIATOM_ELF=${DIATOM_ELF:-$ROOT/../diatom/build/brick/diatom}
 [ -f "$ROOT/vendor/cores/fceumm_libretro.so" ] || { echo "run mk/fetch-vendor.sh first"; exit 1; }
 
 rm -rf "$OUT"
-mkdir -p "$P/cards" "$P/cores" "$P/lib" \
+mkdir -p "$P/cards" "$P/cores" \
          "$OUT/.tmp_update" "$OUT/trimui/app" \
          "$OUT/Roms" "$OUT/Bios" "$OUT/Saves"
 
@@ -31,7 +31,6 @@ cp "$ROOT/res/boot/splash.png" "$P/"      # the pic2fb loading splash, likewise
 cp "$ROOT/THIRD-PARTY-LICENSES.md" "$P/"  # notices for the redistributed software
 cp "$DIATOM_ELF" "$P/diatom"
 cp "$ROOT/vendor/cores/"*.so "$P/cores/"
-cp "$ROOT/vendor/lib/"* "$P/lib/"
 
 # Every system on the shelf must have its core on the card.
 #

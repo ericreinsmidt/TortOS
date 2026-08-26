@@ -567,7 +567,7 @@ const char *plat_resident_last_preview(void) { return d_preview; }
 /* One LEVEL line: "LEVEL\tkind=volume\tindex=8\tcount=21". The values are
  * held rather than applied - Diatom owns the hardware while the game runs
  * (its ADR-0020), and applying over the top is exactly the fight the state
- * plane exists to end. They land in libmsettings when EXIT hands them back. */
+ * plane exists to end. They are applied when EXIT hands ownership back. */
 static void d_note_level(const char *l)
 {
 	const char *k = strstr(l, "kind=");
@@ -586,9 +586,10 @@ static void d_note_level(const char *l)
 static void d_apply_levels(void)
 {
 	/* Through the public setters (defined below, past this point in the
-	 * file): they own the libmsettings handles, and the rescale to their
-	 * percent / 0..10 scales keeps endpoints exact - the same
-	 * round-to-nearest rule the protocol pins. */
+	 * file): they own the device handles. Both sides now use the same
+	 * ladders, so `count` matches and the rescale is the identity - but it
+	 * is written as a rescale anyway, because a launcher should not break if
+	 * the emulator ever changes its scale. */
 	if (d_pend_vol >= 0 && d_pend_vol_n > 1)
 		plat_volume_set_pct((d_pend_vol * 100 + (d_pend_vol_n - 1) / 2)
 		                    / (d_pend_vol_n - 1));
@@ -718,33 +719,180 @@ void plat_leds_off(void)
 #endif
 }
 
-/* ---- volume and brightness, via libmsettings (dlopen'd at runtime) ---- */
+/* ---- volume and brightness, straight at the hardware ----------------------
+ *
+ * This was libmsettings.so, dlopen'd out of a NextUI release. It is now
+ * PlayOS's own code against the same two device interfaces the emulator uses,
+ * which buys three things beyond independence:
+ *
+ *   - The scales MATCH. Diatom drives volume as 21 positions and brightness
+ *     as a 12-rung ladder; libmsettings used 0-20 and 0-10. Every level
+ *     crossing the socket had to be rescaled, and a rescale is where an
+ *     off-by-one hides. Both sides now speak the same ladder and the
+ *     conversion is the identity.
+ *   - Settings persist in PlayOS's own file rather than the stock firmware's
+ *     /mnt/UDISK/system.json, which is TrimUI's state and not ours to own.
+ *   - One fewer binary on the card.
+ *
+ * The device facts here were measured, not guessed, and two of them are traps:
+ *
+ *   `digital volume` (0-63) is the speaker level and is INVERTED - 0 is
+ *   loudest, 63 is quietest - while the driver's own metadata advertises the
+ *   opposite. It also declares mute=0, so its minimum is maximum attenuation
+ *   (about -74 dB) rather than silence; the speaker switch carries the last
+ *   step.
+ *
+ *   `Headphone Volume` is NOT a speaker level. Raising it routes audio to the
+ *   jack and mutes the speakers. It stays at zero.
+ *
+ * The backlight has no /sys/class/backlight on this device; it is the
+ * Allwinner disp2 engine, addressed with plain command numbers (not _IOWR) and
+ * an unsigned long[4] argument block - the same call tools/setbright.c makes
+ * before the launcher exists. */
 
-static void (*ms_init)(void);
-static int (*ms_get_vol)(void);
-static void (*ms_set_vol)(int);
-static int (*ms_get_bright)(void);
-static void (*ms_set_bright)(int);
+/* From the kernel UAPI (sound/asound.h), vendored rather than depended on.
+ * Only the integer case is needed; the union is declared at full size because
+ * its size is what _IOWR bakes into the request number, and a wrong layout
+ * produces a wrong request number rather than a failed call. */
+struct pl_ctl_elem_id {
+	unsigned int  numid;
+	int           iface;
+	unsigned int  device;
+	unsigned int  subdevice;
+	unsigned char name[44];
+	unsigned int  index;
+};
+struct pl_aes_iec958 {
+	unsigned char status[24], subcode[147], pad, dig_subframe[4];
+};
+struct pl_ctl_elem_value {
+	struct pl_ctl_elem_id id;
+	unsigned int indirect: 1;
+	union {
+		union { long value[128]; long *value_ptr; } integer;
+		union { long long value[64]; long long *value_ptr; } integer64;
+		union { unsigned int item[128]; unsigned int *item_ptr; } enumerated;
+		union { unsigned char data[512]; unsigned char *data_ptr; } bytes;
+		struct pl_aes_iec958 iec958;
+	} value;
+	unsigned char reserved[128];
+};
+#define PL_CTL_ELEM_READ   _IOWR('U', 0x12, struct pl_ctl_elem_value)
+#define PL_CTL_ELEM_WRITE  _IOWR('U', 0x13, struct pl_ctl_elem_value)
 
-void plat_settings_init(void)
-{
-	void *h = dlopen("libmsettings.so", RTLD_NOW | RTLD_GLOBAL);
-	if (!h) {
-		fprintf(stderr, "libmsettings: %s\n", dlerror());
-		return;
-	}
-	ms_init = dlsym(h, "InitSettings");
-	ms_get_vol = dlsym(h, "GetVolume");
-	ms_set_vol = dlsym(h, "SetVolume");
-	ms_get_bright = dlsym(h, "GetBrightness");
-	ms_set_bright = dlsym(h, "SetBrightness");
-	if (ms_init) ms_init();
-}
+#define GAIN_CTL     "digital volume"
+#define GAIN_RAW_MAX 63          /* 0 is loudest, 63 quietest */
+#define SPEAKER_CTL  "HpSpeaker Switch"   /* the only true mute on this codec */
+#define VOL_MAX      20          /* 21 positions, 0..20 - Diatom's scale */
+
+#define DISP_LCD_SET_BRIGHTNESS 0x102
+#define DISP_LCD_GET_BRIGHTNESS 0x103
+
+/* Perceived brightness is proportional, not linear, so the rungs are
+ * geometric. The first is the panel's measured floor: 0 and 1 are black on
+ * this display and the driver clamps neither. Identical to Diatom's ladder,
+ * which is what makes the level handoff exact. */
+static const unsigned char bright_ladder[] = {
+	2, 4, 8, 16, 32, 48, 72, 96, 128, 160, 192, 255
+};
+#define BRIGHT_MAX ((int)(sizeof bright_ladder / sizeof bright_ladder[0]) - 1)
 
 static int clampi(int v, int lo, int hi)
 {
 	return v < lo ? lo : (v > hi ? hi : v);
 }
+
+static int mixer_fd = -1, disp_fd = -1;
+static int cur_vol = -1, cur_bright = -1;
+
+static char levels_file[512];
+
+static int ctl_io(const char *name, long *val, int write)
+{
+	struct pl_ctl_elem_value v;
+
+	if (mixer_fd < 0) return -1;
+	memset(&v, 0, sizeof v);
+	v.id.iface = 2;                                 /* SNDRV_CTL_ELEM_IFACE_MIXER */
+	snprintf((char *)v.id.name, sizeof v.id.name, "%s", name);
+	if (write) {
+		v.value.integer.value[0] = *val;
+		return ioctl(mixer_fd, PL_CTL_ELEM_WRITE, &v);
+	}
+	if (ioctl(mixer_fd, PL_CTL_ELEM_READ, &v) < 0) return -1;
+	*val = v.value.integer.value[0];
+	return 0;
+}
+
+static void levels_save(void)
+{
+	FILE *f;
+
+	if (!levels_file[0]) return;
+	f = fopen(levels_file, "w");
+	if (!f) return;
+	fprintf(f, "volume=%d\nbrightness=%d\n", cur_vol, cur_bright);
+	fclose(f);
+}
+
+static void apply_volume(int v)
+{
+	long raw = GAIN_RAW_MAX - ((long)v * GAIN_RAW_MAX + VOL_MAX / 2) / VOL_MAX;
+	long on;
+
+	cur_vol = v;
+	ctl_io("Headphone", &(long){ 0 }, 1);        /* never the jack */
+	ctl_io(GAIN_CTL, &raw, 1);
+	/* Zero has to cut the path, not merely attenuate it. */
+	on = (v > 0);
+	ctl_io(SPEAKER_CTL, &on, 1);
+}
+
+static void apply_brightness(int b)
+{
+	unsigned long a[4] = { 0, 0, 0, 0 };
+
+	cur_bright = b;
+	if (disp_fd < 0) return;
+	a[1] = bright_ladder[b];
+	ioctl(disp_fd, DISP_LCD_SET_BRIGHTNESS, a);
+}
+
+void plat_settings_init(void)
+{
+	FILE *f;
+	int v = -1, b = -1;
+
+	mixer_fd = open("/dev/snd/controlC0", O_RDWR);
+	disp_fd  = open("/dev/disp", O_RDWR);
+	if (mixer_fd < 0) fprintf(stderr, "settings: no /dev/snd/controlC0\n");
+	if (disp_fd  < 0) fprintf(stderr, "settings: no /dev/disp\n");
+
+	snprintf(levels_file, sizeof levels_file, "%s/levels.cfg", P_USERDATA);
+	f = fopen(levels_file, "r");
+	if (f) {
+		if (fscanf(f, "volume=%d brightness=%d", &v, &b) != 2) v = b = -1;
+		fclose(f);
+	}
+
+	/* Whatever the panel is already at, so the launcher's first OSD tells the
+	 * truth even before anything is set - launch.sh applied a brightness
+	 * before this process existed. */
+	if (b < 0 && disp_fd >= 0) {
+		int raw = ioctl(disp_fd, DISP_LCD_GET_BRIGHTNESS, (unsigned long[4]){ 0, 0, 0, 0 });
+		int i;
+		if (raw >= 0) {
+			b = 0;
+			for (i = 1; i <= BRIGHT_MAX; i++)
+				if (abs(bright_ladder[i] - raw) < abs(bright_ladder[b] - raw)) b = i;
+		}
+	}
+	cur_vol    = v >= 0 ? clampi(v, 0, VOL_MAX)    : -1;
+	cur_bright = b >= 0 ? clampi(b, 0, BRIGHT_MAX) : BRIGHT_MAX / 2;
+	if (cur_vol >= 0) apply_volume(cur_vol);
+	apply_brightness(cur_bright);
+}
+
 
 /* The settings indicator: a thin line across the very top on any volume or
  * brightness change, tinted by which of the two it is -- warm for brightness,
@@ -769,8 +917,8 @@ void plat_osd_show(int kind, int val, int max)
 	osd_shown_at = SDL_GetTicks();
 }
 
-int plat_volume_get(void)     { return ms_get_vol ? ms_get_vol() : -1; }
-int plat_brightness_get(void) { return ms_get_bright ? ms_get_bright() : -1; }
+int plat_volume_get(void)     { return cur_vol; }
+int plat_brightness_get(void) { return cur_bright; }
 
 void plat_draw_osd(SDL_Renderer *r)
 {
@@ -793,30 +941,32 @@ void plat_draw_osd(SDL_Renderer *r)
 
 void plat_volume_nudge(int delta)
 {
-	if (!ms_get_vol || !ms_set_vol) return;
-	int v = clampi(ms_get_vol() + delta, 0, 20);
-	ms_set_vol(v);
-	plat_osd_show(2, v, 20);
+	if (mixer_fd < 0) return;
+	apply_volume(clampi((cur_vol < 0 ? 0 : cur_vol) + delta, 0, VOL_MAX));
+	levels_save();
+	plat_osd_show(2, cur_vol, VOL_MAX);
 }
 
 void plat_brightness_nudge(int delta)
 {
-	if (!ms_get_bright || !ms_set_bright) return;
-	int v = clampi(ms_get_bright() + delta, 0, 10);
-	ms_set_bright(v);
-	plat_osd_show(1, v, 10);
+	if (disp_fd < 0) return;
+	apply_brightness(clampi(cur_bright + delta, 0, BRIGHT_MAX));
+	levels_save();
+	plat_osd_show(1, cur_bright, BRIGHT_MAX);
 }
 
 void plat_volume_set_pct(int pct)
 {
-	if (!ms_set_vol) return;
-	ms_set_vol(clampi((pct * 20 + 50) / 100, 0, 20));
+	if (mixer_fd < 0) return;
+	apply_volume(clampi((pct * VOL_MAX + 50) / 100, 0, VOL_MAX));
+	levels_save();
 }
 
 void plat_brightness_set(int level)
 {
-	if (!ms_set_bright) return;
-	ms_set_bright(clampi(level, 0, 10));
+	if (disp_fd < 0) return;
+	apply_brightness(clampi(level, 0, BRIGHT_MAX));
+	levels_save();
 }
 
 /* ---- battery ---- */

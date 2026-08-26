@@ -22,7 +22,7 @@ export USERDATA_PATH=$SDCARD/.userdata/tg5040
 export SHARED_USERDATA_PATH=$SDCARD/.userdata/shared
 export LOGS_PATH=$USERDATA_PATH/logs
 export HOME=$USERDATA_PATH
-export LD_LIBRARY_PATH=$PLAYOS_DIR/lib:/usr/trimui/lib:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=/usr/trimui/lib:$LD_LIBRARY_PATH
 export PATH=/usr/trimui/bin:$PATH
 
 # Cleared by the boot animation when it finishes. The launcher does all of its
@@ -48,13 +48,22 @@ leds_off() {
 	for f in /sys/class/leds/sunxi_led*/brightness; do echo 0 > "$f" 2> /dev/null; done
 }
 
-# Apply the configured brightness now, with the raw table libmsettings uses, so
-# the boot animation is not dimmer than everything after it. playos.elf has not
-# started yet and cannot do it.
+# Apply the configured brightness now, so the boot animation is not dimmer than
+# everything after it. playos.elf has not started yet and cannot do it.
+#
+# This ladder is PlayOS's own and is shared verbatim with platform.c and with
+# the emulator: twelve geometric rungs, the first being the panel's measured
+# floor (0 and 1 are black on this display). A saved level in
+# .userdata/levels.cfg wins over the config default, because that is the
+# level the player last chose.
 brightness_raw() {
-	case "$(getcfg brightness)" in
-		0) echo 1;; 1) echo 8;; 2) echo 16;; 3) echo 32;; 4) echo 48;; 5) echo 72;;
-		6) echo 96;; 7) echo 128;; 8) echo 160;; 9) echo 192;; 10) echo 255;; *) echo 160;;
+	B=$(sed -n 's/^brightness=//p' "$USERDATA_PATH/levels.cfg" 2> /dev/null | head -1)
+	[ -n "$B" ] || B=$(getcfg brightness)
+	case "$B" in
+		0) echo 2;;  1) echo 4;;   2) echo 8;;   3) echo 16;;
+		4) echo 32;; 5) echo 48;;  6) echo 72;;  7) echo 96;;
+		8) echo 128;; 9) echo 160;; 10) echo 192;; 11) echo 255;;
+		*) echo 96;;
 	esac
 }
 [ -x "$PLAYOS_DIR/setbright" ] && "$PLAYOS_DIR/setbright" "$(brightness_raw)"
@@ -133,8 +142,7 @@ if [ -f "$PLAYOS_DIR/playos-boot.mp4" ]; then
 	# page cache while nothing else is using the disk. Cold reads of the
 	# emulator, the cores and their libraries measure ~190ms against ~30ms warm.
 	(
-		cat "$PLAYOS_DIR/diatom" "$PLAYOS_DIR/cores/"*.so \
-		    "$PLAYOS_DIR/lib/"* > /dev/null 2>&1
+		cat "$PLAYOS_DIR/diatom" "$PLAYOS_DIR/cores/"*.so > /dev/null 2>&1
 	) &
 fi
 
@@ -206,7 +214,7 @@ export PLAYOS_DIATOM_SOCKET=/tmp/diatom.sock
 start_resident() {
 	pgrep -f "PlayOS/diatom --socket" > /dev/null && return
 	rm -f "$PLAYOS_DIATOM_SOCKET"
-	LD_LIBRARY_PATH="$PLAYOS_DIR/lib:/usr/trimui/lib" \
+	LD_LIBRARY_PATH=/usr/trimui/lib \
 		"$PLAYOS_DIR/diatom" --socket "$PLAYOS_DIATOM_SOCKET" \
 		--save "$SDCARD/Saves" --system "$SDCARD/Bios" >> "$LOG" 2>&1 &
 	echo $! > /tmp/diatom.pid

@@ -148,7 +148,8 @@ volume, so the line says what it is without a glyph or a number on it.
 
 ## Install
 
-1. `make vendor` once, to pull the cores and runtime libraries.
+1. `make toolchain` and `mk/fetch-sysroot.sh` once (the latter needs the device
+   on adb), then `make vendor` to pull the cores.
 2. Build Diatom in its own repository (`tools/brick-make.sh` there), or point
    `DIATOM_ELF` at a built binary.
 3. `make && make payload`
@@ -267,7 +268,8 @@ tools/          the boot-animation and card generators, and setbright
 res/            the boot animation, the system cards, the font
 config/         systems.cfg and playos.cfg as shipped
 sd/             the boot hook and launch.sh as they land on the card
-vendor/         fetched: cores and runtime libraries
+sysroot/        fetched: the device's own SDL2, for linking (mk/fetch-sysroot.sh)
+vendor/         fetched: the libretro cores, hash-pinned
 ```
 
 ## License

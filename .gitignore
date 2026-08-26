@@ -17,3 +17,5 @@ __pycache__/
 .DS_Store
 ._*
 CLAUDE.md
+
+sysroot/

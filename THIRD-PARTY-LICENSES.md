@@ -19,15 +19,18 @@ copied onto the card as `PlayOS/THIRD-PARTY-LICENSES.md` by `mk/payload.sh`.
 - PlayOS's launcher runs it as a resident process and talks to it over a Unix
   socket; it does not link against it. Diatom ships no cores of its own.
 
-## NextUI runtime libraries
+## Nothing from NextUI or MinUI
 
-Pulled by `mk/fetch-vendor.sh` from a NextUI release into `vendor/`:
+PlayOS previously shipped `libmsettings.so`, `libgametimedb.so` and
+`libbatmondb.so` from a NextUI release, and built inside LoveRetro's toolchain
+image. As of 2026-08-26 none of that remains: volume and brightness are
+PlayOS's own code against the device's ALSA control and display-engine
+interfaces, the other two libraries were shipped but never called, and the
+toolchain is a stock Debian cross-compiler pinned by digest
+(`mk/toolchain.Dockerfile`).
 
-- `vendor/lib/libmsettings.so`, `libgametimedb.so`, `libbatmondb.so` —
-  NextUI/MinUI device libraries, used by the launcher for the device's volume,
-  brightness and battery interfaces.
-- These follow their NextUI upstream licensing.
-  https://github.com/LoveRetro/NextUI
+The SDL2 libraries PlayOS links against are the device's own, in
+`/usr/trimui/lib`, and are not redistributed on the card.
 
 ---
 
@@ -53,21 +56,14 @@ Core source: the libretro organization and each core's upstream repository
 
 ---
 
-## Runtime libraries (`vendor/lib/`, shipped as `PlayOS/lib/`)
+## Runtime libraries
 
-Pulled from the NextUI release; standard shared libraries linked by minarch and
-the cores.
-
-| Library | Project | License |
-|---------|---------|---------|
-| `libcrypto.so.1.1` | OpenSSL 1.1 | OpenSSL + SSLeay (dual) |
-| `liblzma.so.5` | xz-utils | Public domain / BSD-0 |
-| `libbz2.so.1.0` | bzip2 | bzip2 (BSD-style) |
-| `libzstd.so.1` | Zstandard | BSD-3-Clause (or GPL-2.0) |
-| `liblz4.so.1` | LZ4 | BSD-2-Clause |
-| `libzip.so.5` | libzip | BSD-3-Clause |
-| `libchdr.so.0` | libchdr | BSD-3-Clause |
-| `libsamplerate.so.0` | libsamplerate | BSD-2-Clause |
+None are redistributed. Measured 2026-08-26, the cores need only
+`libc`, `libm`, `librt`, `libstdc++`, `libgcc_s` and `ld-linux`, and the
+launcher needs those plus `libSDL2`, `libSDL2_image` and `libSDL2_ttf` - every
+one of which ships in the device's own firmware. The eight compression and
+codec libraries PlayOS used to carry were minarch's dependencies and left with
+it.
 
 ---
 
