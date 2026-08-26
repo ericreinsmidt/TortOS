@@ -538,11 +538,20 @@ bool plat_resident_send(const char *tag, const char *core, const char *rom,
 		 * it is done drawing the moment the game is up - so the last thing
 		 * it does is hand over WHERE THE LEVELS ARE. Without this, a game
 		 * starts at whatever the mixer was left at rather than at the
-		 * volume the shelf shows. */
+		 * volume the shelf shows.
+		 *
+		 * `count` is POSITIONS, not the top index - Diatom answers with
+		 * BRIGHT_LEVELS + 1 and rescales by it. Brightness said 11 for a
+		 * twelve-rung ladder, so every level handed to a game arrived one rung
+		 * too bright, and the inbound rescale then took a rung off on the way
+		 * back. The two cancelled often enough to look like nothing was wrong.
+		 * Both are written off the shared maxima now. */
 		vol = plat_volume_get();
 		bri = plat_brightness_get();
-		if (vol >= 0) dsend("SETLEVEL\tkind=volume\tindex=%d\tcount=21", vol);
-		if (bri >= 0) dsend("SETLEVEL\tkind=brightness\tindex=%d\tcount=11", bri);
+		if (vol >= 0) dsend("SETLEVEL\tkind=volume\tindex=%d\tcount=%d",
+		                    vol, PLAT_VOL_MAX + 1);
+		if (bri >= 0) dsend("SETLEVEL\tkind=brightness\tindex=%d\tcount=%d",
+		                    bri, PLAT_BRIGHT_MAX + 1);
 		return true;
 	}
 
