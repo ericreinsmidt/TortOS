@@ -139,11 +139,30 @@ static void preview_path(app *a, int s, const game_entry *g, char *out, size_t n
  * state lives beside the preview it belongs to, named the same way. A .state
  * suffix rather than minarch's .st9: the formats are not interchangeable, and
  * a shared name would make an old minarch state look like a resumable one. */
-static void state_path(app *a, int s, const game_entry *g, char *out, size_t n)
+/* Slot 9 is the autosave the launch resumes; 1..8 are the player's own,
+ * reachable from the in-game menu. Each slot is a state and a preview named
+ * alike, so a slot that has a picture has a game behind it. */
+static void slot_state_path(app *a, int s, const game_entry *g, int slot,
+                            char *out, size_t n)
 {
 	const char *base = strrchr(g->file, '/');
 	base = base ? base + 1 : g->file;
-	snprintf(out, n, "%s/.minui/%s/%s.9.state", P_SHARED, a->sys.systems[s].folder, base);
+	snprintf(out, n, "%s/.minui/%s/%s.%d.state",
+	         P_SHARED, a->sys.systems[s].folder, base, slot);
+}
+
+static void slot_preview_path(app *a, int s, const game_entry *g, int slot,
+                              char *out, size_t n)
+{
+	const char *base = strrchr(g->file, '/');
+	base = base ? base + 1 : g->file;
+	snprintf(out, n, "%s/.minui/%s/%s.%d.bmp",
+	         P_SHARED, a->sys.systems[s].folder, base, slot);
+}
+
+static void state_path(app *a, int s, const game_entry *g, char *out, size_t n)
+{
+	slot_state_path(a, s, g, 9, out, n);
 }
 
 /* The launcher owns the paths, so the launcher makes the directories - the
@@ -547,7 +566,111 @@ static void build_child_env(void)
  * paths the launch handed over, so the autosave funnel stays one thing. */
 typedef enum { GM_CONTINUE, GM_SAVE, GM_LOAD, GM_RESET, GM_QUIT, GM_ROWS } gm_row;
 
-static void game_menu(app *a, const char *state9)
+/* Copy the paused frame's preview beside a manual save, so the slot strip can
+ * show what is inside each slot. The pause preview IS the frame the save
+ * serialises - Diatom wrote it on the way into the menu - so a straight copy
+ * is the truthful thumbnail, no protocol round trip needed. */
+static void copy_file(const char *from, const char *to)
+{
+	FILE *a = fopen(from, "rb"), *b = to ? fopen(to, "wb") : NULL;
+	char buf[16384];
+	size_t n;
+
+	if (a && b) while ((n = fread(buf, 1, sizeof buf, a)) > 0) fwrite(buf, 1, n, b);
+	if (a) fclose(a);
+	if (b) fclose(b);
+}
+
+/* The slot strip: Auto plus 1..8 for Load, 1..8 for Save. Returns the chosen
+ * slot (9 = Auto) or 0 for backed-out. Slots draw their preview where one
+ * exists and a numbered slab where none does; Load skips slots with nothing
+ * behind them. */
+#define GM_SLOTS 8
+static int slot_strip(app *a, SDL_Texture *bg, int saving)
+{
+	SDL_Texture *thumb[GM_SLOTS + 1] = { 0 };   /* [0]=Auto, [1..8] */
+	int have[GM_SLOTS + 1] = { 0 };
+	sysview *v = &a->view[a->sys_cursor];
+	game_entry *g = &v->list.items[v->cursor];
+	int i, sel = -1, chosen = 0, done = 0;
+	char pth[LIB_PATH * 2];
+
+	for (i = 0; i <= GM_SLOTS; i++) {
+		int slot = i == 0 ? 9 : i;
+		struct stat st;
+
+		slot_state_path(a, a->sys_cursor, g, slot, pth, sizeof pth);
+		have[i] = (stat(pth, &st) == 0 && st.st_size > 0);
+		slot_preview_path(a, a->sys_cursor, g, slot, pth, sizeof pth);
+		if (have[i]) {
+			SDL_Surface *sf = IMG_Load(pth);
+			if (sf) { thumb[i] = SDL_CreateTextureFromSurface(a->r, sf); SDL_FreeSurface(sf); }
+		}
+		/* First selectable: saving starts on slot 1; loading starts on the
+		 * newest thing there is to load, which is almost always Auto. */
+		if (sel < 0 && (saving ? i >= 1 : have[i])) sel = i;
+	}
+	if (sel < 0) sel = saving ? 1 : -1;
+	if (sel < 0) done = -1;                     /* nothing to load at all */
+
+	plat_input_flush();
+	memset(&a->in, 0, sizeof a->in);
+
+	while (!done && !want_quit) {
+		plat_input_poll(&a->in);
+
+		if (in_repeat(&a->in, IN_LEFT) || in_repeat(&a->in, IN_RIGHT)) {
+			int dir = in_repeat(&a->in, IN_RIGHT) ? 1 : -1, next = sel;
+			do {
+				next = (next + dir + GM_SLOTS + 1) % (GM_SLOTS + 1);
+			} while ((saving ? next == 0 : !have[next]) && next != sel);
+			sel = next;
+		}
+		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = -1;
+		if (a->in.pressed[IN_ACCEPT]) { chosen = sel == 0 ? 9 : sel; done = 1; }
+
+		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 255);
+		SDL_RenderClear(a->r);
+		if (bg) SDL_RenderCopy(a->r, bg, NULL, NULL);
+		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 185);
+		SDL_RenderFillRect(a->r, NULL);
+
+		ui_text(a->r, ui_font_big(), saving ? "Save to" : "Load from",
+		        PLAYOS_SCREEN_W / 2, 150, 0, UI_TEXT);
+		{
+			int tw = 96, th = 72, gap = 10;
+			int total = (GM_SLOTS + 1) * (tw + gap) - gap;
+			int x0 = (PLAYOS_SCREEN_W - total) / 2;
+			int y  = (PLAYOS_SCREEN_H - th) / 2;
+
+			for (i = 0; i <= GM_SLOTS; i++) {
+				SDL_Rect r = { x0 + i * (tw + gap), y, tw, th };
+				int dim = saving ? i == 0 : !have[i];
+
+				if (i == sel) ui_glow(a->r, &r, a->tint, 80, 1.5f);
+				SDL_SetRenderDrawColor(a->r, 24, 26, 34, 255);
+				SDL_RenderFillRect(a->r, &r);
+				if (thumb[i]) {
+					SDL_SetTextureColorMod(thumb[i], dim ? 70 : 255,
+					                       dim ? 70 : 255, dim ? 70 : 255);
+					SDL_RenderCopy(a->r, thumb[i], NULL, &r);
+				}
+				ui_text(a->r, ui_font_small(), i == 0 ? "Auto" : (char[]){ '0' + i, 0 },
+				        r.x + tw / 2, y + th + 10, 0,
+				        i == sel ? UI_TEXT : UI_TEXT_DIM);
+			}
+		}
+		SDL_RenderPresent(a->r);
+		SDL_Delay(8);
+	}
+
+	for (i = 0; i <= GM_SLOTS; i++)
+		if (thumb[i]) SDL_DestroyTexture(thumb[i]);
+	return done == 1 ? chosen : 0;
+}
+
+static void game_menu(app *a)
 {
 	static const char *label[GM_ROWS] = {
 		"Continue", "Save", "Load", "Reset", "Quit"
@@ -580,15 +703,36 @@ static void game_menu(app *a, const char *state9)
 				done = 1;
 				break;
 			case GM_SAVE:
-				plat_resident_line("SAVE\tpath=%s", state9);
-				plat_resident_line("RESUME");
-				done = 1;
+			case GM_LOAD: {
+				int slot = slot_strip(a, bg, sel == GM_SAVE);
+				if (slot) {
+					sysview *sv = &a->view[a->sys_cursor];
+					char sp[LIB_PATH * 2], pp[LIB_PATH * 2];
+
+					slot_state_path(a, a->sys_cursor,
+					                &sv->list.items[sv->cursor], slot,
+					                sp, sizeof sp);
+					if (sel == GM_SAVE) {
+						plat_resident_line("SAVE\tpath=%s", sp);
+						/* The paused frame is what the save holds, and
+						 * Diatom already wrote it as the pause preview:
+						 * copy it beside the state so the strip can show
+						 * what is inside the slot. */
+						slot_preview_path(a, a->sys_cursor,
+						                  &sv->list.items[sv->cursor], slot,
+						                  pp, sizeof pp);
+						copy_file(plat_resident_last_preview(), pp);
+					} else {
+						plat_resident_line("LOAD\tpath=%s", sp);
+					}
+					plat_resident_line("RESUME");
+					done = 1;
+				}
+				/* Backed out: fall through to the menu, still paused. */
+				plat_input_flush();
+				memset(&a->in, 0, sizeof a->in);
 				break;
-			case GM_LOAD:
-				plat_resident_line("LOAD\tpath=%s", state9);
-				plat_resident_line("RESUME");
-				done = 1;
-				break;
+			}
 			case GM_RESET:
 				plat_resident_line("RESET");
 				plat_resident_line("RESUME");
@@ -726,7 +870,7 @@ static void launch(app *a)
 			 * the game's first frame replaces it. */
 			for (;;) {
 				r = plat_resident_wait();
-				if (r == RES_PAUSED) { game_menu(a, st); continue; }
+				if (r == RES_PAUSED) { game_menu(a); continue; }
 				break;
 			}
 			resident = (r == RES_EXIT);
