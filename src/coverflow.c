@@ -35,11 +35,25 @@ void cf_focus_rect(const cf_layout *lay, int screen_w, int screen_h, SDL_Rect *o
 	out->y = (int)(screen_h * lay->center_y - ch * 0.5f);
 }
 
-#define ANIM_TAU_MS 45.0f
-#define SNAP_EPS 0.003f
-#define BIG_JUMP 6
-#define MAX_SCROLL_CPS 9.0f   /* cap glide speed (cards/sec) once a sweep builds up */
-#define SCROLL_CAP_GAP 1.5f   /* ...but only past this gap, so single moves stay snappy */
+/* Every move takes this long, whatever its distance. Crossing the shelf is not
+ * a longer journey than stepping one card, it is a faster one.
+ *
+ * This replaced an exponential ease toward the target with a speed cap over
+ * it, and a teleport past six cards. The ease alone converged in time
+ * proportional to log(distance), which was nearly constant already; the cap
+ * made anything past a card and a half take time proportional to DISTANCE, so
+ * a letter jump across a big shelf became a wait, and the teleport existed to
+ * hide the worst of it. One duration removes the need for both. */
+#define ANIM_MS 240.0f
+
+/* Ease out, cubic: about seven eighths of the distance is covered in the first
+ * half of the time, so a single-card step still reads as immediate even though
+ * it formally takes as long as a forty-card one. */
+static float ease_out(float u)
+{
+	float k = 1.0f - u;
+	return 1.0f - k * k * k;
+}
 
 static float clampf(float v, float lo, float hi)
 {
@@ -60,7 +74,7 @@ static int cf_half(int count)
 void cf_reset(coverflow *cf, int cursor)
 {
 	memset(cf, 0, sizeof *cf);
-	cf->pos = cf->target = (float)cursor;
+	cf->pos = cf->from = cf->target = (float)cursor;
 	cf->last_cursor = cursor;
 	cf->primed = true;
 }
@@ -81,40 +95,38 @@ void cf_set_cursor(coverflow *cf, int cursor, int count)
 	cf->last_cursor = cursor;
 
 	cf->target += (float)raw;
-	if (raw > BIG_JUMP || raw < -BIG_JUMP) {
-		cf->pos = cf->target;
-		cf->active = false;
-	} else {
-		if (!cf->active) cf->last_ms = SDL_GetTicks() - 16;
-		cf->active = true;
-	}
+	/* Start the tween from where the cards ARE, not from where the last one
+	 * was headed. Holding a direction retargets every key repeat, and taking
+	 * the live position each time is what makes that one continuous glide
+	 * rather than a stutter back to the old start. */
+	cf->from = cf->pos;
+	cf->t0 = SDL_GetTicks();
+	cf->active = true;
 }
 
 static void step_anim(coverflow *cf, int count)
 {
 	bool loops = cf_loops(count);
 	if (loops) {
-		while (cf->pos >= (float)count) { cf->pos -= count; cf->target -= count; }
-		while (cf->pos < 0.0f) { cf->pos += count; cf->target += count; }
+		/* `from` rides along with pos and target through a wrap, or the
+		 * interpolation below would be measuring against a point that is now
+		 * a whole revolution away. */
+		while (cf->pos >= (float)count) {
+			cf->pos -= count; cf->target -= count; cf->from -= count;
+		}
+		while (cf->pos < 0.0f) {
+			cf->pos += count; cf->target += count; cf->from += count;
+		}
 	}
 	if (!cf->active) return;
-	Uint32 now = SDL_GetTicks();
-	float dt = clampf((float)(now - cf->last_ms), 0.0f, 100.0f);
-	cf->last_ms = now;
-	float k = 1.0f - expf(-dt / ANIM_TAU_MS);
-	float step = (cf->target - cf->pos) * k;
-	/* Once a sweep builds a gap (holding a direction, or the demo's fast system
-	 * scroll), cap the per-frame speed so it glides at a constant velocity
-	 * instead of pulsing one hard ease per card. Small (single-move) gaps are
-	 * left on the snappy exponential. */
-	if (fabsf(cf->target - cf->pos) > SCROLL_CAP_GAP) {
-		float maxstep = MAX_SCROLL_CPS * (dt / 1000.0f);
-		step = clampf(step, -maxstep, maxstep);
-	}
-	cf->pos += step;
-	if (fabsf(cf->target - cf->pos) < SNAP_EPS) {
-		cf->pos = cf->target;
-		cf->active = false;
+	{
+		float u = (float)(SDL_GetTicks() - cf->t0) / ANIM_MS;
+		if (u >= 1.0f) {
+			cf->pos = cf->target;
+			cf->active = false;
+			return;
+		}
+		cf->pos = cf->from + (cf->target - cf->from) * ease_out(u);
 	}
 }
 

@@ -32,11 +32,16 @@ extern const cf_layout CF_LAYOUT_GAMES;
  * it and lay text out against it without duplicating the geometry. */
 void cf_focus_rect(const cf_layout *lay, int screen_w, int screen_h, SDL_Rect *out);
 
+/* A move is a fixed-duration tween from `from` to `target` starting at `t0`,
+ * rather than an ease toward a moving target. Distance changes the speed, not
+ * the time: crossing the whole shelf takes exactly as long as stepping one
+ * card, so the row never feels further away than it is. */
 typedef struct {
-	float pos;      /* continuous position, eases toward target */
+	float pos;      /* continuous position, interpolated from -> target */
+	float from;     /* where the move in flight started */
 	float target;
+	Uint32 t0;      /* when it started */
 	bool active;    /* animation in flight */
-	Uint32 last_ms;
 	int last_cursor;
 	bool primed;
 } coverflow;
