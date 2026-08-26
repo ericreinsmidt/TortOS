@@ -130,6 +130,7 @@ filename, so renaming a ROM folder cannot orphan a save.
 | | |
 |---|---|
 | **Left / Right** | move along the row |
+| **Up / Down** | jump to the previous / next initial (games) |
 | **L1 / R1** | jump a screenful (games) |
 | **A** | open a system, or start a game |
 | **B** | back to the systems row |
@@ -263,7 +264,10 @@ PLAYOS_ROOT=… PLAYOS_ROMS=… PLAYOS_FONT=res/fonts/menu.ttf \
 `--menu [row]` draws the PlayOS menu over that shelf, and `--slots <n>
 [aspect]` draws one frame of the save/load carousel over synthetic game
 frames — the two screens that otherwise need a game running on a device before
-they can be looked at.
+they can be looked at. `--jump <n>` applies n letter-jumps first (negative for
+up), so where the d-pad lands on a real library can be checked without a hand
+on the device. Every shot names the screen and the focused item on stderr, so
+a sequence of them reads back as a list of what was actually drawn.
 
 ### On device
 

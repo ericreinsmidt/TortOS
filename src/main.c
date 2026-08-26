@@ -582,7 +582,14 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 	 * reads as a highlight sitting too low. Descent is negative, so half of it
 	 * subtracted moves the line down onto the middle of the plate. */
 	int ink_off = fm ? -TTF_FontDescent(fm) / 2 : 0;
-	int head_h = heading ? ui_font_line(UI_F_LABEL) + pad / 2 : 0;
+	/* The heading band runs from the panel's top edge down to the rule, and
+	 * the heading is centred inside it rather than hung a fixed distance from
+	 * the top - otherwise retuning the heading's size moves it off centre,
+	 * which is exactly what happened when it grew. `content_off` is the panel
+	 * top to the first row, so a panel with no heading just pads instead. */
+	int line_head   = ui_font_line(UI_F_LABEL);
+	int head_h      = heading ? line_head + pad : 0;
+	int content_off = heading ? head_h + pad / 2 : pad;
 	bool two_col = false;
 	int content_w = 0, i, k;
 	SDL_Rect panel;
@@ -607,8 +614,8 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 	if (content_w > PLAYOS_SCREEN_W - margin * 2 - pad * 2)
 		content_w = PLAYOS_SCREEN_W - margin * 2 - pad * 2;
 
-	if (head_h + n * row_h + pad * 2 > PLAYOS_SCREEN_H - margin * 2) {
-		vis = (PLAYOS_SCREEN_H - margin * 2 - head_h - pad * 2) / row_h;
+	if (content_off + n * row_h + pad > PLAYOS_SCREEN_H - margin * 2) {
+		vis = (PLAYOS_SCREEN_H - margin * 2 - content_off - pad) / row_h;
 		if (vis < 1) vis = 1;
 		if (vis > n) vis = n;
 		first = sel - vis / 2;
@@ -617,25 +624,30 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 	}
 
 	panel.w = content_w + pad * 2;
-	panel.h = head_h + vis * row_h + pad * 2;
+	panel.h = content_off + vis * row_h + pad;
 	panel.x = (PLAYOS_SCREEN_W - panel.w) / 2;
 	panel.y = (PLAYOS_SCREEN_H - panel.h) / 2;
 	cx = panel.x + panel.w / 2;
 	content_x = panel.x + pad;
-	content_y = panel.y + pad;
+	content_y = panel.y + content_off;
 
 	ui_glow(a->r, &panel, a->tint, 60, 1.5f);
 	ui_panel(a->r, &panel, MENU_RADIUS, a->tint);
 
 	if (heading) {
-		ui_text(a->r, fh, heading, cx, content_y, 0, UI_TEXT_SOFT);
+		/* Centred in the band by its ink, on the same reasoning as the rows:
+		 * the em box carries descender depth that "PlayOS" and "NES" mostly do
+		 * not use. */
+		int head_box = fh ? TTF_FontHeight(fh) : line_head;
+		int hy = panel.y + (head_h - head_box) / 2
+		         + (fh ? -TTF_FontDescent(fh) / 2 : 0);
+
+		ui_text(a->r, fh, heading, cx, hy, 0, UI_TEXT_SOFT);
 		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 		SDL_SetRenderDrawColor(a->r, (Uint8)(a->tint >> 16), (Uint8)(a->tint >> 8),
 		                       (Uint8)a->tint, 70);
-		SDL_RenderFillRect(a->r, &(SDL_Rect){ content_x,
-		                                      content_y + head_h - pad / 4,
+		SDL_RenderFillRect(a->r, &(SDL_Rect){ content_x, panel.y + head_h,
 		                                      content_w, 2 });
-		content_y += head_h;
 	}
 
 	for (k = 0; k < vis; k++) {
@@ -1275,6 +1287,66 @@ static void update_systems(app *a)
 	cf_set_cursor(&a->cf_sys, a->sys_cursor, n);
 }
 
+/* The first alphanumeric character of a name, upper-cased, or '\0' for a name
+ * with none at all - which groups those few together rather than giving each
+ * one a group of its own. Leading articles and punctuation are deliberately
+ * NOT skipped: lib_scan sorts the shelf with strcasecmp on this same string,
+ * so grouping that disagreed with the order the cards are drawn in would make
+ * the jump land somewhere that looks arbitrary. "The Legend of Zelda" files
+ * under T here because it sits under T on the shelf. */
+static char shelf_initial(const char *s)
+{
+	for (; *s; s++) {
+		unsigned char c = (unsigned char)*s;
+		if (c >= 'a' && c <= 'z') return (char)(c - 32);
+		if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) return (char)c;
+	}
+	return '\0';
+}
+
+/* The first game sharing idx's initial, walking backwards from it. */
+static int shelf_group_start(sysview *v, int idx)
+{
+	int n = v->list.count, i = idx;
+	char c = shelf_initial(v->list.items[idx].name);
+
+	for (;;) {
+		int p = (i - 1 + n) % n;
+		if (p == idx) return idx;             /* one initial, the whole shelf */
+		if (shelf_initial(v->list.items[p].name) != c) break;
+		i = p;
+	}
+	return i;
+}
+
+/* Up and down cross the shelf one initial at a time, which on a long library
+ * is the difference between forty presses and two. Down lands on the first
+ * game of the next initial. Up lands on the first game of THIS one, and moves
+ * to the previous initial only when the cursor is already there - so from any
+ * group's first game, up and down are exact inverses. */
+static int shelf_letter_jump(sysview *v, int dir)
+{
+	int n = v->list.count, i, cur = v->cursor;
+	char c0 = shelf_initial(v->list.items[cur].name);
+
+	if (n <= 1) return cur;
+	if (dir > 0) {
+		for (i = 1; i < n; i++) {
+			int k = (cur + i) % n;
+			if (shelf_initial(v->list.items[k].name) != c0) return k;
+		}
+		return cur;                           /* every name starts alike */
+	}
+	i = shelf_group_start(v, cur);
+	if (i != cur) return i;
+	/* Already at the top of the group. If what precedes it shares the initial
+	 * then the shelf is one group and there is nowhere to go - the same answer
+	 * down gives, rather than shuffling back by one. */
+	i = (cur - 1 + n) % n;
+	if (shelf_initial(v->list.items[i].name) == c0) return cur;
+	return shelf_group_start(v, i);
+}
+
 static void update_games(app *a)
 {
 	sysview *v = &a->view[a->sys_cursor];
@@ -1282,6 +1354,8 @@ static void update_games(app *a)
 	if (n <= 0) { a->screen = SCREEN_SYSTEMS; return; }
 	if (in_repeat(&a->in, IN_LEFT))  v->cursor = (v->cursor - 1 + n) % n;
 	if (in_repeat(&a->in, IN_RIGHT)) v->cursor = (v->cursor + 1) % n;
+	if (in_repeat(&a->in, IN_DOWN))  v->cursor = shelf_letter_jump(v, +1);
+	if (in_repeat(&a->in, IN_UP))    v->cursor = shelf_letter_jump(v, -1);
 	/* L1/R1 jump a screenful, so a long shelf is crossable. Wrapped the long
 	 * way round on purpose: C's % truncates toward zero, so on a shelf of
 	 * three games the obvious `(cursor - CF_WINDOW + n*2) % n` lands on -1 and
@@ -1328,6 +1402,7 @@ static const char *shot_path;
 static int shot_screen = -1;
 static int shot_menu, shot_menu_sel;
 static int shot_slots, shot_slot_sel;
+static int shot_jump;               /* letter-jumps to apply before drawing */
 static float shot_slot_aspect = 4.0f / 3.0f;
 
 /* A stand-in for a paused game frame, at whatever shape was asked for: the
@@ -1391,7 +1466,17 @@ static void take_shot(app *a)
 		SDL_RenderPresent(a->r);
 		IMG_SavePNG(out, shot_path);
 		SDL_FreeSurface(out);
-		fprintf(stderr, "wrote %s\n", shot_path);
+		/* Say what was drawn, not just that something was: a tool whose whole
+		 * job is rendering one state is far more useful when the state it
+		 * chose is in the output beside the filename. */
+		{
+			sysview *v = &a->view[a->sys_cursor];
+			const char *what = a->screen == SCREEN_GAMES && v->list.count > 0
+			                 ? v->list.items[v->cursor].name
+			                 : a->sys.systems[a->sys_cursor].name;
+			fprintf(stderr, "wrote %s  [%s] %s\n", shot_path,
+			        a->screen == SCREEN_GAMES ? "games" : "systems", what);
+		}
 	}
 }
 
@@ -1415,6 +1500,12 @@ int main(int argc, char *argv[])
 		/* --slots <sel> [aspect] draws one frame of the save/load carousel
 		 * over synthetic frames, which is the only way to look at it without
 		 * a game running on a device. */
+		/* --jump N applies N letter-jumps before the shot (negative for up),
+		 * so the d-pad's behaviour on a real library can be checked without a
+		 * device or a hand on it. */
+		else if (!strcmp(argv[i], "--jump") && i + 1 < argc) {
+			shot_jump = atoi(argv[++i]);
+		}
 		else if (!strcmp(argv[i], "--slots")) {
 			shot_slots = 1;
 			if (i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9')
@@ -1492,6 +1583,13 @@ int main(int argc, char *argv[])
 
 	if (shot_path) {
 		if (shot_screen >= 0) a.screen = (screen_id)shot_screen;
+		if (shot_jump) {
+			sysview *v = &a.view[a.sys_cursor];
+			int k, dir = shot_jump > 0 ? 1 : -1;
+			for (k = 0; k < (shot_jump < 0 ? -shot_jump : shot_jump); k++)
+				if (v->list.count > 0) v->cursor = shelf_letter_jump(v, dir);
+			cf_reset(&v->cf, v->cursor);
+		}
 		if (a.screen == SCREEN_GAMES) prime_window(&a, a.sys_cursor);
 		take_shot(&a);
 		goto done;
