@@ -145,7 +145,10 @@ Diatom failure degrades to a slow launch instead of a dead device.
 triggered. *As executed:* a clean reboot into the swapped stack, then a full
 cycle driven through the production supervisor - shelf, launch, play, menu,
 quit, shelf - with the same resident surviving and the launcher never
-restarting.
+restarting. After Phase 5, a second full cycle on **SNES** - a system this
+card had never had - ran the same path through snes9x2010 and left its
+state and preview in a `.minui/SNES/` that had not existed either. The shelf
+now carries nine systems on the author's own card art.
 
 ### Phase 5 - delete minarch  ✅ done (early - see the header)
 Remove `minarch/`, `vendor/minarch.elf`, the NextUI dependency in
