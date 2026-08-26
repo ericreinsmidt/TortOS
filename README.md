@@ -220,6 +220,13 @@ make boot       # regenerate the boot animation
 make cards      # regenerate the system cards
 ```
 
+`make minarch` is the one target that needs another project on disk: it builds
+from a NextUI checkout with the overlays in `minarch/overrides/`, which is also
+why the shipped image carries GPL-3.0 that PlayOS itself does not use.
+[DIATOM-MIGRATION.md](DIATOM-MIGRATION.md) is a plan for removing both, by
+replacing minarch with an MIT frontend written against the same device. Nothing
+in it has been done yet.
+
 The host build renders exactly what the handheld renders, and can be asked for
 a single frame:
 
