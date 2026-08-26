@@ -66,10 +66,26 @@ bool plat_spawn_detached(char *const argv[], const char *const envkv[],
 
 /* The resident emulator. plat_resident_send() hands over a game and returns
  * at once, so the launcher can animate while it loads; plat_resident_wait()
- * blocks until the game is over. */
+ * blocks until the game is over - or, on the Diatom transport, until the
+ * player opens the in-game menu, which the launcher draws (the emulator hands
+ * the display over rather than drawing its own).
+ *
+ * Two transports behind one seam. The fifo pair drives minarch and is the
+ * default; setting PLAYOS_DIATOM_SOCKET selects Diatom's socket protocol,
+ * where peer death is EOF, the stop signal is a message, and the reply is a
+ * line saying what actually happened. */
+#define RES_DEAD   0   /* emulator missing, dead, or the game never started */
+#define RES_EXIT   1   /* the game ran and is over */
+#define RES_PAUSED 2   /* Diatom only: menu open, the launcher owns the display */
 bool plat_resident_ready(void);
-bool plat_resident_send(const char *req_line);
-bool plat_resident_wait(void);
+bool plat_resident_send(const char *tag, const char *core, const char *rom,
+                        const char *resume, const char *exit_state,
+                        const char *preview);
+int  plat_resident_wait(void);
+/* Diatom only: one protocol line (RESUME, STOP, SAVE\tpath=...), newline added. */
+bool plat_resident_line(const char *fmt, ...);
+/* Path from the most recent PREVIEW message, or "" - the menu's backdrop. */
+const char *plat_resident_last_preview(void);
 
 void plat_request_poweroff(void);
 void plat_leds_off(void);

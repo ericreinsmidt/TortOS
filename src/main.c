@@ -134,6 +134,29 @@ static void preview_path(app *a, int s, const game_entry *g, char *out, size_t n
 	snprintf(out, n, "%s/.minui/%s/%s.9.bmp", P_SHARED, a->sys.systems[s].folder, base);
 }
 
+/* The Diatom transport takes explicit paths rather than a slot number, so the
+ * state lives beside the preview it belongs to, named the same way. A .state
+ * suffix rather than minarch's .st9: the formats are not interchangeable, and
+ * a shared name would make an old minarch state look like a resumable one. */
+static void state_path(app *a, int s, const game_entry *g, char *out, size_t n)
+{
+	const char *base = strrchr(g->file, '/');
+	base = base ? base + 1 : g->file;
+	snprintf(out, n, "%s/.minui/%s/%s.9.state", P_SHARED, a->sys.systems[s].folder, base);
+}
+
+/* The launcher owns the paths, so the launcher makes the directories - the
+ * emulator writes where it is told and fails where it cannot. minarch's menu
+ * once lost every preview to this exact missing mkdir. */
+static void persist_dir_ensure(app *a, int s)
+{
+	char d[LIB_PATH * 2];
+	snprintf(d, sizeof d, "%s/.minui", P_SHARED);
+	mkdir(d, 0755);
+	snprintf(d, sizeof d, "%s/.minui/%s", P_SHARED, a->sys.systems[s].folder);
+	mkdir(d, 0755);
+}
+
 static bool game_has_state(app *a, int s, game_entry *g)
 {
 	if (!g->state_known) {
@@ -511,6 +534,112 @@ static void build_child_env(void)
 	minarch_env[n] = NULL;
 }
 
+/* The in-game menu - the launcher's, over Diatom's pause.
+ *
+ * MENU in a game makes Diatom write a preview of the frame, stop presenting,
+ * and say PAUSED. From that word the display is ours: the menu is that frame
+ * dimmed, with the same rows minarch's menu had - Continue, Save, Load,
+ * Reset, Quit - drawn with the launcher's own font and glow instead of a
+ * patched copy of them inside someone else's emulator.
+ *
+ * Every row acts through one protocol line. Save and Load use the same slot-9
+ * paths the launch handed over, so the autosave funnel stays one thing. */
+typedef enum { GM_CONTINUE, GM_SAVE, GM_LOAD, GM_RESET, GM_QUIT, GM_ROWS } gm_row;
+
+static void game_menu(app *a, const char *state9)
+{
+	static const char *label[GM_ROWS] = {
+		"Continue", "Save", "Load", "Reset", "Quit"
+	};
+	SDL_Texture *bg = NULL;
+	const char *pv = plat_resident_last_preview();
+	int sel = 0, done = 0;
+
+	if (pv && *pv) {
+		SDL_Surface *sf = IMG_Load(pv);
+		if (sf) { bg = SDL_CreateTextureFromSurface(a->r, sf); SDL_FreeSurface(sf); }
+	}
+
+	plat_input_flush();
+	memset(&a->in, 0, sizeof a->in);
+
+	while (!done && !want_quit) {
+		plat_input_poll(&a->in);
+
+		if (in_repeat(&a->in, IN_UP))   sel = (sel + GM_ROWS - 1) % GM_ROWS;
+		if (in_repeat(&a->in, IN_DOWN)) sel = (sel + 1) % GM_ROWS;
+		/* MENU again, or B: back to the game, same as Continue. */
+		if (a->in.pressed[IN_MENU] || a->in.pressed[IN_BACK]) {
+			plat_resident_line("RESUME");
+			done = 1;
+		} else if (a->in.pressed[IN_ACCEPT]) {
+			switch ((gm_row)sel) {
+			case GM_CONTINUE:
+				plat_resident_line("RESUME");
+				done = 1;
+				break;
+			case GM_SAVE:
+				plat_resident_line("SAVE\tpath=%s", state9);
+				plat_resident_line("RESUME");
+				done = 1;
+				break;
+			case GM_LOAD:
+				plat_resident_line("LOAD\tpath=%s", state9);
+				plat_resident_line("RESUME");
+				done = 1;
+				break;
+			case GM_RESET:
+				plat_resident_line("RESET");
+				plat_resident_line("RESUME");
+				done = 1;
+				break;
+			case GM_QUIT:
+				/* The wait loop carries on until EXIT arrives; quitting is
+				 * asking, not tearing down. */
+				plat_resident_line("STOP");
+				done = 1;
+				break;
+			default: break;
+			}
+		}
+		if (a->in.pressed[IN_POWER]) {
+			plat_resident_line("STOP");
+			done = 1;
+		}
+
+		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 255);
+		SDL_RenderClear(a->r);
+		if (bg) SDL_RenderCopy(a->r, bg, NULL, NULL);
+		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 165);
+		SDL_RenderFillRect(a->r, NULL);
+
+		{
+			int rows_h = GM_ROWS * 84;
+			int y0 = (PLAYOS_SCREEN_H - rows_h) / 2;
+			int i;
+
+			for (i = 0; i < GM_ROWS; i++) {
+				int y = y0 + i * 84;
+				if (i == sel) {
+					SDL_Rect r = { PLAYOS_SCREEN_W / 2 - 170, y - 14, 340, 64 };
+					ui_glow(a->r, &r, a->tint, 70, 1.6f);
+				}
+				ui_text(a->r, ui_font_big(), label[i],
+				        PLAYOS_SCREEN_W / 2, y, 0,
+				        i == sel ? UI_TEXT : UI_TEXT_DIM);
+			}
+		}
+		SDL_RenderPresent(a->r);
+		SDL_Delay(8);
+	}
+
+	if (bg) SDL_DestroyTexture(bg);
+	/* Nothing presents from here: the next frame on screen is the game's. */
+	plat_input_flush();
+	memset(&a->in, 0, sizeof a->in);
+}
+
 /* Bring the resident emulator back.
  *
  * With one process per game a core that segfaults takes down that game and
@@ -528,6 +657,23 @@ static void respawn_resident(app *a)
 	int n = 0, i;
 
 	if (plat_resident_ready()) return;
+
+	/* Diatom transport: the resident is diatom itself, and it preloads
+	 * nothing - a core is mapped the first time a game needs it and kept
+	 * (its ADR-0006), so there is no core list to hand over. */
+	if (getenv("PLAYOS_DIATOM_SOCKET")) {
+		char *dargv[4];
+		snprintf(elf, sizeof elf, "%s/diatom", P_ROOT);
+		if (access(elf, X_OK) != 0) return;
+		dargv[0] = elf;
+		dargv[1] = (char *)"--socket";
+		dargv[2] = (char *)getenv("PLAYOS_DIATOM_SOCKET");
+		dargv[3] = NULL;
+		fprintf(stderr, "resident emulator is gone, starting diatom\n");
+		plat_spawn_detached(dargv, minarch_env, P_ROOT);
+		return;
+	}
+
 	snprintf(elf, sizeof elf, "%s/minarch.elf", P_ROOT);
 	if (access(elf, X_OK) != 0) return;
 
@@ -569,23 +715,45 @@ static void launch(app *a)
 	remember_place(a);
 
 	if (plat_resident_ready()) {
-		/* The emulator is already up, holding the GL context and all three
-		 * cores, so this is ~200ms rather than ~1100. Nothing here is torn
+		/* The emulator is already up, holding its context and every core,
+		 * so this is ~200ms rather than ~1100. Nothing here is torn
 		 * down -- this process keeps its own context through the whole game,
 		 * which is why coming back is a frame rather than a second and a
 		 * half. The two do overlap for the length of this animation, while
 		 * the game loads behind it; after that only the emulator draws,
-		 * because this process is blocked. */
-		char req[LIB_PATH * 2 + CFG_STR * 2 + 64];
-		snprintf(req, sizeof req, "%s\t%s\t%s\n", s->tag, core, rom);
-		if (plat_resident_send(req)) {
-			animated = true;
-			anim_launch(a, 190);       /* runs WHILE the game loads */
-			/* False means it stopped answering -- it died, or was never
-			 * really there. The game did not run, so say so by falling
-			 * through to the path that runs it the slow way, rather than
-			 * fading the shelf back up as though it had. */
-			resident = plat_resident_wait();
+		 * because this process is blocked - except when the player opens
+		 * the in-game menu, which is drawn HERE now, over the frame the
+		 * emulator hands us on the way into its pause. */
+		char st[LIB_PATH * 2], pv[LIB_PATH * 2];
+
+		state_path(a, a->sys_cursor, &v->list.items[v->cursor], st, sizeof st);
+		preview_path(a, a->sys_cursor, &v->list.items[v->cursor], pv, sizeof pv);
+		persist_dir_ensure(a, a->sys_cursor);
+
+		if (plat_resident_send(s->tag, core, rom, st, st, pv)) {
+			int r;
+			/* No launch animation on the Diatom transport, and it is a
+			 * display-safety rule, not a taste call: Diatom presents through
+			 * fbdev, this process through GL, and the handoff spike's one
+			 * invariant is that they never present concurrently - the 190ms
+			 * overlap that was harmless GL-on-GL with minarch is the exact
+			 * case that wedges the display engine. A warm Diatom launch is
+			 * ~15ms, so there is nothing to animate over anyway; the shelf
+			 * simply holds until the game's first frame replaces it. */
+			if (!getenv("PLAYOS_DIATOM_SOCKET")) {
+				animated = true;
+				anim_launch(a, 190);   /* runs WHILE the game loads */
+			}
+			for (;;) {
+				r = plat_resident_wait();
+				if (r == RES_PAUSED) { game_menu(a, st); continue; }
+				break;
+			}
+			resident = (r == RES_EXIT);
+			/* RES_DEAD means it stopped answering -- it died, or the game
+			 * never started. Say so by falling through to the path that
+			 * runs it the slow way, rather than fading the shelf back up
+			 * as though it had run. */
 			if (!resident)
 				fprintf(stderr, "resident emulator stopped answering, falling back\n");
 		} else {
@@ -805,6 +973,41 @@ int main(int argc, char *argv[])
 		if (a.screen == SCREEN_GAMES) prime_window(&a, a.sys_cursor);
 		take_shot(&a);
 		goto done;
+	}
+
+	/* Dev instrumentation, same standing as --shot: launch one game with no
+	 * buttons pressed, so the resident path can be exercised over adb with
+	 * nobody holding the device. PLAYOS_AUTOLAUNCH="TAG<tab>rom-filename";
+	 * pair with PLAYOS_AUTOSTOP_S to end the game on a clock. */
+	{
+		const char *auto_spec = getenv("PLAYOS_AUTOLAUNCH");
+		if (auto_spec && strchr(auto_spec, '\t')) {
+			char tag[64], file[LIB_PATH];
+			const char *bar = strchr(auto_spec, '\t');
+			int si, gi, found = 0;
+			snprintf(tag, sizeof tag, "%.*s", (int)(bar - auto_spec), auto_spec);
+			snprintf(file, sizeof file, "%s", bar + 1);
+			for (si = 0; si < a.sys.count && !found; si++) {
+				if (strcmp(a.sys.systems[si].tag, tag) != 0) continue;
+				for (gi = 0; gi < a.view[si].list.count; gi++) {
+					const char *b = strrchr(a.view[si].list.items[gi].file, '/');
+					b = b ? b + 1 : a.view[si].list.items[gi].file;
+					if (strcmp(b, file) == 0) {
+						a.sys_cursor = si;
+						a.view[si].cursor = gi;
+						found = 1;
+						break;
+					}
+				}
+			}
+			if (found) {
+				fprintf(stderr, "autolaunch: %s / %s\n", tag, file);
+				launch(&a);
+			} else {
+				fprintf(stderr, "autolaunch: no %s / %s in the library\n", tag, file);
+			}
+			goto done;
+		}
 	}
 
 	/* Everything above ran while the boot animation was on screen. Only now

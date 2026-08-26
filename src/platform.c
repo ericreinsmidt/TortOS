@@ -10,8 +10,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <poll.h>
+#include <stdarg.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/un.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -393,6 +397,135 @@ static pid_t resident_pid(void)
 }
 #endif
 
+/* ---------------- the Diatom transport ---------------------------------- */
+
+/* One connection, held across games. Diatom is fine with that - it is the
+ * fifo pair that needed reopening per game - and holding it means peer death
+ * is a POLLHUP here rather than a pid file that lies after a crash. */
+static int    dsock = -1;
+static char   dbuf[4096];
+static size_t dused;
+static char   d_preview[1024];
+static int    d_pend_vol = -1, d_pend_vol_n;      /* LEVEL events, held until */
+static int    d_pend_bri = -1, d_pend_bri_n;      /* EXIT hands levels back  */
+
+static const char *diatom_socket_path(void) { return getenv("PLAYOS_DIATOM_SOCKET"); }
+
+static void dclose(void)
+{
+	if (dsock >= 0) close(dsock);
+	dsock = -1;
+	dused = 0;
+}
+
+static bool dsend(const char *fmt, ...)
+{
+	char line[2048];
+	va_list ap;
+	int n;
+
+	if (dsock < 0) return false;
+	va_start(ap, fmt);
+	n = vsnprintf(line, sizeof line - 1, fmt, ap);
+	va_end(ap);
+	if (n < 0) return false;
+	if (n >= (int)sizeof line - 1) n = (int)sizeof line - 2;
+	if (n == 0 || line[n - 1] != '\n') line[n++] = '\n';
+	if (write(dsock, line, (size_t)n) != n) { dclose(); return false; }
+	return true;
+}
+
+/* One line, or NULL after timeout_ms with nothing complete. -1 blocks. */
+static char *dline(int timeout_ms)
+{
+	static char out[2048];
+
+	for (;;) {
+		char *nl = memchr(dbuf, '\n', dused);
+		struct pollfd p = { dsock, POLLIN, 0 };
+		ssize_t n;
+
+		if (nl) {
+			size_t len = (size_t)(nl - dbuf);
+			if (len >= sizeof out) len = sizeof out - 1;
+			memcpy(out, dbuf, len);
+			out[len] = '\0';
+			memmove(dbuf, nl + 1, dused - (size_t)(nl - dbuf) - 1);
+			dused -= (size_t)(nl - dbuf) + 1;
+			return out;
+		}
+		if (dsock < 0) return NULL;
+		if (poll(&p, 1, timeout_ms) <= 0) return NULL;
+		n = read(dsock, dbuf + dused, sizeof dbuf - dused);
+		if (n <= 0) { dclose(); return NULL; }
+		dused += (size_t)n;
+	}
+}
+
+/* launch.sh writes the pid when it starts Diatom. Verified against
+ * /proc/<pid>/cmdline before any signal is sent: a stale file after a crash
+ * and respawn would otherwise aim SIGTERM at whoever inherited the number. */
+static pid_t diatom_pid(void)
+{
+	char path[64], cmd[256];
+	FILE *f = fopen("/tmp/diatom.pid", "r");
+	long v = 0;
+	int fd, n;
+
+	if (!f) return -1;
+	if (fscanf(f, "%ld", &v) != 1) v = 0;
+	fclose(f);
+	if (v <= 0) return -1;
+
+	snprintf(path, sizeof path, "/proc/%ld/cmdline", v);
+	fd = open(path, O_RDONLY);
+	if (fd < 0) return -1;
+	n = (int)read(fd, cmd, sizeof cmd - 1);
+	close(fd);
+	if (n <= 0) return -1;
+	cmd[n] = '\0';
+	return strstr(cmd, "diatom") ? (pid_t)v : -1;
+}
+
+/* Connect if not connected, and cope with what READY says. state=running
+ * means a previous launcher died mid-game and this one just started: the
+ * game on screen is real, but this launcher believes it owns the display, so
+ * end the session and start clean rather than draw over live output. */
+static bool dconnect(void)
+{
+	struct sockaddr_un a;
+	const char *path = diatom_socket_path();
+	char *l;
+
+	if (dsock >= 0) return true;
+	if (!path) return false;
+
+	dsock = socket(AF_UNIX, SOCK_STREAM, 0);
+	if (dsock < 0) return false;
+	memset(&a, 0, sizeof a);
+	a.sun_family = AF_UNIX;
+	snprintf(a.sun_path, sizeof a.sun_path, "%s", path);
+	if (connect(dsock, (struct sockaddr *)&a, sizeof a) != 0) { dclose(); return false; }
+
+	while ((l = dline(400))) {
+		if (strncmp(l, "READY", 5) == 0) {
+			if (strstr(l, "state=running")) {
+				unsigned t0 = plat_now_ms();
+				fprintf(stderr, "diatom: had a game running; stopping it\n");
+				dsend("STOP");
+				while ((l = dline(500)) || plat_now_ms() - t0 < 4000)
+					if (l && strncmp(l, "EXIT", 4) == 0) break;
+			}
+			return true;
+		}
+	}
+	/* No READY inside the window: not our protocol on the other end. */
+	dclose();
+	return false;
+}
+
+/* ---------------- the fifo transport (minarch) --------------------------- */
+
 /* Is there a resident emulator to talk to?
  *
  * The fifos alone do not answer that. They are only unlinked on a clean exit,
@@ -405,6 +538,8 @@ bool plat_resident_ready(void)
 {
 	struct stat st;
 	pid_t pid;
+
+	if (diatom_socket_path()) return dconnect();
 
 	if (stat(PLAYOS_REQ, &st) != 0 || !S_ISFIFO(st.st_mode)) return false;
 	if (stat(PLAYOS_REP, &st) != 0 || !S_ISFIFO(st.st_mode)) return false;
@@ -422,12 +557,43 @@ static int res_fd_rep = -1;
 
 /* Ask for a game. Returns immediately -- the caller draws its launch
  * animation while the game loads, which is most of what a launch costs. */
-bool plat_resident_send(const char *req_line)
+bool plat_resident_send(const char *tag, const char *core, const char *rom,
+                        const char *resume, const char *exit_state,
+                        const char *preview)
 {
 	int fd_req;
 	char c;
 
 	run_power_pressed = false;
+
+	if (diatom_socket_path()) {
+		char *l;
+		int vol, bri;
+
+		if (!dconnect()) return false;
+		while ((l = dline(0))) { }                 /* drop stale events */
+		d_preview[0] = '\0';
+		d_pend_vol = d_pend_bri = -1;
+
+		if (!dsend("RUN\tcore=%s\trom=%s\ttag=%s"
+		           "\tresume=%s\texit_state=%s\tpreview=%s",
+		           core, rom, tag,
+		           resume ? resume : "", exit_state ? exit_state : "",
+		           preview ? preview : ""))
+			return false;
+
+		/* The launcher owns levels while it draws (Diatom's ADR-0020), and
+		 * it is done drawing the moment the game is up - so the last thing
+		 * it does is hand over WHERE THE LEVELS ARE. Without this, a game
+		 * starts at whatever the mixer was left at rather than at the
+		 * volume the shelf shows. */
+		vol = plat_volume_get();
+		bri = plat_brightness_get();
+		if (vol >= 0) dsend("SETLEVEL\tkind=volume\tindex=%d\tcount=21", vol);
+		if (bri >= 0) dsend("SETLEVEL\tkind=brightness\tindex=%d\tcount=11", bri);
+		return true;
+	}
+
 	if (res_fd_rep >= 0) { close(res_fd_rep); res_fd_rep = -1; }
 
 	fd_req = open(PLAYOS_REQ, O_WRONLY | O_NONBLOCK);
@@ -438,24 +604,150 @@ bool plat_resident_send(const char *req_line)
 	/* Drop anything left over from a previous game before asking for one. */
 	while (read(res_fd_rep, &c, 1) == 1) { }
 
-	if (write(fd_req, req_line, strlen(req_line)) < 0) {
-		close(fd_req); close(res_fd_rep); res_fd_rep = -1;
-		return false;
+	{
+		char req[2048];
+		snprintf(req, sizeof req, "%s\t%s\t%s\n", tag, core, rom);
+		if (write(fd_req, req, strlen(req)) < 0) {
+			close(fd_req); close(res_fd_rep); res_fd_rep = -1;
+			return false;
+		}
 	}
 	close(fd_req);
 	return true;
 }
 
+bool plat_resident_line(const char *fmt, ...)
+{
+	char line[1600];
+	va_list ap;
+
+	va_start(ap, fmt);
+	vsnprintf(line, sizeof line, fmt, ap);
+	va_end(ap);
+	return dsend("%s", line);
+}
+
+const char *plat_resident_last_preview(void) { return d_preview; }
+
 /* Block until the game is over, watching the power button throughout -- the
  * same job plat_run does for the one-shot binary, except the signal ends the
  * GAME rather than the process, so residency survives to serve the next one. */
-bool plat_resident_wait(void)
+/* One LEVEL line: "LEVEL\tkind=volume\tindex=8\tcount=21". The values are
+ * held rather than applied - Diatom owns the hardware while the game runs
+ * (its ADR-0020), and applying over the top is exactly the fight the state
+ * plane exists to end. They land in libmsettings when EXIT hands them back. */
+static void d_note_level(const char *l)
+{
+	const char *k = strstr(l, "kind=");
+	const char *i = strstr(l, "index=");
+	const char *c = strstr(l, "count=");
+	int idx, cnt;
+
+	if (!k || !i || !c) return;
+	idx = atoi(i + 6);
+	cnt = atoi(c + 6);
+	if (cnt < 2) return;
+	if (strncmp(k + 5, "volume", 6) == 0)          { d_pend_vol = idx; d_pend_vol_n = cnt; }
+	else if (strncmp(k + 5, "brightness", 10) == 0) { d_pend_bri = idx; d_pend_bri_n = cnt; }
+}
+
+static void d_apply_levels(void)
+{
+	/* Through the public setters (defined below, past this point in the
+	 * file): they own the libmsettings handles, and the rescale to their
+	 * percent / 0..10 scales keeps endpoints exact - the same
+	 * round-to-nearest rule the protocol pins. */
+	if (d_pend_vol >= 0 && d_pend_vol_n > 1)
+		plat_volume_set_pct((d_pend_vol * 100 + (d_pend_vol_n - 1) / 2)
+		                    / (d_pend_vol_n - 1));
+	if (d_pend_bri >= 0 && d_pend_bri_n > 1)
+		plat_brightness_set((d_pend_bri * 10 + (d_pend_bri_n - 1) / 2)
+		                    / (d_pend_bri_n - 1));
+	d_pend_vol = d_pend_bri = -1;
+}
+
+static int diatom_wait(void)
+{
+	int got_running = 0, sent_stop = 0;
+	unsigned stop_at = 0, start = plat_now_ms();
+	int autostop_s = getenv("PLAYOS_AUTOSTOP_S") ? atoi(getenv("PLAYOS_AUTOSTOP_S")) : 0;
+
+#ifdef __linux__
+	{
+		struct input_event ev;
+		while (fd_power >= 0 && read(fd_power, &ev, sizeof ev) == (ssize_t)sizeof ev)
+			; /* drain stale presses */
+	}
+#endif
+
+	for (;;) {
+		char *l;
+
+		if (dsock < 0) return RES_DEAD;
+		while ((l = dline(100))) {
+			if      (strncmp(l, "RUNNING", 7) == 0) got_running = 1;
+			else if (strncmp(l, "PAUSED", 6) == 0)  return RES_PAUSED;
+			else if (strncmp(l, "PREVIEW\tpath=", 13) == 0)
+				snprintf(d_preview, sizeof d_preview, "%s", l + 13);
+			else if (strncmp(l, "LEVEL\t", 6) == 0) d_note_level(l);
+			else if (strncmp(l, "EXIT", 4) == 0) { d_apply_levels(); return RES_EXIT; }
+			else if (strncmp(l, "ERROR", 5) == 0) {
+				fprintf(stderr, "diatom: %s\n", l);
+				/* Before RUNNING it means the game never started and the
+				 * display is still ours. After, it is a failed menu op the
+				 * menu already showed; the game is still going. */
+				if (!got_running) return RES_DEAD;
+			}
+		}
+		if (dsock < 0) return RES_DEAD;            /* EOF mid-game */
+
+#ifdef __linux__
+		{
+			struct input_event ev;
+			while (fd_power >= 0 &&
+			       read(fd_power, &ev, sizeof ev) == (ssize_t)sizeof ev) {
+				if (ev.type == EV_KEY && ev.code == KEY_POWER && ev.value == 1 &&
+				    !sent_stop) {
+					run_power_pressed = true;
+					sent_stop = 1;
+					stop_at = plat_now_ms();
+					dsend("STOP");
+				}
+			}
+		}
+#endif
+		if (autostop_s > 0 && !sent_stop &&
+		    plat_now_ms() - start > (unsigned)autostop_s * 1000u) {
+			sent_stop = 1;
+			stop_at = plat_now_ms();
+			dsend("STOP");
+		}
+
+		/* STOP is a request; a core wedged inside retro_run cannot honour
+		 * it. Escalate on the clock: SIGTERM still flushes saves, SIGKILL
+		 * is the end of the line and reports the emulator dead. */
+		if (sent_stop && stop_at) {
+			unsigned waited = plat_now_ms() - stop_at;
+			pid_t pid = diatom_pid();
+			if (waited > 5000) {
+				if (pid > 0) kill(pid, SIGKILL);
+				dclose();
+				return RES_DEAD;
+			}
+			if (waited > 2500 && pid > 0) kill(pid, SIGTERM);
+		}
+	}
+}
+
+int plat_resident_wait(void)
 {
 	int fd_rep = res_fd_rep;
 	bool ok = false;
 	char c;
 
-	if (fd_rep < 0) return false;
+	if (diatom_socket_path()) return diatom_wait();
+
+	if (fd_rep < 0) return RES_DEAD;
 
 #ifdef __linux__
 	{
@@ -504,7 +796,7 @@ bool plat_resident_wait(void)
 #endif
 	close(fd_rep);
 	res_fd_rep = -1;
-	return ok;
+	return ok ? RES_EXIT : RES_DEAD;
 }
 
 void plat_request_poweroff(void)
