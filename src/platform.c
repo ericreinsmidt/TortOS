@@ -750,6 +750,9 @@ void plat_leds_off(void)
  * an unsigned long[4] argument block - the same call tools/setbright.c makes
  * before the launcher exists. */
 
+#ifdef __linux__
+#include <sys/ioctl.h>
+
 /* From the kernel UAPI (sound/asound.h), vendored rather than depended on.
  * Only the integer case is needed; the union is declared at full size because
  * its size is what _IOWR bakes into the request number, and a wrong layout
@@ -892,6 +895,24 @@ void plat_settings_init(void)
 	if (cur_vol >= 0) apply_volume(cur_vol);
 	apply_brightness(cur_bright);
 }
+
+#else   /* not __linux__ */
+
+/* The host build exists to look at the shelf while changing how it looks
+ * (mk/native.mk). There is no codec and no display engine here, so the
+ * settings are state and nothing more - enough that the OSD draws and the
+ * levels the launcher reports are consistent. */
+#define VOL_MAX    20
+#define BRIGHT_MAX 11
+static int cur_vol = 8, cur_bright = 7;
+static int mixer_fd = 0, disp_fd = 0;    /* "present", so the nudges run */
+static int clampi(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
+static void levels_save(void) { }
+static void apply_volume(int v) { cur_vol = v; }
+static void apply_brightness(int b) { cur_bright = b; }
+void plat_settings_init(void) { }
+
+#endif  /* __linux__ */
 
 
 /* The settings indicator: a thin line across the very top on any volume or
