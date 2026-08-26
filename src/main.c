@@ -576,6 +576,12 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 	int pad = row_h * 3 / 4;
 	int gap = row_h;                 /* between the label and value columns */
 	int text_h = fm ? TTF_FontHeight(fm) : row_h;
+	/* Centre the ink, not the em box. The box reserves a descender's depth
+	 * below the baseline that labels like "Wi-Fi" and "Bluetooth" never use,
+	 * so centring the box leaves the visible line riding high in its row and
+	 * reads as a highlight sitting too low. Descent is negative, so half of it
+	 * subtracted moves the line down onto the middle of the plate. */
+	int ink_off = fm ? -TTF_FontDescent(fm) / 2 : 0;
 	int head_h = heading ? ui_font_line(UI_F_LABEL) + pad / 2 : 0;
 	bool two_col = false;
 	int content_w = 0, i, k;
@@ -634,7 +640,7 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 
 	for (k = 0; k < vis; k++) {
 		int y = content_y + k * row_h;
-		int ty = y + (row_h - text_h) / 2;
+		int ty = y + (row_h - text_h) / 2 + ink_off;
 		SDL_Color lc, vc;
 
 		i = first + k;
@@ -711,12 +717,18 @@ static void playos_menu_draw(app *a, int sel)
 {
 	menu_row rows[PM_ROWS];
 	char tbuf[16];
+	/* Opened from the systems row the menu is about the firmware, so it says
+	 * PlayOS. Opened inside a system it says which one, because that is the
+	 * thing on screen behind it and the heading should agree with where you
+	 * are rather than repeat what the firmware is called. */
+	const char *heading = a->screen == SCREEN_GAMES
+	                    ? a->sys.systems[a->sys_cursor].name : "PlayOS";
 
 	playos_menu_rows(a, rows, tbuf, sizeof tbuf);
 	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 	SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
 	SDL_RenderFillRect(a->r, NULL);
-	menu_draw(a, "PlayOS", rows, PM_ROWS, sel);
+	menu_draw(a, heading, rows, PM_ROWS, sel);
 }
 
 static void playos_menu(app *a)
