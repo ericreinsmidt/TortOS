@@ -92,6 +92,16 @@ static void t_mark(const char *what)
 	fprintf(stderr, "boot: %-14s %5u ms\n", what, plat_now_ms() - t_boot0);
 }
 
+/* The return from a game, phase by phase, for the same reason boot is timed.
+ * Nothing is presented while this path runs, so the panel holds the launcher's
+ * last frame - the in-game menu - throughout it. Anything slow here is not
+ * merely slow, it is a stall the player sees. */
+static unsigned t_exit0;
+static void t_exit(const char *what)
+{
+	fprintf(stderr, "exit: %-12s %5u ms\n", what, plat_now_ms() - t_exit0);
+}
+
 /* The boot animation plays in a background process while everything below
  * runs -- the card scan, GL init, font and asset decode, the lot. Both it and
  * this process draw to /dev/fb0, so presenting now would fight it: last
@@ -580,9 +590,15 @@ static void anim_launch(app *a, unsigned ms)
 static void anim_return(app *a, unsigned ms)
 {
 	unsigned t0 = plat_now_ms(), now;
+	int first = 1;
 	while ((now = plat_now_ms()) - t0 < ms) {
 		float k = (float)(now - t0) / (float)ms;
 		render(a);
+		/* The first one carries the cost of rebuilding the card art the evict
+		 * above threw away, off the card, possibly while the emulator is still
+		 * flushing a save state to it. Timed separately from the rest of the
+		 * fade for exactly that reason. */
+		if (first) { t_exit("first frame"); first = 0; }
 		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 		SDL_SetRenderDrawColor(a->r, 0, 0, 0, (Uint8)(255 * (1.0f - k)));
 		SDL_RenderFillRect(a->r, NULL);
@@ -1445,6 +1461,9 @@ static void launch(app *a)
 		respawn_resident(a);
 	}
 
+	t_exit0 = plat_now_ms();
+	t_exit("EXIT");
+
 	/* The game has just written a fresh autosave preview; make the card pick
 	 * it up rather than showing the one from last time. */
 	{
@@ -1456,9 +1475,12 @@ static void launch(app *a)
 		}
 	}
 
+	t_exit("card evict");
+
 	plat_leds_off();
 	plat_input_flush();
 	memset(&a->in, 0, sizeof a->in);
+	t_exit("leds+flush");
 
 	if (access(PLAYOS_POWEROFF_FLAG, F_OK) == 0) { a->running = false; return; }
 	/* Power was pressed during the game. The emulator no longer handles that
@@ -1466,6 +1488,7 @@ static void launch(app *a)
 	if (plat_run_power_pressed()) { power_off(a); return; }
 
 	anim_return(a, 130);
+	t_exit("fade done");
 }
 
 /* ---------- input --------------------------------------------------------- */
