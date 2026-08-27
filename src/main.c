@@ -92,6 +92,28 @@ static void t_mark(const char *what)
 	fprintf(stderr, "boot: %-14s %5u ms\n", what, plat_now_ms() - t_boot0);
 }
 
+/* Get off the game's last frame before doing anything slow.
+ *
+ * Everything between EXIT and the first frame of the fade blocks and none of it
+ * presents, so the panel holds whatever the launcher drew last - which after a
+ * quit is the in-game menu, over a frame of the game that has ended. Measured
+ * on the device: 123ms of it, 52 in plat_leds_off's seventy-nine sysfs writes
+ * and 69 rebuilding the focused card off the SD card.
+ *
+ * One present, black, because the fade that follows starts from black and the
+ * two should agree. This is not the buffer-establishing that was tried and
+ * reverted: that guarded a stale back buffer, which a swap cannot show. This
+ * gets a stale FRONT frame off the glass, which is measurable and was measured.
+ */
+static void present_black(app *a)
+{
+	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_NONE);
+	SDL_SetRenderDrawColor(a->r, 0, 0, 0, 255);
+	SDL_RenderClear(a->r);
+	SDL_RenderPresent(a->r);
+	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+}
+
 /* The return from a game, phase by phase, for the same reason boot is timed.
  * Nothing is presented while this path runs, so the panel holds the launcher's
  * last frame - the in-game menu - throughout it. Anything slow here is not
@@ -1463,6 +1485,8 @@ static void launch(app *a)
 
 	t_exit0 = plat_now_ms();
 	t_exit("EXIT");
+	present_black(a);
+	t_exit("black");
 
 	/* The game has just written a fresh autosave preview; make the card pick
 	 * it up rather than showing the one from last time. */
@@ -1477,6 +1501,12 @@ static void launch(app *a)
 
 	t_exit("card evict");
 
+	/* 52ms of sysfs writes, and it looks like it belongs after the fade where
+	 * it would cost nothing. It does not: both early returns below lead to the
+	 * launcher exiting for a power-off, and launch.sh only runs its own
+	 * leds_off at the TOP of the restart loop, which a power-off never reaches.
+	 * Moved past them, a shutdown from a game keeps whatever the game lit.
+	 * Behind the black present is enough - it is dead time either way now. */
 	plat_leds_off();
 	plat_input_flush();
 	memset(&a->in, 0, sizeof a->in);
