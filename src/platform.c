@@ -840,6 +840,24 @@ struct pl_ctl_elem_value {
 
 #define GAIN_CTL     "digital volume"
 #define GAIN_RAW_MAX 63          /* 0 is loudest, 63 quietest */
+
+/* Only the top of that register is worth spending on the volume keys. The
+ * control is 1.16 dB per step, so using all 63 puts 73 dB across 21 positions -
+ * 3.65 dB a press, which made 60% of the scale -29 dB and the bottom two thirds
+ * inaudible. That is not a curve shape problem: dB is already the perceptually
+ * even axis, the same reason the brightness ladder below is geometric. It is a
+ * RANGE problem, and 73 dB is simply more than a handheld speaker has.
+ *
+ * Measured on the device 2026-08-28 with a 440 Hz tone at -1.4 dBFS captured on
+ * its own microphone, room baseline ~40 rms:
+ *
+ *   raw 0   10034 rms   201x room      raw 31    114 rms   2.3x room
+ *   raw 16   1485 rms    30x room      raw 47     34 rms   inaudible
+ *
+ * So 34 is about -39 dB: the quietest step still audible in a quiet room, and
+ * the floor the scale should reach rather than 63. ~2 dB a press across the 21
+ * positions. Detail and method in VOLUME-CURVE.md. */
+#define GAIN_RAW_USABLE 34
 #define SPEAKER_CTL  "HpSpeaker Switch"   /* the only true mute on this codec */
 #define VOL_MAX      PLAT_VOL_MAX         /* 21 positions, 0..20 - Diatom's scale */
 
@@ -899,7 +917,7 @@ static void levels_save(void)
 
 static void apply_volume(int v)
 {
-	long raw = GAIN_RAW_MAX - ((long)v * GAIN_RAW_MAX + VOL_MAX / 2) / VOL_MAX;
+	long raw = ((long)(VOL_MAX - v) * GAIN_RAW_USABLE + VOL_MAX / 2) / VOL_MAX;
 	long on;
 
 	cur_vol = v;
