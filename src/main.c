@@ -92,6 +92,13 @@ static void t_mark(const char *what)
 	fprintf(stderr, "boot: %-14s %5u ms\n", what, plat_now_ms() - t_boot0);
 }
 
+/* One number for the way back, because this path keeps being asked how fast it
+ * is and a number is how the answer stays true. The five phase marks that took
+ * it from 213ms to here are in the history if it ever needs breaking down
+ * again; the budget they found was 5ms to black, 4ms of bookkeeping, and the
+ * rest decoding the focused card's autosave preview off the SD card. */
+static unsigned t_back0;
+
 /* Get off the game's last frame before doing anything slow.
  *
  * Everything between EXIT and the first frame of the fade blocks and none of it
@@ -594,45 +601,6 @@ static void anim_launch(app *a, unsigned ms)
 	SDL_SetRenderDrawColor(a->r, 0, 0, 0, 255);
 	SDL_RenderClear(a->r);
 	SDL_RenderPresent(a->r);
-}
-
-/* Coming back: the shelf fades up out of black. Short, because the launcher
- * never went anywhere -- it kept its context through the whole game and has
- * nothing to rebuild. */
-static void anim_return(app *a, unsigned ms)
-{
-	unsigned t0, now;
-
-	/* Warm the shelf before the clock starts, and deliberately do not present
-	 * it: the panel is already black from the present taken at EXIT, so there
-	 * is nothing new to show and no reason to wait a vblank to show it.
-	 *
-	 * What this pays for is the first draw_shelf rebuilding the focused card's
-	 * texture off the SD card - tens of milliseconds, because the evict on the
-	 * way in threw it away on purpose so the fresh autosave preview replaces
-	 * the stale one. With the clock already running, that cost was spent
-	 * INSIDE the fade: the first frame reached the panel with k already past a
-	 * half, so the shelf jumped from black to half lit and faded only the rest
-	 * of the way. Paying it here makes the fade a fade. */
-	draw_shelf(a);
-
-	t0 = plat_now_ms();
-	while ((now = plat_now_ms()) - t0 < ms) {
-		float k = (float)(now - t0) / (float)ms;
-		/* draw_shelf, NOT render: render ends in a present. Calling it here
-		 * put the shelf on the panel at FULL brightness, and then the black
-		 * below put it up again dimmed - two presents per pass, so for the
-		 * whole fade the panel alternated bright, dim, bright, dim. That was
-		 * the flicker, through every fix aimed at the handover on both sides
-		 * of the socket. It is one frame per pass now. */
-		draw_shelf(a);
-		plat_draw_osd(a->r);
-		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
-		SDL_SetRenderDrawColor(a->r, 0, 0, 0, (Uint8)(255 * (1.0f - k)));
-		SDL_RenderFillRect(a->r, NULL);
-		SDL_RenderPresent(a->r);
-		SDL_Delay(6);
-	}
 }
 
 /* The send-off. The mark collapses to a point and the screen goes with it --
@@ -1493,6 +1461,7 @@ static void launch(app *a)
 		respawn_resident(a);
 	}
 
+	t_back0 = plat_now_ms();
 	present_black(a);
 
 	/* The game has just written a fresh autosave preview; make the card pick
@@ -1520,7 +1489,13 @@ static void launch(app *a)
 	 * key itself, so the press arrived here. */
 	if (plat_run_power_pressed()) { power_off(a); return; }
 
-	anim_return(a, 60);
+	/* Straight to the shelf, no fade. The card decode inside this render is
+	 * the only real cost left on the way back, and a fade laid over the top of
+	 * it is time spent easing in a picture the player has already been looking
+	 * at all the way up to the moment they quit. render() is right here: it
+	 * draws and presents exactly once. */
+	render(a);
+	fprintf(stderr, "exit: back in %u ms\n", plat_now_ms() - t_back0);
 	/* Seventy-nine open/write/close round trips through sysfs, measured at
 	 * 35-52ms. Nothing about them is urgent and the panel is what the player
 	 * is waiting on, so they happen once the shelf is up rather than while it
