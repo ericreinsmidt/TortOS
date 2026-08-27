@@ -615,8 +615,15 @@ static void anim_return(app *a, unsigned ms)
 	int first = 1;
 	while ((now = plat_now_ms()) - t0 < ms) {
 		float k = (float)(now - t0) / (float)ms;
-		render(a);
-		/* The first one carries the cost of rebuilding the card art the evict
+		/* draw_shelf, NOT render: render ends in a present. Calling it here
+		 * put the shelf on the panel at FULL brightness, and then the black
+		 * below put it up again dimmed - two presents per pass, so for the
+		 * whole fade the panel alternated bright, dim, bright, dim. That was
+		 * the flicker, through every fix aimed at the handover on both sides
+		 * of the socket. It is one frame per pass now. */
+		draw_shelf(a);
+		plat_draw_osd(a->r);
+		/* The first pass carries the cost of rebuilding the card art the evict
 		 * above threw away, off the card, possibly while the emulator is still
 		 * flushing a save state to it. Timed separately from the rest of the
 		 * fade for exactly that reason. */
