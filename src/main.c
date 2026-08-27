@@ -114,16 +114,6 @@ static void present_black(app *a)
 	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 }
 
-/* The return from a game, phase by phase, for the same reason boot is timed.
- * Nothing is presented while this path runs, so the panel holds the launcher's
- * last frame - the in-game menu - throughout it. Anything slow here is not
- * merely slow, it is a stall the player sees. */
-static unsigned t_exit0;
-static void t_exit(const char *what)
-{
-	fprintf(stderr, "exit: %-12s %5u ms\n", what, plat_now_ms() - t_exit0);
-}
-
 /* The boot animation plays in a background process while everything below
  * runs -- the card scan, GL init, font and asset decode, the lot. Both it and
  * this process draw to /dev/fb0, so presenting now would fight it: last
@@ -612,7 +602,6 @@ static void anim_launch(app *a, unsigned ms)
 static void anim_return(app *a, unsigned ms)
 {
 	unsigned t0 = plat_now_ms(), now;
-	int first = 1;
 	while ((now = plat_now_ms()) - t0 < ms) {
 		float k = (float)(now - t0) / (float)ms;
 		/* draw_shelf, NOT render: render ends in a present. Calling it here
@@ -623,11 +612,6 @@ static void anim_return(app *a, unsigned ms)
 		 * of the socket. It is one frame per pass now. */
 		draw_shelf(a);
 		plat_draw_osd(a->r);
-		/* The first pass carries the cost of rebuilding the card art the evict
-		 * above threw away, off the card, possibly while the emulator is still
-		 * flushing a save state to it. Timed separately from the rest of the
-		 * fade for exactly that reason. */
-		if (first) { t_exit("first frame"); first = 0; }
 		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 		SDL_SetRenderDrawColor(a->r, 0, 0, 0, (Uint8)(255 * (1.0f - k)));
 		SDL_RenderFillRect(a->r, NULL);
@@ -1494,10 +1478,7 @@ static void launch(app *a)
 		respawn_resident(a);
 	}
 
-	t_exit0 = plat_now_ms();
-	t_exit("EXIT");
 	present_black(a);
-	t_exit("black");
 
 	/* The game has just written a fresh autosave preview; make the card pick
 	 * it up rather than showing the one from last time. */
@@ -1510,11 +1491,9 @@ static void launch(app *a)
 		}
 	}
 
-	t_exit("card evict");
 
 	plat_input_flush();
 	memset(&a->in, 0, sizeof a->in);
-	t_exit("flush");
 
 	/* This one exits without power_off(), so it darkens the lights itself. */
 	if (access(PLAYOS_POWEROFF_FLAG, F_OK) == 0) {
@@ -1527,14 +1506,12 @@ static void launch(app *a)
 	if (plat_run_power_pressed()) { power_off(a); return; }
 
 	anim_return(a, 90);
-	t_exit("fade done");
 	/* Seventy-nine open/write/close round trips through sysfs, measured at
 	 * 35-52ms. Nothing about them is urgent and the panel is what the player
 	 * is waiting on, so they happen once the shelf is up rather than while it
 	 * is still black. The two paths above that leave without reaching here do
 	 * it themselves. */
 	plat_leds_off();
-	t_exit("leds off");
 }
 
 /* ---------- input --------------------------------------------------------- */
