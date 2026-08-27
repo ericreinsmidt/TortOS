@@ -15,10 +15,35 @@ pid and verify what came back:
     md5sum /proc/$P2/exe /mnt/SDCARD/PlayOS/playos.elf
 
 The supervisor (`launch.sh`) restarts it; never kill launch.sh itself - the
-boot hook powers the device off when the loop exits. The launcher now stops a
-still-running game at boot before its first frame (the two-presenter wedge
-guard), so a restart mid-game is safe - but it stops the player's game, so
-still avoid restarting while one runs.
+boot hook powers the device off when the loop exits.
+
+To replace the RESIDENT EMULATOR, kill diatom FIRST and the launcher second.
+`launch.sh` only calls `start_resident` at the top of its supervisor loop, and
+that loop is blocked inside `./playos.elf`, so killing diatom alone gets no
+respawn until the launcher exits. Do it the other way round and
+`start_resident`'s `pgrep` finds the old diatom still alive and skips.
+
+The launcher stops a still-running game at boot before its first frame (the
+two-presenter wedge guard), so a restart mid-game is safe - but it stops the
+player's game, so still avoid restarting while one runs. Check first: see below.
+
+The device is shared with the Diatom session. Say what you are about to do to it
+before you do it, and check nothing is running - two sessions deployed the same
+build within seconds of each other on 2026-08-27, and the second restart killed
+the first one's freshly verified pids while a human was mid-test.
+
+## Is a game actually running?
+
+Sample CPU ticks, not process lists. `ps` shows diatom either way, and a mapped
+core proves nothing - ADR-0006 never unloads them, so a core stays mapped long
+after its game ended.
+
+    D=$(ps | grep "[d]iatom --socket" | awk '{print $1}' | head -1)
+    A=$(awk '{print $14+$15}' /proc/$D/stat); sleep 2
+    B=$(awk '{print $14+$15}' /proc/$D/stat); echo $((B-A))
+
+A resident idling at the shelf moves a few ticks. One running a game cannot -
+the blit alone is half a frame. Single digits over two seconds is idle.
 
 ## Seeing the screen
 
@@ -39,9 +64,16 @@ correct capture of a launcher frame is alpha 255 in all 786432 pixels; anything
 else means the byte order is wrong or the read was short.
 
 `count=768` reads page 0. The framebuffer is 1024x16384 virtual, about 21 pages,
-and Diatom pans among its own while a game runs, so page 0 is only what is on
-glass when the pan offset is zero. Check `/sys/class/graphics/fb0/pan` first: it
-reads `0,0` whenever the launcher is presenting.
+so page 0 is only what is on glass when the pan offset says so. Read
+`/sys/class/graphics/fb0/pan` first and capture the page it names - `skip` is in
+4096-byte BLOCKS and a page is 768 of them, so page 1 is `skip=768` and page 2
+is `skip=1536`.
+
+Do NOT assume the launcher sits on page 0. It double buffers and alternates:
+300 samples while the shelf was up came back 151 at `0,0` and 149 at `0,768`.
+An earlier version of this file claimed `0,0` meant the launcher was presenting,
+which is true about half the time, and half-true is worse than wrong - it reads
+as a running game.
 
 `--shot` renders the shelf headless, but only the shelf; SIGSTOP the live
 launcher while a second --shot instance runs.
