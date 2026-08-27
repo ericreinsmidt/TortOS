@@ -93,6 +93,12 @@ const char *plat_resident_last_preview(void);
  * its mode or rect can change, settling included (its ADR-0022), so the last
  * one heard is current. */
 bool plat_resident_rect(SDL_Rect *out);
+/* Read replies for up to timeout_ms, stopping as soon as a DISPLAY arrives.
+ * For changing the mode from the in-game menu: Diatom answers a SETDISPLAY with
+ * the new rect, and the menu wants it now so its backdrop can redraw where the
+ * game is about to be, rather than on the next wait after resuming. A missed
+ * reply costs a stale backdrop, never a hang. */
+bool plat_resident_sync_rect(int timeout_ms);
 
 void plat_request_poweroff(void);
 void plat_leds_off(void);

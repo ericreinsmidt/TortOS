@@ -1027,7 +1027,12 @@ static void build_child_env(void)
  *
  * Every row acts through one protocol line. Save and Load use the same slot-9
  * paths the launch handed over, so the autosave funnel stays one thing. */
-typedef enum { GM_CONTINUE, GM_SAVE, GM_LOAD, GM_RESET, GM_QUIT, GM_ROWS } gm_row;
+/* Display sits with the things you do to the game rather than the things you do
+ * to a save, because it is the one row whose effect you judge by looking at the
+ * game behind the menu. */
+typedef enum {
+	GM_CONTINUE, GM_SAVE, GM_LOAD, GM_DISPLAY, GM_RESET, GM_QUIT, GM_ROWS
+} gm_row;
 
 /* The paused frame, drawn where the game actually is.
  *
@@ -1234,14 +1239,41 @@ static int slot_strip(app *a, SDL_Texture *bg, int saving)
 	return done == 1 ? chosen : 0;
 }
 
-static void game_menu(app *a)
+/* The in-game rows, carrying the display mode's current label. */
+static void gm_build(app *a, menu_row *out)
 {
 	static const char *label[GM_ROWS] = {
-		"Continue", "Save", "Load", "Reset", "Quit"
+		"Continue", "Save", "Load", "Display", "Reset", "Quit"
 	};
+	int i;
+
+	for (i = 0; i < GM_ROWS; i++) out[i] = (menu_row){ label[i], NULL, true };
+	out[GM_DISPLAY].value = DMODES[a->view[a->sys_cursor].dmode].label;
+}
+
+/* Measured across every mode label, so cycling the row does not resize the
+ * panel under the cursor - the same reason the shelf menus have a fixed width. */
+static int gm_width(app *a)
+{
+	menu_row rows[GM_ROWS];
+	int w = 0, k;
+
+	gm_build(a, rows);
+	for (k = 0; k < DMODE_COUNT; k++) {
+		int mw;
+		rows[GM_DISPLAY].value = DMODES[k].label;
+		mw = menu_measure(rows, GM_ROWS, NULL);
+		if (mw > w) w = mw;
+	}
+	return w;
+}
+
+static void game_menu(app *a)
+{
 	SDL_Texture *bg = NULL;
 	const char *pv = plat_resident_last_preview();
 	int sel = 0, done = 0, resume = 0;
+	int width = gm_width(a);
 
 	if (pv && *pv) {
 		SDL_Surface *sf = IMG_Load(pv);
@@ -1256,6 +1288,23 @@ static void game_menu(app *a)
 
 		if (in_repeat(&a->in, IN_UP))   sel = (sel + GM_ROWS - 1) % GM_ROWS;
 		if (in_repeat(&a->in, IN_DOWN)) sel = (sel + 1) % GM_ROWS;
+
+		/* Applied to the running game at once, not on resume: the whole point
+		 * of this row being here rather than on the shelf is judging the mode
+		 * against the game it is being applied to. Diatom takes SETDISPLAY
+		 * while paused (its ADR-0020), answers with the new rect, and the
+		 * backdrop behind this menu redraws into it. */
+		if (sel == GM_DISPLAY) {
+			int d = in_repeat(&a->in, IN_RIGHT) ? 1
+			      : in_repeat(&a->in, IN_LEFT)  ? -1 : 0;
+			if (d) {
+				sysview *v = &a->view[a->sys_cursor];
+				v->dmode = (v->dmode + d + DMODE_COUNT) % DMODE_COUNT;
+				display_save(a);
+				plat_resident_line("SETDISPLAY\tmode=%s", DMODES[v->dmode].name);
+				plat_resident_sync_rect(150);
+			}
+		}
 		/* MENU again, or B: back to the game, same as Continue. */
 		if (a->in.pressed[IN_MENU] || a->in.pressed[IN_BACK]) {
 			resume = 1;
@@ -1325,10 +1374,8 @@ static void game_menu(app *a)
 
 		{
 			menu_row rows[GM_ROWS];
-			int i;
-			for (i = 0; i < GM_ROWS; i++)
-				rows[i] = (menu_row){ label[i], NULL, true };
-			menu_draw(a, NULL, rows, GM_ROWS, sel, 0);
+			gm_build(a, rows);
+			menu_draw(a, NULL, rows, GM_ROWS, sel, width);
 		}
 		SDL_RenderPresent(a->r);
 		SDL_Delay(8);

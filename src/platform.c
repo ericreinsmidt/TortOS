@@ -614,6 +614,24 @@ bool plat_resident_rect(SDL_Rect *out)
 	return true;
 }
 
+/* Only safe while Diatom is paused, which is the only place it is called from:
+ * a game that is running can send EXIT, and this would eat it. Paused, the only
+ * traffic is what our own SETDISPLAY provoked. */
+bool plat_resident_sync_rect(int timeout_ms)
+{
+	unsigned t0 = SDL_GetTicks();
+	char *l;
+
+	if (dsock < 0) return false;
+	while ((int)(SDL_GetTicks() - t0) < timeout_ms) {
+		l = dline(timeout_ms);
+		if (!l) break;
+		if (strncmp(l, "DISPLAY\t", 8) == 0) { d_note_display(l); return true; }
+		if (strncmp(l, "LEVEL\t", 6) == 0) d_note_level(l);
+	}
+	return false;
+}
+
 static void d_apply_levels(void)
 {
 	/* Through the public setters (defined below, past this point in the
