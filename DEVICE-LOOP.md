@@ -22,11 +22,29 @@ still avoid restarting while one runs.
 
 ## Seeing the screen
 
-`dd if=/dev/fb0 bs=4096 count=768` captures what is displayed, INCLUDING the
-launcher's GL output - 1024x768 BGRA. Convert with PIL ('raw','BGRA'). This is
-how you screenshot the shelf, the in-game menu, anything. `--shot` renders the
-shelf headless, but only the shelf; SIGSTOP the live launcher while a second
---shot instance runs.
+/dev/fb0 holds what is displayed, INCLUDING the launcher's GL output, at
+1024x768 BGRA. Capture it ON THE DEVICE and pull the file:
+
+    adb shell 'dd if=/dev/fb0 of=/tmp/fb.raw bs=4096 count=768'
+    adb pull /tmp/fb.raw && adb shell 'rm -f /tmp/fb.raw'
+
+Do NOT pipe dd through `adb shell`: it translates LF to CRLF on the way out and
+silently corrupts the image. The tell is the size - a good capture is exactly
+3145728 bytes, and the mangled one came back 3241341 and decoded to coloured
+noise with one readable band through the middle. `adb exec-out`, which would
+avoid the translation, is not supported by this device's adbd.
+
+Convert with PIL: `Image.frombytes("RGBA",(1024,768),data,"raw","BGRA")`. A
+correct capture of a launcher frame is alpha 255 in all 786432 pixels; anything
+else means the byte order is wrong or the read was short.
+
+`count=768` reads page 0. The framebuffer is 1024x16384 virtual, about 21 pages,
+and Diatom pans among its own while a game runs, so page 0 is only what is on
+glass when the pan offset is zero. Check `/sys/class/graphics/fb0/pan` first: it
+reads `0,0` whenever the launcher is presenting.
+
+`--shot` renders the shelf headless, but only the shelf; SIGSTOP the live
+launcher while a second --shot instance runs.
 
 ## Driving it with no hands
 
