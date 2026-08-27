@@ -574,47 +574,12 @@ static void anim_launch(app *a, unsigned ms)
 	SDL_RenderPresent(a->r);
 }
 
-/* Every buffer this process swaps between, set to a known frame, before any of
- * it is allowed on glass.
- *
- * The launcher keeps its GL context through the whole game -- that is the warm
- * return -- but it does not keep its PIXELS. Measured on the device: SDL is
- * double buffered here, panning between fb0 pages 0 and 1 (yoffset 0 and 768),
- * while the emulator flips through those same pages to show the game. So by
- * the time a game ends, both of this process's back buffers hold frames of the
- * game, not of the shelf.
- *
- * One present only establishes ONE of them. The next swap puts the other on
- * glass still holding a game frame, for one refresh, before it is drawn into.
- * That is a whole frame of the game reappearing after the game has gone.
- *
- * Three, for two pages, because the cost of an extra vblank here is nothing
- * against a driver that turns out to triple buffer somewhere. */
-static void establish_buffers(app *a)
-{
-	/* NONE, not BLEND: this has to WRITE opaque black into the page rather
-	 * than blend over whatever the emulator left there. */
-	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_NONE);
-	for (int i = 0; i < 3; i++) {
-		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 255);
-		SDL_RenderClear(a->r);
-		SDL_RenderPresent(a->r);
-	}
-	/* Back to the resting mode plat_video_init established, so nothing drawn
-	 * after this inherits a blend mode it did not ask for. */
-	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
-}
-
 /* Coming back: the shelf fades up out of black. Short, because the launcher
  * never went anywhere -- it kept its context through the whole game and has
- * nothing to rebuild. The fade starts from black and every buffer is already
- * black, so the two agree and there is nothing stale left to show. */
+ * nothing to rebuild. */
 static void anim_return(app *a, unsigned ms)
 {
-	unsigned t0, now;
-
-	establish_buffers(a);
-	t0 = plat_now_ms();
+	unsigned t0 = plat_now_ms(), now;
 	while ((now = plat_now_ms()) - t0 < ms) {
 		float k = (float)(now - t0) / (float)ms;
 		render(a);
