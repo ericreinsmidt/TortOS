@@ -1220,7 +1220,7 @@ static void game_menu(app *a)
 	};
 	SDL_Texture *bg = NULL;
 	const char *pv = plat_resident_last_preview();
-	int sel = 0, done = 0;
+	int sel = 0, done = 0, resume = 0;
 
 	if (pv && *pv) {
 		SDL_Surface *sf = IMG_Load(pv);
@@ -1237,12 +1237,12 @@ static void game_menu(app *a)
 		if (in_repeat(&a->in, IN_DOWN)) sel = (sel + 1) % GM_ROWS;
 		/* MENU again, or B: back to the game, same as Continue. */
 		if (a->in.pressed[IN_MENU] || a->in.pressed[IN_BACK]) {
-			plat_resident_line("RESUME");
+			resume = 1;
 			done = 1;
 		} else if (a->in.pressed[IN_ACCEPT]) {
 			switch ((gm_row)sel) {
 			case GM_CONTINUE:
-				plat_resident_line("RESUME");
+				resume = 1;
 				done = 1;
 				break;
 			case GM_SAVE:
@@ -1268,7 +1268,7 @@ static void game_menu(app *a)
 					} else {
 						plat_resident_line("LOAD\tpath=%s", sp);
 					}
-					plat_resident_line("RESUME");
+					resume = 1;
 					done = 1;
 				}
 				/* Backed out: fall through to the menu, still paused. */
@@ -1278,7 +1278,7 @@ static void game_menu(app *a)
 			}
 			case GM_RESET:
 				plat_resident_line("RESET");
-				plat_resident_line("RESUME");
+				resume = 1;
 				done = 1;
 				break;
 			case GM_QUIT:
@@ -1314,6 +1314,27 @@ static void game_menu(app *a)
 	}
 
 	if (bg) SDL_DestroyTexture(bg);
+
+	/* Hand the pages back the way Diatom expects to find them.
+	 *
+	 * Diatom does not repaint the area outside its picture every frame - its
+	 * pages start opaque black and it writes only the rect - which is sound
+	 * while it owns the framebuffer and false the moment this process has
+	 * drawn a full-screen menu into the same pages. At any display mode that
+	 * does not fill the panel, resuming showed the game correctly sized with
+	 * this menu still surrounding it, and flickering: Diatom cycles three
+	 * pages and only the two this process presents into had been dirtied, so
+	 * the border alternated menu, menu, black at the refresh rate.
+	 *
+	 * Twice because this process alternates two pages and one present only
+	 * clears the one it lands on. Before RESUME and never after: afterwards
+	 * Diatom is drawing, and this would be a second presenter. */
+	if (resume) {
+		present_black(a);
+		present_black(a);
+		plat_resident_line("RESUME");
+	}
+
 	/* Nothing presents from here: the next frame on screen is the game's. */
 	plat_input_flush();
 	memset(&a->in, 0, sizeof a->in);
