@@ -849,15 +849,27 @@ struct pl_ctl_elem_value {
  * RANGE problem, and 73 dB is simply more than a handheld speaker has.
  *
  * Measured on the device 2026-08-28 with a 440 Hz tone at -1.4 dBFS captured on
- * its own microphone, room baseline ~40 rms:
+ * its own microphone. Coarse sweep, room baseline ~40 rms:
  *
  *   raw 0   10034 rms   201x room      raw 31    114 rms   2.3x room
  *   raw 16   1485 rms    30x room      raw 47     34 rms   inaudible
  *
- * So 34 is about -39 dB: the quietest step still audible in a quiet room, and
- * the floor the scale should reach rather than 63. ~2 dB a press across the 21
- * positions. Detail and method in VOLUME-CURVE.md. */
-#define GAIN_RAW_USABLE 34
+ * The floor was first set at 34 by reading that table, and Eric reported the
+ * bottom of the scale as dead. A finer sweep says why - room baseline 33:
+ *
+ *   raw 18  1091 rms  32.7x      raw 30    85 rms   2.5x
+ *   raw 22   404 rms  12.1x      raw 34    55 rms   1.6x
+ *   raw 26   173 rms   5.2x
+ *
+ * 34 is 1.6x room noise, so the last few positions were all sitting in the
+ * noise and were indistinguishable from each other. 26 is 5.2x: quiet, and
+ * unmistakably present. That is the floor, ~1.5 dB a press across the 21
+ * positions. Detail and method in VOLUME-CURVE.md.
+ *
+ * This is the SPEAKER floor. The headphone amp is a separate control
+ * ("Headphone Volume", 0-7 at 6 dB) which apply_volume pins to zero, so it is
+ * not calibrated and headphones will be near-silent until it is. */
+#define GAIN_RAW_USABLE 26
 #define SPEAKER_CTL  "HpSpeaker Switch"   /* the only true mute on this codec */
 #define VOL_MAX      PLAT_VOL_MAX         /* 21 positions, 0..20 - Diatom's scale */
 

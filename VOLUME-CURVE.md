@@ -69,10 +69,50 @@ over 21 positions is ~2 dB per press, which feels like a normal control:
 Position 0 keeps working because `HpSpeaker Switch` already carries the true
 mute, which is why the bottom of the register is not needed for silence.
 
-34 is a starting point from the table above, not a measured optimum. The honest
-way to land it is to pick the raw value that is *just* audible in a quiet room
-and use that as the floor. `tools/micprobe.sh --tone` in the Diatom repo gives
-the number; `DIATOM_GAIN=<n>` selects the raw value.
+**Landed at 26, not 34.** The first attempt read 34 off the coarse table above
+and Eric reported the bottom of the scale as dead. A finer sweep says why -
+room baseline 33 rms:
+
+| raw | dB | rms | vs room |
+|---|---|---|---|
+| 18 | -20.9 | 1091 | 32.7x |
+| 22 | -25.5 | 404 | 12.1x |
+| 26 | -30.2 | 173 | 5.2x |
+| 30 | -34.8 | 85 | 2.5x |
+| 34 | -39.4 | 55 | 1.6x |
+
+34 sits at 1.6x room noise, so the last few positions were all *in* the noise
+and indistinguishable from one another - which is exactly what "dead" means. 26
+is 5.2x: quiet, and unmistakably present. About 1.5 dB a press across the 21
+positions.
+
+Worth noting the first floor was picked by reading a table rather than by
+measuring the thing being decided, and a human caught it in one listen.
+
+## Headphones are a separate control, and are currently pinned to silence
+
+`apply_volume` does `ctl_io("Headphone", &(long){ 0 }, 1)` on every change,
+commented "never the jack". `Headphone Volume` is 0-7 at **6 dB a step**, range
+-42 dB to 0, so with headphones plugged in today the jack is at **-42 dB**. That
+will present as a headphone bug and it is this line.
+
+The recorded justification is that raising it "routes audio to the jack and
+mutes the speakers". That is plausibly a real observation with the wrong cause:
+`Headphone Switch` and `HpSpeaker Switch` are the routing controls, and the
+codec likely auto-routes on jack insert. The original observation was almost
+certainly made with nothing plugged in, so it is worth re-testing rather than
+inheriting.
+
+**There is jack detection**, which makes the fix clean rather than a guess:
+`/dev/input/event2` is `audiocodec sunxi Audio Jack`, `capabilities/sw` is
+`0x14` - `SW_HEADPHONE_INSERT` and `SW_MICROPHONE_INSERT` - delivered as
+`EV_SW`. Current state reads with `EVIOCGSW`.
+
+Suggested shape when someone tests with headphones: keep the 21-position scale
+driving `digital volume` exactly as now, and set `Headphone Volume` once to a
+calibrated level on insert. Eight positions at 6 dB is far too coarse to be the
+user-facing control, and the speaker floor measured here does not transfer to
+the headphone amp.
 
 ## One caveat before trusting old numbers
 
