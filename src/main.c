@@ -1239,6 +1239,18 @@ static int slot_strip(app *a, SDL_Texture *bg, int saving)
 	return done == 1 ? chosen : 0;
 }
 
+/* Change the mode, keep it, tell the running game, and take back the rect so
+ * the backdrop behind the menu redraws where the game is about to be. */
+static void gm_cycle_display(app *a, int d)
+{
+	sysview *v = &a->view[a->sys_cursor];
+
+	v->dmode = (v->dmode + d + DMODE_COUNT) % DMODE_COUNT;
+	display_save(a);
+	plat_resident_line("SETDISPLAY\tmode=%s", DMODES[v->dmode].name);
+	plat_resident_sync_rect(150);
+}
+
 /* The in-game rows, carrying the display mode's current label. */
 static void gm_build(app *a, menu_row *out)
 {
@@ -1297,13 +1309,7 @@ static void game_menu(app *a)
 		if (sel == GM_DISPLAY) {
 			int d = in_repeat(&a->in, IN_RIGHT) ? 1
 			      : in_repeat(&a->in, IN_LEFT)  ? -1 : 0;
-			if (d) {
-				sysview *v = &a->view[a->sys_cursor];
-				v->dmode = (v->dmode + d + DMODE_COUNT) % DMODE_COUNT;
-				display_save(a);
-				plat_resident_line("SETDISPLAY\tmode=%s", DMODES[v->dmode].name);
-				plat_resident_sync_rect(150);
-			}
+			if (d) gm_cycle_display(a, d);
 		}
 		/* MENU again, or B: back to the game, same as Continue. */
 		if (a->in.pressed[IN_MENU] || a->in.pressed[IN_BACK]) {
@@ -1346,6 +1352,12 @@ static void game_menu(app *a)
 				memset(&a->in, 0, sizeof a->in);
 				break;
 			}
+			/* A cycles it forward as well as left and right. Every other
+			 * row in this menu is something A does, so a row that only
+			 * answered to left and right was a row that looked broken. */
+			case GM_DISPLAY:
+				gm_cycle_display(a, +1);
+				break;
 			case GM_RESET:
 				plat_resident_line("RESET");
 				resume = 1;
