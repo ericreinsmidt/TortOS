@@ -601,7 +601,22 @@ static void anim_launch(app *a, unsigned ms)
  * nothing to rebuild. */
 static void anim_return(app *a, unsigned ms)
 {
-	unsigned t0 = plat_now_ms(), now;
+	unsigned t0, now;
+
+	/* Warm the shelf before the clock starts, and deliberately do not present
+	 * it: the panel is already black from the present taken at EXIT, so there
+	 * is nothing new to show and no reason to wait a vblank to show it.
+	 *
+	 * What this pays for is the first draw_shelf rebuilding the focused card's
+	 * texture off the SD card - tens of milliseconds, because the evict on the
+	 * way in threw it away on purpose so the fresh autosave preview replaces
+	 * the stale one. With the clock already running, that cost was spent
+	 * INSIDE the fade: the first frame reached the panel with k already past a
+	 * half, so the shelf jumped from black to half lit and faded only the rest
+	 * of the way. Paying it here makes the fade a fade. */
+	draw_shelf(a);
+
+	t0 = plat_now_ms();
 	while ((now = plat_now_ms()) - t0 < ms) {
 		float k = (float)(now - t0) / (float)ms;
 		/* draw_shelf, NOT render: render ends in a present. Calling it here
@@ -1505,7 +1520,7 @@ static void launch(app *a)
 	 * key itself, so the press arrived here. */
 	if (plat_run_power_pressed()) { power_off(a); return; }
 
-	anim_return(a, 90);
+	anim_return(a, 60);
 	/* Seventy-nine open/write/close round trips through sysfs, measured at
 	 * 35-52ms. Nothing about them is urgent and the panel is what the player
 	 * is waiting on, so they happen once the shelf is up rather than while it
