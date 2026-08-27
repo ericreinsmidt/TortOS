@@ -87,6 +87,12 @@ int  plat_resident_wait(void);
 bool plat_resident_line(const char *fmt, ...);
 /* Path from the most recent PREVIEW message, or "" - the menu's backdrop. */
 const char *plat_resident_last_preview(void);
+/* Where Diatom is actually drawing the game, from its DISPLAY message. False
+ * until it has said, which is the standalone path and the first moments of a
+ * launch. Cached rather than asked for: Diatom reports it from the one place
+ * its mode or rect can change, settling included (its ADR-0022), so the last
+ * one heard is current. */
+bool plat_resident_rect(SDL_Rect *out);
 
 void plat_request_poweroff(void);
 void plat_leds_off(void);

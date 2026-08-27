@@ -381,6 +381,8 @@ static int    dsock = -1;
 static char   dbuf[4096];
 static size_t dused;
 static char   d_preview[1024];
+static SDL_Rect d_rect;
+static bool     d_rect_known;
 static int    d_pend_vol = -1, d_pend_vol_n;      /* LEVEL events, held until */
 static int    d_pend_bri = -1, d_pend_bri_n;      /* EXIT hands levels back  */
 
@@ -525,6 +527,7 @@ bool plat_resident_send(const char *tag, const char *core, const char *rom,
 		if (!dconnect()) return false;
 		while ((l = dline(0))) { }                 /* drop stale events */
 		d_preview[0] = '\0';
+		d_rect_known = false;
 		d_pend_vol = d_pend_bri = -1;
 
 		if (!dsend("RUN\tcore=%s\trom=%s\ttag=%s"
@@ -592,6 +595,25 @@ static void d_note_level(const char *l)
 	else if (strncmp(k + 5, "brightness", 10) == 0) { d_pend_bri = idx; d_pend_bri_n = cnt; }
 }
 
+/* "DISPLAY\tmode=native\tfilter=nearest\trect=256x224+384+272" */
+static void d_note_display(const char *l)
+{
+	const char *r = strstr(l, "rect=");
+	int w, h, x, y;
+
+	if (!r || sscanf(r + 5, "%dx%d+%d+%d", &w, &h, &x, &y) != 4) return;
+	if (w <= 0 || h <= 0) return;
+	d_rect.w = w; d_rect.h = h; d_rect.x = x; d_rect.y = y;
+	d_rect_known = true;
+}
+
+bool plat_resident_rect(SDL_Rect *out)
+{
+	if (!d_rect_known) return false;
+	*out = d_rect;
+	return true;
+}
+
 static void d_apply_levels(void)
 {
 	/* Through the public setters (defined below, past this point in the
@@ -637,6 +659,7 @@ static int diatom_wait(void)
 			else if (strncmp(l, "PREVIEW\tpath=", 13) == 0)
 				snprintf(d_preview, sizeof d_preview, "%s", l + 13);
 			else if (strncmp(l, "LEVEL\t", 6) == 0) d_note_level(l);
+			else if (strncmp(l, "DISPLAY\t", 8) == 0) d_note_display(l);
 			else if (strncmp(l, "EXIT", 4) == 0) { d_apply_levels(); return RES_EXIT; }
 			else if (strncmp(l, "ERROR", 5) == 0) {
 				fprintf(stderr, "diatom: %s\n", l);

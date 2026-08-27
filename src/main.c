@@ -1029,6 +1029,27 @@ static void build_child_env(void)
  * paths the launch handed over, so the autosave funnel stays one thing. */
 typedef enum { GM_CONTINUE, GM_SAVE, GM_LOAD, GM_RESET, GM_QUIT, GM_ROWS } gm_row;
 
+/* The paused frame, drawn where the game actually is.
+ *
+ * Diatom reports its rect with every DISPLAY message (its ADR-0022 put it there
+ * so a launcher need not recompute it from geometry it does not have), and the
+ * preview it writes is the CORE'S frame - 256x224 for an NES, no display mode
+ * applied. Stretching that to the panel, which is what this used to do, showed
+ * a game that looked nothing like the one paused underneath at any mode that
+ * does not fill the screen, and made the picture jump size the moment MENU was
+ * pressed.
+ *
+ * Falls back to filling the panel when Diatom has not said - the standalone
+ * path, and the first moments of a launch. */
+static void draw_paused_frame(app *a, SDL_Texture *bg)
+{
+	SDL_Rect r;
+
+	if (!bg) return;
+	if (plat_resident_rect(&r)) SDL_RenderCopy(a->r, bg, NULL, &r);
+	else                        SDL_RenderCopy(a->r, bg, NULL, NULL);
+}
+
 /* Copy the paused frame's preview beside a manual save, so the slot strip can
  * show what is inside each slot. The pause preview IS the frame the save
  * serialises - Diatom wrote it on the way into the menu - so a straight copy
@@ -1198,7 +1219,7 @@ static int slot_strip(app *a, SDL_Texture *bg, int saving)
 
 		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 255);
 		SDL_RenderClear(a->r);
-		if (bg) SDL_RenderCopy(a->r, bg, NULL, NULL);
+		draw_paused_frame(a, bg);
 		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 185);
 		SDL_RenderFillRect(a->r, NULL);
@@ -1297,7 +1318,7 @@ static void game_menu(app *a)
 
 		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 255);
 		SDL_RenderClear(a->r);
-		if (bg) SDL_RenderCopy(a->r, bg, NULL, NULL);
+		draw_paused_frame(a, bg);
 		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
 		SDL_RenderFillRect(a->r, NULL);
