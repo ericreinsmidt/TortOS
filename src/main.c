@@ -659,6 +659,10 @@ static void anim_poweroff(app *a)
 
 static void power_off(app *a)
 {
+	/* Here rather than only on the return path: launch.sh runs its leds_off at
+	 * the TOP of its restart loop, and a power-off breaks that loop instead of
+	 * going round it, so this is the last chance to darken them. */
+	plat_leds_off();
 	remember_place(a);
 	plat_request_poweroff();
 	anim_poweroff(a);
@@ -1508,24 +1512,29 @@ static void launch(app *a)
 
 	t_exit("card evict");
 
-	/* 52ms of sysfs writes, and it looks like it belongs after the fade where
-	 * it would cost nothing. It does not: both early returns below lead to the
-	 * launcher exiting for a power-off, and launch.sh only runs its own
-	 * leds_off at the TOP of the restart loop, which a power-off never reaches.
-	 * Moved past them, a shutdown from a game keeps whatever the game lit.
-	 * Behind the black present is enough - it is dead time either way now. */
-	plat_leds_off();
 	plat_input_flush();
 	memset(&a->in, 0, sizeof a->in);
-	t_exit("leds+flush");
+	t_exit("flush");
 
-	if (access(PLAYOS_POWEROFF_FLAG, F_OK) == 0) { a->running = false; return; }
+	/* This one exits without power_off(), so it darkens the lights itself. */
+	if (access(PLAYOS_POWEROFF_FLAG, F_OK) == 0) {
+		plat_leds_off();
+		a->running = false;
+		return;
+	}
 	/* Power was pressed during the game. The emulator no longer handles that
 	 * key itself, so the press arrived here. */
 	if (plat_run_power_pressed()) { power_off(a); return; }
 
-	anim_return(a, 130);
+	anim_return(a, 90);
 	t_exit("fade done");
+	/* Seventy-nine open/write/close round trips through sysfs, measured at
+	 * 35-52ms. Nothing about them is urgent and the panel is what the player
+	 * is waiting on, so they happen once the shelf is up rather than while it
+	 * is still black. The two paths above that leave without reaching here do
+	 * it themselves. */
+	plat_leds_off();
+	t_exit("leds off");
 }
 
 /* ---------- input --------------------------------------------------------- */
