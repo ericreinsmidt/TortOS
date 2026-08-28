@@ -46,6 +46,7 @@ case $WHAT in elf|all)
 	$A push "$ROOT/build/setbright"         "$P/" > /dev/null
 	$A push "$ROOT/config/systems.cfg"      "$P/" > /dev/null
 	$A push "$ROOT/config/playos.cfg"       "$P/" > /dev/null
+	$A push "$ROOT/config/coreopts.cfg"     "$P/" > /dev/null
 	$A push "$ROOT/sd/playos/launch.sh"     "$P/" > /dev/null
 	$A push "$ROOT/sd/.tmp_update/updater"   /mnt/SDCARD/.tmp_update/ > /dev/null
 	$A push "$ROOT/sd/.tmp_update/tg5040.sh" /mnt/SDCARD/.tmp_update/ > /dev/null
