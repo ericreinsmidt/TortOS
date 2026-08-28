@@ -23,3 +23,6 @@ sysroot/
 # Local ROM/BIOS test set. 889 MB of content that must never enter history.
 /PlayOS-Test-Set/
 /PlayOS-Test-Set.zip
+
+# Design working files: source documents for art, not build inputs.
+/tortos_logo_ideas/
