@@ -21,7 +21,7 @@ from fontTools.ttLib import TTFont
 from fontTools.pens.svgPathPen import SVGPathPen
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from markdef import BG, OFFWHT, BLUE, GREEN, DKGREEN, CELLS, HEAD, CENTRE, hexf
+from markdef import BG, OFFWHT, CYAN, GREEN, DKGREEN, CELLS, HEAD, CENTER, hexf
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FONT = os.path.join(ROOT, "res", "fonts", "wordmark.ttf")
@@ -38,7 +38,7 @@ T_PTS = [(109, 728), (596, 728), (581, 614), (396, 614),
          (320, 0), (200, 0), (276, 614), (95, 614)]
 T_ADV, INK_R, CANVAS_W = 583.0, 477.0, 1200.0
 RAW = [(T_TOP + TH / 2, 400, 600, DKGREEN),
-       (T_TOP + TH / 2 + PITCH, 250, 622, BLUE),
+       (T_TOP + TH / 2 + PITCH, 250, 622, CYAN),
        (T_TOP + TH / 2 + PITCH * 2, 355, 600, GREEN)]
 R, PAD = 40.0, 24.0
 
@@ -100,7 +100,7 @@ def lockup_svg():
     f = [poly(barpts(a, b, y), hexf(c)) for (y, a, b, c) in BARS]
     f.append(poly([(WORD_X + px * K, BASELINE - py * K) for px, py in T_PTS], hexf(OFFWHT)))
     scale, penx = FSIZE / _upm, WORD_X + T_ADV * K + TUCK
-    for text, col in (("ort", hexf(OFFWHT)), ("OS", hexf(BLUE))):
+    for text, col in (("ort", hexf(OFFWHT)), ("OS", hexf(CYAN))):
         for ch in text:
             d, adv = glyph(ch)
             if d:
@@ -112,7 +112,7 @@ def lockup_svg():
 
 def mark_svg():
     f = [poly(hexpts(x, y, R * 0.95), hexf(c)) for (x, y, c) in MARK_CELLS]
-    f.append(poly(hexpts(0, 0, R * 0.95), hexf(CENTRE)))
+    f.append(poly(hexpts(0, 0, R * 0.95), hexf(CENTER)))
     return "\n".join(f)
 
 
@@ -133,11 +133,11 @@ def png(kind, scale, dark):
         bx, by = T(WORD_X + T_ADV * K + TUCK, BASELINE)
         d.text((bx, by), "ort", font=fo, fill=OFFWHT + (255,), anchor="ls")
         d.text((bx + d.textlength("ort", font=fo), by), "OS", font=fo,
-               fill=BLUE + (255,), anchor="ls")
+               fill=CYAN + (255,), anchor="ls")
     else:
         for (x, y, c) in MARK_CELLS:
             d.polygon([T(*p) for p in hexpts(x, y, R * 0.95)], fill=c + (255,))
-        d.polygon([T(*p) for p in hexpts(0, 0, R * 0.95)], fill=CENTRE + (255,))
+        d.polygon([T(*p) for p in hexpts(0, 0, R * 0.95)], fill=CENTER + (255,))
     return im.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
 
 

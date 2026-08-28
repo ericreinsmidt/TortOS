@@ -53,7 +53,7 @@ N_FRAMES = 72                      # 2.400 s exactly
 SS = 3                             # supersample factor
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from markdef import BG, OFFWHT, BLUE, GREEN, DKGREEN, CELLS, HEAD   # noqa: E402
+from markdef import BG, OFFWHT, CYAN, GREEN, DKGREEN, CELLS, HEAD   # noqa: E402
 
 # ---- the lockup, in the same design units the exported SVG uses -------------
 FSIZE  = 150.0
@@ -74,7 +74,7 @@ INK_R  = 477.0                     # measured ink right edge, with TUCK applied
 DESIGN_W = 1200.0
 
 BARS_RAW = [(T_TOP + TH / 2,             400, 600, DKGREEN),
-            (T_TOP + TH / 2 + PITCH,     250, 622, BLUE),
+            (T_TOP + TH / 2 + PITCH,     250, 622, CYAN),
             (T_TOP + TH / 2 + PITCH * 2, 355, 600, GREEN)]
 
 
@@ -129,7 +129,7 @@ def draw_turtle(d, cx, cy, r, sx, sy, alpha):
         d.polygon(hexpts(cx + i * dx * sx, cy + j * dy * sy, r * 0.95, sx, sy),
                   fill=col + (alpha,), outline=(0, 0, 0, alpha), width=max(1, int(3 * SS * SCALE)))
     d.polygon(hexpts(cx, cy, r * 0.95, sx, sy),
-              fill=BLUE + (alpha,), outline=(0, 0, 0, alpha), width=max(1, int(3 * SS * SCALE)))
+              fill=CYAN + (alpha,), outline=(0, 0, 0, alpha), width=max(1, int(3 * SS * SCALE)))
 
 
 def eo(t): return 1 - (1 - t) ** 3
@@ -183,7 +183,7 @@ def render(n, font):
         ox = wx + T_ADV * K + TUCK
         ld.text((X(ox), Y(BASELINE)), "ort", font=font, fill=OFFWHT + (al,), anchor="ls")
         tw = ld.textlength("ort", font=font)
-        ld.text((X(ox) + tw, Y(BASELINE)), "OS", font=font, fill=BLUE + (al,), anchor="ls")
+        ld.text((X(ox) + tw, Y(BASELINE)), "OS", font=font, fill=CYAN + (al,), anchor="ls")
         im = Image.alpha_composite(im, L); d = ImageDraw.Draw(im, "RGBA")
 
     # --- the speed bars, in behind the wordmark -----------------------------

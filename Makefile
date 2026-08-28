@@ -6,7 +6,7 @@ IMAGE := tortos-toolchain
 BRICK ?= 192.168.1.101
 SSH := sshpass -p 'tina' ssh -o StrictHostKeyChecking=no root@$(BRICK)
 
-.PHONY: all clean native toolchain vendor boot payload release install-card \
+.PHONY: all clean native toolchain vendor boot checkmark payload release install-card \
         adb adb-elf adb-res adb-vendor adb-restart adb-run adb-log \
         deploy restart logs
 
@@ -43,7 +43,14 @@ vendor:
 boot:
 	python3 tools/genboot.py
 
-payload: all
+# src/main.c hand-keeps a copy of the mark that C cannot import from
+# tools/markdef.py. payload depends on this for the same reason payload.sh
+# refuses a card whose systems.cfg names cores vendor/ does not have: the
+# failure is silent otherwise, and it ships.
+checkmark:
+	python3 tools/checkmark.py
+
+payload: all checkmark
 	./mk/payload.sh
 
 VERSION ?= 1.0

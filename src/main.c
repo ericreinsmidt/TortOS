@@ -505,7 +505,8 @@ static void draw_shell(SDL_Renderer *r, float cx, float cy, float rad,
 		col.a = alpha;
 		draw_hex(r, cx + cells[k].i * dx, cy + cells[k].j * dy, rad * 0.95f, col);
 	}
-	col.r = 74; col.g = 158; col.b = 255; col.a = alpha;
+	/* markdef.CYAN, and the same value as MENU_ACCENT below. */
+	col.r = 61; col.g = 214; col.b = 255; col.a = alpha;
 	draw_hex(r, cx, cy, rad * 0.95f, col);
 	if (dim > 0.0f) {
 		SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
@@ -768,8 +769,8 @@ typedef struct {
 } menu_row;
 
 #define MENU_RADIUS 20
-/* The launcher's own cyan. Named for a genboot.py CYAN that no longer
- * exists; see the note where it is drawn. */
+/* The system's one accent: this menu, the volume OSD, and the mark's center
+ * cell in both animations. Hand-kept equal to markdef.CYAN and UI_CYAN_*. */
 #define MENU_ACCENT 0x3DD6FFu
 
 /* The unit every menu measurement is in. Row height, padding and the gap
@@ -848,14 +849,15 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 	content_y = panel.y + content_off;
 
 	/* TortOS's own color, not the focused system's. The menu belongs to the
-	 * launcher rather than to whatever card happens to be under the cursor.
+	 * launcher rather than to whatever card happens to be under the cursor, so
+	 * the boot animation, the mark and this chrome are one accent: the device's
+	 * first frame and the shelf agree.
 	 *
-	 * It used to be justified as matching the boot animation's play triangle,
-	 * which is twice stale: that animation was replaced by the turtle, and the
-	 * mark's blue is markdef.BLUE, (74,158,255), against this (61,214,255).
-	 * They are a blue and a cyan, near enough to look deliberate in sequence
-	 * and far enough apart that calling them one color was wrong. Whether they
-	 * should be reconciled is a design question, not a fact about the code. */
+	 * They did not always. The mark carried its own blue, (74,158,255), while
+	 * this was (61,214,255), and comments in both files called them the same
+	 * color without either having been checked against the other. Unified on
+	 * this cyan on 2026-08-28, that being the direction that stays clear of the
+	 * nine system accents; the mark's old blue sat close to Genesis. */
 	ui_glow(a->r, &panel, accent, 60, 1.5f);
 	ui_panel(a->r, &panel, MENU_RADIUS, accent);
 

@@ -74,8 +74,16 @@ expose. `MENU_ACCENT` was documented as "genboot.py's CYAN, the boot
 animation's play triangle": there is no CYAN in genboot.py any more, the play
 triangle belonged to the animation the turtle replaced, and the mark's blue
 is (74,158,255) against the menu's (61,214,255). The two comments claiming
-those were one color now state the difference. Reconciling them is a design
-decision and is left open.
+those were one color now state the difference.
+
+Reconciled the same day, on cyan: `markdef.CYAN` is (61,214,255) and the mark,
+the wordmark, both animations and the launcher chrome are one accent. Cyan
+rather than the mark's blue because the blue sits about eight degrees of hue
+from the Genesis card accent, while cyan is clear of all nine. The boot
+animation, `bootlogo.bmp`, `splash.png` and the SVG and PNG exports were all
+regenerated from the definition; `tools/checkmark.py`, wired into `payload`,
+now fails the build if `src/main.c`'s hand-kept copy of the mark drifts from
+`markdef.py` again.
 
 **3. The boot chain. Done 2026-08-28, folded into phase 1** for the reason
 given there. `.tmp_update/tg5040.sh`, `launch.sh` internals, the payload and
