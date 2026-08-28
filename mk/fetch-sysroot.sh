@@ -17,7 +17,7 @@
 set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 OUT=${1:-$ROOT/sysroot}
-DL=/tmp/playos-sysroot-dl
+DL=/tmp/tortos-sysroot-dl
 
 # SDL2 headers are version-matched to the library the firmware ships
 # (libSDL2-2.0.so.0.3000.8 = 2.30.8).

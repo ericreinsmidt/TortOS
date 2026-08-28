@@ -14,14 +14,14 @@ continuation rather than a cut, and that only works if the first frame matches
 what the bootloader left on the panel.
 
 THE LENGTH IS A CONTRACT, NOT A PREFERENCE. launch.sh starts this in the
-background and the launcher blocks on /tmp/playos_bootanim until ffmpeg clears
+background and the launcher blocks on /tmp/tortos_bootanim until ffmpeg clears
 it, so anything longer than the launcher's own startup is time the player
 spends waiting at a picture. Today the launcher is ready about 1.06 s after it
 starts, and roughly 90 lines of launch.sh run between this starting and the
 launcher starting, so 2.4 s finishes first and nobody waits. The launcher
 reports it if that ever stops being true: wait_for_boot_anim calls
 t_mark("anim wait"), which prints only when it actually waited. A `boot: anim
-wait` line in playos.log means this file got too long or startup got faster.
+wait` line in tortos.log means this file got too long or startup got faster.
 
 The last beat is a still hold, and the frame it holds is the finished lockup -
 the same composition as tortos-lockup.svg, from the same constants. When
@@ -87,7 +87,7 @@ def bar_pts(x0, x1, yc):
 
 _raw_left = min(min(p[0] for p in bar_pts(a, b, y)) for (y, a, b, _) in BARS_RAW)
 _raw_right = 650.0 + INK_R
-DX = DESIGN_W / 2 - (_raw_left + _raw_right) / 2      # centre the lockup
+DX = DESIGN_W / 2 - (_raw_left + _raw_right) / 2      # center the lockup
 WORD_X = 650.0 + DX
 BARS = [(y, a + DX, b + DX, c) for (y, a, b, c) in BARS_RAW]
 LOCK_L, LOCK_R = _raw_left + DX, _raw_right + DX
@@ -228,7 +228,7 @@ def main():
             print("  frame %2d/%d" % (i + 1, N_FRAMES))
 
     if first.convert("RGB").getextrema() != ((BG[0], BG[0]), (BG[1], BG[1]), (BG[2], BG[2])):
-        sys.exit("frame 0 is not the flat background colour")
+        sys.exit("frame 0 is not the flat background color")
 
     bmp = os.path.join(OUT_DIR, "bootlogo.bmp")
     png = os.path.join(OUT_DIR, "splash.png")

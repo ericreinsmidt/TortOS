@@ -7,9 +7,9 @@
 set -e
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 OUT=$ROOT/out/sd
-P=$OUT/PlayOS
+P=$OUT/TortOS
 
-[ -f "$ROOT/build/playos.elf" ] || { echo "run make first"; exit 1; }
+[ -f "$ROOT/build/tortos.elf" ] || { echo "run make first"; exit 1; }
 DIATOM_ELF=${DIATOM_ELF:-$ROOT/../diatom/build/brick/diatom}
 [ -f "$DIATOM_ELF" ] || { echo "no diatom at $DIATOM_ELF (set DIATOM_ELF)"; exit 1; }
 [ -f "$ROOT/vendor/cores/fceumm_libretro.so" ] || { echo "run mk/fetch-vendor.sh first"; exit 1; }
@@ -19,10 +19,10 @@ mkdir -p "$P/cards" "$P/cores" \
          "$OUT/.tmp_update" "$OUT/trimui/app" \
          "$OUT/Roms" "$OUT/Bios" "$OUT/Saves"
 
-cp "$ROOT/build/playos.elf" "$P/"
+cp "$ROOT/build/tortos.elf" "$P/"
 cp "$ROOT/build/setbright" "$P/"          # brightness before the boot animation
-cp "$ROOT/sd/playos/launch.sh" "$P/"
-cp "$ROOT/config/systems.cfg" "$ROOT/config/playos.cfg" \
+cp "$ROOT/sd/tortos/launch.sh" "$P/"
+cp "$ROOT/config/systems.cfg" "$ROOT/config/tortos.cfg" \
    "$ROOT/config/coreopts.cfg" "$P/"
 cp "$ROOT/res/cards/"*.png "$P/cards/"
 cp "$ROOT/res/fonts/menu.ttf" "$P/"       # the UI face, and the in-game menu's
@@ -56,7 +56,7 @@ cp "$ROOT/sd/trimui/app/MainUI" "$ROOT/sd/trimui/app/runtrimui.sh" "$OUT/trimui/
 
 chmod +x "$OUT/.tmp_update/updater" "$OUT/.tmp_update/tg5040.sh" \
          "$OUT/trimui/app/MainUI" "$OUT/trimui/app/runtrimui.sh" \
-         "$P/launch.sh" "$P/playos.elf" "$P/diatom" "$P/setbright"
+         "$P/launch.sh" "$P/tortos.elf" "$P/diatom" "$P/setbright"
 
 # One ROM folder per system, with the .media folder box art goes in. Read from
 # systems.cfg (awk, not sed: folder names contain spaces).
@@ -72,7 +72,7 @@ du -sh "$OUT"
 echo "payload ready: $OUT"
 
 VERSION=${VERSION:-1.0}
-ZIP="$ROOT/out/PlayOS-v$VERSION.zip"
+ZIP="$ROOT/out/TortOS-v$VERSION.zip"
 rm -f "$ZIP"
 ( cd "$OUT" && zip -qr "$ZIP" . -x '.DS_Store' '._*' )
 echo "release zip:  $ZIP  ($(du -h "$ZIP" | cut -f1))"

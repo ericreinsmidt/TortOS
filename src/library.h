@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: 0BSD */
-#ifndef PLAYOS_LIBRARY_H
-#define PLAYOS_LIBRARY_H
+#ifndef TORTOS_LIBRARY_H
+#define TORTOS_LIBRARY_H
 
 #include <stdbool.h>
 

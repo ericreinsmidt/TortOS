@@ -1,8 +1,8 @@
 """The TortOS mark: one definition, everything else derives from it.
 
-The shell's colours and cell positions were duplicated across the boot
+The shell's colors and cell positions were duplicated across the boot
 animation, the shutdown animation in src/main.c, and the exported SVG and PNG.
-On 2026-08-28 the cell beside the head changed colour and that meant editing
+On 2026-08-28 the cell beside the head changed color and that meant editing
 the same table in four places - the identical failure the system accents had,
 where six of nine cards had drifted from config/systems.cfg.
 
@@ -18,13 +18,13 @@ happens to be dark, not an appendage.
 
 BG      = (17, 19, 16)
 OFFWHT  = (233, 236, 227)
-BLUE    = (74, 158, 255)      # the centre; also the boot line and menu chrome
+BLUE    = (74, 158, 255)      # the center; also the boot line and menu chrome
 GREEN   = (94, 138, 86)
-DKGREEN = (61, 89, 67)        # the head, and what dims the centre at shutdown
+DKGREEN = (61, 89, 67)        # the head, and what dims the center at shutdown
 MIDGRN  = (104, 138, 96)
 LTGRN   = (128, 176, 118)
 
-# (lattice i, lattice j, colour) - i in units of sqrt(3)*r, j in units of 1.5*r
+# (lattice i, lattice j, color) - i in units of sqrt(3)*r, j in units of 1.5*r
 CELLS = [
     (-0.5, -1.0, LTGRN),   # upper left
     ( 0.5, -1.0, MIDGRN),  # upper right

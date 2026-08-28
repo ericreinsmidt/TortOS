@@ -3,7 +3,7 @@
 
     python3 tools/genmark.py [outdir]      default: tortos_logo_ideas/exports
 
-Cells and colours come from tools/markdef.py, the same module the boot
+Cells and colors come from tools/markdef.py, the same module the boot
 animation imports, so the art cannot drift from what the device draws. The type
 is converted to outlines rather than referenced by family name: the files render
 identically on a machine with no Josefin installed, and the paths can be pulled

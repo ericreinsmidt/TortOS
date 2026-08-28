@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: 0BSD */
-#ifndef PLAYOS_COVERFLOW_H
-#define PLAYOS_COVERFLOW_H
+#ifndef TORTOS_COVERFLOW_H
+#define TORTOS_COVERFLOW_H
 
 #include <SDL.h>
 #include <stdbool.h>

@@ -9,7 +9,7 @@
 set -e
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 WHAT=${1:-all}
-P=/mnt/SDCARD/PlayOS
+P=/mnt/SDCARD/TortOS
 
 # Pick the TrimUI out of whatever else is plugged in.
 SER=${ADB_SERIAL:-$(adb devices | awk '/\tdevice$/{print $1}' | while read s; do
@@ -41,16 +41,16 @@ $A shell "mkdir -p $P/cards $P/cores $P/lib $P/bin /mnt/SDCARD/.tmp_update \
           /mnt/SDCARD/.system/tg5040/shaders" > /dev/null
 
 case $WHAT in elf|all)
-	[ -f "$ROOT/build/playos.elf" ] || { echo "run make first"; exit 1; }
-	$A push "$ROOT/build/playos.elf"        "$P/" > /dev/null
+	[ -f "$ROOT/build/tortos.elf" ] || { echo "run make first"; exit 1; }
+	$A push "$ROOT/build/tortos.elf"        "$P/" > /dev/null
 	$A push "$ROOT/build/setbright"         "$P/" > /dev/null
 	$A push "$ROOT/config/systems.cfg"      "$P/" > /dev/null
-	$A push "$ROOT/config/playos.cfg"       "$P/" > /dev/null
+	$A push "$ROOT/config/tortos.cfg"       "$P/" > /dev/null
 	$A push "$ROOT/config/coreopts.cfg"     "$P/" > /dev/null
-	$A push "$ROOT/sd/playos/launch.sh"     "$P/" > /dev/null
+	$A push "$ROOT/sd/tortos/launch.sh"     "$P/" > /dev/null
 	$A push "$ROOT/sd/.tmp_update/updater"   /mnt/SDCARD/.tmp_update/ > /dev/null
 	$A push "$ROOT/sd/.tmp_update/tg5040.sh" /mnt/SDCARD/.tmp_update/ > /dev/null
-	$A shell "chmod +x $P/playos.elf $P/setbright $P/launch.sh \
+	$A shell "chmod +x $P/tortos.elf $P/setbright $P/launch.sh \
 	          /mnt/SDCARD/.tmp_update/updater /mnt/SDCARD/.tmp_update/tg5040.sh"
 	echo "  + launcher"
 esac
@@ -61,8 +61,8 @@ case $WHAT in res|all)
 	# The bootloader splash and the pic2fb splash. launch.sh installs these
 	# ONCE, guarded by .bootlogo_applied / .splash_applied, so pushing them
 	# is not enough on a device that has already been set up - clear the
-	# markers too when the animation's opening colour changes, or the
-	# handoff into it steps from the old colour to the new one.
+	# markers too when the animation's opening color changes, or the
+	# handoff into it steps from the old color to the new one.
 	$A push "$ROOT/res/boot/bootlogo.bmp"   "$P/" > /dev/null
 	$A push "$ROOT/res/boot/splash.png"     "$P/" > /dev/null
 	echo "  + assets"

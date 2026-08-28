@@ -35,27 +35,57 @@ states), and nothing has shipped, so there are no other cards in the world.
 
 ## Phases
 
-**1. Repo, mechanical.** Identifiers, strings, filenames, `sd/playos/` ->
-`sd/tortos/`, `config/playos.cfg` -> `tortos.cfg`, `playos.elf` -> `tortos.elf`.
-Both builds green is the exit criterion; the compiler catches a missed
-identifier, so this phase is safe by construction.
+**1. Repo, mechanical. Done 2026-08-28.** Identifiers, strings, filenames,
+`sd/playos/` -> `sd/tortos/`, `config/playos.cfg` -> `tortos.cfg`,
+`playos.elf` -> `tortos.elf`.
 
-**2. Repo, prose.** README, licences, DEVICE-LOOP, VOLUME-CURVE, the menu
-heading and About row. No behaviour change.
+"Safe by construction, the compiler catches a missed identifier" was too
+confident. Three live names carry no type for it to check: the host binary
+`build-native/playos`, which has no `.elf` in it to match on; the `pgrep -f
+"PlayOS/diatom --socket"` guard inside `launch.sh`; and `P=$OUT/PlayOS` in
+`payload.sh`. Both builds went green with all three still wrong. Running
+`make payload` and resolving each `/mnt/SDCARD` path the chain names against
+the tree it produced is the check that actually found them.
 
-**3. The boot chain.** `.tmp_update/tg5040.sh`, `launch.sh` internals, the
-payload and zip names. Nothing deployed yet - this is still repo-only.
+It also absorbed phase 3, not by choice. The pass that renamed
+`/mnt/SDCARD/PlayOS` reached `tg5040.sh` and `launch.sh` in the same sweep, so
+the boot chain was already half-moved -- `tg5040.sh` looking for
+`/mnt/SDCARD/TortOS/launch.sh` while `payload.sh` still assembled
+`out/sd/PlayOS/`. That half state is the one arrangement that certainly does
+not boot, and it is not worth committing and then sleeping on, so the
+remaining live names were finished here.
+
+**2. Repo, prose.** README, licenses, DEVICE-LOOP, VOLUME-CURVE, the menu
+heading and About row. No behavior change.
+
+**3. The boot chain. Done 2026-08-28, folded into phase 1** for the reason
+given there. `.tmp_update/tg5040.sh`, `launch.sh` internals, the payload and
+zip names, all repo-only; the card itself is still phase 4.
 
 **4. Device.** A fresh card install rather than an in-place rename: the
 in-place version means renaming the directory a running `launch.sh` is
 executing from, and there is no good moment to do that. Format, `make
 install-card`, restore saves from `backups/`.
 
-Before this: `playos-bootbright.sh` is installed into `/usr/trimui/bin` and
-patched into `/etc/init.d/runtrimui`, which is firmware, not card. A fresh card
-does not clean that up. Either leave the old name installed and keep
-`launch.sh` writing it, or unpatch the init script first. Decide before
-formatting.
+Before this, and it must be before: `playos-bootbright.sh` is installed into
+`/usr/trimui/bin` and patched into `/etc/init.d/runtrimui`, which is firmware,
+not card. A fresh card does not clean that up. The decision is to unpatch, for
+consistency of naming.
+
+The order is not free. `launch.sh` now greps `/etc/init.d/runtrimui` for
+`tortos-bootbright` and patches when it does not find it, and the device's
+`runtrimui` currently names `playos-bootbright`. So booting the new card
+against the un-unpatched firmware would take a backup, with
+`cp /etc/init.d/runtrimui /etc/init.d/runtrimui.tortos-bak`, of a file that is
+already patched -- and the stock original survives only in
+`runtrimui.playos-bak`, which nothing writes any more. Delete that or overwrite
+it and the clean copy is gone for good; the result also calls both bootbright
+scripts, one of which will not exist.
+
+So, while the old card still boots: restore `/etc/init.d/runtrimui` from
+`/etc/init.d/runtrimui.playos-bak`, delete `/usr/trimui/bin/playos-bootbright.sh`,
+and confirm `grep bootbright /etc/init.d/runtrimui` is empty. Only then
+format.
 
 Also note `.bootlogo_applied` and `.splash_applied` guard one-time installs; a
 fresh card has neither, so both get reapplied, which is what we want.

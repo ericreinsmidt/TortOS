@@ -63,7 +63,7 @@ static const struct { const char *name, *label; } DMODES[] = {
 
 typedef struct {
 	systems_cfg sys;
-	playos_cfg cfg;
+	tortos_cfg cfg;
 
 	SDL_Texture *sys_tex[CFG_MAX_SYSTEMS];
 	int sys_w[CFG_MAX_SYSTEMS], sys_h[CFG_MAX_SYSTEMS];
@@ -133,7 +133,7 @@ static void present_black(app *a)
  * once. */
 static void wait_for_boot_anim(void)
 {
-	const char *flag = getenv("PLAYOS_ANIM_FLAG");
+	const char *flag = getenv("TORTOS_ANIM_FLAG");
 	unsigned start;
 
 	if (!flag || !*flag || access(flag, F_OK) != 0) return;
@@ -259,7 +259,7 @@ static void preview_path(app *a, int s, const game_entry *g, char *out, size_t n
 {
 	const char *base = strrchr(g->file, '/');
 	base = base ? base + 1 : g->file;
-	snprintf(out, n, "%s/.playos/%s/%s.%s.bmp",
+	snprintf(out, n, "%s/.tortos/%s/%s.%s.bmp",
 	         P_SHARED, a->sys.systems[s].folder, base, slot_name(SLOT_AUTO));
 }
 
@@ -277,7 +277,7 @@ static void slot_state_path(app *a, int s, const game_entry *g, int slot,
 {
 	const char *base = strrchr(g->file, '/');
 	base = base ? base + 1 : g->file;
-	snprintf(out, n, "%s/.playos/%s/%s.%s.state",
+	snprintf(out, n, "%s/.tortos/%s/%s.%s.state",
 	         P_SHARED, a->sys.systems[s].folder, base, slot_name(slot));
 }
 
@@ -286,7 +286,7 @@ static void slot_preview_path(app *a, int s, const game_entry *g, int slot,
 {
 	const char *base = strrchr(g->file, '/');
 	base = base ? base + 1 : g->file;
-	snprintf(out, n, "%s/.playos/%s/%s.%s.bmp",
+	snprintf(out, n, "%s/.tortos/%s/%s.%s.bmp",
 	         P_SHARED, a->sys.systems[s].folder, base, slot_name(slot));
 }
 
@@ -303,9 +303,9 @@ static void state_path(app *a, int s, const game_entry *g, char *out, size_t n)
 static void persist_dir_ensure(app *a, int s)
 {
 	char d[LIB_PATH * 2];
-	snprintf(d, sizeof d, "%s/.playos", P_SHARED);
+	snprintf(d, sizeof d, "%s/.tortos", P_SHARED);
 	mkdir(d, 0755);
-	snprintf(d, sizeof d, "%s/.playos/%s", P_SHARED, a->sys.systems[s].folder);
+	snprintf(d, sizeof d, "%s/.tortos/%s", P_SHARED, a->sys.systems[s].folder);
 	mkdir(d, 0755);
 }
 
@@ -471,16 +471,16 @@ static void draw_hex(SDL_Renderer *r, float cx, float cy, float rad, SDL_Color c
 	SDL_RenderGeometry(r, NULL, v, 7, idx, 18);
 }
 
-/* The mark, drawn about its own centre.
+/* The mark, drawn about its own center.
  *
  * `head` slides the dark cell back along the lattice: 1.0 is where it sits at
- * rest, 0.0 is home on the centre. `dim` then fades that same dark over the
- * blue centre cell, 0 to 1.
+ * rest, 0.0 is home on the center. `dim` then fades that same dark over the
+ * blue center cell, 0 to 1.
  *
  * The two are separate because at head = 0 the dark cell lands exactly on the
- * centre and is drawn UNDER the blue, so on its own the head just disappears.
+ * center and is drawn UNDER the blue, so on its own the head just disappears.
  * `dim` is what makes its arrival visible: the blue is the one lit thing in
- * either mark - the same colour as the boot line and the menu chrome - so
+ * either mark - the same color as the boot line and the menu chrome - so
  * covering it is the light going out, and the shell closes dark. */
 static void draw_shell(SDL_Renderer *r, float cx, float cy, float rad,
                        float head, float dim, Uint8 alpha)
@@ -533,7 +533,7 @@ static bool battery_low(void)
  * low. Drawn with horizontal spans -- SDL has no circle. */
 static void draw_low_battery_dot(SDL_Renderer *r)
 {
-	int cx = PLAYOS_SCREEN_W - 34, cy = 34, rad = 9;
+	int cx = TORTOS_SCREEN_W - 34, cy = 34, rad = 9;
 	SDL_SetRenderDrawColor(r, 224, 72, 72, 255);
 	for (int dy = -rad; dy <= rad; dy++) {
 		int dx = (int)(sqrt((double)(rad * rad - dy * dy)) + 0.5);
@@ -550,7 +550,7 @@ static void draw_background(app *a)
 	 * whole screen belongs to the machine you are looking at. Faint enough to
 	 * read as light rather than as a panel. */
 	{
-		SDL_Rect band = { 0, PLAYOS_SCREEN_H - 240, PLAYOS_SCREEN_W, 480 };
+		SDL_Rect band = { 0, TORTOS_SCREEN_H - 240, TORTOS_SCREEN_W, 480 };
 		ui_glow(r, &band, a->tint, 34, 1.7f);
 	}
 }
@@ -561,17 +561,17 @@ static void draw_systems(app *a)
 	const system_cfg *s = &a->sys.systems[a->sys_cursor];
 	char line[128];
 
-	cf_focus_rect(&CF_LAYOUT_SYSTEMS, PLAYOS_SCREEN_W, PLAYOS_SCREEN_H, &focus);
+	cf_focus_rect(&CF_LAYOUT_SYSTEMS, TORTOS_SCREEN_W, TORTOS_SCREEN_H, &focus);
 	ui_glow(a->r, &focus, s->accent, 110, 2.4f);
-	cf_draw(&a->cf_sys, a->r, PLAYOS_SCREEN_W, PLAYOS_SCREEN_H, a->sys.count,
+	cf_draw(&a->cf_sys, a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, a->sys.count,
 	        sys_get_tex, a, &CF_LAYOUT_SYSTEMS);
 
 	if (a->view[a->sys_cursor].list.count > 0)
 		snprintf(line, sizeof line, "%d games", a->view[a->sys_cursor].list.count);
 	else
 		snprintf(line, sizeof line, "no games in Roms/%s", s->folder);
-	ui_text(a->r, ui_font(UI_F_META), line, PLAYOS_SCREEN_W / 2, 690, 0, UI_TEXT_DIM);
-	ui_rail(a->r, PLAYOS_SCREEN_W, PLAYOS_SCREEN_H, a->sys_cursor, a->sys.count,
+	ui_text(a->r, ui_font(UI_F_META), line, TORTOS_SCREEN_W / 2, 690, 0, UI_TEXT_DIM);
+	ui_rail(a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, a->sys_cursor, a->sys.count,
 	        s->accent);
 }
 
@@ -582,16 +582,16 @@ static void draw_games(app *a)
 	SDL_Rect focus;
 	char count[64];
 
-	cf_focus_rect(&CF_LAYOUT_GAMES, PLAYOS_SCREEN_W, PLAYOS_SCREEN_H, &focus);
+	cf_focus_rect(&CF_LAYOUT_GAMES, TORTOS_SCREEN_W, TORTOS_SCREEN_H, &focus);
 	ui_glow(a->r, &focus, s->accent, 100, 2.3f);
-	cf_draw(&v->cf, a->r, PLAYOS_SCREEN_W, PLAYOS_SCREEN_H, v->list.count,
+	cf_draw(&v->cf, a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, v->list.count,
 	        game_get_tex, a, &CF_LAYOUT_GAMES);
 	evict_far(v, TEX_KEEP_NEAR);
 
 	if (v->list.count > 0) {
 		game_entry *g = &v->list.items[v->cursor];
 		int tw = ui_text_width(ui_font(UI_F_TITLE), g->title);
-		int tx = PLAYOS_SCREEN_W / 2;
+		int tx = TORTOS_SCREEN_W / 2;
 		/* A game with an autosave gets a dot in the system's color beside
 		 * its name: pressing A on it does not start it, it continues it.
 		 * Sized and centered off the title's own line, so it keeps sitting
@@ -608,13 +608,13 @@ static void draw_games(app *a)
 		}
 		ui_text(a->r, ui_font(UI_F_TITLE), g->title, tx, 40, 0, UI_TEXT);
 		snprintf(count, sizeof count, "%d / %d", v->cursor + 1, v->list.count);
-		ui_text(a->r, ui_font(UI_F_META), count, PLAYOS_SCREEN_W / 2, 690, 0,
+		ui_text(a->r, ui_font(UI_F_META), count, TORTOS_SCREEN_W / 2, 690, 0,
 		        UI_TEXT_DIM);
 	} else {
-		ui_text(a->r, ui_font(UI_F_TITLE), s->name, PLAYOS_SCREEN_W / 2, 40, 0,
+		ui_text(a->r, ui_font(UI_F_TITLE), s->name, TORTOS_SCREEN_W / 2, 40, 0,
 		        UI_TEXT);
 	}
-	ui_rail(a->r, PLAYOS_SCREEN_W, PLAYOS_SCREEN_H, v->cursor, v->list.count,
+	ui_rail(a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, v->cursor, v->list.count,
 	        s->accent);
 }
 
@@ -663,7 +663,7 @@ static void anim_launch(app *a, unsigned ms)
 	int tw = 0, th = 0;
 	SDL_Texture *card;
 
-	cf_focus_rect(&CF_LAYOUT_GAMES, PLAYOS_SCREEN_W, PLAYOS_SCREEN_H, &from);
+	cf_focus_rect(&CF_LAYOUT_GAMES, TORTOS_SCREEN_W, TORTOS_SCREEN_H, &from);
 	card = v->list.count ? game_get_tex(a, v->cursor, &tw, &th) : NULL;
 
 	while ((now = plat_now_ms()) - t0 < ms) {
@@ -677,8 +677,8 @@ static void anim_launch(app *a, unsigned ms)
 		if (card) {
 			dst.w = (int)(from.w * scale);
 			dst.h = (int)(from.h * scale);
-			dst.x = PLAYOS_SCREEN_W / 2 - dst.w / 2;
-			dst.y = PLAYOS_SCREEN_H / 2 - dst.h / 2;
+			dst.x = TORTOS_SCREEN_W / 2 - dst.w / 2;
+			dst.y = TORTOS_SCREEN_H / 2 - dst.h / 2;
 			SDL_SetTextureAlphaMod(card, (Uint8)(255 * (1.0f - k)));
 			SDL_RenderCopy(a->r, card, NULL, &dst);
 			SDL_SetTextureAlphaMod(card, 255);
@@ -707,7 +707,7 @@ static void anim_poweroff(app *a)
 {
 	const unsigned T_IN = 430, T_HEAD = 260, T_DIM = 210;
 	const unsigned ms = T_IN + T_HEAD + T_DIM;
-	const float cx = PLAYOS_SCREEN_W / 2.0f, cy = PLAYOS_SCREEN_H / 2.0f;
+	const float cx = TORTOS_SCREEN_W / 2.0f, cy = TORTOS_SCREEN_H / 2.0f;
 	const float rad = 46.0f;
 	unsigned t0 = plat_now_ms(), now;
 
@@ -715,10 +715,10 @@ static void anim_poweroff(app *a)
 		unsigned t = now - t0;
 		float x = cx, head = 1.0f, dim = 0.0f;
 		if (t < T_IN) {
-			/* In from the left, decelerating onto the centre. */
+			/* In from the left, decelerating onto the center. */
 			float k = (float)t / (float)T_IN;
 			float e = 1.0f - (1.0f - k) * (1.0f - k) * (1.0f - k);
-			x = -PLAYOS_SCREEN_W * 0.35f + (cx + PLAYOS_SCREEN_W * 0.35f) * e;
+			x = -TORTOS_SCREEN_W * 0.35f + (cx + TORTOS_SCREEN_W * 0.35f) * e;
 		} else if (t < T_IN + T_HEAD) {
 			float k = (float)(t - T_IN) / (float)T_HEAD;
 			head = 1.0f - k * k;          /* accelerating in, like a flinch */
@@ -826,11 +826,11 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 		if (w > content_w) content_w = w;
 	}
 	if (fixed_w > 0) content_w = fixed_w;
-	if (content_w > PLAYOS_SCREEN_W - margin * 2 - pad * 2)
-		content_w = PLAYOS_SCREEN_W - margin * 2 - pad * 2;
+	if (content_w > TORTOS_SCREEN_W - margin * 2 - pad * 2)
+		content_w = TORTOS_SCREEN_W - margin * 2 - pad * 2;
 
-	if (content_off + n * row_h + pad > PLAYOS_SCREEN_H - margin * 2) {
-		vis = (PLAYOS_SCREEN_H - margin * 2 - content_off - pad) / row_h;
+	if (content_off + n * row_h + pad > TORTOS_SCREEN_H - margin * 2) {
+		vis = (TORTOS_SCREEN_H - margin * 2 - content_off - pad) / row_h;
 		if (vis < 1) vis = 1;
 		if (vis > n) vis = n;
 		first = sel - vis / 2;
@@ -840,8 +840,8 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 
 	panel.w = content_w + pad * 2;
 	panel.h = content_off + vis * row_h + pad;
-	panel.x = (PLAYOS_SCREEN_W - panel.w) / 2;
-	panel.y = (PLAYOS_SCREEN_H - panel.h) / 2;
+	panel.x = (TORTOS_SCREEN_W - panel.w) / 2;
+	panel.y = (TORTOS_SCREEN_H - panel.h) / 2;
 	cx = panel.x + panel.w / 2;
 	content_x = panel.x + pad;
 	content_y = panel.y + content_off;
@@ -897,7 +897,7 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 		 * and stays one step quieter than a working row, which is the whole
 		 * signal that it does nothing yet. One step, though, not two: most of
 		 * this list is placeholders, and ranking them against an unselected
-		 * working row as well left the entire menu reading as greyed out. */
+		 * working row as well left the entire menu reading as grayed out. */
 		if (rows[i].live) lc = i == sel ? UI_TEXT      : UI_TEXT_SOFT;
 		else              lc = i == sel ? UI_TEXT_SOFT : UI_TEXT_DIM;
 		vc = rows[i].live && i == sel
@@ -1051,7 +1051,7 @@ static int menu_shelf_width(app *a)
 	return w;
 }
 
-static void playos_menu_draw(app *a, int sel)
+static void tortos_menu_draw(app *a, int sel)
 {
 	menu_row rows[MENU_MAX_ROWS];
 	menu_bufs bufs;
@@ -1067,7 +1067,7 @@ static void playos_menu_draw(app *a, int sel)
 	          a->screen == SCREEN_SYSTEMS ? MENU_ACCENT : a->tint);
 }
 
-static void playos_menu(app *a)
+static void tortos_menu(app *a)
 {
 	menu_row rows[MENU_MAX_ROWS];
 	menu_bufs bufs;
@@ -1119,7 +1119,7 @@ static void playos_menu(app *a)
 
 		tick_tint(a);
 		draw_shelf(a);
-		playos_menu_draw(a, sel);
+		tortos_menu_draw(a, sel);
 		plat_draw_osd(a->r);
 		SDL_RenderPresent(a->r);
 		SDL_Delay(8);
@@ -1237,7 +1237,7 @@ static void slot_draw(app *a, const slot_view *sv, int sel)
 	 * drawn to it. The border is the picture's own edge in the system's
 	 * color - a 240x160 GBA frame and a 256x224 NES frame are different
 	 * shapes, and neither should be padded out into the same rectangle. */
-	const SDL_Rect area = { (PLAYOS_SCREEN_W - 700) / 2, 129, 700, 451 };
+	const SDL_Rect area = { (TORTOS_SCREEN_W - 700) / 2, 129, 700, 451 };
 	const int bw = 12;
 	SDL_Rect img = area, frame;
 	char slotname[16];
@@ -1251,11 +1251,11 @@ static void slot_draw(app *a, const slot_view *sv, int sel)
 	 *
 	 * The margins are mirrored: the heading's top sits as far from the top of
 	 * the screen as the marker rail's bottom sits from the bottom of it, and
-	 * the heading is centred in the gap above the frame. That fixes every
+	 * the heading is centered in the gap above the frame. That fixes every
 	 * number here to one another rather than to taste, so changing the image
 	 * size moves the rest to match instead of drifting into something. */
 	ui_text(a->r, ui_font(UI_F_LABEL), sv->saving ? "Save to" : "Load from",
-	        PLAYOS_SCREEN_W / 2, 39, 0, UI_TEXT_DIM);
+	        TORTOS_SCREEN_W / 2, 39, 0, UI_TEXT_DIM);
 
 	if ((float)area.w / sv->aspect <= (float)area.h) {
 		img.w = area.w;
@@ -1294,17 +1294,17 @@ static void slot_draw(app *a, const slot_view *sv, int sel)
 	if (sel == 0) snprintf(slotname, sizeof slotname, "Auto");
 	else          snprintf(slotname, sizeof slotname, "Slot %d", sel);
 	ui_text(a->r, ui_font(UI_F_MENU), slotname,
-	        PLAYOS_SCREEN_W / 2, img.y + img.h + 36, 0, UI_TEXT);
+	        TORTOS_SCREEN_W / 2, img.y + img.h + 36, 0, UI_TEXT);
 	ui_text(a->r, ui_font(UI_F_META),
 	        sv->have[sel] ? sv->when[sel] : (sv->saving ? "\xE2\x80\x94" : ""),
-	        PLAYOS_SCREEN_W / 2, img.y + img.h + 42 + line_menu, 0, UI_TEXT_DIM);
+	        TORTOS_SCREEN_W / 2, img.y + img.h + 42 + line_menu, 0, UI_TEXT_DIM);
 
 	/* The dot rail: where you are among the slots, without showing every
 	 * picture.
 	 * A hollow-dim dot is a slot you cannot land on. */
 	{
 		int dots = GM_SLOTS + 1, dw = 36;
-		int x0 = (PLAYOS_SCREEN_W - dots * dw) / 2 + dw / 2;
+		int x0 = (TORTOS_SCREEN_W - dots * dw) / 2 + dw / 2;
 		int y  = img.y + img.h + 62 + line_menu + line_meta;
 
 		/* One size for every marker. Sizing the selected one larger meant the
@@ -1766,7 +1766,7 @@ static void launch(app *a)
 	memset(&a->in, 0, sizeof a->in);
 
 	/* This one exits without power_off(), so it darkens the lights itself. */
-	if (access(PLAYOS_POWEROFF_FLAG, F_OK) == 0) {
+	if (access(TORTOS_POWEROFF_FLAG, F_OK) == 0) {
 		plat_leds_off();
 		a->running = false;
 		return;
@@ -1977,11 +1977,11 @@ static void shot_draw_slots(app *a)
 
 static void take_shot(app *a)
 {
-	SDL_Surface *out = SDL_CreateRGBSurfaceWithFormat(0, PLAYOS_SCREEN_W,
-	                                                  PLAYOS_SCREEN_H, 32,
+	SDL_Surface *out = SDL_CreateRGBSurfaceWithFormat(0, TORTOS_SCREEN_W,
+	                                                  TORTOS_SCREEN_H, 32,
 	                                                  SDL_PIXELFORMAT_RGBA32);
 	draw_shelf(a);
-	if (shot_menu) playos_menu_draw(a, shot_menu_sel);
+	if (shot_menu) tortos_menu_draw(a, shot_menu_sel);
 	if (shot_slots) shot_draw_slots(a);
 	if (out) {
 		/* Read BEFORE presenting: the backbuffer is invalid afterwards. */
@@ -2050,8 +2050,8 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "no usable %s\n", path);
 		return 1;
 	}
-	snprintf(path, sizeof path, "%s/playos.cfg", P_ROOT);
-	cfg_load_playos(path, &a.cfg);
+	snprintf(path, sizeof path, "%s/tortos.cfg", P_ROOT);
+	cfg_load_tortos(path, &a.cfg);
 
 	/* Scan every system now, not when one is opened: it is three directory
 	 * reads, it happens behind the boot animation, and it means walking into
@@ -2079,7 +2079,7 @@ int main(int argc, char *argv[])
 	plat_input_init();
 	/* The config values are defaults handed to the settings code, which
 	 * prefers the player's saved levels over them. They are NOT reapplied
-	 * afterwards: doing that put playos.cfg ahead of the level the player last
+	 * afterwards: doing that put tortos.cfg ahead of the level the player last
 	 * chose and undid every nudge on the next restart. */
 	plat_settings_init(a.cfg.volume, a.cfg.brightness);
 	plat_leds_off();
@@ -2124,10 +2124,10 @@ int main(int argc, char *argv[])
 
 	/* Dev instrumentation, same standing as --shot: launch one game with no
 	 * buttons pressed, so the resident path can be exercised over adb with
-	 * nobody holding the device. PLAYOS_AUTOLAUNCH="TAG<tab>rom-filename";
-	 * pair with PLAYOS_AUTOSTOP_S to end the game on a clock. */
+	 * nobody holding the device. TORTOS_AUTOLAUNCH="TAG<tab>rom-filename";
+	 * pair with TORTOS_AUTOSTOP_S to end the game on a clock. */
 	{
-		const char *auto_spec = getenv("PLAYOS_AUTOLAUNCH");
+		const char *auto_spec = getenv("TORTOS_AUTOLAUNCH");
 		if (auto_spec && strchr(auto_spec, '\t')) {
 			char tag[64], file[LIB_PATH];
 			const char *bar = strchr(auto_spec, '\t');
@@ -2182,7 +2182,7 @@ int main(int argc, char *argv[])
 
 		/* MENU on the shelf is PlayOS's own menu, the counterpart to the one
 		 * MENU opens in a game. It draws over the shelf and returns here. */
-		if (a.in.pressed[IN_MENU]) { playos_menu(&a); continue; }
+		if (a.in.pressed[IN_MENU]) { tortos_menu(&a); continue; }
 
 		if (a.screen == SCREEN_SYSTEMS) update_systems(&a);
 		else update_games(&a);

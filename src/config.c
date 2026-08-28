@@ -60,7 +60,7 @@ bool cfg_load_systems(const char *path, systems_cfg *out)
 	return out->count > 0;
 }
 
-void cfg_load_playos(const char *path, playos_cfg *out)
+void cfg_load_tortos(const char *path, tortos_cfg *out)
 {
 	memset(out, 0, sizeof *out);
 	out->volume = -1;

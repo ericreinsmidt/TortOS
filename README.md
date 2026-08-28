@@ -187,7 +187,7 @@ a single entry.
 
 PlayOS replaces the boot splash and the loading splash on first boot, and backs
 both up beside itself (`bootlogo.stock.bmp`, `splash.stock.png`) along with the
-stock init script (`/etc/init.d/runtrimui.playos-bak`). Removing the card is
+stock init script (`/etc/init.d/runtrimui.tortos-bak`). Removing the card is
 enough to boot stock again; `/usr/trimui/bin/runtrimui-original.sh` is the
 original hook.
 
@@ -197,7 +197,7 @@ original hook.
 
 Two files, and they are the whole settings screen.
 
-`PlayOS/playos.cfg`:
+`TortOS/tortos.cfg`:
 
 ```
 volume=40           # 0..100, the default before one has ever been set
@@ -227,7 +227,7 @@ a multiplier per role — title, menu row, heading, the quiet line of counts and
 timestamps — in `src/ui.c`, so the proportions between them are stated in one
 table rather than as numbers spread across the call sites.
 
-`PlayOS/systems.cfg` — one line per system:
+`TortOS/systems.cfg` — one line per system:
 
 ```
 sys|display name|Roms/ folder|core|tag|card art|accent|extensions
@@ -248,9 +248,9 @@ Docker and (for regenerating art) Python with Pillow, plus ffmpeg.
 ```sh
 make toolchain  # the cross-compiler      -> playos-toolchain   (once)
 mk/fetch-sysroot.sh  # the device's SDL2  -> sysroot/           (once, needs adb)
-make            # the launcher            -> build/playos.elf
+make            # the launcher            -> build/tortos.elf
 make vendor     # the libretro cores      -> vendor/
-make payload    # the installable card    -> out/sd/ and out/PlayOS-v1.0.zip
+make payload    # the installable card    -> out/sd/ and out/TortOS-v1.0.zip
 make native     # host build of the launcher, for working on how it looks
 make boot       # regenerate the boot animation
 ```
@@ -262,7 +262,7 @@ The host build renders exactly what the handheld renders, and can be asked for
 a single frame:
 
 ```sh
-PLAYOS_ROOT=… PLAYOS_ROMS=… PLAYOS_FONT=res/fonts/menu.ttf \
+TORTOS_ROOT=… TORTOS_ROMS=… TORTOS_FONT=res/fonts/menu.ttf \
   build-native/playos --shot /tmp/shelf.png --screen games
 ```
 
@@ -295,7 +295,7 @@ src/            the launcher (0BSD)
 mk/             cross build, payload, deployment
 tools/          the boot-animation and card generators, and setbright
 res/            the boot animation, the system cards, the font
-config/         systems.cfg and playos.cfg as shipped
+config/         systems.cfg and tortos.cfg as shipped
 sd/             the boot hook and launch.sh as they land on the card
 sysroot/        fetched: the device's own SDL2, for linking (mk/fetch-sysroot.sh)
 vendor/         fetched: the libretro cores, hash-pinned

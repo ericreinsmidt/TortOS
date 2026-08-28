@@ -4,7 +4,7 @@
 export LD_LIBRARY_PATH=/usr/trimui/lib:$LD_LIBRARY_PATH
 export PATH=/usr/trimui/bin:$PATH
 
-LAUNCH=/mnt/SDCARD/PlayOS/launch.sh
+LAUNCH=/mnt/SDCARD/TortOS/launch.sh
 if [ -x "$LAUNCH" ] || [ -f "$LAUNCH" ]; then
 	sh "$LAUNCH"
 fi

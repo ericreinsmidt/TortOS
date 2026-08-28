@@ -16,7 +16,7 @@
 # Pinned by digest, never :latest. The digest is the multi-arch manifest list,
 # so on an arm64 host this runs natively with no emulation.
 #
-#   docker build -f mk/toolchain.Dockerfile -t playos-toolchain mk
+#   docker build -f mk/toolchain.Dockerfile -t tortos-toolchain mk
 FROM debian:bullseye-slim@sha256:f313b4bd62667092a59b3a664d7d3ab8b5e65f41675f48e81455a15dc5abe792
 
 RUN apt-get update && apt-get install -y --no-install-recommends \

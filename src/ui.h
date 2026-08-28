@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: 0BSD */
-#ifndef PLAYOS_UI_H
-#define PLAYOS_UI_H
+#ifndef TORTOS_UI_H
+#define TORTOS_UI_H
 
 #include <SDL.h>
 #include <SDL_ttf.h>

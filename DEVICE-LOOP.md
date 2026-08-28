@@ -6,20 +6,20 @@ rest is the sharp edges.
 
 ## Restarting the launcher
 
-`killall -q playos.elf` fails silently often enough to burn an hour. Kill by
+`killall -q tortos.elf` fails silently often enough to burn an hour. Kill by
 pid and verify what came back:
 
-    P=$(ps | grep "[.]/playos.elf" | awk '{print $1}' | head -1)
+    P=$(ps | grep "[.]/tortos.elf" | awk '{print $1}' | head -1)
     kill -9 $P; sleep 5
-    P2=$(ps | grep "[.]/playos.elf" | awk '{print $1}' | head -1)
-    md5sum /proc/$P2/exe /mnt/SDCARD/PlayOS/playos.elf
+    P2=$(ps | grep "[.]/tortos.elf" | awk '{print $1}' | head -1)
+    md5sum /proc/$P2/exe /mnt/SDCARD/TortOS/tortos.elf
 
 The supervisor (`launch.sh`) restarts it; never kill launch.sh itself - the
 boot hook powers the device off when the loop exits.
 
 To replace the RESIDENT EMULATOR, kill diatom FIRST and the launcher second.
 `launch.sh` only calls `start_resident` at the top of its supervisor loop, and
-that loop is blocked inside `./playos.elf`, so killing diatom alone gets no
+that loop is blocked inside `./tortos.elf`, so killing diatom alone gets no
 respawn until the launcher exits. Do it the other way round and
 `start_resident`'s `pgrep` finds the old diatom still alive and skips.
 
@@ -96,7 +96,7 @@ Injected presses reach the game too, so a stray A is a stray jump.
   in an unknown state.
 - Any headless game run makes SOUND at the shelf's volume. Mute first, restore
   after - and mute the right file. `.userdata/tg5040/levels.cfg` holds the
-  level the player last chose and WINS over playos.cfg, so editing playos.cfg
+  level the player last chose and WINS over tortos.cfg, so editing tortos.cfg
   does nothing on a device that has ever had its volume touched. It is also
   all-or-nothing: a levels.cfg missing either key is ignored entirely, so
   write both.
@@ -105,7 +105,7 @@ Injected presses reach the game too, so a stray A is a stray jump.
       cat $L                                    # keep these to restore
       printf 'volume=0\nbrightness=7\n' > $L
 
-  Applies at launcher restart. playos.cfg is only the default for a device
+  Applies at launcher restart. tortos.cfg is only the default for a device
   that has never had a level set on it.
 - The device clock is wrong until network time syncs; file mtimes are honest
   but odd.

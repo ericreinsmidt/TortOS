@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: 0BSD */
-#ifndef PLAYOS_CONFIG_H
-#define PLAYOS_CONFIG_H
+#ifndef TORTOS_CONFIG_H
+#define TORTOS_CONFIG_H
 
 #include <stdbool.h>
 
@@ -15,7 +15,7 @@ typedef struct {
 	                       * so it is also the folder name under Saves/. Three
 	                       * characters at most: this array is the limit, and a
 	                       * longer tag is silently truncated into it. */
-	char card[CFG_STR];   /* card art filename under PlayOS/cards/ */
+	char card[CFG_STR];   /* card art filename under TortOS/cards/ */
 	unsigned accent;      /* 0xRRGGBB, tints the focus glow and the rail */
 	char exts[CFG_STR];   /* which extensions in that folder are games; empty
 	                       * means everything, which also means save files and
@@ -34,9 +34,9 @@ typedef struct {
 	int brightness;         /* a rung, 0..PLAT_BRIGHT_MAX */
 	float font_scale;       /* multiplies the whole type scale; 1.0 = as designed */
 	char startup_system[CFG_STR];
-} playos_cfg;
+} tortos_cfg;
 
 bool cfg_load_systems(const char *path, systems_cfg *out);
-void cfg_load_playos(const char *path, playos_cfg *out);
+void cfg_load_tortos(const char *path, tortos_cfg *out);
 
 #endif

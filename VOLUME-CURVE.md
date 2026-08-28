@@ -17,7 +17,7 @@ replaced, and that project has no bearing here.
 `tools/micprobe.sh` in the Diatom repo, playing a 440 Hz tone at -1.4 dBFS and
 capturing on the device's own microphone. Room baseline ~40 rms.
 
-| `digital volume` | rms | vs room | modelled |
+| `digital volume` | rms | vs room | modeled |
 |---|---|---|---|
 | 0 | 10034 | 201x | 0 dB |
 | 16 | 1485 | 30x | -18.6 dB |

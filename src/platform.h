@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: 0BSD */
-#ifndef PLAYOS_PLATFORM_H
-#define PLAYOS_PLATFORM_H
+#ifndef TORTOS_PLATFORM_H
+#define TORTOS_PLATFORM_H
 
 #include <SDL.h>
 #include <stdbool.h>
@@ -10,14 +10,14 @@
  * backlight, the codec, the battery, and the pipe to the resident emulator.
  * The rest of PlayOS talks to this file and to SDL, and to nothing else. */
 
-#define PLAYOS_SCREEN_W 1024
-#define PLAYOS_SCREEN_H 768
+#define TORTOS_SCREEN_W 1024
+#define TORTOS_SCREEN_H 768
 
 /* launch.sh polls for this and powers the device down when it appears. */
-#define PLAYOS_POWEROFF_FLAG "/tmp/playos_poweroff"
+#define TORTOS_POWEROFF_FLAG "/tmp/tortos_poweroff"
 
 /* Overridable at runtime so the launcher can be pointed at a test tree. */
-extern const char *P_ROOT;     /* /mnt/SDCARD/PlayOS      */
+extern const char *P_ROOT;     /* /mnt/SDCARD/TortOS      */
 extern const char *P_CARD;     /* /mnt/SDCARD             */
 extern const char *P_ROMS;     /* /mnt/SDCARD/Roms        */
 extern const char *P_USERDATA; /* /mnt/SDCARD/.userdata/tg5040 */
@@ -72,7 +72,7 @@ bool plat_spawn_detached(char *const argv[], const char *const envkv[],
  *
  * One transport: Diatom's socket protocol, where peer death is EOF, the stop
  * signal is a message, and the reply is a line saying what actually happened.
- * PLAYOS_DIATOM_SOCKET overrides the path for tests. */
+ * TORTOS_DIATOM_SOCKET overrides the path for tests. */
 #define RES_DEAD   0   /* emulator missing, dead, or the game never started */
 #define RES_EXIT   1   /* the game ran and is over */
 #define RES_PAUSED 2   /* Diatom only: menu open, the launcher owns the display */
@@ -120,7 +120,7 @@ void plat_leds_off(void);
 #define PLAT_BRIGHT_MAX  11   /* a 12-rung geometric ladder, 0..11 */
 
 /* Levels come from .userdata/levels.cfg when the player has ever set one, and
- * from playos.cfg otherwise: the saved level is a choice, the config value is
+ * from tortos.cfg otherwise: the saved level is a choice, the config value is
  * only a default. launch.sh applies the same precedence to the boot animation
  * before this process exists, so passing the config defaults in here keeps the
  * rule in one place instead of two that can disagree.

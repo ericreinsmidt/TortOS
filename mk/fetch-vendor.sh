@@ -5,7 +5,7 @@
 # measurement says nothing needs them:
 #
 #   the cores need  libc libm librt libstdc++ libgcc_s ld-linux
-#   playos.elf needs libSDL2 libSDL2_image libSDL2_ttf libm libdl libc
+#   tortos.elf needs libSDL2 libSDL2_image libSDL2_ttf libm libdl libc
 #
 # Every one of those ships in the device's own firmware under /usr/trimui/lib
 # or /usr/lib. Settings are PlayOS's own code in src/platform.c, against the
@@ -19,7 +19,7 @@
 set -e
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 VENDOR=$ROOT/vendor
-DL=${1:-/tmp/playos-vendor}
+DL=${1:-/tmp/tortos-vendor}
 BB=https://buildbot.libretro.com/nightly/linux/aarch64/latest
 
 command -v curl   > /dev/null || { echo "need curl" >&2; exit 1; }

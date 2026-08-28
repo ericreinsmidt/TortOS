@@ -17,7 +17,7 @@ LDFLAGS := -L$(SYSROOT)/usr/lib -Wl,-rpath-link,$(SYSROOT)/usr/lib \
            -Wl,--allow-shlib-undefined
 LDLIBS := -lSDL2 -lSDL2_image -lSDL2_ttf -lm -ldl
 
-$(BUILD)/playos.elf: $(SRC) $(wildcard src/*.h)
+$(BUILD)/tortos.elf: $(SRC) $(wildcard src/*.h)
 	mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(SRC) $(LDLIBS)
 

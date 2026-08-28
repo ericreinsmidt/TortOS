@@ -49,11 +49,11 @@ static int fd_power = -1; /* axp2202-pek: KEY_POWER */
 static int fd_keys = -1;  /* sunxi-keyboard: volume keys */
 static int fd_joy = -1;   /* TRIMUI Player1: raw, for the front F1/F2 keys */
 
-/* PLAYOS_INPUT_DEBUG=1 logs raw evdev codes and SDL button indices, so one
+/* TORTOS_INPUT_DEBUG=1 logs raw evdev codes and SDL button indices, so one
  * press tells you exactly which device a control arrives on. */
 static int dbg_input;
 
-const char *P_ROOT = "/mnt/SDCARD/PlayOS";
+const char *P_ROOT = "/mnt/SDCARD/TortOS";
 const char *P_CARD = "/mnt/SDCARD";
 const char *P_ROMS = "/mnt/SDCARD/Roms";
 const char *P_USERDATA = "/mnt/SDCARD/.userdata/tg5040";
@@ -66,7 +66,7 @@ const char *P_SHARED = "/mnt/SDCARD/.userdata/shared";
  * The per-system half exists because mgba_gb_model cannot be set globally.
  * Autodetect is right for Game Boy Color and GBA and wrong only for Game Boy,
  * where it reads the SGB flag and boots a Super Game Boy - a SNES accessory -
- * so a DMG cartridge comes out colourised and framed in a border, on a shelf
+ * so a DMG cartridge comes out colorized and framed in a border, on a shelf
  * that says Game Boy. Pinning the model globally would force GBC titles into
  * DMG mode too, and a 0xC0 cartridge would refuse to boot. */
 #define COREOPT_MAX 48
@@ -132,17 +132,17 @@ const char *plat_coreopt(const char *tag, int i)
 	coreopt_nth(tag, i, &kv);
 	return kv;
 }
-const char *P_FONT = "/mnt/SDCARD/PlayOS/menu.ttf";
+const char *P_FONT = "/mnt/SDCARD/TortOS/menu.ttf";
 
 void paths_init(void)
 {
 	const char *v;
-	if ((v = getenv("PLAYOS_ROOT"))) P_ROOT = v;
-	if ((v = getenv("PLAYOS_CARD"))) P_CARD = v;
-	if ((v = getenv("PLAYOS_ROMS"))) P_ROMS = v;
-	if ((v = getenv("PLAYOS_USERDATA"))) P_USERDATA = v;
-	if ((v = getenv("PLAYOS_SHARED"))) P_SHARED = v;
-	if ((v = getenv("PLAYOS_FONT"))) P_FONT = v;
+	if ((v = getenv("TORTOS_ROOT"))) P_ROOT = v;
+	if ((v = getenv("TORTOS_CARD"))) P_CARD = v;
+	if ((v = getenv("TORTOS_ROMS"))) P_ROMS = v;
+	if ((v = getenv("TORTOS_USERDATA"))) P_USERDATA = v;
+	if ((v = getenv("TORTOS_SHARED"))) P_SHARED = v;
+	if ((v = getenv("TORTOS_FONT"))) P_FONT = v;
 }
 
 SDL_Renderer *plat_renderer(void) { return ren; }
@@ -160,7 +160,7 @@ bool plat_video_init(void)
 	}
 	SDL_ShowCursor(SDL_DISABLE);
 	win = SDL_CreateWindow("PlayOS", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-	                       PLAYOS_SCREEN_W, PLAYOS_SCREEN_H,
+	                       TORTOS_SCREEN_W, TORTOS_SCREEN_H,
 	                       SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
 	if (!win) {
 		fprintf(stderr, "window: %s\n", SDL_GetError());
@@ -201,7 +201,7 @@ bool plat_input_init(void)
 {
 	char marker[512];
 	snprintf(marker, sizeof marker, "%s/.input_debug", P_ROOT);
-	dbg_input = getenv("PLAYOS_INPUT_DEBUG") != NULL || access(marker, F_OK) == 0;
+	dbg_input = getenv("TORTOS_INPUT_DEBUG") != NULL || access(marker, F_OK) == 0;
 	if (SDL_InitSubSystem(SDL_INIT_JOYSTICK) != 0) {
 		fprintf(stderr, "joystick init: %s\n", SDL_GetError());
 		return false;
@@ -462,7 +462,7 @@ static int    d_pend_bri = -1, d_pend_bri_n;      /* EXIT hands levels back  */
 
 const char *plat_resident_socket(void)
 {
-	const char *v = getenv("PLAYOS_DIATOM_SOCKET");
+	const char *v = getenv("TORTOS_DIATOM_SOCKET");
 	return v ? v : "/tmp/diatom.sock";
 }
 
@@ -747,7 +747,7 @@ static int diatom_wait(void)
 {
 	int got_running = 0, sent_stop = 0;
 	unsigned stop_at = 0, start = plat_now_ms();
-	int autostop_s = getenv("PLAYOS_AUTOSTOP_S") ? atoi(getenv("PLAYOS_AUTOSTOP_S")) : 0;
+	int autostop_s = getenv("TORTOS_AUTOSTOP_S") ? atoi(getenv("TORTOS_AUTOSTOP_S")) : 0;
 
 #ifdef __linux__
 	{
@@ -824,7 +824,7 @@ int plat_resident_wait(void)
 
 void plat_request_poweroff(void)
 {
-	FILE *f = fopen(PLAYOS_POWEROFF_FLAG, "w");
+	FILE *f = fopen(TORTOS_POWEROFF_FLAG, "w");
 	if (f) fclose(f);
 }
 
@@ -1062,7 +1062,7 @@ void plat_settings_init(int cfg_volume_pct, int cfg_brightness)
 		fclose(f);
 	}
 
-	/* Then playos.cfg, which is a default for a device that has never had a
+	/* Then tortos.cfg, which is a default for a device that has never had a
 	 * level set on it - not an instruction to be obeyed at every boot. It used
 	 * to be applied over the top of the above by main(), which put the config
 	 * ahead of the player and disagreed with launch.sh into the bargain. */
@@ -1154,7 +1154,7 @@ void plat_draw_osd(SDL_Renderer *r)
 	if (pct < 0) pct = 0; else if (pct > 1) pct = 1;
 
 	SDL_Color fill = osd_kind == 1 ? UI_OSD_BRIGHT : UI_OSD_VOLUME;
-	int W = PLAYOS_SCREEN_W;
+	int W = TORTOS_SCREEN_W;
 	SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
 	SDL_SetRenderDrawColor(r, 0, 0, 0, 128);                 /* scrim */
 	SDL_RenderFillRect(r, &(SDL_Rect){ 0, 0, W, OSD_LINE_H + OSD_PAD * 2 });
@@ -1198,7 +1198,7 @@ void plat_brightness_set(int level)
 
 bool plat_battery(int *pct, bool *charging)
 {
-	const char *fake = getenv("PLAYOS_FAKE_BATT");
+	const char *fake = getenv("TORTOS_FAKE_BATT");
 	if (fake && *fake) {
 		if (pct) *pct = atoi(fake);
 		if (charging) *charging = false;
