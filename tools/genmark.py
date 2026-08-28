@@ -21,7 +21,7 @@ from fontTools.ttLib import TTFont
 from fontTools.pens.svgPathPen import SVGPathPen
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from markdef import BG, OFFWHT, CYAN, GREEN, DKGREEN, CELLS, HEAD, CENTER, hexf
+from markdef import BG, LTGRN, CYAN, MIDGRN, DKGREEN, CELLS, HEAD, CENTER, hexf
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FONT = os.path.join(ROOT, "res", "fonts", "wordmark.ttf")
@@ -39,7 +39,7 @@ T_PTS = [(109, 728), (596, 728), (581, 614), (396, 614),
 T_ADV, INK_R, CANVAS_W = 583.0, 477.0, 1200.0
 RAW = [(T_TOP + TH / 2, 400, 600, DKGREEN),
        (T_TOP + TH / 2 + PITCH, 250, 622, CYAN),
-       (T_TOP + TH / 2 + PITCH * 2, 355, 600, GREEN)]
+       (T_TOP + TH / 2 + PITCH * 2, 355, 600, MIDGRN)]
 R, PAD = 40.0, 24.0
 
 
@@ -98,9 +98,9 @@ def poly(pts, fill):
 
 def lockup_svg():
     f = [poly(barpts(a, b, y), hexf(c)) for (y, a, b, c) in BARS]
-    f.append(poly([(WORD_X + px * K, BASELINE - py * K) for px, py in T_PTS], hexf(OFFWHT)))
+    f.append(poly([(WORD_X + px * K, BASELINE - py * K) for px, py in T_PTS], hexf(LTGRN)))
     scale, penx = FSIZE / _upm, WORD_X + T_ADV * K + TUCK
-    for text, col in (("ort", hexf(OFFWHT)), ("OS", hexf(CYAN))):
+    for text, col in (("ort", hexf(LTGRN)), ("OS", hexf(CYAN))):
         for ch in text:
             d, adv = glyph(ch)
             if d:
@@ -128,10 +128,10 @@ def png(kind, scale, dark):
         for (y, a, b, c) in BARS:
             d.polygon([T(*p) for p in barpts(a, b, y)], fill=c + (255,))
         d.polygon([T(WORD_X + px * K, BASELINE - py * K) for px, py in T_PTS],
-                  fill=OFFWHT + (255,))
+                  fill=LTGRN + (255,))
         fo = ImageFont.truetype(FONT, int(FSIZE * k))
         bx, by = T(WORD_X + T_ADV * K + TUCK, BASELINE)
-        d.text((bx, by), "ort", font=fo, fill=OFFWHT + (255,), anchor="ls")
+        d.text((bx, by), "ort", font=fo, fill=LTGRN + (255,), anchor="ls")
         d.text((bx + d.textlength("ort", font=fo), by), "OS", font=fo,
                fill=CYAN + (255,), anchor="ls")
     else:

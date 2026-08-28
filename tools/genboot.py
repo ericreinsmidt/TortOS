@@ -53,7 +53,7 @@ N_FRAMES = 72                      # 2.400 s exactly
 SS = 3                             # supersample factor
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from markdef import BG, OFFWHT, CYAN, GREEN, DKGREEN, CELLS, HEAD   # noqa: E402
+from markdef import BG, LTGRN, CYAN, MIDGRN, DKGREEN, CELLS, HEAD   # noqa: E402
 
 # ---- the lockup, in the same design units the exported SVG uses -------------
 FSIZE  = 150.0
@@ -75,7 +75,7 @@ DESIGN_W = 1200.0
 
 BARS_RAW = [(T_TOP + TH / 2,             400, 600, DKGREEN),
             (T_TOP + TH / 2 + PITCH,     250, 622, CYAN),
-            (T_TOP + TH / 2 + PITCH * 2, 355, 600, GREEN)]
+            (T_TOP + TH / 2 + PITCH * 2, 355, 600, MIDGRN)]
 
 
 def bar_pts(x0, x1, yc):
@@ -179,9 +179,9 @@ def render(n, font):
         L = Image.new("RGBA", im.size, (0, 0, 0, 0)); ld = ImageDraw.Draw(L)
         al = int(255 * wt)
         ld.polygon([(X(wx + px * K), Y(BASELINE - py * K)) for px, py in T_PTS],
-                   fill=OFFWHT + (al,))
+                   fill=LTGRN + (al,))
         ox = wx + T_ADV * K + TUCK
-        ld.text((X(ox), Y(BASELINE)), "ort", font=font, fill=OFFWHT + (al,), anchor="ls")
+        ld.text((X(ox), Y(BASELINE)), "ort", font=font, fill=LTGRN + (al,), anchor="ls")
         tw = ld.textlength("ort", font=font)
         ld.text((X(ox) + tw, Y(BASELINE)), "OS", font=font, fill=CYAN + (al,), anchor="ls")
         im = Image.alpha_composite(im, L); d = ImageDraw.Draw(im, "RGBA")
