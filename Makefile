@@ -6,7 +6,7 @@ IMAGE := playos-toolchain
 BRICK ?= 192.168.1.101
 SSH := sshpass -p 'tina' ssh -o StrictHostKeyChecking=no root@$(BRICK)
 
-.PHONY: all clean native toolchain vendor boot cards payload release install-card \
+.PHONY: all clean native toolchain vendor boot payload release install-card \
         adb adb-elf adb-res adb-vendor adb-restart adb-run adb-log \
         deploy restart logs
 
@@ -34,12 +34,14 @@ native:
 vendor:
 	./mk/fetch-vendor.sh
 
-# Assets in res/ are committed ready to ship; nothing needs generating to
-# build. These regenerate them.
+# Assets in res/ are committed ready to ship; nothing needs generating to build.
+#
+# The boot animation still has a generator. The system cards no longer do: they
+# are drawn by hand, gencards.py could not reproduce any of the nine, and its
+# only remaining effect would have been to overwrite three of them. Their accent
+# rule is kept in step with config/systems.cfg by tools/recolor-cards.py.
 boot:
 	python3 tools/genboot.py
-cards:
-	python3 tools/gencards.py
 
 payload: all
 	./mk/payload.sh

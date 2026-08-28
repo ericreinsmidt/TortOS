@@ -253,7 +253,6 @@ make vendor     # the libretro cores      -> vendor/
 make payload    # the installable card    -> out/sd/ and out/PlayOS-v1.0.zip
 make native     # host build of the launcher, for working on how it looks
 make boot       # regenerate the boot animation
-make cards      # regenerate the system cards
 ```
 
 `make payload` needs a built Diatom binary (`DIATOM_ELF`, defaulting to a
