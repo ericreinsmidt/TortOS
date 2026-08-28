@@ -72,8 +72,7 @@ bool plat_spawn_detached(char *const argv[], const char *const envkv[],
  *
  * One transport: Diatom's socket protocol, where peer death is EOF, the stop
  * signal is a message, and the reply is a line saying what actually happened.
- * PLAYOS_DIATOM_SOCKET overrides the path for tests. The fifo transport that
- * drove minarch left with minarch. */
+ * PLAYOS_DIATOM_SOCKET overrides the path for tests. */
 #define RES_DEAD   0   /* emulator missing, dead, or the game never started */
 #define RES_EXIT   1   /* the game ran and is over */
 #define RES_PAUSED 2   /* Diatom only: menu open, the launcher owns the display */
@@ -87,6 +86,15 @@ int  plat_resident_wait(void);
 bool plat_resident_line(const char *fmt, ...);
 /* Path from the most recent PREVIEW message, or "" - the menu's backdrop. */
 const char *plat_resident_last_preview(void);
+/* Core options the launcher wants applied to every game, read once from
+ * coreopts.cfg. Diatom deliberately keeps no per-core knowledge (its ADR-0019
+ * and register section 12), so the per-core opinions live here. Each entry is
+ * a whole "key=value" string; a core that does not declare the key ignores it.
+ * Applied BEFORE the game loads, because options marked (Restart) are read at
+ * retro_load_game and setting one afterwards does nothing until next launch. */
+int         plat_coreopt_count(const char *tag);
+const char *plat_coreopt(const char *tag, int i);
+
 /* Where Diatom is actually drawing the game, from its DISPLAY message. False
  * until it has said, which is the standalone path and the first moments of a
  * launch. Cached rather than asked for: Diatom reports it from the one place

@@ -3,11 +3,14 @@
 From the Diatom side, 2026-08-28, measured on hardware. No Diatom change is
 needed; the defect and the fix are both in `src/platform.c`.
 
-## Symptom, in Eric's words
+## Symptom
 
-> "When I was using minarch as the base for PlayOS, the audio was much louder at
-> max, and it didn't drop off like it does now. So 60% was fairly loud before.
-> Now it is barely audible."
+Reported from ordinary play: the audio used to be much louder at maximum and
+did not fall away so steeply. 60% was a normal listening level before; now it
+is barely audible.
+
+Paraphrased rather than quoted - the original wording named the emulator PlayOS
+replaced, and that project has no bearing here.
 
 ## The measurement
 

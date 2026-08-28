@@ -1,5 +1,5 @@
 # PlayOS's own toolchain: a stock Debian cross-compiler pinned by digest, with
-# the device's SDL2 in sysroot/. Nothing from NextUI, MinUI, LoveRetro or
+# the device's SDL2 in sysroot/. Every dependency is PlayOS's own or the
 # TrimUI's SDK. Build it once with `make toolchain`, and the sysroot once with
 # `mk/fetch-sysroot.sh` (needs the device on adb).
 IMAGE := playos-toolchain

@@ -257,8 +257,7 @@ make cards      # regenerate the system cards
 ```
 
 `make payload` needs a built Diatom binary (`DIATOM_ELF`, defaulting to a
-sibling checkout). The move from the GPL minarch it used to ship is recorded
-in [DIATOM-MIGRATION.md](DIATOM-MIGRATION.md), phase by phase.
+sibling checkout).
 
 The host build renders exactly what the handheld renders, and can be asked for
 a single frame:

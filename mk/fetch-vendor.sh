@@ -1,18 +1,15 @@
 #!/bin/sh
 # Populate vendor/cores with the libretro cores PlayOS redistributes.
 #
-# That is the whole of it now. PlayOS used to pull a NextUI release for
-# minarch's runtime libraries and the assets it resolved from compile-time
-# paths; minarch is gone, and measurement says nothing else needed them:
+# That is the whole of it. PlayOS carries no third-party runtime libraries;
+# measurement says nothing needs them:
 #
 #   the cores need  libc libm librt libstdc++ libgcc_s ld-linux
 #   playos.elf needs libSDL2 libSDL2_image libSDL2_ttf libm libdl libc
 #
 # Every one of those ships in the device's own firmware under /usr/trimui/lib
-# or /usr/lib. libmsettings, the last NextUI library PlayOS actually called,
-# is now PlayOS's own code in src/platform.c against the same two device
-# interfaces. libgametimedb and libbatmondb were shipped and never called at
-# all.
+# or /usr/lib. Settings are PlayOS's own code in src/platform.c, against the
+# device's ALSA control and display-engine interfaces.
 #
 # Cores come from libretro's own buildbot, pinned by sha256 - the same hashes
 # Diatom's CORES.md verifies, because they are the same binaries. The

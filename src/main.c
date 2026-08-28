@@ -223,29 +223,62 @@ static SDL_Texture *sys_get_tex(void *ctx, int i, int *w, int *h)
 
 /* Where a game's autosave preview lives: the frame the player was looking at
  * when they stopped. The directory is named after the ROM's folder under
- * Roms/ - a layout inherited from minarch and kept, so the previews users
- * already have stayed on their cards across the emulator change. */
+ * Roms/.
+ *
+ * The directory and the slot names are PlayOS's own. Both were briefly
+ * borrowed from the emulator PlayOS replaced, and the borrowing cost more than
+ * it saved: a name that describes another project invites a reader to treat
+ * the contents as dead, and on 2026-08-28 the live autosave tree was deleted
+ * by someone auditing the card for exactly that reason. Nothing was lost only
+ * because states were being cleared for testing the same hour.
+ *
+ * Renamed with no migration path, deliberately - nothing has shipped, so there
+ * are no cards in the world to be kind to. */
+/* Six manual save slots and one autosave.
+ *
+ * Six because it is enough and it fits the carousel's dot rail without
+ * crowding, not because any particular number is correct. An earlier eight was
+ * copied from another launcher and had no reasoning of its own behind it.
+ *
+ * The resume slot is named rather than numbered on disk: `<game>.auto.state`
+ * explains itself, where a number needs a reader to already know which slot
+ * means auto. Its value is only an internal sentinel and must not collide with
+ * 1..GM_SLOTS, so it is derived rather than picked. */
+#define GM_SLOTS  6
+#define SLOT_AUTO (GM_SLOTS + 1)
+
+static const char *slot_name(int slot)
+{
+	static char buf[8];
+	if (slot == SLOT_AUTO) return "auto";
+	snprintf(buf, sizeof buf, "%d", slot);
+	return buf;
+}
+
 static void preview_path(app *a, int s, const game_entry *g, char *out, size_t n)
 {
 	const char *base = strrchr(g->file, '/');
 	base = base ? base + 1 : g->file;
-	snprintf(out, n, "%s/.minui/%s/%s.9.bmp", P_SHARED, a->sys.systems[s].folder, base);
+	snprintf(out, n, "%s/.playos/%s/%s.%s.bmp",
+	         P_SHARED, a->sys.systems[s].folder, base, slot_name(SLOT_AUTO));
 }
 
 /* The Diatom transport takes explicit paths rather than a slot number, so the
- * state lives beside the preview it belongs to, named the same way. A .state
- * suffix rather than minarch's .st9: the formats are not interchangeable, and
- * a shared name would make an old minarch state look like a resumable one. */
-/* Slot 9 is the autosave the launch resumes; 1..8 are the player's own,
- * reachable from the in-game menu. Each slot is a state and a preview named
+ * state lives beside the preview it belongs to, named the same way.
+ *
+ * The autosave is named `auto`, not a number. Slots 1..GM_SLOTS are the
+ * player's own,
+ * reachable from the in-game menu, and are genuinely numbered; the resume slot
+ * is not one of them and calling it 9 only meant something to someone who knew
+ * which emulator picked that number. Each slot is a state and a preview named
  * alike, so a slot that has a picture has a game behind it. */
 static void slot_state_path(app *a, int s, const game_entry *g, int slot,
                             char *out, size_t n)
 {
 	const char *base = strrchr(g->file, '/');
 	base = base ? base + 1 : g->file;
-	snprintf(out, n, "%s/.minui/%s/%s.%d.state",
-	         P_SHARED, a->sys.systems[s].folder, base, slot);
+	snprintf(out, n, "%s/.playos/%s/%s.%s.state",
+	         P_SHARED, a->sys.systems[s].folder, base, slot_name(slot));
 }
 
 static void slot_preview_path(app *a, int s, const game_entry *g, int slot,
@@ -253,24 +286,26 @@ static void slot_preview_path(app *a, int s, const game_entry *g, int slot,
 {
 	const char *base = strrchr(g->file, '/');
 	base = base ? base + 1 : g->file;
-	snprintf(out, n, "%s/.minui/%s/%s.%d.bmp",
-	         P_SHARED, a->sys.systems[s].folder, base, slot);
+	snprintf(out, n, "%s/.playos/%s/%s.%s.bmp",
+	         P_SHARED, a->sys.systems[s].folder, base, slot_name(slot));
 }
 
 static void state_path(app *a, int s, const game_entry *g, char *out, size_t n)
 {
-	slot_state_path(a, s, g, 9, out, n);
+	slot_state_path(a, s, g, SLOT_AUTO, out, n);
 }
 
 /* The launcher owns the paths, so the launcher makes the directories - the
- * emulator writes where it is told and fails where it cannot. minarch's menu
- * once lost every preview to this exact missing mkdir. */
+ * emulator writes where it is told and fails where it cannot. A missing mkdir
+ * here once cost every preview on the card, silently, because writing to a
+ * path in a directory that does not exist fails per-write and looks like
+ * nothing happening. */
 static void persist_dir_ensure(app *a, int s)
 {
 	char d[LIB_PATH * 2];
-	snprintf(d, sizeof d, "%s/.minui", P_SHARED);
+	snprintf(d, sizeof d, "%s/.playos", P_SHARED);
 	mkdir(d, 0755);
-	snprintf(d, sizeof d, "%s/.minui/%s", P_SHARED, a->sys.systems[s].folder);
+	snprintf(d, sizeof d, "%s/.playos/%s", P_SHARED, a->sys.systems[s].folder);
 	mkdir(d, 0755);
 }
 
@@ -1021,11 +1056,11 @@ static void build_child_env(void)
  *
  * MENU in a game makes Diatom write a preview of the frame, stop presenting,
  * and say PAUSED. From that word the display is ours: the menu is that frame
- * dimmed, with the same rows minarch's menu had - Continue, Save, Load,
- * Reset, Quit - drawn with the launcher's own font and glow instead of a
- * patched copy of them inside someone else's emulator.
+ * dimmed, with the rows a player expects - Continue, Save, Load, Reset, Quit
+ * - drawn with the launcher's own font and glow. The menu is the launcher's,
+ * not something patched into the emulator.
  *
- * Every row acts through one protocol line. Save and Load use the same slot-9
+ * Every row acts through one protocol line. Save and Load use the same autosave
  * paths the launch handed over, so the autosave funnel stays one thing. */
 /* Display sits with the things you do to the game rather than the things you do
  * to a save, because it is the one row whose effect you judge by looking at the
@@ -1070,19 +1105,18 @@ static void copy_file(const char *from, const char *to)
 	if (b) fclose(b);
 }
 
-/* The slot carousel: Auto plus 1..8 for Load, 1..8 for Save. One slot at a
+/* The slot carousel: Auto plus the manual slots for Load, the manual slots for
+ * Save. One slot at a
  * time, large - the paused frame at a size you can actually read - with the
  * save's own timestamp under it and a dot rail for where you are. Left and
  * right cycle; Load skips slots with nothing behind them, Save cannot aim at
  * Auto, which belongs to the exit funnel alone. */
-#define GM_SLOTS 8
-
 typedef struct {
-	SDL_Texture *thumb[GM_SLOTS + 1];   /* [0]=Auto, [1..8] */
+	SDL_Texture *thumb[GM_SLOTS + 1];   /* [0]=Auto, [1..GM_SLOTS] */
 	int have[GM_SLOTS + 1];
 	char when[GM_SLOTS + 1][40];
 	/* Every slot of one game holds the same machine's frame, so one aspect
-	 * describes all nine and the picture can be framed exactly rather than
+	 * describes them all and the picture can be framed exactly rather than
 	 * dropped into a fixed box with bars down its sides. 4:3 until a slot
 	 * with a picture in it says otherwise. */
 	float aspect;
@@ -1143,7 +1177,8 @@ static void slot_draw(app *a, const slot_view *sv, int sel)
 	        sv->have[sel] ? sv->when[sel] : (sv->saving ? "\xE2\x80\x94" : ""),
 	        PLAYOS_SCREEN_W / 2, img.y + img.h + 32 + line_menu, 0, UI_TEXT_DIM);
 
-	/* The dot rail: where you are among nine, without showing nine pictures.
+	/* The dot rail: where you are among the slots, without showing every
+	 * picture.
 	 * A hollow-dim dot is a slot you cannot land on. */
 	{
 		int dots = GM_SLOTS + 1, dw = 18;
@@ -1164,7 +1199,7 @@ static void slot_draw(app *a, const slot_view *sv, int sel)
 	}
 }
 
-/* Returns the chosen slot (9 = Auto) or 0 for backed out. */
+/* Returns the chosen slot (SLOT_AUTO, or 1..GM_SLOTS) or 0 for backed out. */
 static int slot_strip(app *a, SDL_Texture *bg, int saving)
 {
 	slot_view sv = { .aspect = 4.0f / 3.0f, .saving = saving };
@@ -1174,7 +1209,7 @@ static int slot_strip(app *a, SDL_Texture *bg, int saving)
 	char pth[LIB_PATH * 2];
 
 	for (i = 0; i <= GM_SLOTS; i++) {
-		int slot = i == 0 ? 9 : i;
+		int slot = i == 0 ? SLOT_AUTO : i;
 		struct stat st;
 
 		slot_state_path(a, a->sys_cursor, g, slot, pth, sizeof pth);
@@ -1462,7 +1497,11 @@ static void launch(app *a)
 	char core[CFG_STR * 2], elf[CFG_STR * 2], rom[LIB_PATH * 2];
 	char st[LIB_PATH * 2], pv[LIB_PATH * 2];
 	char save[CFG_STR * 2], bios[CFG_STR * 2];
-	char *argv[20];
+	/* 18 fixed entries plus NULL, then two per core option. Sized off the
+	 * loader's own cap so the two cannot drift apart: the previous 20 was
+	 * already 18 full, and a silent bound check would have dropped every
+	 * option rather than failing loudly. */
+	char *argv[20 + 2 * 32];
 	bool resident = false;
 	int n = 0;
 
@@ -1474,7 +1513,7 @@ static void launch(app *a)
 	snprintf(save, sizeof save, "%s/Saves", P_CARD);
 	snprintf(bios, sizeof bios, "%s/Bios", P_CARD);
 
-	/* The slot-9 story, by path rather than by convention: the state and the
+	/* The autosave story, by path rather than by convention: the state and the
 	 * preview live beside each other, the launch hands both over, and a game
 	 * always comes up where it was left. */
 	state_path(a, a->sys_cursor, &v->list.items[v->cursor], st, sizeof st);
@@ -1505,9 +1544,9 @@ static void launch(app *a)
 			/* No launch animation, and it is a display-safety rule, not a
 			 * taste call: Diatom presents through fbdev, this process
 			 * through GL, and the handoff spike's one invariant is that
-			 * they never present concurrently - the 190ms overlap that was
-			 * harmless GL-on-GL with minarch is the exact case that wedges
-			 * the display engine. A warm launch is ~15ms, so there is
+			 * they never present concurrently - a 190ms overlap that is
+			 * harmless GL-on-GL is the exact case that wedges the display
+			 * engine when one side is fbdev. A warm launch is ~15ms, so there is
 			 * nothing to animate over anyway; the shelf simply holds until
 			 * the game's first frame replaces it. */
 			for (;;) {
@@ -1548,6 +1587,15 @@ static void launch(app *a)
 		argv[n++] = (char *)"--load-state";      argv[n++] = st;
 		argv[n++] = (char *)"--state-on-exit";   argv[n++] = st;
 		argv[n++] = (char *)"--preview-on-exit"; argv[n++] = pv;
+		/* Same opinions as the resident path gets over SETOPT, so a game plays
+		 * the same whether the resident was up or the fallback ran it. */
+		{
+			int ci;
+			for (ci = 0; ci < plat_coreopt_count(s->tag) && n < (int)(sizeof argv / sizeof argv[0]) - 3; ci++) {
+				argv[n++] = (char *)"--core-option";
+				argv[n++] = (char *)plat_coreopt(s->tag, ci);
+			}
+		}
 		argv[n] = NULL;
 		fprintf(stderr, "diatom exited %d\n", plat_run(argv, child_env, P_ROOT));
 

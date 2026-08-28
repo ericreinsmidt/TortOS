@@ -19,15 +19,12 @@ copied onto the card as `PlayOS/THIRD-PARTY-LICENSES.md` by `mk/payload.sh`.
 - PlayOS's launcher runs it as a resident process and talks to it over a Unix
   socket; it does not link against it. Diatom ships no cores of its own.
 
-## Nothing from NextUI or MinUI
+## No third-party firmware components
 
-PlayOS previously shipped `libmsettings.so`, `libgametimedb.so` and
-`libbatmondb.so` from a NextUI release, and built inside LoveRetro's toolchain
-image. As of 2026-08-26 none of that remains: volume and brightness are
-PlayOS's own code against the device's ALSA control and display-engine
-interfaces, the other two libraries were shipped but never called, and the
-toolchain is a stock Debian cross-compiler pinned by digest
-(`mk/toolchain.Dockerfile`).
+PlayOS ships no launcher, emulator or settings library from another project.
+Volume and brightness are PlayOS's own code against the device's ALSA control
+and display-engine interfaces, and the toolchain is a stock Debian
+cross-compiler pinned by digest (`mk/toolchain.Dockerfile`).
 
 The SDL2 libraries PlayOS links against are the device's own, in
 `/usr/trimui/lib`, and are not redistributed on the card.
@@ -62,8 +59,8 @@ None are redistributed. Measured 2026-08-26, the cores need only
 `libc`, `libm`, `librt`, `libstdc++`, `libgcc_s` and `ld-linux`, and the
 launcher needs those plus `libSDL2`, `libSDL2_image` and `libSDL2_ttf` - every
 one of which ships in the device's own firmware. The eight compression and
-codec libraries PlayOS used to carry were minarch's dependencies and left with
-it.
+codec libraries PlayOS once carried were a previous emulator's dependencies and
+left with it.
 
 ---
 

@@ -58,6 +58,80 @@ const char *P_CARD = "/mnt/SDCARD";
 const char *P_ROMS = "/mnt/SDCARD/Roms";
 const char *P_USERDATA = "/mnt/SDCARD/.userdata/tg5040";
 const char *P_SHARED = "/mnt/SDCARD/.userdata/shared";
+
+/* ---- core options, read once from coreopts.cfg --------------------------- */
+/* Lines before any [SECTION] apply to every game; a [TAG] section applies only
+ * to that system, keyed on the same tag systems.cfg uses for saves and states.
+ *
+ * The per-system half exists because mgba_gb_model cannot be set globally.
+ * Autodetect is right for Game Boy Color and GBA and wrong only for Game Boy,
+ * where it reads the SGB flag and boots a Super Game Boy - a SNES accessory -
+ * so a DMG cartridge comes out colourised and framed in a border, on a shelf
+ * that says Game Boy. Pinning the model globally would force GBC titles into
+ * DMG mode too, and a 0xC0 cartridge would refuse to boot. */
+#define COREOPT_MAX 48
+static struct { char tag[8]; char kv[192]; } coreopts[COREOPT_MAX];
+static int  ncoreopts = -1;   /* -1 = not read yet */
+
+static void coreopts_load(void)
+{
+	char path[512], line[256], section[8] = "";
+	FILE *f;
+
+	ncoreopts = 0;
+	snprintf(path, sizeof path, "%s/coreopts.cfg", P_ROOT);
+	if (!(f = fopen(path, "r"))) return;
+	while (ncoreopts < COREOPT_MAX && fgets(line, sizeof line, f)) {
+		char *p = line, *end;
+		while (*p == ' ' || *p == '\t') p++;
+		end = p + strcspn(p, "\r\n");
+		*end = '\0';
+		while (end > p && (end[-1] == ' ' || end[-1] == '\t')) *--end = '\0';
+		if (*p == '#' || !*p) continue;
+		if (*p == '[') {
+			char *close = strchr(p, ']');
+			if (!close) continue;              /* malformed, ignore quietly */
+			*close = '\0';
+			snprintf(section, sizeof section, "%s", p + 1);
+			continue;
+		}
+		if (!strchr(p, '=')) continue;         /* not key=value */
+		snprintf(coreopts[ncoreopts].tag, sizeof coreopts[0].tag, "%s", section);
+		snprintf(coreopts[ncoreopts].kv,  sizeof coreopts[0].kv,  "%s", p);
+		ncoreopts++;
+	}
+	fclose(f);
+}
+
+/* Global entries first, then this tag's, so a system can override a global. */
+static int coreopt_nth(const char *tag, int want, const char **out)
+{
+	int pass, i, seen = 0;
+	for (pass = 0; pass < 2; pass++)
+		for (i = 0; i < ncoreopts; i++) {
+			bool global = coreopts[i].tag[0] == '\0';
+			if (pass == 0 ? !global : global) continue;
+			if (pass == 1 && (!tag || strcmp(coreopts[i].tag, tag))) continue;
+			if (seen++ == want) { if (out) *out = coreopts[i].kv; return 1; }
+		}
+	return 0;
+}
+
+int plat_coreopt_count(const char *tag)
+{
+	int n = 0;
+	if (ncoreopts < 0) coreopts_load();
+	while (coreopt_nth(tag, n, NULL)) n++;
+	return n;
+}
+
+const char *plat_coreopt(const char *tag, int i)
+{
+	const char *kv = "";
+	if (ncoreopts < 0) coreopts_load();
+	coreopt_nth(tag, i, &kv);
+	return kv;
+}
 const char *P_FONT = "/mnt/SDCARD/PlayOS/menu.ttf";
 
 void paths_init(void)
@@ -530,6 +604,22 @@ bool plat_resident_send(const char *tag, const char *core, const char *rom,
 		d_rect_known = false;
 		d_pend_vol = d_pend_bri = -1;
 
+		/* Before RUN, not after. mgba_sgb_borders and mgba_use_bios are both
+		 * marked (Restart) by the core, meaning they are read during
+		 * retro_load_game; a SETOPT that arrives after the game is up applies
+		 * to the NEXT launch and looks like it did nothing. Diatom holds a
+		 * value for a key the active core has not declared and applies it when
+		 * one does, so sending the whole list every time is correct. */
+		{
+			int i;
+			for (i = 0; i < plat_coreopt_count(tag); i++) {
+				const char *kv = plat_coreopt(tag, i), *eq = strchr(kv, '=');
+				if (!eq) continue;
+				dsend("SETOPT\tkey=%.*s\tvalue=%s",
+				      (int)(eq - kv), kv, eq + 1);
+			}
+		}
+
 		if (!dsend("RUN\tcore=%s\trom=%s\ttag=%s"
 		           "\tresume=%s\texit_state=%s\tpreview=%s",
 		           core, rom, tag,
@@ -776,9 +866,9 @@ void plat_leds_off(void)
 
 /* ---- volume and brightness, straight at the hardware ----------------------
  *
- * This was libmsettings.so, dlopen'd out of a NextUI release. It is now
- * PlayOS's own code against the same two device interfaces the emulator uses,
- * which buys three things beyond independence:
+ * PlayOS's own code, against the same two device interfaces the emulator uses.
+ * It replaced a third-party settings library, which bought three things beyond
+ * independence:
  *
  *   - The scales MATCH. Diatom drives volume as 21 positions and brightness
  *     as a 12-rung ladder; libmsettings used 0-20 and 0-10. Every level
