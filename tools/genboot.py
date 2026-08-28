@@ -52,13 +52,8 @@ FPS = 30
 N_FRAMES = 72                      # 2.400 s exactly
 SS = 3                             # supersample factor
 
-BG      = (17, 19, 16)
-OFFWHT  = (233, 236, 227)
-BLUE    = (74, 158, 255)
-GREEN   = (94, 138, 86)
-DKGREEN = (61, 89, 67)
-MIDGRN  = (104, 138, 96)
-LTGRN   = (128, 176, 118)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from markdef import BG, OFFWHT, BLUE, GREEN, DKGREEN, CELLS, HEAD   # noqa: E402
 
 # ---- the lockup, in the same design units the exported SVG uses -------------
 FSIZE  = 150.0
@@ -128,14 +123,9 @@ def hexpts(cx, cy, r, sx, sy):
 
 
 def draw_turtle(d, cx, cy, r, sx, sy, alpha):
-    """Six shell cells, a head one lattice step out, and the blue centre.
-
-    The head is the same radius and the same grid step as every other cell, so
-    it reads as part of the shell rather than as something bolted on."""
+    """The shell, from tools/markdef.py - the one place its cells are defined."""
     dx, dy = math.sqrt(3) * r, 1.5 * r
-    cells = [(-1, 0, MIDGRN), (1, 0, MIDGRN), (-0.5, -1, LTGRN), (0.5, -1, MIDGRN),
-             (-0.5, 1, LTGRN), (0.5, 1, MIDGRN), (2, 0, DKGREEN)]
-    for (i, j, col) in cells:
+    for (i, j, col) in list(CELLS) + [HEAD]:
         d.polygon(hexpts(cx + i * dx * sx, cy + j * dy * sy, r * 0.95, sx, sy),
                   fill=col + (alpha,), outline=(0, 0, 0, alpha), width=max(1, int(3 * SS * SCALE)))
     d.polygon(hexpts(cx, cy, r * 0.95, sx, sy),

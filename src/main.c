@@ -446,20 +446,73 @@ static void restore_place(app *a)
 
 /* ---------- drawing ------------------------------------------------------- */
 
-static void draw_triangle(SDL_Renderer *r, float cx, float cy, float size,
-                          SDL_Color col)
+/* One cell of the shell: a filled hexagon as a six-triangle fan, because
+ * SDL_RenderGeometry is the only primitive here that antialiases nothing and
+ * therefore looks identical to the boot animation's rasteriser. */
+static void draw_hex(SDL_Renderer *r, float cx, float cy, float rad, SDL_Color col)
 {
-	SDL_Vertex v[3];
-	static const int idx[3] = { 0, 1, 2 };
-	float h = size, w = size * 0.88f;
-	v[0].position.x = cx - w * 0.42f; v[0].position.y = cy - h * 0.5f;
-	v[1].position.x = cx + w * 0.58f; v[1].position.y = cy;
-	v[2].position.x = cx - w * 0.42f; v[2].position.y = cy + h * 0.5f;
-	for (int i = 0; i < 3; i++) {
+	SDL_Vertex v[7];
+	int idx[18], i;
+	v[0].position.x = cx; v[0].position.y = cy;
+	for (i = 0; i < 6; i++) {
+		float a = (float)(M_PI / 6.0 + i * M_PI / 3.0);
+		v[i + 1].position.x = cx + rad * cosf(a);
+		v[i + 1].position.y = cy + rad * sinf(a);
+	}
+	for (i = 0; i < 7; i++) {
 		v[i].color = col;
 		v[i].tex_coord.x = v[i].tex_coord.y = 0;
 	}
-	SDL_RenderGeometry(r, NULL, v, 3, idx, 3);
+	for (i = 0; i < 6; i++) {
+		idx[i * 3 + 0] = 0;
+		idx[i * 3 + 1] = 1 + i;
+		idx[i * 3 + 2] = 1 + (i + 1) % 6;
+	}
+	SDL_RenderGeometry(r, NULL, v, 7, idx, 18);
+}
+
+/* The mark, drawn about its own centre.
+ *
+ * `head` slides the dark cell back along the lattice: 1.0 is where it sits at
+ * rest, 0.0 is home on the centre. `dim` then fades that same dark over the
+ * blue centre cell, 0 to 1.
+ *
+ * The two are separate because at head = 0 the dark cell lands exactly on the
+ * centre and is drawn UNDER the blue, so on its own the head just disappears.
+ * `dim` is what makes its arrival visible: the blue is the one lit thing in
+ * either mark - the same colour as the boot line and the menu chrome - so
+ * covering it is the light going out, and the shell closes dark. */
+static void draw_shell(SDL_Renderer *r, float cx, float cy, float rad,
+                       float head, float dim, Uint8 alpha)
+{
+	/* Mirrors tools/markdef.py, which is the definition. C cannot import it,
+	 * so this is the one hand-kept copy: change one, change both. The ring
+	 * alternates light, mid, light, mid, light, mid for three-fold symmetry. */
+	static const struct { float i, j; Uint8 c[3]; } cells[] = {
+		{ -0.5f, -1.0f, { 128, 176, 118 } }, {  0.5f, -1.0f, { 104, 138,  96 } },
+		{  1.0f,  0.0f, { 128, 176, 118 } }, {  0.5f,  1.0f, { 104, 138,  96 } },
+		{ -0.5f,  1.0f, { 128, 176, 118 } }, { -1.0f,  0.0f, { 104, 138,  96 } },
+	};
+	float dx = 1.7320508f * rad, dy = 1.5f * rad;
+	SDL_Color col;
+	int k;
+
+	/* Head first, so the shell cells draw over it as it withdraws. */
+	col.r = 61; col.g = 89; col.b = 67; col.a = alpha;
+	draw_hex(r, cx + 2.0f * dx * head, cy, rad * 0.95f, col);
+	for (k = 0; k < 6; k++) {
+		col.r = cells[k].c[0]; col.g = cells[k].c[1]; col.b = cells[k].c[2];
+		col.a = alpha;
+		draw_hex(r, cx + cells[k].i * dx, cy + cells[k].j * dy, rad * 0.95f, col);
+	}
+	col.r = 74; col.g = 158; col.b = 255; col.a = alpha;
+	draw_hex(r, cx, cy, rad * 0.95f, col);
+	if (dim > 0.0f) {
+		SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+		col.r = 61; col.g = 89; col.b = 67;
+		col.a = (Uint8)(alpha * (dim > 1.0f ? 1.0f : dim));
+		draw_hex(r, cx, cy, rad * 0.95f, col);
+	}
 }
 
 static bool battery_low(void)
@@ -638,24 +691,54 @@ static void anim_launch(app *a, unsigned ms)
 	SDL_RenderPresent(a->r);
 }
 
-/* The send-off. The mark collapses to a point and the screen goes with it --
- * the same triangle the boot animation draws, run backwards. */
+/* The send-off, and the inverse of the boot animation's gesture: there he
+ * launches head-first out of frame, here he arrives and pulls the head in.
+ *
+ * Timed against the shutdown rather than chosen. Measured 2026-08-28: 1.42 s
+ * from the Power off press to adbd dying, of which the old 620 ms animation
+ * was the first slice - the rest was a black screen while sync and the kernel
+ * finished. So the animation runs to about 900 ms and then DOES NOT clear.
+ *
+ * Not clearing is the point. Whatever was last presented stays on the panel
+ * until the kernel cuts it, so the mark sits there through the remainder of
+ * the shutdown and the screen going dark is the device going dark. The boot
+ * animation relies on exactly the same thing at the other end. */
 static void anim_poweroff(app *a)
 {
-	unsigned t0 = plat_now_ms(), now, ms = 620;
+	const unsigned T_IN = 430, T_HEAD = 260, T_DIM = 210;
+	const unsigned ms = T_IN + T_HEAD + T_DIM;
+	const float cx = PLAYOS_SCREEN_W / 2.0f, cy = PLAYOS_SCREEN_H / 2.0f;
+	const float rad = 46.0f;
+	unsigned t0 = plat_now_ms(), now;
+
 	while ((now = plat_now_ms()) - t0 < ms) {
-		float k = (float)(now - t0) / (float)ms;
-		float e = 1.0f - (1.0f - k) * (1.0f - k);
-		SDL_Color col = { UI_CYAN_R, UI_CYAN_G, UI_CYAN_B, (Uint8)(255 * (1.0f - e)) };
-		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 255);
+		unsigned t = now - t0;
+		float x = cx, head = 1.0f, dim = 0.0f;
+		if (t < T_IN) {
+			/* In from the left, decelerating onto the centre. */
+			float k = (float)t / (float)T_IN;
+			float e = 1.0f - (1.0f - k) * (1.0f - k) * (1.0f - k);
+			x = -PLAYOS_SCREEN_W * 0.35f + (cx + PLAYOS_SCREEN_W * 0.35f) * e;
+		} else if (t < T_IN + T_HEAD) {
+			float k = (float)(t - T_IN) / (float)T_HEAD;
+			head = 1.0f - k * k;          /* accelerating in, like a flinch */
+		} else {
+			float k = (float)(t - T_IN - T_HEAD) / (float)T_DIM;
+			head = 0.0f;
+			dim = 1.0f - (1.0f - k) * (1.0f - k) * (1.0f - k);
+		}
+		SDL_SetRenderDrawColor(a->r, 17, 19, 16, 255);
 		SDL_RenderClear(a->r);
-		draw_triangle(a->r, PLAYOS_SCREEN_W / 2.0f, PLAYOS_SCREEN_H / 2.0f,
-		              160.0f * (1.0f - e * 0.94f), col);
+		draw_shell(a->r, x, cy, rad, head, dim, 255);
 		SDL_RenderPresent(a->r);
 		SDL_Delay(6);
 	}
-	SDL_SetRenderDrawColor(a->r, 0, 0, 0, 255);
+	/* Land on the closed state exactly, in case the loop exited a frame early,
+	 * and then deliberately no clear: the dark shell is the last thing on
+	 * screen and stays there while the device powers down. */
+	SDL_SetRenderDrawColor(a->r, 17, 19, 16, 255);
 	SDL_RenderClear(a->r);
+	draw_shell(a->r, cx, cy, rad, 0.0f, 1.0f, 255);
 	SDL_RenderPresent(a->r);
 }
 
@@ -1678,7 +1761,6 @@ static void launch(app *a)
 			v->tex[v->cursor] = NULL;
 		}
 	}
-
 
 	plat_input_flush();
 	memset(&a->in, 0, sizeof a->in);
