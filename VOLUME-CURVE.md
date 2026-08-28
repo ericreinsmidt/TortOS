@@ -9,7 +9,7 @@ Reported from ordinary play: the audio used to be much louder at maximum and
 did not fall away so steeply. 60% was a normal listening level before; now it
 is barely audible.
 
-Paraphrased rather than quoted - the original wording named the emulator PlayOS
+Paraphrased rather than quoted - the original wording named the emulator TortOS
 replaced, and that project has no bearing here.
 
 ## The measurement
@@ -31,7 +31,7 @@ and agreed to within 3% at both ends.
 **The inversion your comments describe is correct.** 0 is loudest. I raised the
 opposite theory during this investigation and it was wrong.
 
-But the earlier *proof* of it was circular: it diffed PlayOS's own writes across
+But the earlier *proof* of it was circular: it diffed TortOS's own writes across
 a volume-up press, which establishes what `apply_volume` does, not what the
 codec does. The table above is the non-circular version, so the comment in
 `platform.c` can now cite a real measurement.
@@ -131,8 +131,8 @@ cross-checked by hand.
   writes four controls and restores none of them, which made it a good suspect.
   A clean reboot shows `Soft Volume Master` at 255 and `DAC volume` at 160 -
   both driver defaults, unchanged. Not it. The harness bug is real and worth
-  fixing anyway, since its justifying comment claims PlayOS resets the mixer
-  when PlayOS only resets one of the four.
+  fixing anyway, since its justifying comment claims TortOS resets the mixer
+  when TortOS only resets one of the four.
 - **Volume not persisting.** It persists correctly. `levels.cfg volume=5`
   survived a reboot and produced raw 47 exactly as `apply_volume` predicts.
 - **Per-core loudness differences.** Real and measured - a 13 dB spread across a

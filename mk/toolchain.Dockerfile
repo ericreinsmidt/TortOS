@@ -5,7 +5,7 @@
 # and their headers live in the sysroot (mk/fetch-sysroot.sh), not in this
 # image, so the image never needs rebuilding when the device libraries change.
 #
-# This replaces ghcr.io/loveretro/tg5040-toolchain:latest, which built PlayOS
+# This replaces ghcr.io/loveretro/tg5040-toolchain:latest, which built TortOS
 # correctly but was someone else's image on an UNPINNED tag: a republish would
 # have changed every build here with nothing failing and no record of it.
 #

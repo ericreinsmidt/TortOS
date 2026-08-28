@@ -1,4 +1,4 @@
-# Runs inside the PlayOS toolchain container. CC comes from the image; SYSROOT
+# Runs inside the TortOS toolchain container. CC comes from the image; SYSROOT
 # is passed in and holds the device's own SDL2 libraries, so what links is
 # byte-identical to what runs.
 BUILD := build
@@ -11,7 +11,7 @@ CFLAGS := -O2 -mcpu=cortex-a53 -Wall -Wextra -Wno-unused-parameter -std=gnu11 \
 # and SDL2/SDL2_image reach for more of the firmware besides. Those resolve on
 # the device at runtime, where they exist. The flag permits undefined symbols
 # in SHARED LIBRARIES only - anything THIS code calls and cannot find is still
-# a link error, which is what makes the link a real check that PlayOS uses no
+# a link error, which is what makes the link a real check that TortOS uses no
 # SDL function the shipped libraries lack.
 LDFLAGS := -L$(SYSROOT)/usr/lib -Wl,-rpath-link,$(SYSROOT)/usr/lib \
            -Wl,--allow-shlib-undefined

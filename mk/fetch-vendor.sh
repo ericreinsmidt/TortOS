@@ -1,14 +1,14 @@
 #!/bin/sh
-# Populate vendor/cores with the libretro cores PlayOS redistributes.
+# Populate vendor/cores with the libretro cores TortOS redistributes.
 #
-# That is the whole of it. PlayOS carries no third-party runtime libraries;
+# That is the whole of it. TortOS carries no third-party runtime libraries;
 # measurement says nothing needs them:
 #
 #   the cores need  libc libm librt libstdc++ libgcc_s ld-linux
 #   tortos.elf needs libSDL2 libSDL2_image libSDL2_ttf libm libdl libc
 #
 # Every one of those ships in the device's own firmware under /usr/trimui/lib
-# or /usr/lib. Settings are PlayOS's own code in src/platform.c, against the
+# or /usr/lib. Settings are TortOS's own code in src/platform.c, against the
 # device's ALSA control and display-engine interfaces.
 #
 # Cores come from libretro's own buildbot, pinned by sha256 - the same hashes

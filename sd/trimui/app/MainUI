@@ -2,7 +2,7 @@
 # First-boot installer. On a stock device there is no .tmp_update on the card
 # yet, so the firmware runs this in place of its own MainUI binary. It installs
 # the runtrimui.sh hook, moves .tmp_update to the SD root, and hands off to
-# PlayOS. Every boot after this one goes straight to PlayOS.
+# TortOS. Every boot after this one goes straight to TortOS.
 
 SDCARD=/mnt/SDCARD
 cd "$SDCARD/trimui/app"

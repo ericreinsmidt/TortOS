@@ -1,5 +1,5 @@
 #!/bin/sh
-# Regenerate the Brick sysroot PlayOS links against.
+# Regenerate the Brick sysroot TortOS links against.
 #
 # Deliberately NOT committed: the libraries are TrimUI's binaries and the
 # headers are upstream SDL's, so the repository records how to obtain them
@@ -28,7 +28,7 @@ DL=/tmp/tortos-sysroot-dl
 # headers declare a superset of the old API. That is safe here for a reason
 # rather than by hope: the link is against the DEVICE'S OWN libraries, pulled
 # above, so a call to anything the shipped library lacks is a link error, not
-# a runtime surprise. If PlayOS ever reaches for a newer SDL_image or SDL_ttf
+# a runtime surprise. If TortOS ever reaches for a newer SDL_image or SDL_ttf
 # function, the build fails and says so.
 #
 # Hashes are trust-on-first-use against the release assets, recorded
@@ -48,7 +48,7 @@ mkdir -p "$OUT/usr/lib" "$OUT/usr/include/SDL2" "$DL"
 
 # Named rather than pulled wholesale: /usr/trimui/lib contains at least one
 # dangling symlink (libfreeimage.so.3 -> nothing), and `adb pull` of the whole
-# directory fails on it. Naming what PlayOS links against is more honest
+# directory fails on it. Naming what TortOS links against is more honest
 # anyway - the list IS the dependency set.
 echo "pulling libraries from the device"
 for lib in libSDL2-2.0.so.0 libSDL2_image-2.0.so.0 libSDL2_ttf-2.0.so.0; do

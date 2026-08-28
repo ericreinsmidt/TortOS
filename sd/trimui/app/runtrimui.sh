@@ -1,6 +1,6 @@
 #!/bin/sh
 # Installed to /usr/trimui/bin/runtrimui.sh by the first-boot installer.
-# Waits for the SD card, then runs its updater (PlayOS) if present, else stock.
+# Waits for the SD card, then runs its updater (TortOS) if present, else stock.
 
 mounted=$(cat /proc/mounts | grep -i SDCARD)
 cnt=0

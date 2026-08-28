@@ -23,7 +23,7 @@
 #define UI_TEXT_SOFT ((SDL_Color){ 198, 201, 214, 255 })
 #define UI_TEXT_DIM  ((SDL_Color){ 148, 153, 172, 255 })
 
-/* PlayOS cyan: 0x3DD6FF. The system accents come from systems.cfg. */
+/* TortOS cyan: 0x3DD6FF. The system accents come from systems.cfg. */
 #define UI_CYAN_R 61
 #define UI_CYAN_G 214
 #define UI_CYAN_B 255

@@ -1,5 +1,5 @@
 #!/bin/sh
-# PlayOS boot entry. Called from .tmp_update/tg5040.sh; never returns.
+# TortOS boot entry. Called from .tmp_update/tg5040.sh; never returns.
 #
 # The order of things in here is the boot time. The animation runs in the
 # background and everything else -- the launcher's whole startup and the
@@ -37,7 +37,7 @@ mkdir -p "$BIOS_PATH" "$ROMS_PATH" "$SAVES_PATH" "$USERDATA_PATH" "$LOGS_PATH" \
 CFG=$TORTOS_DIR/tortos.cfg
 getcfg() { [ -f "$CFG" ] && sed -n "s/^$1=//p" "$CFG" | tail -1; }
 
-# All LEDs off: PlayOS shows no chrome, and the lights are pure battery drain.
+# All LEDs off: TortOS shows no chrome, and the lights are pure battery drain.
 # A function, because trimui_inputd re-lights them when it starts.
 leds_off() {
 	echo 0 > /sys/class/led_anim/effect_enable 2> /dev/null
@@ -51,7 +51,7 @@ leds_off() {
 # Apply the configured brightness now, so the boot animation is not dimmer than
 # everything after it. tortos.elf has not started yet and cannot do it.
 #
-# This ladder is PlayOS's own and is shared verbatim with platform.c and with
+# This ladder is TortOS's own and is shared verbatim with platform.c and with
 # the emulator: twelve geometric rungs, the first being the panel's measured
 # floor (0 and 1 are black on this display). A saved level in
 # .userdata/levels.cfg wins over the config default, because that is the
@@ -151,7 +151,7 @@ echo 227 > /sys/class/gpio/export 2> /dev/null
 echo -n out > /sys/class/gpio/gpio227/direction 2> /dev/null
 echo -n 0 > /sys/class/gpio/gpio227/value 2> /dev/null
 
-# Radio silence. PlayOS has nothing to talk to: no downloads, no pairing, no
+# Radio silence. TortOS has nothing to talk to: no downloads, no pairing, no
 # achievements. Both radios are battery drain and boot time.
 #
 # `wifi=1` in tortos.cfg -- or a .devwifi marker -- keeps WiFi up so a

@@ -1,10 +1,10 @@
-# PlayOS
+# TortOS
 
 A custom firmware for the **TrimUI Brick / Brick Hammer** (tg5040) that plays
 nine 8- and 16-bit consoles, and does nothing else.
 
 No store, no scraper, no achievements, no music player, no settings screen. No
-WiFi and no Bluetooth — both radios are shut down at boot and never come back.
+WiFi and no Bluetooth - both radios are shut down at boot and never come back.
 What is on screen is a row of cards, the name of the thing under the cursor,
 and a rail saying where you are in the list.
 
@@ -20,12 +20,12 @@ is the game:
 
 | | |
 |---|---|
-| `GFX_init` — SDL video plus the EGL/GL context | ~620 ms |
+| `GFX_init` - SDL video plus the EGL/GL context | ~620 ms |
 | `dlopen` of the libretro core | ~170 ms |
 | audio and settings | ~140 ms |
 | **actually opening the ROM** | **~36 ms** |
 
-Everything except the last line is the cost of *starting a process*. So PlayOS
+Everything except the last line is the cost of *starting a process*. So TortOS
 does not start one.
 
 ### The resident emulator
@@ -50,16 +50,16 @@ Quit act through one protocol line each. Volume and brightness set in a game
 come back to the launcher's settings when the game ends, because the two
 sides share one levels channel instead of overwriting each other.
 
-Nothing depends on the resident emulator. If the socket is not there — in the
-first second after boot, or if it has died — the launcher runs the same
+Nothing depends on the resident emulator. If the socket is not there - in the
+first second after boot, or if it has died - the launcher runs the same
 `diatom` binary standalone, one process for that game, and starts a fresh
 resident once the display is back.
 
 ### The boot animation runs *behind* startup
 
 An animation that adds its own length to the boot is a delay with a picture on
-it. PlayOS plays its 2.4s animation in the background while the launcher does
-its entire startup — the card scan, GL init, font and card decode — and while
+it. TortOS plays its 2.4s animation in the background while the launcher does
+its entire startup - the card scan, GL init, font and card decode - and while
 the resident emulator builds its context and maps the cores it needs.
 
 `ffmpeg` and the launcher both write to `/dev/fb0`, and it is last-writer-wins,
@@ -90,7 +90,7 @@ not a second and a half of re-initializing a display.
 
 ## What it looks like
 
-A single row of cards in perspective, with reflections — Cover Flow, carried
+A single row of cards in perspective, with reflections - Cover Flow, carried
 over from an earlier project by the same author and retuned. The focused card
 sits in a soft glow tinted with its system's color, and the whole background
 carries a wash of that color that eases as you move between systems.
@@ -98,7 +98,7 @@ carries a wash of that color that eases as you move between systems.
 Card art comes from, in order:
 
 1. box art you put in `Roms/<system>/.media/<name>.png`;
-2. **the autosave preview** — the frame you were looking at when you stopped,
+2. **the autosave preview** - the frame you were looking at when you stopped,
    which for a game in progress is a better card than any box;
 3. a generated slab: the system's color, the title, and the title's first
    letter enormous and barely there behind it.
@@ -110,14 +110,14 @@ Pressing A on it does not start it, it continues it.
 
 ## Saves
 
-- **Autosave.** Every way out of a game — the Quit row, the power button, a
-  stop from the launcher — writes the state and the preview at the paths the
+- **Autosave.** Every way out of a game - the Quit row, the power button, a
+  stop from the launcher - writes the state and the preview at the paths the
   launch handed over. One funnel, so no exit can forget and none can save
   twice.
 - **Auto-resume.** The launcher asks for slot 9 before every launch. If a state
   is there the game comes up exactly where it was left; if not it starts fresh.
-- **Manual save and load**, eight slots, from the in-game menu (`MENU`). Silent
-  — the device shows no in-game chrome.
+- **Manual save and load**, eight slots, from the in-game menu (`MENU`).
+  Silent - the device shows no in-game chrome.
 
 Saves and states are keyed on the system's **tag** (`NES`, `PCE`, `GBA`), which
 is stated outright in `systems.cfg` rather than guessed from punctuation in a
@@ -136,13 +136,13 @@ filename, so renaming a ROM folder cannot orphan a save.
 | **B** | back to the systems row |
 | **Volume rocker** | volume, everywhere, including in game |
 | **F1 / F2** | brightness, everywhere, including in game |
-| **MENU** (on the shelf) | the PlayOS menu — settings that are about the firmware |
+| **MENU** (on the shelf) | the TortOS menu - settings that are about the firmware |
 | **MENU** (in game) | the in-game menu: Continue, Save, Load, Options, Reset, Quit |
 | **POWER** | ends the game if one is running, otherwise powers off |
 
 Volume and brightness draw the same thin line across the top of the screen in
 the launcher, in a game, and in the in-game menu. One firmware, one piece of
-feedback — tinted by which of the two it is, warm for brightness and cyan for
+feedback - tinted by which of the two it is, warm for brightness and cyan for
 volume, so the line says what it is without a glyph or a number on it.
 
 ---
@@ -157,7 +157,7 @@ volume, so the line says what it is without a glyph or a number on it.
 4. Copy the **contents** of `out/sd/` to the root of a FAT32 SD card
    (`make install-card CARD=/Volumes/YOURCARD` does it and ejects properly).
 5. Put the card in a stock Brick and power on. The first boot installs the
-   `runtrimui.sh` hook; every boot after that comes straight up in PlayOS.
+   `runtrimui.sh` hook; every boot after that comes straight up in TortOS.
 
 Then put ROMs in:
 
@@ -180,12 +180,12 @@ one: a system with no ROMs in its folder still gets a card, and a line removed
 from the config takes its shelf with it.
 
 A folder inside a system folder that contains a disc image counts as one game,
-launching the image inside it — that is how a multi-disc PC Engine CD set stays
+launching the image inside it - that is how a multi-disc PC Engine CD set stays
 a single entry.
 
 ### Undoing it
 
-PlayOS replaces the boot splash and the loading splash on first boot, and backs
+TortOS replaces the boot splash and the loading splash on first boot, and backs
 both up beside itself (`bootlogo.stock.bmp`, `splash.stock.png`) along with the
 stock init script (`/etc/init.d/runtrimui.tortos-bak`). Removing the card is
 enough to boot stock again; `/usr/trimui/bin/runtrimui-original.sh` is the
@@ -202,7 +202,7 @@ Two files, and they are the whole settings screen.
 ```
 volume=40           # 0..100, the default before one has ever been set
 brightness=7        # 0..11, twelve geometric rungs; 0 is the panel's floor
-startup_system=NES  # only decides the very first boot; after that PlayOS
+startup_system=NES  # only decides the very first boot; after that TortOS
                     # comes back to wherever you were
 font_scale=1.0      # 0.75..1.50, multiplies the whole type scale at once
 wifi=1              # keeps WiFi up on a development unit, for ssh
@@ -218,16 +218,16 @@ game and a level set on the shelf mean the same thing on both sides.
 **Display mode** is per system, set from that system's own menu and kept in
 `.userdata/<platform>/display.cfg` keyed on the system's tag. The seven modes
 are Diatom's, named as it names them, and the launcher hands the chosen one
-over with every launch — the emulator's mode is global and outlives a game, so
+over with every launch - the emulator's mode is global and outlives a game, so
 a system that has never been set would otherwise inherit whatever the last one
 chose. An unrecognised name in that file falls back to `aspect`.
 
 `font_scale` moves every size together. The sizes themselves are one base and
-a multiplier per role — title, menu row, heading, the quiet line of counts and
-timestamps — in `src/ui.c`, so the proportions between them are stated in one
+a multiplier per role - title, menu row, heading, the quiet line of counts and
+timestamps - in `src/ui.c`, so the proportions between them are stated in one
 table rather than as numbers spread across the call sites.
 
-`TortOS/systems.cfg` — one line per system:
+`TortOS/systems.cfg` - one line per system:
 
 ```
 sys|display name|Roms/ folder|core|tag|card art|accent|extensions
@@ -240,13 +240,13 @@ longer one is silently truncated.
 
 ## Building
 
-Everything cross-compiles in PlayOS's own toolchain image - a stock Debian
+Everything cross-compiles in TortOS's own toolchain image - a stock Debian
 cross-compiler pinned by digest, built by `mk/toolchain.Dockerfile`, linking
 against the device's own SDL2 in `sysroot/`. So the only host requirements are
 Docker and (for regenerating art) Python with Pillow, plus ffmpeg.
 
 ```sh
-make toolchain  # the cross-compiler      -> playos-toolchain   (once)
+make toolchain  # the cross-compiler      -> tortos-toolchain   (once)
 mk/fetch-sysroot.sh  # the device's SDL2  -> sysroot/           (once, needs adb)
 make            # the launcher            -> build/tortos.elf
 make vendor     # the libretro cores      -> vendor/
@@ -263,12 +263,12 @@ a single frame:
 
 ```sh
 TORTOS_ROOT=… TORTOS_ROMS=… TORTOS_FONT=res/fonts/menu.ttf \
-  build-native/playos --shot /tmp/shelf.png --screen games
+  build-native/tortos --shot /tmp/shelf.png --screen games
 ```
 
-`--menu [row]` draws the PlayOS menu over that shelf, and `--slots <n>
+`--menu [row]` draws the TortOS menu over that shelf, and `--slots <n>
 [aspect]` draws one frame of the save/load carousel over synthetic game
-frames — the two screens that otherwise need a game running on a device before
+frames - the two screens that otherwise need a game running on a device before
 they can be looked at. `--jump <n>` applies n letter-jumps first (negative for
 up), so where the d-pad lands on a real library can be checked without a hand
 on the device. Every shot names the screen and the focused item on stderr, so
@@ -303,7 +303,7 @@ vendor/         fetched: the libretro cores, hash-pinned
 
 ## License
 
-PlayOS's own code is **0BSD** (`LICENSE`).
+TortOS's own code is **0BSD** (`LICENSE`).
 
 The emulator is [Diatom](https://github.com/ericreinsmidt/diatom), **MIT**, a
 separate program the launcher runs and talks to over a socket. The cores keep

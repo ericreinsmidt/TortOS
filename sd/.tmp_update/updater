@@ -1,5 +1,5 @@
 #!/bin/sh
-# PlayOS SD-boot entry. The stock runtrimui.sh runs this when it is present on
+# TortOS SD-boot entry. The stock runtrimui.sh runs this when it is present on
 # the card.
 
 INFO=$(cat /proc/cpuinfo 2> /dev/null)

@@ -115,6 +115,12 @@ Injected presses reach the game too, so a stray A is a stray jump.
 
 ## The escape hatch
 
-`PlayOS.pre-diatom/` on the card is the complete pre-migration PlayOS
-directory. The wedge (two things presenting at once) needs a power cycle -
-adb usually survives it, `adb reboot` sometimes does not.
+`PlayOS.pre-diatom/` on the card is the complete pre-migration launcher
+directory. The name is the old one and stays as it is: it is a literal path on
+a card written before the rename, not a reference to the product.
+
+It does not survive the TortOS card install, which formats. If it is still
+wanted as a fallback, pull it off the device first.
+
+The wedge (two things presenting at once) needs a power cycle - adb usually
+survives it, `adb reboot` sometimes does not.

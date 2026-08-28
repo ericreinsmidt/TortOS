@@ -1,5 +1,5 @@
-# PlayOS's own toolchain: a stock Debian cross-compiler pinned by digest, with
-# the device's SDL2 in sysroot/. Every dependency is PlayOS's own or the
+# TortOS's own toolchain: a stock Debian cross-compiler pinned by digest, with
+# the device's SDL2 in sysroot/. Every dependency is TortOS's own or the
 # TrimUI's SDK. Build it once with `make toolchain`, and the sysroot once with
 # `mk/fetch-sysroot.sh` (needs the device on adb).
 IMAGE := tortos-toolchain
@@ -28,7 +28,7 @@ toolchain:
 native:
 	$(MAKE) -f mk/native.mk
 
-# The libretro cores PlayOS redistributes, hash-pinned from libretro's own
+# The libretro cores TortOS redistributes, hash-pinned from libretro's own
 # buildbot. Needed once, before the first payload. No runtime libraries: the
 # cores need only what the device's firmware already has.
 vendor:

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Copy the assembled payload onto a mounted FAT32 card.
 #
-# ONLY ever adds PlayOS's own files. It never deletes anything it did not put
+# ONLY ever adds TortOS's own files. It never deletes anything it did not put
 # there, and it refuses outright to touch a DO_NOT_TOUCH tree -- on the
 # development card that folder holds another firmware install.
 set -e

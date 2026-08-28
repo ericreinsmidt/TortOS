@@ -159,7 +159,7 @@ bool plat_video_init(void)
 		return false;
 	}
 	SDL_ShowCursor(SDL_DISABLE);
-	win = SDL_CreateWindow("PlayOS", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+	win = SDL_CreateWindow("TortOS", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
 	                       TORTOS_SCREEN_W, TORTOS_SCREEN_H,
 	                       SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
 	if (!win) {
@@ -866,7 +866,7 @@ void plat_leds_off(void)
 
 /* ---- volume and brightness, straight at the hardware ----------------------
  *
- * PlayOS's own code, against the same two device interfaces the emulator uses.
+ * TortOS's own code, against the same two device interfaces the emulator uses.
  * It replaced a third-party settings library, which bought three things beyond
  * independence:
  *
@@ -875,7 +875,7 @@ void plat_leds_off(void)
  *     crossing the socket had to be rescaled, and a rescale is where an
  *     off-by-one hides. Both sides now speak the same ladder and the
  *     conversion is the identity.
- *   - Settings persist in PlayOS's own file rather than the stock firmware's
+ *   - Settings persist in TortOS's own file rather than the stock firmware's
  *     /mnt/UDISK/system.json, which is TrimUI's state and not ours to own.
  *   - One fewer binary on the card.
  *

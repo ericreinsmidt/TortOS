@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: 0BSD
  *
- * PlayOS -- a custom firmware for the TrimUI Brick that plays NES, TurboGrafx
+ * TortOS -- a custom firmware for the TrimUI Brick that plays NES, TurboGrafx
  * -16 and Game Boy Advance games, and does nothing else.
  *
  * The whole design metric is speed. The launcher starts behind the boot
@@ -43,7 +43,7 @@ typedef struct {
 	coverflow cf;
 } sysview;
 
-/* Diatom's display modes, in the order PlayOS offers them: the sensible
+/* Diatom's display modes, in the order TortOS offers them: the sensible
  * default first, then whole-pixel scaling, then the ones that trade shape or
  * edges for coverage, with 1:1 last as a reference rather than a choice.
  *
@@ -225,8 +225,8 @@ static SDL_Texture *sys_get_tex(void *ctx, int i, int *w, int *h)
  * when they stopped. The directory is named after the ROM's folder under
  * Roms/.
  *
- * The directory and the slot names are PlayOS's own. Both were briefly
- * borrowed from the emulator PlayOS replaced, and the borrowing cost more than
+ * The directory and the slot names are TortOS's own. Both were briefly
+ * borrowed from the emulator TortOS replaced, and the borrowing cost more than
  * it saved: a name that describes another project invites a reader to treat
  * the contents as dead, and on 2026-08-28 the live autosave tree was deleted
  * by someone auditing the card for exactly that reason. Nothing was lost only
@@ -756,7 +756,7 @@ static void power_off(app *a)
 
 /* ---------- menus --------------------------------------------------------- */
 
-/* Both menus in PlayOS are the same shape - a short list on a slab, over a
+/* Both menus in TortOS are the same shape - a short list on a slab, over a
  * paused game frame or over the shelf - so they are drawn by one function and
  * cannot drift apart. The slab is sized to its own widest row with the same
  * padding on every side, rather than to a number picked once and left behind
@@ -768,7 +768,8 @@ typedef struct {
 } menu_row;
 
 #define MENU_RADIUS 20
-/* genboot.py's CYAN, the boot animation's play triangle. */
+/* The launcher's own cyan. Named for a genboot.py CYAN that no longer
+ * exists; see the note where it is drawn. */
 #define MENU_ACCENT 0x3DD6FFu
 
 /* The unit every menu measurement is in. Row height, padding and the gap
@@ -780,7 +781,7 @@ static int menu_row_h(void) { return ui_font_line(UI_F_MENU) * 3 / 2; }
  * menus pass a width measured across both of them so the panel never resizes;
  * the in-game menu has no values to cycle and sizes to itself. */
 /* `accent` is the panel's border and heading rule. The shelf's own menu passes
- * MENU_ACCENT because that menu is PlayOS, not whichever card is under the
+ * MENU_ACCENT because that menu is TortOS, not whichever card is under the
  * cursor; a menu that belongs to a system passes that system's color. */
 static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
                       int sel, int fixed_w, unsigned accent)
@@ -846,19 +847,24 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 	content_x = panel.x + pad;
 	content_y = panel.y + content_off;
 
-	/* PlayOS's own color, not the focused system's. The menu belongs to the
-	 * launcher rather than to whatever card happens to be under the cursor,
-	 * and it is the same cyan as the boot animation's play triangle, so the
-	 * first thing the device draws and the shelf's own chrome agree. Sampled
-	 * from a rendered frame at 0x3BD6FF; the constant in tools/genboot.py is
-	 * 0x3DD6FF and the difference is video compression. */
+	/* TortOS's own color, not the focused system's. The menu belongs to the
+	 * launcher rather than to whatever card happens to be under the cursor.
+	 *
+	 * It used to be justified as matching the boot animation's play triangle,
+	 * which is twice stale: that animation was replaced by the turtle, and the
+	 * mark's blue is markdef.BLUE, (74,158,255), against this (61,214,255).
+	 * They are a blue and a cyan, near enough to look deliberate in sequence
+	 * and far enough apart that calling them one color was wrong. Whether they
+	 * should be reconciled is a design question, not a fact about the code. */
 	ui_glow(a->r, &panel, accent, 60, 1.5f);
 	ui_panel(a->r, &panel, MENU_RADIUS, accent);
 
 	if (heading) {
 		/* Centered in the band by its ink, on the same reasoning as the rows:
-		 * the em box carries descender depth that "PlayOS" and "NES" mostly do
-		 * not use. */
+		 * the em box carries descender depth that "TortOS" and "NES" do not use.
+		 * This read "mostly do not" while the heading was "PlayOS", whose y was
+		 * the exception; the shift is by font metrics rather than by the string,
+		 * so nothing here changed with the name, it just got exactly true. */
 		int head_box = fh ? TTF_FontHeight(fh) : line_head;
 		int hy = panel.y + (head_h - head_box) / 2
 		         + (fh ? -TTF_FontDescent(fh) / 2 : 0);
@@ -940,7 +946,7 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
  * about THAT system, because a menu that repeated the firmware's settings
  * while a shelf of NES games sat behind it would be answering a question
  * nobody asked. Almost every row in both is a placeholder: the lists are here
- * to hold the shape of what PlayOS grows into, and a row that is drawn but
+ * to hold the shape of what TortOS grows into, and a row that is drawn but
  * does nothing states that more honestly than an empty menu does. */
 typedef enum {
 	PM_WIFI, PM_BT, PM_ACHIEVEMENTS, PM_SCRAPE,
@@ -984,14 +990,14 @@ static int menu_build(app *a, screen_id screen, int sys,
 	}
 
 	snprintf(b->a, sizeof b->a, "%d%%", (int)(ui_get_font_scale() * 100.0f + 0.5f));
-	*heading = "PlayOS";
+	*heading = "TortOS";
 	out[PM_WIFI]         = (menu_row){ "Wi-Fi",             "not yet", false };
 	out[PM_BT]           = (menu_row){ "Bluetooth",         "not yet", false };
 	out[PM_ACHIEVEMENTS] = (menu_row){ "RetroAchievements", "not yet", false };
 	out[PM_SCRAPE]       = (menu_row){ "Box art scraping",  "not yet", false };
 	out[PM_TEXT]         = (menu_row){ "Text size",         b->a,      false };
 	out[PM_SLEEP]        = (menu_row){ "Sleep timer",       "not yet", false };
-	out[PM_ABOUT]        = (menu_row){ "About PlayOS",      NULL,      false };
+	out[PM_ABOUT]        = (menu_row){ "About TortOS",      NULL,      false };
 	out[PM_POWER]        = (menu_row){ "Power off",         NULL,      true  };
 	return PM_ROWS;
 }
@@ -1061,7 +1067,7 @@ static void tortos_menu_draw(app *a, int sel)
 	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 	SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
 	SDL_RenderFillRect(a->r, NULL);
-	/* The shelf's menu is PlayOS's own on the systems screen and a system's on
+	/* The shelf's menu is TortOS's own on the systems screen and a system's on
 	 * a game list, which is where it gains rows that belong to that system. */
 	menu_draw(a, heading, rows, n, sel, menu_shelf_width(a),
 	          a->screen == SCREEN_SYSTEMS ? MENU_ACCENT : a->tint);
@@ -2014,7 +2020,7 @@ int main(int argc, char *argv[])
 		else if (!strcmp(argv[i], "--screen") && i + 1 < argc)
 			shot_screen = strcmp(argv[++i], "games") == 0 ? SCREEN_GAMES
 			                                              : SCREEN_SYSTEMS;
-		/* --menu [row] draws the PlayOS menu over whichever screen --screen
+		/* --menu [row] draws the TortOS menu over whichever screen --screen
 		 * asked for, so the panel can be looked at without a device. */
 		else if (!strcmp(argv[i], "--menu")) {
 			shot_menu = 1;
@@ -2180,7 +2186,7 @@ int main(int argc, char *argv[])
 		if (in_repeat(&a.in, IN_BRIGHTUP)) plat_brightness_nudge(+1);
 		if (in_repeat(&a.in, IN_BRIGHTDN)) plat_brightness_nudge(-1);
 
-		/* MENU on the shelf is PlayOS's own menu, the counterpart to the one
+		/* MENU on the shelf is TortOS's own menu, the counterpart to the one
 		 * MENU opens in a game. It draws over the shelf and returns here. */
 		if (a.in.pressed[IN_MENU]) { tortos_menu(&a); continue; }
 

@@ -8,7 +8,7 @@
 /* Everything that knows it is running on a TrimUI Brick lives here: the
  * display, the buttons that arrive on three different devices, the panel
  * backlight, the codec, the battery, and the pipe to the resident emulator.
- * The rest of PlayOS talks to this file and to SDL, and to nothing else. */
+ * The rest of TortOS talks to this file and to SDL, and to nothing else. */
 
 #define TORTOS_SCREEN_W 1024
 #define TORTOS_SCREEN_H 768
@@ -111,7 +111,7 @@ bool plat_resident_sync_rect(int timeout_ms);
 void plat_request_poweroff(void);
 void plat_leds_off(void);
 
-/* The two level scales, stated once. PlayOS shares them verbatim with
+/* The two level scales, stated once. TortOS shares them verbatim with
  * launch.sh and with Diatom, so a level crossing the socket needs no
  * conversion - which only holds while every place that rescales a level agrees
  * on the top of the range, so they live here rather than beside the ladder

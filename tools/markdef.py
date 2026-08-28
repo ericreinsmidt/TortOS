@@ -18,7 +18,7 @@ happens to be dark, not an appendage.
 
 BG      = (17, 19, 16)
 OFFWHT  = (233, 236, 227)
-BLUE    = (74, 158, 255)      # the center; also the boot line and menu chrome
+BLUE    = (74, 158, 255)      # the center, the wordmark's OS, the speed lines
 GREEN   = (94, 138, 86)
 DKGREEN = (61, 89, 67)        # the head, and what dims the center at shutdown
 MIDGRN  = (104, 138, 96)

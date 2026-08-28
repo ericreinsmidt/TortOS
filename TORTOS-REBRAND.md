@@ -55,8 +55,27 @@ the boot chain was already half-moved -- `tg5040.sh` looking for
 not boot, and it is not worth committing and then sleeping on, so the
 remaining live names were finished here.
 
-**2. Repo, prose.** README, licenses, DEVICE-LOOP, VOLUME-CURVE, the menu
-heading and About row. No behavior change.
+**2. Repo, prose. Done 2026-08-28.** README, licenses, DEVICE-LOOP,
+VOLUME-CURVE, the menu heading and About row. No behavior change, and that
+was kept literally: the one thing found that would have changed pixels was
+left alone and written down instead.
+
+Two names are deliberately still `PlayOS`. `PlayOS.pre-diatom/` in
+DEVICE-LOOP is a literal directory on a card written before the rename, so
+renaming it in prose would make the document wrong; a note now says so, and
+says the phase 4 format destroys it. This file keeps the old names because
+it is the record of what is being renamed. Everything else, including the
+`PlayOS-Test-Set/` working directory and its two `.gitignore` lines, moved
+together -- those two had to move in the same commit, since renaming the
+ignore rule alone would have exposed 896M of ROMs to git.
+
+The pass also turned up stale claims that the rename did not cause but did
+expose. `MENU_ACCENT` was documented as "genboot.py's CYAN, the boot
+animation's play triangle": there is no CYAN in genboot.py any more, the play
+triangle belonged to the animation the turtle replaced, and the mark's blue
+is (74,158,255) against the menu's (61,214,255). The two comments claiming
+those were one color now state the difference. Reconciling them is a design
+decision and is left open.
 
 **3. The boot chain. Done 2026-08-28, folded into phase 1** for the reason
 given there. `.tmp_update/tg5040.sh`, `launch.sh` internals, the payload and

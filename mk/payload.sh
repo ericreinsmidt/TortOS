@@ -3,7 +3,7 @@
 #
 # Copy the CONTENTS of out/sd/ to the root of a FAT32 SD card, put it in a
 # stock Brick and power on: the first boot installs the runtrimui.sh hook and
-# every boot after that comes straight up in PlayOS.
+# every boot after that comes straight up in TortOS.
 set -e
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 OUT=$ROOT/out/sd
