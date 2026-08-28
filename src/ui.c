@@ -241,17 +241,28 @@ void ui_round_rect(SDL_Renderer *r, const SDL_Rect *q, int radius, SDL_Color col
 	}
 }
 
+/* The border is the system's color at full strength, not a wash of it. At
+ * alpha 110 over a near-black background it read as a darker version of the
+ * accent rather than the accent, so a system's identity barely reached the one
+ * piece of chrome that frames everything it does. Twelve pixels rather than two
+ * for the same reason: at two it was a hairline that the eye resolved as gray.
+ *
+ * Twelve specifically, matching the save/load frame's `bw`, so the two pieces
+ * of accent chrome a player sees are the same weight rather than nearly so. */
+#define UI_PANEL_BORDER 12
+
 void ui_panel(SDL_Renderer *r, const SDL_Rect *q, int radius, unsigned border)
 {
-	SDL_Rect in = { q->x + 2, q->y + 2, q->w - 4, q->h - 4 };
+	const int bw = UI_PANEL_BORDER;
+	SDL_Rect in = { q->x + bw, q->y + bw, q->w - bw * 2, q->h - bw * 2 };
 
 	ui_round_rect(r, q, radius, (SDL_Color){
-		(Uint8)(border >> 16), (Uint8)(border >> 8), (Uint8)border, 110 });
+		(Uint8)(border >> 16), (Uint8)(border >> 8), (Uint8)border, 255 });
 	/* Opaque enough that a card title behind it does not ghost through the
 	 * list, which at 95% it did. Lifted off the background's own near-black:
 	 * at 10,11,16 the panel was a hole in the screen rather than a surface on
 	 * it, and every row drawn on it inherited that as looking unlit. */
-	ui_round_rect(r, &in, radius - 2, (SDL_Color){ 22, 24, 32, 252 });
+	ui_round_rect(r, &in, radius - bw, (SDL_Color){ 22, 24, 32, 252 });
 }
 
 unsigned ui_mix(unsigned a, unsigned b, float t)
@@ -295,7 +306,7 @@ static void blit_line(SDL_Surface *dst, TTF_Font *f, const char *line, int *y)
 	SDL_FreeSurface(t);
 }
 
-/* Break a title across lines that fit the card and draw them centred. The
+/* Break a title across lines that fit the card and draw them centered. The
  * line is built by appending in place and undoing the append when it no
  * longer fits, so there is no second buffer that could truncate the first. */
 static void draw_wrapped(SDL_Surface *dst, TTF_Font *f, const char *title,
@@ -393,7 +404,7 @@ SDL_Texture *ui_make_card(SDL_Renderer *r, const char *title, unsigned rgb,
 
 	draw_watermark(s, title, rgb);
 
-	/* The system's colour as a band rather than a wash: a generated card
+	/* The system's color as a band rather than a wash: a generated card
 	 * should read as "this system, no art" at a glance in the row. */
 	SDL_FillRect(s, &(SDL_Rect){ 0, 0, CARD_W, 6 },
 	             SDL_MapRGBA(s->format, (Uint8)(rgb >> 16), (Uint8)(rgb >> 8),

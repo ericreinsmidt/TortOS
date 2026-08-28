@@ -33,10 +33,10 @@
  * so they are the same weight. */
 #define UI_BAR_H 6
 
-/* The settings line is tinted by which setting it is. Brightness is the colour
+/* The settings line is tinted by which setting it is. Brightness is the color
  * of light, volume is the launcher's own cyan -- fixed per function rather
  * than taken from the system accent, which would make one control change
- * colour as you scrolled past it. */
+ * color as you scrolled past it. */
 #define UI_OSD_BRIGHT ((SDL_Color){ 255, 206, 128, 255 })
 #define UI_OSD_VOLUME ((SDL_Color){  61, 214, 255, 255 })
 
@@ -68,14 +68,14 @@ TTF_Font *ui_font(ui_font_role role);
 /* Baseline-to-baseline distance for a role, the unit menu rows are laid out in. */
 int ui_font_line(ui_font_role role);
 
-/* Draw text with its top-left at (x,y). anchor: -1 left, 0 centre, 1 right,
+/* Draw text with its top-left at (x,y). anchor: -1 left, 0 center, 1 right,
  * applied to x. Returns the drawn width. Rendering is cached per (font,
  * string), so redrawing the same title every frame costs one blit. */
 int ui_text(SDL_Renderer *r, TTF_Font *f, const char *s, int x, int y,
             int anchor, SDL_Color col);
 int ui_text_width(TTF_Font *f, const char *s);
 
-/* An additive radial glow, tinted, centred on rect and spilling past it.
+/* An additive radial glow, tinted, centered on rect and spilling past it.
  * This is what tells you which card has focus without drawing a frame
  * around anything. */
 void ui_glow(SDL_Renderer *r, const SDL_Rect *rect, unsigned rgb, int alpha,

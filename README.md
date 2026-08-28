@@ -64,7 +64,7 @@ the resident emulator builds its context and maps the cores it needs.
 
 `ffmpeg` and the launcher both write to `/dev/fb0`, and it is last-writer-wins,
 so they must never draw at the same time. A marker file is the handshake: the
-launcher initialises freely, blocks on the marker, and presents its first frame
+launcher initializes freely, blocks on the marker, and presents its first frame
 the moment the animation clears it. Bounded at 8 seconds, so a stuck decoder
 cannot hang the boot.
 
@@ -84,7 +84,7 @@ boot: card assets      1499 ms
 
 With a resident emulator there is nothing to tear down, so the launcher keeps
 its own GL context through the whole game. Coming back from a game is a frame,
-not a second and a half of re-initialising a display.
+not a second and a half of re-initializing a display.
 
 ---
 
@@ -92,18 +92,18 @@ not a second and a half of re-initialising a display.
 
 A single row of cards in perspective, with reflections — Cover Flow, carried
 over from an earlier project by the same author and retuned. The focused card
-sits in a soft glow tinted with its system's colour, and the whole background
-carries a wash of that colour that eases as you move between systems.
+sits in a soft glow tinted with its system's color, and the whole background
+carries a wash of that color that eases as you move between systems.
 
 Card art comes from, in order:
 
 1. box art you put in `Roms/<system>/.media/<name>.png`;
 2. **the autosave preview** — the frame you were looking at when you stopped,
    which for a game in progress is a better card than any box;
-3. a generated slab: the system's colour, the title, and the title's first
+3. a generated slab: the system's color, the title, and the title's first
    letter enormous and barely there behind it.
 
-A game with an autosave gets a dot in the system's colour beside its name.
+A game with an autosave gets a dot in the system's color beside its name.
 Pressing A on it does not start it, it continues it.
 
 ---

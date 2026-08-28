@@ -55,7 +55,7 @@ the blit alone is half a frame. Single digits over two seconds is idle.
 
 Do NOT pipe dd through `adb shell`: it translates LF to CRLF on the way out and
 silently corrupts the image. The tell is the size - a good capture is exactly
-3145728 bytes, and the mangled one came back 3241341 and decoded to coloured
+3145728 bytes, and the mangled one came back 3241341 and decoded to colored
 noise with one readable band through the middle. `adb exec-out`, which would
 avoid the translation, is not supported by this device's adbd.
 

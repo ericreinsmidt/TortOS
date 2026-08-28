@@ -127,7 +127,7 @@ fi
 #
 # ffmpeg and the launcher both write to /dev/fb0, so they must never draw at
 # the same time: last writer wins, and they would fight at 30fps against 60.
-# The marker file is the handshake -- the launcher initialises freely, blocks
+# The marker file is the handshake -- the launcher initializes freely, blocks
 # on the marker, and presents the moment the animation clears it. Removed in
 # the same subshell so it goes even if the decoder dies.
 if [ -f "$PLAYOS_DIR/playos-boot.mp4" ]; then

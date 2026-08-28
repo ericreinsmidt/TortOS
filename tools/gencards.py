@@ -10,7 +10,7 @@ Outputs (all under res/cards/), 640x820 RGBA PNG each:
 
 One design, three accents. Each card is a rounded slab with a vertical
 gradient, a cyan hairline picking out the top edge, an abstract geometric mark
-in the accent colour, an accent band, and the system label under it. The marks
+in the accent color, an accent band, and the system label under it. The marks
 are invented shapes that gesture at the shape language of each machine; none of
 them reproduce a logo or any other trademark.
 
@@ -19,7 +19,7 @@ corners have to carry clean antialiased alpha rather than relying on the
 background behind them. Everything is drawn at 4x and downsampled with LANCZOS
 to get that. The card is painted as fully opaque RGB first and the rounded mask
 is applied as alpha only at the end, so the pixels underneath the transparent
-corners still hold the gradient colour and the downsample cannot pull a dark
+corners still hold the gradient color and the downsample cannot pull a dark
 fringe in from unpainted areas.
 
 The label font size is derived from the longest of the three labels, so all
@@ -68,7 +68,7 @@ HAIR_INSET = 3
 HAIR_ALPHA = 0.35
 DIM = 0.45                          # secondary geometry inside a mark
 
-MARK_CX, MARK_CY = W / 2.0, 280.0   # centred in the upper two thirds
+MARK_CX, MARK_CY = W / 2.0, 280.0   # centered in the upper two thirds
 BAND_Y, BAND_H = 588, 10
 LABEL_CY = 686
 LABEL_MAX_W = 520                   # leaves 60px of margin either side
@@ -113,11 +113,11 @@ def blank_mask():
     return Image.new("L", (WS, HS), 0)
 
 
-def paint(card, mask, colour, alpha=1.0):
-    """Composite a flat colour onto the card through an antialiased mask."""
+def paint(card, mask, color, alpha=1.0):
+    """Composite a flat color onto the card through an antialiased mask."""
     if alpha < 1.0:
         mask = mask.point(lambda v, a=alpha: int(v * a))
-    card.paste(colour, (0, 0), mask)
+    card.paste(color, (0, 0), mask)
 
 
 def gradient_slab():

@@ -637,7 +637,7 @@ bool plat_resident_send(const char *tag, const char *core, const char *rom,
 		 * BRIGHT_LEVELS + 1 and rescales by it. Brightness said 11 for a
 		 * twelve-rung ladder, so every level handed to a game arrived one rung
 		 * too bright, and the inbound rescale then took a rung off on the way
-		 * back. The two cancelled often enough to look like nothing was wrong.
+		 * back. The two canceled often enough to look like nothing was wrong.
 		 * Both are written off the shared maxima now. */
 		vol = plat_volume_get();
 		bri = plat_brightness_get();
@@ -801,7 +801,7 @@ static int diatom_wait(void)
 			dsend("STOP");
 		}
 
-		/* STOP is a request; a core wedged inside retro_run cannot honour
+		/* STOP is a request; a core wedged inside retro_run cannot honor
 		 * it. Escalate on the clock: SIGTERM still flushes saves, SIGKILL
 		 * is the end of the line and reports the emulator dead. */
 		if (sent_stop && stop_at) {
@@ -1124,7 +1124,7 @@ void plat_settings_init(int cfg_volume_pct, int cfg_brightness)
  * cyan for volume. Diatom draws its own thin bar in game for the same reason,
  * so the feedback is one thing everywhere instead of a launcher line here and
  * another firmware's pill there; the tint is the part Diatom has to be taught
- * to match. Still no glyph and no number: the colour and the button you just
+ * to match. Still no glyph and no number: the color and the button you just
  * pressed agree, and neither needs a label. */
 #define OSD_LINE_H     UI_BAR_H
 #define OSD_PAD        3    /* half-black scrim above and below */

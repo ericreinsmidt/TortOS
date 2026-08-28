@@ -12,13 +12,13 @@ Frame 0 is pure black on purpose. The stock splash is replaced by bootlogo.bmp
 and the kernel holds that image on screen until the video player takes over, so
 starting the video on the same pure black the splash shows means the handoff has
 no visible seam. The last frame is the finished lockup on the flat background
-colour for the mirror-image reason: it stays on the panel until the launcher
+color for the mirror-image reason: it stays on the panel until the launcher
 draws its first frame, so the video has to end on exactly what the launcher
 starts on.
 
 Frames are drawn supersampled and downsampled with LANCZOS, because the play
 triangle is mostly diagonal edges and PIL's polygon/line rasteriser has no
-antialiasing of its own. Shapes are composited as colour-through-an-L-mask
+antialiasing of its own. Shapes are composited as color-through-an-L-mask
 rather than as RGBA layers, which avoids the dark fringes non-premultiplied
 RGBA compositing leaves on antialiased edges. The bloom is built from a
 separate coverage buffer, blurred at reduced resolution, and added on top of
@@ -64,7 +64,7 @@ FONT_PX = 108
 TRACKING = 20.0                     # extra advance between letters
 LINE_W = 2.0                        # thin sweep lines / triangle outline
 STREAK_H = 3.0
-CY = 384.0                          # lockup vertical centre
+CY = 384.0                          # lockup vertical center
 
 WORD = "PLAYOS"
 N_WHITE = 4                         # "PLAY" white, "OS" cyan
@@ -135,7 +135,7 @@ def letter_layout():
 
 LX, WORD_W = letter_layout()
 _ink = _pd.textbbox((0, 0), WORD, font=font, anchor="ls", stroke_width=STROKE)
-BASELINE = CY * SS - (_ink[1] + _ink[3]) / 2.0     # centre the ink on CY
+BASELINE = CY * SS - (_ink[1] + _ink[3]) / 2.0     # center the ink on CY
 
 TOTAL_W = TRI_W * SS + GAP * SS + WORD_W
 X0 = (WS - TOTAL_W) / 2.0
@@ -157,12 +157,12 @@ def new_mask():
     return Image.new("L", (WS, HS), 0)
 
 
-def stamp(base, glow, mask, colour, alpha, glow_weight):
-    """Composite `colour` onto base through `mask`, and add to the glow buffer."""
+def stamp(base, glow, mask, color, alpha, glow_weight):
+    """Composite `color` onto base through `mask`, and add to the glow buffer."""
     if alpha <= 0.0:
         return
     m = mask if alpha >= 1.0 else mask.point(lambda v, a=alpha: int(v * a))
-    base.paste(colour, (0, 0), m)
+    base.paste(color, (0, 0), m)
     if glow_weight > 0.0:
         w = glow_weight * alpha
         glow.paste(int(round(255 * min(1.0, w))), (0, 0), m)

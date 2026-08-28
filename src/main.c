@@ -493,7 +493,7 @@ static void draw_background(app *a)
 	SDL_Renderer *r = a->r;
 	SDL_SetRenderDrawColor(r, UI_BG_R, UI_BG_G, UI_BG_B, 255);
 	SDL_RenderClear(r);
-	/* A wash of the focused system's colour along the bottom edge, so the
+	/* A wash of the focused system's color along the bottom edge, so the
 	 * whole screen belongs to the machine you are looking at. Faint enough to
 	 * read as light rather than as a panel. */
 	{
@@ -539,9 +539,9 @@ static void draw_games(app *a)
 		game_entry *g = &v->list.items[v->cursor];
 		int tw = ui_text_width(ui_font(UI_F_TITLE), g->title);
 		int tx = PLAYOS_SCREEN_W / 2;
-		/* A game with an autosave gets a dot in the system's colour beside
+		/* A game with an autosave gets a dot in the system's color beside
 		 * its name: pressing A on it does not start it, it continues it.
-		 * Sized and centred off the title's own line, so it keeps sitting
+		 * Sized and centered off the title's own line, so it keeps sitting
 		 * with the text when the type scale moves. */
 		if (game_has_state(a, a->sys_cursor, g)) {
 			int line = ui_font_line(UI_F_TITLE);
@@ -584,7 +584,7 @@ static void render(app *a)
 }
 
 /* Ease the background tint toward the focused system rather than snapping: the
- * colour is meant to feel like the light the machine gives off, and light does
+ * color is meant to feel like the light the machine gives off, and light does
  * not cut. Called from every loop that draws the shelf. */
 static unsigned last_tint_ms;
 static void tick_tint(app *a)
@@ -685,6 +685,8 @@ typedef struct {
 } menu_row;
 
 #define MENU_RADIUS 20
+/* genboot.py's CYAN, the boot animation's play triangle. */
+#define MENU_ACCENT 0x3DD6FFu
 
 /* The unit every menu measurement is in. Row height, padding and the gap
  * between the two columns are all cut from it, so the whole panel scales with
@@ -694,23 +696,26 @@ static int menu_row_h(void) { return ui_font_line(UI_F_MENU) * 3 / 2; }
 /* `fixed_w` is the content width to use, or 0 to size to these rows. The shelf
  * menus pass a width measured across both of them so the panel never resizes;
  * the in-game menu has no values to cycle and sizes to itself. */
+/* `accent` is the panel's border and heading rule. The shelf's own menu passes
+ * MENU_ACCENT because that menu is PlayOS, not whichever card is under the
+ * cursor; a menu that belongs to a system passes that system's color. */
 static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
-                      int sel, int fixed_w)
+                      int sel, int fixed_w, unsigned accent)
 {
 	TTF_Font *fm = ui_font(UI_F_MENU), *fh = ui_font(UI_F_LABEL);
 	int row_h = menu_row_h();
 	int pad = row_h * 3 / 4;
 	int gap = row_h;                 /* between the label and value columns */
 	int text_h = fm ? TTF_FontHeight(fm) : row_h;
-	/* Centre the ink, not the em box. The box reserves a descender's depth
+	/* Center the ink, not the em box. The box reserves a descender's depth
 	 * below the baseline that labels like "Wi-Fi" and "Bluetooth" never use,
-	 * so centring the box leaves the visible line riding high in its row and
+	 * so centering the box leaves the visible line riding high in its row and
 	 * reads as a highlight sitting too low. Descent is negative, so half of it
 	 * subtracted moves the line down onto the middle of the plate. */
 	int ink_off = fm ? -TTF_FontDescent(fm) / 2 : 0;
 	/* The heading band runs from the panel's top edge down to the rule, and
-	 * the heading is centred inside it rather than hung a fixed distance from
-	 * the top - otherwise retuning the heading's size moves it off centre,
+	 * the heading is centered inside it rather than hung a fixed distance from
+	 * the top - otherwise retuning the heading's size moves it off center,
 	 * which is exactly what happened when it grew. `content_off` is the panel
 	 * top to the first row, so a panel with no heading just pads instead. */
 	int line_head   = ui_font_line(UI_F_LABEL);
@@ -758,11 +763,17 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 	content_x = panel.x + pad;
 	content_y = panel.y + content_off;
 
-	ui_glow(a->r, &panel, a->tint, 60, 1.5f);
-	ui_panel(a->r, &panel, MENU_RADIUS, a->tint);
+	/* PlayOS's own color, not the focused system's. The menu belongs to the
+	 * launcher rather than to whatever card happens to be under the cursor,
+	 * and it is the same cyan as the boot animation's play triangle, so the
+	 * first thing the device draws and the shelf's own chrome agree. Sampled
+	 * from a rendered frame at 0x3BD6FF; the constant in tools/genboot.py is
+	 * 0x3DD6FF and the difference is video compression. */
+	ui_glow(a->r, &panel, accent, 60, 1.5f);
+	ui_panel(a->r, &panel, MENU_RADIUS, accent);
 
 	if (heading) {
-		/* Centred in the band by its ink, on the same reasoning as the rows:
+		/* Centered in the band by its ink, on the same reasoning as the rows:
 		 * the em box carries descender depth that "PlayOS" and "NES" mostly do
 		 * not use. */
 		int head_box = fh ? TTF_FontHeight(fh) : line_head;
@@ -771,8 +782,8 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 
 		ui_text(a->r, fh, heading, cx, hy, 0, UI_TEXT_SOFT);
 		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
-		SDL_SetRenderDrawColor(a->r, (Uint8)(a->tint >> 16), (Uint8)(a->tint >> 8),
-		                       (Uint8)a->tint, 70);
+		SDL_SetRenderDrawColor(a->r, (Uint8)(accent >> 16),
+		                       (Uint8)(accent >> 8), (Uint8)accent, 70);
 		SDL_RenderFillRect(a->r, &(SDL_Rect){ content_x, panel.y + head_h,
 		                                      content_w, 2 });
 	}
@@ -784,10 +795,19 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 
 		i = first + k;
 		if (i == sel) {
+			/* A soft white plate, not the system's color. The accent already
+			 * frames the panel; using it again for the cursor made the two
+			 * compete, and on a dark red system the plate read as a stain on
+			 * the row rather than a highlight under it. White is neutral
+			 * against all nine accents.
+			 *
+			 * A flat plate, with no radial glow under it. The glow was
+			 * brightest at the row's midpoint and fell off toward both ends,
+			 * which put a soft blob behind the middle of every highlighted
+			 * row and read as a smudge rather than as a selection. */
 			SDL_Rect plate = { panel.x + pad / 2, y, panel.w - pad, row_h };
-			ui_glow(a->r, &plate, a->tint, 55, 1.5f);
-			ui_round_rect(a->r, &plate, row_h / 4, (SDL_Color){
-				(Uint8)(a->tint >> 16), (Uint8)(a->tint >> 8), (Uint8)a->tint, 46 });
+			ui_round_rect(a->r, &plate, row_h / 4,
+			              (SDL_Color){ 255, 255, 255, 34 });
 		}
 
 		/* A placeholder row still highlights - it is a real place on the list -
@@ -812,7 +832,7 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 	}
 
 	/* Three dim dots where the list carries on, in the same vocabulary the
-	 * slot carousel's rail uses. Hung just off the rows rather than centred in
+	 * slot carousel's rail uses. Hung just off the rows rather than centered in
 	 * the padding: with a heading above, the padding is already spoken for by
 	 * the separator, and the indicator belongs to the list in any case. */
 	if (vis < n) {
@@ -958,7 +978,10 @@ static void playos_menu_draw(app *a, int sel)
 	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 	SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
 	SDL_RenderFillRect(a->r, NULL);
-	menu_draw(a, heading, rows, n, sel, menu_shelf_width(a));
+	/* The shelf's menu is PlayOS's own on the systems screen and a system's on
+	 * a game list, which is where it gains rows that belong to that system. */
+	menu_draw(a, heading, rows, n, sel, menu_shelf_width(a),
+	          a->screen == SCREEN_SYSTEMS ? MENU_ACCENT : a->tint);
 }
 
 static void playos_menu(app *a)
@@ -1129,7 +1152,7 @@ static void slot_draw(app *a, const slot_view *sv, int sel)
 {
 	/* `area` is the layout slot the picture is fitted into; nothing is ever
 	 * drawn to it. The border is the picture's own edge in the system's
-	 * colour - a 240x160 GBA frame and a 256x224 NES frame are different
+	 * color - a 240x160 GBA frame and a 256x224 NES frame are different
 	 * shapes, and neither should be padded out into the same rectangle. */
 	const SDL_Rect area = { (PLAYOS_SCREEN_W - 560) / 2, 170, 560, 400 };
 	const int bw = 12;
@@ -1154,9 +1177,15 @@ static void slot_draw(app *a, const slot_view *sv, int sel)
 
 	ui_glow(a->r, &img, a->tint, 85, 1.35f);
 	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
-	SDL_SetRenderDrawColor(a->r, (Uint8)(a->tint >> 16), (Uint8)(a->tint >> 8),
-	                       (Uint8)a->tint, 150);
-	SDL_RenderFillRect(a->r, &frame);
+	/* Opaque, matching the menu panel's border. At alpha 150 the frame let the
+	 * background through and read as a darker accent than the system's own. The
+	 * thumbnail itself is drawn at full brightness below - it never was
+	 * darkened, only the frame around it.
+	 *
+	 * Rounded outside, square inside: the corner radius belongs to the chrome,
+	 * and rounding the image would mean clipping the game's own pixels. */
+	ui_round_rect(a->r, &frame, bw, (SDL_Color){
+		(Uint8)(a->tint >> 16), (Uint8)(a->tint >> 8), (Uint8)a->tint, 255 });
 	if (sv->thumb[sel]) {
 		SDL_SetTextureColorMod(sv->thumb[sel], 255, 255, 255);
 		SDL_RenderCopy(a->r, sv->thumb[sel], NULL, &img);
@@ -1181,20 +1210,22 @@ static void slot_draw(app *a, const slot_view *sv, int sel)
 	 * picture.
 	 * A hollow-dim dot is a slot you cannot land on. */
 	{
-		int dots = GM_SLOTS + 1, dw = 18;
+		int dots = GM_SLOTS + 1, dw = 36;
 		int x0 = (PLAYOS_SCREEN_W - dots * dw) / 2 + dw / 2;
 		int y  = img.y + img.h + 50 + line_menu + line_meta;
 
+		/* One size for every marker. Sizing the selected one larger meant the
+		 * rail changed shape as you cycled, and color already says which slot
+		 * you are on - two signals for one fact, one of them moving. */
 		for (i = 0; i < dots; i++) {
 			int can = sv->saving ? i >= 1 : sv->have[i];
-			int r2  = i == sel ? 6 : 4;
+			int r2  = 12;
 			SDL_Rect d = { x0 + i * dw - r2, y - r2, r2 * 2, r2 * 2 };
-			if (i == sel)
-				SDL_SetRenderDrawColor(a->r, (a->tint >> 16) & 255,
-				                       (a->tint >> 8) & 255, a->tint & 255, 255);
-			else
-				SDL_SetRenderDrawColor(a->r, 90, 94, 110, can ? 255 : 90);
-			SDL_RenderFillRect(a->r, &d);
+			SDL_Color c = i == sel
+				? (SDL_Color){ (Uint8)(a->tint >> 16), (Uint8)(a->tint >> 8),
+				               (Uint8)a->tint, 255 }
+				: (SDL_Color){ 90, 94, 110, can ? 255 : 90 };
+			ui_round_rect(a->r, &d, r2 / 2, c);
 		}
 	}
 }
@@ -1422,7 +1453,7 @@ static void game_menu(app *a)
 		{
 			menu_row rows[GM_ROWS];
 			gm_build(a, rows);
-			menu_draw(a, NULL, rows, GM_ROWS, sel, width);
+			menu_draw(a, NULL, rows, GM_ROWS, sel, width, a->tint);
 		}
 		SDL_RenderPresent(a->r);
 		SDL_Delay(8);
@@ -1887,7 +1918,7 @@ int main(int argc, char *argv[])
 		 * over synthetic frames, which is the only way to look at it without
 		 * a game running on a device. */
 		/* --jump N applies N letter-jumps before the shot (negative for up),
-		 * so the d-pad's behaviour on a real library can be checked without a
+		 * so the d-pad's behavior on a real library can be checked without a
 		 * device or a hand on it. */
 		else if (!strcmp(argv[i], "--jump") && i + 1 < argc) {
 			shot_jump = atoi(argv[++i]);
