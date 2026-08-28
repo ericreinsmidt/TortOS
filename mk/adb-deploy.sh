@@ -57,7 +57,14 @@ esac
 case $WHAT in res|all)
 	$A push "$ROOT/res/cards/."             "$P/cards/" > /dev/null
 	$A push "$ROOT/res/fonts/menu.ttf"      "$P/" > /dev/null
-	$A push "$ROOT/res/boot/playos-boot.mp4" "$P/" > /dev/null
+	$A push "$ROOT/res/boot/tortos-boot.mp4" "$P/" > /dev/null
+	# The bootloader splash and the pic2fb splash. launch.sh installs these
+	# ONCE, guarded by .bootlogo_applied / .splash_applied, so pushing them
+	# is not enough on a device that has already been set up - clear the
+	# markers too when the animation's opening colour changes, or the
+	# handoff into it steps from the old colour to the new one.
+	$A push "$ROOT/res/boot/bootlogo.bmp"   "$P/" > /dev/null
+	$A push "$ROOT/res/boot/splash.png"     "$P/" > /dev/null
 	echo "  + assets"
 esac
 case $WHAT in diatom|all)

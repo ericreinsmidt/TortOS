@@ -26,7 +26,7 @@ cp "$ROOT/config/systems.cfg" "$ROOT/config/playos.cfg" \
    "$ROOT/config/coreopts.cfg" "$P/"
 cp "$ROOT/res/cards/"*.png "$P/cards/"
 cp "$ROOT/res/fonts/menu.ttf" "$P/"       # the UI face, and the in-game menu's
-cp "$ROOT/res/boot/playos-boot.mp4" "$P/"
+cp "$ROOT/res/boot/tortos-boot.mp4" "$P/"
 cp "$ROOT/res/boot/bootlogo.bmp" "$P/"    # u-boot splash, applied on first boot
 cp "$ROOT/res/boot/splash.png" "$P/"      # the pic2fb loading splash, likewise
 cp "$ROOT/THIRD-PARTY-LICENSES.md" "$P/"  # notices for the redistributed software

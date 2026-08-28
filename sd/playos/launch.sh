@@ -130,10 +130,10 @@ fi
 # The marker file is the handshake -- the launcher initializes freely, blocks
 # on the marker, and presents the moment the animation clears it. Removed in
 # the same subshell so it goes even if the decoder dies.
-if [ -f "$PLAYOS_DIR/playos-boot.mp4" ]; then
+if [ -f "$PLAYOS_DIR/tortos-boot.mp4" ]; then
 	: > "$PLAYOS_ANIM_FLAG"
 	(
-		ffmpeg -hide_banner -loglevel quiet -re -i "$PLAYOS_DIR/playos-boot.mp4" \
+		ffmpeg -hide_banner -loglevel quiet -re -i "$PLAYOS_DIR/tortos-boot.mp4" \
 		       -pix_fmt bgra -f fbdev /dev/fb0 2> /dev/null
 		rm -f "$PLAYOS_ANIM_FLAG"
 	) &
