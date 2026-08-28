@@ -115,12 +115,16 @@ Injected presses reach the game too, so a stray A is a stray jump.
 
 ## The escape hatch
 
-`PlayOS.pre-diatom/` on the card is the complete pre-migration launcher
-directory. The name is the old one and stays as it is: it is a literal path on
-a card written before the rename, not a reference to the product.
+There is no longer one. This said `PlayOS.pre-diatom/` on the card was the
+complete pre-migration launcher directory, and on 2026-08-28, checking before
+the TortOS card install, it was not on the card at all. It had been gone long
+enough that nobody noticed, which is the point worth keeping: a documented
+fallback nobody has tried is a claim, not a fallback.
 
-It does not survive the TortOS card install, which formats. If it is still
-wanted as a fallback, pull it off the device first.
+What is actually held: `backups/device-saves/<stamp>/`, verified by comparing
+every file's MD5 against the device before the card was formatted, and the ROM
+library, which lives in `TortOS-Test-Set/`. The launcher itself is rebuildable
+from this repository, so it never needed a card copy.
 
-The wedge (two things presenting at once) needs a power cycle - adb usually
-survives it, `adb reboot` sometimes does not.
+The wedge (two things presenting at once) still needs a power cycle - adb
+usually survives it, `adb reboot` sometimes does not.
