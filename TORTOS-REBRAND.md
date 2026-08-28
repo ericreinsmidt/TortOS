@@ -89,7 +89,7 @@ now fails the build if `src/main.c`'s hand-kept copy of the mark drifts from
 given there. `.tmp_update/tg5040.sh`, `launch.sh` internals, the payload and
 zip names, all repo-only; the card itself is still phase 4.
 
-**4. Device.** A fresh card install rather than an in-place rename: the
+**4. Device. Done 2026-08-28.** A fresh card install rather than an in-place rename: the
 in-place version means renaming the directory a running `launch.sh` is
 executing from, and there is no good moment to do that. Format, `make
 install-card`, restore saves from `backups/`.
@@ -113,6 +113,30 @@ So, while the old card still boots: restore `/etc/init.d/runtrimui` from
 `/etc/init.d/runtrimui.playos-bak`, delete `/usr/trimui/bin/playos-bootbright.sh`,
 and confirm `grep bootbright /etc/init.d/runtrimui` is empty. Only then
 format.
+
+Done in that order, and it mattered. The init script turned out to be patched
+by three firmwares, not one - EROS, Contrarian and PlayOS, each having backed
+up the already-patched script it found, so `runtrimui.eros-bak` is the only
+true stock copy. Restoring `playos-bak` removed exactly our line and left the
+other two alone, which is not ours to clean. On the first TortOS boot
+`launch.sh` re-patched and wrote `runtrimui.tortos-bak` containing EROS and
+Contrarian and none of ours: a clean backup, which is what unpatching first
+bought. Had we formatted first, that file would have captured
+`playos-bootbright` forever.
+
+Two other things the device disagreed with the plan about. The escape hatch
+`PlayOS.pre-diatom/` was not on the card at all and had not been for some
+time. And the save states live at `.userdata/shared/.playos/`, which TortOS
+reads as `.tortos/` - restoring them verbatim would have lost every
+auto-resume silently, with the games simply starting fresh and nothing
+reporting an error. 362 files were moved across and verified by MD5.
+
+Backups first, and verified rather than assumed: `backups/device-saves/`
+gained a second snapshot because the existing one predated seven newer saves
+and 181 states, and every file was MD5-compared against the device before the
+card was erased. The ROM library was proven to be a subset of
+`TortOS-Test-Set/` first, so the format risked nothing there; `syscard3.pce`
+existed only on the card and now does not.
 
 Also note `.bootlogo_applied` and `.splash_applied` guard one-time installs; a
 fresh card has neither, so both get reapplied, which is what we want.
