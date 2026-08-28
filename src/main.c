@@ -1154,15 +1154,25 @@ static void slot_draw(app *a, const slot_view *sv, int sel)
 	 * drawn to it. The border is the picture's own edge in the system's
 	 * color - a 240x160 GBA frame and a 256x224 NES frame are different
 	 * shapes, and neither should be padded out into the same rectangle. */
-	const SDL_Rect area = { (PLAYOS_SCREEN_W - 560) / 2, 170, 560, 400 };
+	const SDL_Rect area = { (PLAYOS_SCREEN_W - 700) / 2, 129, 700, 451 };
 	const int bw = 12;
 	SDL_Rect img = area, frame;
 	char slotname[16];
 	int line_menu = ui_font_line(UI_F_MENU), line_meta = ui_font_line(UI_F_META);
 	int i;
 
+	/* The heading sits close to the top edge so the picture gets the middle of
+	 * the screen. Everything below hangs off the IMAGE rather than off `area`,
+	 * so a frame shorter than the layout slot pulls its own caption up with it
+	 * instead of leaving a gap.
+	 *
+	 * The margins are mirrored: the heading's top sits as far from the top of
+	 * the screen as the marker rail's bottom sits from the bottom of it, and
+	 * the heading is centred in the gap above the frame. That fixes every
+	 * number here to one another rather than to taste, so changing the image
+	 * size moves the rest to match instead of drifting into something. */
 	ui_text(a->r, ui_font(UI_F_LABEL), sv->saving ? "Save to" : "Load from",
-	        PLAYOS_SCREEN_W / 2, 96, 0, UI_TEXT_DIM);
+	        PLAYOS_SCREEN_W / 2, 39, 0, UI_TEXT_DIM);
 
 	if ((float)area.w / sv->aspect <= (float)area.h) {
 		img.w = area.w;
@@ -1201,10 +1211,10 @@ static void slot_draw(app *a, const slot_view *sv, int sel)
 	if (sel == 0) snprintf(slotname, sizeof slotname, "Auto");
 	else          snprintf(slotname, sizeof slotname, "Slot %d", sel);
 	ui_text(a->r, ui_font(UI_F_MENU), slotname,
-	        PLAYOS_SCREEN_W / 2, img.y + img.h + 28, 0, UI_TEXT);
+	        PLAYOS_SCREEN_W / 2, img.y + img.h + 36, 0, UI_TEXT);
 	ui_text(a->r, ui_font(UI_F_META),
 	        sv->have[sel] ? sv->when[sel] : (sv->saving ? "\xE2\x80\x94" : ""),
-	        PLAYOS_SCREEN_W / 2, img.y + img.h + 32 + line_menu, 0, UI_TEXT_DIM);
+	        PLAYOS_SCREEN_W / 2, img.y + img.h + 42 + line_menu, 0, UI_TEXT_DIM);
 
 	/* The dot rail: where you are among the slots, without showing every
 	 * picture.
@@ -1212,7 +1222,7 @@ static void slot_draw(app *a, const slot_view *sv, int sel)
 	{
 		int dots = GM_SLOTS + 1, dw = 36;
 		int x0 = (PLAYOS_SCREEN_W - dots * dw) / 2 + dw / 2;
-		int y  = img.y + img.h + 50 + line_menu + line_meta;
+		int y  = img.y + img.h + 62 + line_menu + line_meta;
 
 		/* One size for every marker. Sizing the selected one larger meant the
 		 * rail changed shape as you cycled, and color already says which slot
@@ -1250,7 +1260,21 @@ static int slot_strip(app *a, SDL_Texture *bg, int saving)
 			 * device clock is only as good as the device clock, and showing
 			 * what the filesystem says beats pretending to know better. */
 			struct tm *tm = localtime(&st.st_mtime);
-			if (tm) strftime(sv.when[i], sizeof sv.when[i], "%b %e  %H:%M", tm);
+			if (tm) {
+				/* "Aug 23 9:21:05 AM". Built from the fields rather than with
+				 * strftime's "%-I", which drops the leading zero but is a GNU
+				 * extension and does nothing on the BSD libc the host build
+				 * links against - it would have read right on the device and
+				 * wrong in every screenshot. The month still comes from
+				 * strftime so it stays whatever the locale calls it. */
+				char mon[8];
+				int h12 = tm->tm_hour % 12;
+				strftime(mon, sizeof mon, "%b", tm);
+				if (!h12) h12 = 12;
+				snprintf(sv.when[i], sizeof sv.when[i], "%s %d %d:%02d:%02d %s",
+				         mon, tm->tm_mday, h12, tm->tm_min, tm->tm_sec,
+				         tm->tm_hour < 12 ? "AM" : "PM");
+			}
 
 			slot_preview_path(a, a->sys_cursor, g, slot, pth, sizeof pth);
 			SDL_Surface *sf = IMG_Load(pth);
@@ -1857,7 +1881,8 @@ static void shot_draw_slots(app *a)
 		/* Slot 5 left empty, so the empty state is in the picture too. */
 		if (i == 5) continue;
 		sv.have[i] = 1;
-		snprintf(sv.when[i], sizeof sv.when[i], "Aug %2d  09:%02d", 20 + i, i * 7);
+		snprintf(sv.when[i], sizeof sv.when[i], "Aug %d %d:%02d:%02d PM",
+		         20 + i, 1 + i, i * 7, i * 9);
 		sv.thumb[i] = fake_frame(a->r, shot_slot_aspect);
 	}
 	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);

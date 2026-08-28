@@ -24,11 +24,17 @@ blend of the old accent and the card's background; the blend factor is measured
 per pixel and re-applied against the new accent, so the soft top and bottom
 edges stay exactly as soft as the artist drew them.
 
-Not quite lossless, and the amount was measured rather than assumed. A round
-trip through a different color and back leaves the two antialiased edge rows
-differing by at most 2/255 - 1280 pixels of 524800, invisible. It does not
-accumulate: a card whose band already matches the config is skipped entirely,
-so the only way to pay the rounding twice is to change the color twice.
+Not quite lossless. A round trip through a different color and back leaves the
+two antialiased edge rows differing by a few units of 255 - about 1280 pixels
+of 524800, invisible on the panel. The size depends on the color pair, not on
+some fixed bound: green through magenta and back measured 2, orange through
+pink and back measured 4, because how far a channel separates the accent from
+the background is what the blend factor is solved on.
+
+It does not accumulate. A card whose band already matches the config is skipped
+entirely, so the only way to pay the rounding twice is to change the color
+twice. If a card must stay byte-identical, restore it from git rather than
+recoloring it back.
 """
 import collections
 import os
