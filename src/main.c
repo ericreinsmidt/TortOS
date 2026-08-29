@@ -1308,7 +1308,12 @@ static int menu_build(app *a, screen_id screen, int sys,
  * while it happens. Painting the reason first is the difference between a
  * device that is working and a device that has hung: the picture is identical
  * otherwise, and the second reading is the one that gets a power cycle. */
-static void wifi_wait(app *a, const char *msg)
+/* One line on a panel over the shelf, for the moments something is happening
+ * and there is nothing yet to show. The heading is a parameter because it was
+ * not: this began as the Wi-Fi screen's own and said "Wi-Fi" over every
+ * message it was given, so signing in to RetroAchievements and fetching a set
+ * both announced themselves as Wi-Fi. */
+static void wait_panel(app *a, const char *heading, const char *msg)
 {
 	menu_row row = { msg, NULL, false };
 
@@ -1316,7 +1321,7 @@ static void wifi_wait(app *a, const char *msg)
 	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 	SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
 	SDL_RenderFillRect(a->r, NULL);
-	menu_draw(a, "Wi-Fi", &row, 1, -1, 0, MENU_ACCENT);
+	menu_draw(a, heading, &row, 1, -1, 0, MENU_ACCENT);
 	plat_draw_osd(a->r);
 	SDL_RenderPresent(a->r);
 }
@@ -1358,7 +1363,7 @@ static void wifi_screen(app *a)
 
 	while (!done && !want_quit && a->running) {
 		if (rescan) {
-			wifi_wait(a, "Scanning...");
+			wait_panel(a, "Wi-Fi", "Scanning...");
 			char cur[WIFI_SSID_MAX];
 			n = wifi_scan(nets, WIFI_MAX_NETS);
 			if (n < 0) n = 0;
@@ -1407,11 +1412,11 @@ static void wifi_screen(app *a)
 				on = false;
 				n = 0;
 			} else {
-				wifi_wait(a, "Turning Wi-Fi on...");
+				wait_panel(a, "Wi-Fi", "Turning Wi-Fi on...");
 				on = wifi_up();
 				wifi_pref_save(on);
 				if (!on) {
-					wifi_wait(a, "Wi-Fi did not come up");
+					wait_panel(a, "Wi-Fi", "Wi-Fi did not come up");
 					SDL_Delay(1800);
 				}
 				rescan = on;
@@ -1436,7 +1441,7 @@ static void wifi_screen(app *a)
 				if (kr != KB_ACCEPT) continue;
 			}
 
-			wifi_wait(a, "Connecting...");
+			wait_panel(a, "Wi-Fi", "Connecting...");
 			ok = wifi_connect(nets[k].ssid, psk[0] ? psk : NULL);
 			/* Wiped as soon as it has been handed over. It still exists in
 			 * the supplicant's config, which is the point, but there is no
@@ -1453,7 +1458,7 @@ static void wifi_screen(app *a)
 				snprintf(status, sizeof status,
 				         "Could not connect to %s", nets[k].ssid);
 			}
-			wifi_wait(a, status);
+			wait_panel(a, "Wi-Fi", status);
 			SDL_Delay(1800);
 			/* Out on success, because the job is done and the menu row behind
 			 * this screen already names the network - staying in the list
@@ -1524,7 +1529,7 @@ static void ra_signin_screen(app *a)
 	if (kr == KB_POWER) { memset(pass, 0, sizeof pass); power_off(a); return; }
 	if (kr != KB_ACCEPT || !pass[0]) { memset(pass, 0, sizeof pass); return; }
 
-	wifi_wait(a, "Signing in...");
+	wait_panel(a, "RetroAchievements", "Signing in...");
 	ok = ra_sign_in(user, pass, err, sizeof err);
 	/* Wiped the moment it has been used, the same as the Wi-Fi passphrase.
 	 * The token it bought is the thing worth keeping. */
@@ -2412,7 +2417,7 @@ static void launch(app *a)
 		 * offline, not signed in, or a game RetroAchievements has never seen -
 		 * and the launch carries on without. */
 		if (ra_signed_in() && access(set, R_OK) != 0 && ra_online()) {
-			wifi_wait(a, "Checking achievements...");
+			wait_panel(a, "RetroAchievements", "Looking up this game...");
 			ra_ensure_set(rom, s->tag, set);
 		}
 

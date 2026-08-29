@@ -66,9 +66,13 @@ def main():
             json.dump(d, f, ensure_ascii=False)
 
         pd = d.get("PatchData", {})
-        keep = [a for a in (pd.get("Achievements") or [])
-                if int(a.get("Flags", 3)) == 3 and a.get("MemAddr")
-                and not str(a.get("Title", "")).startswith("Warning: Unknown Emulator")]
+        def real(a):
+            t = str(a.get("Title", ""))
+            return (int(a.get("Flags", 3)) == 3 and a.get("MemAddr")
+                    and not t.startswith("Warning: Unknown Emulator")
+                    and not t.startswith("Unsupported Game Version"))
+
+        keep = [a for a in (pd.get("Achievements") or []) if real(a)]
         py = os.path.join(tmp, f"{gid}.py.set")
         m.write_set(py, gid, pd.get("ConsoleID", 0), pd.get("Title", ""), keep)
 

@@ -36,12 +36,22 @@ Nothing is written to disk and nothing is stored here.
 
   - **Flags 5 is "unofficial"** - achievements in development, not part of the
     set anyone is playing. Skipped.
-  - **"Warning: Unknown Emulator"** is injected by RA into every set fetched by
-    a client it does not recognize, with condition `1=1.300.` - true after 300
-    frames. It is a notice to the developer, not an achievement, and writing it
-    would put a fake entry in every game's list that unlocks itself five
-    seconds in. Skipped, and counted in the summary so the fact that this
-    client is unregistered stays visible rather than being papered over.
+  - **Two notices RA sends as if they were achievements**, both with condition
+    `1=1.300.` - true after 300 frames. Neither is something a player earned,
+    and writing either puts an entry in a game's list that unlocks itself five
+    seconds in. Both skipped, and counted in the summary so the facts they
+    carry stay visible rather than being papered over:
+
+      "Warning: Unknown Emulator"  this client is not registered with RA.
+      "Unsupported Game Version"   this ROM is a dump RA has not verified.
+                                   It arrives as the ONLY achievement under a
+                                   synthetic game id, so the whole set is a
+                                   placeholder and the game ends up with none.
+
+    Eight of the 180 ROMs in the test library are in the second case: Sonic 2,
+    Alex Kidd, Phantasy Star, Castle of Illusion, Monster World IV, Super Mario
+    Bros. Deluxe, Final Fantasy VI and Super Mario Advance 4. A different dump
+    of each would have achievements.
 """
 import argparse
 import getpass
@@ -183,7 +193,9 @@ def main():
             for x in ach:
                 if int(x.get("Flags", 3)) != 3:
                     continue
-                if str(x.get("Title", "")).startswith("Warning: Unknown Emulator"):
+                t = str(x.get("Title", ""))
+                if t.startswith("Warning: Unknown Emulator") or \
+                   t.startswith("Unsupported Game Version"):
                     warned += 1
                     continue
                 if not x.get("MemAddr"):
@@ -207,9 +219,10 @@ def main():
           f"RA does not know {unknown}, no achievements {empty}, "
           f"could not ask {failed}")
     if warned:
-        print(f"  {warned} sets carried RA's \"Unknown Emulator\" notice and it was\n"
-              f"  dropped from each. That is what an unregistered client is told;\n"
-              f"  registering is the fix, not filtering.")
+        print(f"  {warned} of RA's notice entries were dropped - the unregistered-client\n"
+              f"  warning, and unverified-ROM placeholders. A game whose ONLY entry was a\n"
+              f"  placeholder is counted above as having no achievements, which is what it\n"
+              f"  has: a different dump of it would have a real set.")
     return 0
 
 

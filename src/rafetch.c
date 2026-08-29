@@ -211,13 +211,25 @@ bool ra_set_from_json(const char *json, size_t len, long gameid,
 		if (js_member(e, "Points", &v)) points = js_int(v);
 		if (js_member(e, "Description", &v)) { js_str(v, adesc, sizeof adesc); tsv_safe(adesc); }
 
-		/* RA injects this into every set fetched by a client it does not
-		 * recognize; its condition is `1=1.300.`, true after 300 frames. It
-		 * is a notice to whoever builds the client, not an achievement, and
-		 * writing it would put an entry in every game's list that unlocks
-		 * itself five seconds in. Registering is the fix; dropping it is
-		 * what keeps the list honest in the meantime. */
-		if (!strncmp(atitle, "Warning: Unknown Emulator", 25)) { warned++; continue; }
+		/* Two notices RetroAchievements sends as if they were achievements,
+		 * both with the condition `1=1.300.` - true after 300 frames.
+		 * Neither is something a player earned, and writing either would put
+		 * an entry in a game's list that unlocks itself five seconds in.
+		 *
+		 *   Warning: Unknown Emulator   this client is not registered with
+		 *                               RetroAchievements. Registering is
+		 *                               the fix; dropping it keeps the list
+		 *                               honest meanwhile.
+		 *   Unsupported Game Version    this ROM is a dump RA has not
+		 *                               verified. It comes back as the ONLY
+		 *                               achievement, under a synthetic game
+		 *                               id, so the whole set is a placeholder
+		 *                               and `kept` ends at zero - which is
+		 *                               how the caller learns there is
+		 *                               nothing here.
+		 */
+		if (!strncmp(atitle, "Warning: Unknown Emulator", 25) ||
+		    !strncmp(atitle, "Unsupported Game Version", 24)) { warned++; continue; }
 
 		fprintf(out, "#:\t%ld\t%ld\t%s\t%s\n", id, points, atitle, adesc);
 		fprintf(out, "%ld\t%s\n", id, mem);
