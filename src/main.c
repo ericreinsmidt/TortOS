@@ -88,6 +88,10 @@ typedef struct {
 	SDL_Renderer *r;
 } app;
 
+/* Defined down with the shelf building it belongs to, declared here because
+ * the input loop calls it the moment a favorite changes. */
+static void refresh_favorites_shelf(app *a);
+
 static volatile sig_atomic_t want_quit;
 static void on_sigterm(int sig) { (void)sig; want_quit = 1; plat_terminate(); }
 
@@ -2305,6 +2309,11 @@ static void update_games(app *a)
 		           v->list.items[v->cursor].file);
 		fav_path(p, sizeof p);
 		fav_save(p);
+		/* The shelf follows immediately. Everything below this line may have
+		 * moved - the system indices, sys_cursor, and v itself - so nothing
+		 * from before it can be reused. */
+		refresh_favorites_shelf(a);
+		return;
 	}
 	if (a->in.pressed[IN_ACCEPT]) { launch(a); return; }
 	cf_set_cursor(&v->cf, v->cursor, n);
@@ -2417,10 +2426,19 @@ static void build_favorites_shelf(app *a)
 		owner[j + 1] = to;
 	}
 
+	/* sys_tex/sys_w/sys_h are parallel to systems[] and have to move with it.
+	 * At startup they are all NULL and skipping them is harmless, which is
+	 * exactly why it would have gone unnoticed until the shelf was rebuilt
+	 * live with the cards already loaded - and then one system would have
+	 * been wearing the next one's art. */
 	for (i = a->sys.count; i > 0; i--) {
 		a->sys.systems[i] = a->sys.systems[i - 1];
 		a->view[i] = a->view[i - 1];
+		a->sys_tex[i] = a->sys_tex[i - 1];
+		a->sys_w[i] = a->sys_w[i - 1];
+		a->sys_h[i] = a->sys_h[i - 1];
 	}
+	a->sys_tex[0] = NULL;
 	for (i = 0; i < n; i++) owner[i]++;          /* everything moved up one */
 
 	memset(&a->sys.systems[0], 0, sizeof a->sys.systems[0]);
@@ -2444,11 +2462,96 @@ static void build_favorites_shelf(app *a)
 		for (i = 0; i < a->sys.count; i++) {
 			a->sys.systems[i] = a->sys.systems[i + 1];
 			a->view[i] = a->view[i + 1];
+			a->sys_tex[i] = a->sys_tex[i + 1];
+			a->sys_w[i] = a->sys_w[i + 1];
+			a->sys_h[i] = a->sys_h[i + 1];
 		}
 		return;
 	}
 	a->sys.count++;
 	fprintf(stderr, "scan: %-16s %d games\n", "Favorites", n);
+}
+
+static bool fav_shelf_present(app *a)
+{
+	return a->sys.count > 0 && strcmp(a->sys.systems[0].tag, "FAV") == 0;
+}
+
+/* Take the Favorites shelf back off. Its game list and owner map are this
+ * file's own allocations rather than lib_scan's, and the game_entry values in
+ * it are copies - the originals belong to the shelves they came from and must
+ * not be touched. */
+static void drop_favorites_shelf(app *a)
+{
+	int i;
+
+	if (!fav_shelf_present(a)) return;
+
+	for (i = 0; i < a->view[0].list.count; i++)
+		if (a->view[0].tex[i]) SDL_DestroyTexture(a->view[0].tex[i]);
+	free(a->view[0].tex);
+	free(a->view[0].tw);
+	free(a->view[0].th);
+	free(a->view[0].list.items);
+	free(a->view[0].owner);
+	if (a->sys_tex[0]) SDL_DestroyTexture(a->sys_tex[0]);
+
+	for (i = 0; i + 1 < a->sys.count; i++) {
+		a->sys.systems[i] = a->sys.systems[i + 1];
+		a->view[i] = a->view[i + 1];
+		a->sys_tex[i] = a->sys_tex[i + 1];
+		a->sys_w[i] = a->sys_w[i + 1];
+		a->sys_h[i] = a->sys_h[i + 1];
+	}
+	a->sys.count--;
+	memset(&a->view[a->sys.count], 0, sizeof a->view[0]);
+	a->sys_tex[a->sys.count] = NULL;
+}
+
+/* Rebuild the Favorites shelf in place, for use the moment a favorite
+ * changes. Restarting the launcher to see a star take effect is not an
+ * answer.
+ *
+ * Drop and rebuild rather than patch: the shelf is a sorted projection of a
+ * set over every other shelf, and the four cases - it appears, it grows, it
+ * shrinks, it goes away - are one line each this way and four separate
+ * index-juggling routines the other.
+ *
+ * Everything is re-found by TAG afterwards, never by index. Inserting or
+ * removing the shelf moves every system up or down by one, so the index the
+ * caller was standing on means something different by the time this returns.
+ * The tag does not move. */
+static void refresh_favorites_shelf(app *a)
+{
+	char tag[sizeof a->sys.systems[0].tag];
+	int cur, i;
+
+	if (a->sys.count <= 0) return;
+	snprintf(tag, sizeof tag, "%s", a->sys.systems[a->sys_cursor].tag);
+	cur = a->view[a->sys_cursor].cursor;
+
+	drop_favorites_shelf(a);
+	build_favorites_shelf(a);
+
+	for (i = 0; i < a->sys.count; i++)
+		if (strcmp(a->sys.systems[i].tag, tag) == 0) break;
+
+	if (i < a->sys.count) {
+		a->sys_cursor = i;
+		/* The Favorites list can shrink under the cursor - un-favoriting the
+		 * game you are looking at is the ordinary way to use this. */
+		if (cur >= a->view[i].list.count)
+			cur = a->view[i].list.count ? a->view[i].list.count - 1 : 0;
+		a->view[i].cursor = cur;
+		cf_reset(&a->view[i].cf, cur);
+	} else {
+		/* The shelf being stood on no longer exists, which happens exactly
+		 * once: un-favoriting the last favorite while inside Favorites. There
+		 * is no list to stay in, so go back out to the shelves. */
+		a->sys_cursor = 0;
+		a->screen = SCREEN_SYSTEMS;
+	}
+	cf_reset(&a->cf_sys, a->sys_cursor);
 }
 
 static void scan_all(app *a)
