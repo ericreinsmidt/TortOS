@@ -65,11 +65,18 @@ def systems_from_cfg(path):
 
 def rom_bytes(path):
     """The ROM itself. The library is zipped one game per archive, and RA
-    hashes what is inside, not the container."""
+    hashes what is inside, not the container.
+
+    THE LARGEST ENTRY, not the first, because that is the one Diatom loads
+    (src/zip.c). For one-ROM-per-archive the two are the same file and the
+    distinction never shows; for anything else this would hash one game and
+    run another, and the achievements would silently be for something else."""
     if path.lower().endswith(".zip"):
         with zipfile.ZipFile(path) as z:
-            names = [n for n in z.namelist() if not n.endswith("/")]
-            return z.read(names[0]) if names else None
+            infos = [i for i in z.infolist() if not i.is_dir() and i.file_size]
+            if not infos:
+                return None
+            return z.read(max(infos, key=lambda i: i.file_size))
     return open(path, "rb").read()
 
 

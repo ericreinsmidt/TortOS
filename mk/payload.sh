@@ -29,6 +29,10 @@ cp "$ROOT/res/fonts/menu.ttf" "$P/"       # the UI face, and the in-game menu's
 cp "$ROOT/res/boot/tortos-boot.mp4" "$P/"
 cp "$ROOT/res/boot/bootlogo.bmp" "$P/"    # u-boot splash, applied on first boot
 cp "$ROOT/res/boot/splash.png" "$P/"      # the pic2fb loading splash, likewise
+# The device has curl and OpenSSL but nothing to trust - see res/ssl/README.md.
+# Without this, every HTTPS request fails verification and achievements never
+# arrive, with an error that reads like the network being down.
+cp "$ROOT/res/ssl/cacert.pem" "$P/"
 cp "$ROOT/THIRD-PARTY-LICENSES.md" "$P/"  # notices for the redistributed software
 cp "$DIATOM_ELF" "$P/diatom"
 cp "$ROOT/vendor/cores/"*.so "$P/cores/"

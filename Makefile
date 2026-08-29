@@ -8,7 +8,7 @@ SSH := sshpass -p 'tina' ssh -o StrictHostKeyChecking=no root@$(BRICK)
 
 .PHONY: all clean native toolchain vendor boot checkmark payload release install-card \
         adb adb-elf adb-res adb-vendor adb-restart adb-run adb-log \
-        check-cheevos deploy restart logs
+        check-cheevos check-rahash check-raset deploy restart logs
 
 all: build/tortos.elf
 
@@ -33,6 +33,28 @@ build-native/cheevos-check: tools/cheevos-check.c src/cheevos.c src/cheevos.h
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
 	      -o $@ tools/cheevos-check.c src/cheevos.c
+
+# The two hashers - one C for the device, one Python for the host tools - over
+# every ROM in the library. A wrong rule does not crash; it produces a hash RA
+# has never seen, which is indistinguishable from a game RA does not know.
+check-rahash: build-native/rahash-check
+	@python3 tools/rahash-check.py
+
+build-native/rahash-check: tools/rahash-check.c src/rahash.c src/rahash.h
+	@mkdir -p build-native
+	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
+	      -o $@ tools/rahash-check.c src/rahash.c
+
+# The two set converters - one C on the device, one Python in the bulk tool -
+# over real RetroAchievements responses. Needs credentials and a network;
+# skips cleanly without them.
+check-raset: build-native/raset-check
+	@python3 tools/raset-check.py
+
+build-native/raset-check: tools/raset-check.c src/rafetch.c src/rajson.c src/rahash.c src/ranet.c
+	@mkdir -p build-native
+	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g -DTORTOS_VERSION='"check"' \
+	      -o $@ tools/raset-check.c src/rafetch.c src/rajson.c src/rahash.c src/ranet.c
 
 # One-time: the cross-compiler image. Pinned by digest, so it does not drift.
 toolchain:

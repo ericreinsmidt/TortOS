@@ -7,12 +7,16 @@ Writes `Roms/<System>/.cheevos/<name>.set` - the same shape as box art's
 `.media/<name>.png`, so a set travels with the ROM folder and a card reflash
 loses nothing that was not already lost.
 
-HOST-SIDE, and that is a constraint rather than a preference. RetroAchievements
-is HTTPS only, the Brick ships no TLS library and no curl, and vendoring one to
-fetch a file that never changes would be a large dependency bought for a static
-asset. Achievement DETECTION needs no network at all once the set is on the
-card; only submitting unlocks back to an account does, and that is blocked on
-client registration regardless.
+A CONVENIENCE, NOT THE MECHANISM. The device fetches its own sets the normal
+way - src/rafetch.c, on first launch of a game - because it turns out to have
+curl and OpenSSL and only lacked a trust store. This exists to seed a whole
+library in one pass, or to work from a card that will never see a network. It
+writes the identical file, and `make check-raset` requires the two converters
+to keep producing byte-identical output.
+
+An earlier version of this comment said the device could not do HTTPS. That
+was never measured, only assumed from the launcher not using it, and it was
+wrong.
 
 The file is read by two programs and is deliberately one file:
 

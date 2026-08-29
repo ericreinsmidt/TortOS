@@ -16,6 +16,8 @@
 #include "library.h"
 #include "platform.h"
 #include "favorites.h"
+#include "rafetch.h"
+#include "ranet.h"
 #include "keyboard.h"
 #include "wifi.h"
 #include "ui.h"
@@ -554,6 +556,13 @@ static void chv_store_path(char *out, size_t n)
 static void chv_active_path(char *out, size_t n)
 {
 	snprintf(out, n, "%s/cheevos-active.set", P_USERDATA);
+}
+
+/* The account. Per-device rather than shared, because it holds a session
+ * token: a card moved to another device should not carry one with it. */
+static void ra_creds_path(char *out, size_t n)
+{
+	snprintf(out, n, "%s/ra.cfg", P_USERDATA);
 }
 
 /* Called from inside plat_resident_wait, mid-game, when the launcher owns
@@ -1277,7 +1286,9 @@ static int menu_build(app *a, screen_id screen, int sys,
 		out[PM_WIFI]     = (menu_row){ "Wi-Fi",             b->b,      true  };
 	}
 	out[PM_BT]           = (menu_row){ "Bluetooth",         "not yet", false };
-	out[PM_ACHIEVEMENTS] = (menu_row){ "RetroAchievements", "not yet", false };
+	out[PM_ACHIEVEMENTS] = (menu_row){ "RetroAchievements",
+	                                   ra_signed_in() ? ra_user() : "sign in",
+	                                   true };
 	out[PM_SCRAPE]       = (menu_row){ "Box art scraping",  "not yet", false };
 	out[PM_TEXT]         = (menu_row){ "Text size",         b->a,      true  };
 	out[PM_SLEEP]        = (menu_row){ "Sleep timer",       "not yet", false };
@@ -1477,6 +1488,66 @@ static void wifi_screen(app *a)
  * address in particular has nowhere else to live: the Wi-Fi screen names the
  * network, and short of asking the router there is no way to find out what
  * address the device took. */
+/* Signing in to RetroAchievements. Two prompts and a request; the account
+ * screen is deliberately not a screen, because there is nothing to look at
+ * until there is something to say.
+ *
+ * The password is used to get a token and then wiped. Nothing stores it -
+ * ra.cfg holds the token, which is what every later call uses anyway. */
+static void ra_signin_screen(app *a)
+{
+	char user[RA_USER_MAX] = "", pass[96] = "", err[160] = "";
+	char path[CFG_STR * 2];
+	menu_row row;
+	kb_result kr;
+	bool ok;
+
+	snprintf(user, sizeof user, "%s", ra_user());
+
+	if (!ra_online()) {
+		row = (menu_row){ "Not on a network. Connect Wi-Fi first.", NULL, false };
+		wifi_backdrop(a);
+		menu_draw(a, "RetroAchievements", &row, 1, -1, 0, MENU_ACCENT);
+		plat_draw_osd(a->r);
+		SDL_RenderPresent(a->r);
+		SDL_Delay(1600);
+		return;
+	}
+
+	kr = kb_prompt(a->r, &a->in, "RetroAchievements user", user,
+	               (int)sizeof user, MENU_ACCENT, wifi_backdrop, a);
+	if (kr == KB_POWER) { power_off(a); return; }
+	if (kr != KB_ACCEPT || !user[0]) return;
+
+	kr = kb_prompt(a->r, &a->in, "Password", pass,
+	               (int)sizeof pass, MENU_ACCENT, wifi_backdrop, a);
+	if (kr == KB_POWER) { memset(pass, 0, sizeof pass); power_off(a); return; }
+	if (kr != KB_ACCEPT || !pass[0]) { memset(pass, 0, sizeof pass); return; }
+
+	wifi_wait(a, "Signing in...");
+	ok = ra_sign_in(user, pass, err, sizeof err);
+	/* Wiped the moment it has been used, the same as the Wi-Fi passphrase.
+	 * The token it bought is the thing worth keeping. */
+	memset(pass, 0, sizeof pass);
+
+	if (ok) {
+		ra_creds_path(path, sizeof path);
+		ra_creds_save(path);
+		snprintf(err, sizeof err, "Signed in as %s", ra_user());
+	} else if (!err[0]) {
+		snprintf(err, sizeof err, "Sign-in failed");
+	}
+
+	row = (menu_row){ err, NULL, ok };
+	wifi_backdrop(a);
+	menu_draw(a, "RetroAchievements", &row, 1, -1, 0, MENU_ACCENT);
+	plat_draw_osd(a->r);
+	SDL_RenderPresent(a->r);
+	SDL_Delay(1800);
+	plat_input_flush();
+	memset(&a->in, 0, sizeof a->in);
+}
+
 static void about_screen(app *a)
 {
 	char ver[48], addr[80], batt[32], up[48];
@@ -1685,6 +1756,8 @@ static void tortos_menu(app *a)
 		    sel == PM_POWER) { power_off(a); return; }
 		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
 		    sel == PM_WIFI) wifi_screen(a);
+		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
+		    sel == PM_ACHIEVEMENTS) ra_signin_screen(a);
 		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
 		    sel == PM_ABOUT) about_screen(a);
 
@@ -2332,6 +2405,17 @@ static void launch(app *a)
 
 		chv_path(P_ROMS, s->folder, v->list.items[v->cursor].name,
 		         set, sizeof set);
+
+		/* Fetch it if this game has never been played here. Only then: a
+		 * cached set costs nothing and this is the launch path, so the delay
+		 * is paid once per game rather than every time. Failing is ordinary -
+		 * offline, not signed in, or a game RetroAchievements has never seen -
+		 * and the launch carries on without. */
+		if (ra_signed_in() && access(set, R_OK) != 0 && ra_online()) {
+			wifi_wait(a, "Checking achievements...");
+			ra_ensure_set(rom, s->tag, set);
+		}
+
 		if (chv_load(set)) {
 			chv_active_path(active, sizeof active);
 			if (chv_write_active(active)) {
@@ -3053,6 +3137,13 @@ int main(int argc, char *argv[])
 		chv_store_path(cp, sizeof cp);
 		chv_earned_load(cp);
 		plat_resident_on_unlock(on_cheevo_unlocked);
+
+		/* Without this every HTTPS request fails verification, because the
+		 * device has no trust store of its own - res/ssl/README.md. */
+		snprintf(cp, sizeof cp, "%s/cacert.pem", P_ROOT);
+		ra_set_ca_path(cp);
+		ra_creds_path(cp, sizeof cp);
+		ra_creds_load(cp);
 	}
 
 	/* Scan every system now, not when one is opened: it is three directory

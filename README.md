@@ -138,25 +138,35 @@ invisible to it, so unlocks would be missed silently. The launcher declares
 which console the game is and hands over the set; Diatom watches every frame
 (its ADR-0025 and ADR-0026).
 
-**Fetching a set is a host-side job**, `tools/ra-sets.py`, and the device never
-talks to RetroAchievements:
+**The device does the normal thing.** Sign in once under `MENU` ->
+RetroAchievements, and the first time you launch a game TortOS hashes the ROM,
+asks RetroAchievements which game it is, fetches the set and caches it at
+`Roms/<System>/.cheevos/<name>.set`, beside the box art in `.media/`. After
+that the launch is instant and works with Wi-Fi off.
 
-```sh
-RA_USER=you RA_PASS=... python3 tools/ra-sets.py --roms /Volumes/TORTOS/Roms
-```
+That needs HTTPS, which the Brick turns out to have: `curl 7.54.1` against
+`OpenSSL/1.1.0i`. What it does not have is anything to trust, so
+`res/ssl/cacert.pem` ships with the launcher - see its README for the
+measurement. Only the password is typed; RetroAchievements answers with a
+token, and that is what is stored.
 
-That writes `Roms/<System>/.cheevos/<name>.set` beside the box art in
-`.media/`. RetroAchievements is HTTPS only and the Brick ships no TLS library,
-so putting the fetch on the device would mean vendoring one to download a file
-that never changes. Detection needs no network at all once the set is on the
-card. Measured 2026-08-29 over the 180-ROM test library: **166 games have a
-set, 8,297 achievements in total, and every condition in all of them parses.**
+`tools/ra-sets.py` does the same fetch from a host, for seeding a whole library
+at once or working offline. It writes the identical file, and is a convenience
+rather than the mechanism. Measured over the 180-ROM test library: **166 games
+have a set, 8,297 achievements, and every condition in all of them parses.**
 
-**Submitting unlocks back to an account is not implemented**, and is blocked on
-registering this client with RetroAchievements rather than on code. Until then
-an unregistered client is served sets with a `Warning: Unknown Emulator` entry
-injected, which `ra-sets.py` drops and counts rather than showing you a fake
-achievement that unlocks itself five seconds into every game.
+Three things exist twice, once for the device and once for the host tool: the
+per-console hash rules, the JSON to set-file conversion, and the set format
+itself. `make check-rahash` and `make check-raset` run both implementations
+over the same real data and require them to agree, because the failure they
+guard against is silent - a wrong hash looks exactly like a game
+RetroAchievements does not know.
+
+**Submitting unlocks back to your account is not implemented**, and is blocked
+on registering this client with RetroAchievements rather than on code. Until
+then RA injects a `Warning: Unknown Emulator` entry into every set it serves,
+which is dropped rather than shown as a fake achievement that unlocks itself
+five seconds into every game.
 
 ---
 
@@ -289,6 +299,8 @@ make payload    # the installable card    -> out/sd/ and out/TortOS-v1.0.zip
 make native     # host build of the launcher, for working on how it looks
 make boot       # regenerate the boot animation
 make check-cheevos  # the achievement half, on the host: parsing and filtering
+make check-rahash   # the C and Python ROM hashers agree, over the whole library
+make check-raset    # the C and Python set converters agree (needs RA_USER/RA_PASS)
 ```
 
 `make payload` needs a built Diatom binary (`DIATOM_ELF`, defaulting to a
