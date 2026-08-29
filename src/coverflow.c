@@ -268,6 +268,18 @@ bool cf_draw(coverflow *cf, SDL_Renderer *r, int screen_w, int screen_h,
 	/* collect visible slots, then draw far-to-near so the center card wins */
 	struct slot { int item; float d; } slots[CF_WINDOW];
 	int ns = 0;
+	/* Two items are the one case where "never draw the same item twice" and
+	 * "keep rotating" cannot both hold. A wrapping carousel moves by sliding
+	 * the row leftward and bringing the next card in from the right; with two
+	 * cards the one coming in IS the one going out, so refusing the repeat
+	 * leaves nothing to slide in and the pair just swaps places on the spot.
+	 *
+	 * So at two the repeat is allowed and the row rotates. It is not a
+	 * duplicate in the sense the dedupe below prevents - it is the same card
+	 * seen twice around a short loop, which is what a carousel of two things
+	 * actually looks like. */
+	bool twin = (count == 2);
+
 	for (int k = -half; k <= half; k++) {
 		int i = base + k;
 		float d = (float)i - cf->pos;
@@ -283,7 +295,7 @@ bool cf_draw(coverflow *cf, SDL_Renderer *r, int screen_w, int screen_h,
 		 * wider than the list, wrapping offers the same item on both sides -
 		 * two items put the other one at -1 and +1 - and drawing it twice
 		 * would be worse than the bug this replaced. */
-		{
+		if (!twin) {
 			int dup = -1, q;
 			for (q = 0; q < ns; q++)
 				if (slots[q].item == item) { dup = q; break; }
