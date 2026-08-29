@@ -83,8 +83,28 @@ launcher while a second --shot instance runs.
 `keyinject` (in the Diatom repo, staged at /mnt/SDCARD/diatom/keyinject)
 writes into /dev/input/event3 and every reader sees it:
 
-    A=305  B=304  MENU=316  START=315  SELECT=314
+    A=305  B=304  Y=307  X=308  L1=310  R1=311
+    SELECT=314  START=315  MENU=316
     d-pad: `hat -1/1` (up/down), `hatx -1/1` (left/right)
+
+Note A/B and X/Y are both crossed relative to the evdev names: A is BTN_EAST
+and B is BTN_SOUTH, X is BTN_WEST and Y is BTN_NORTH. Guessing from the
+BTN_ name gets it wrong every time.
+
+Derive this rather than probing for it. src/platform.c maps SDL joystick
+INDICES (JOY_B=0, JOY_A=1, JOY_Y=2, JOY_X=3, JOY_L1=4, JOY_R1=5), and SDL
+assigns those indices in ascending evdev-code order, so the table is whatever
+the device declares:
+
+    adb shell 'sed -n "/event3/,/^$/p" /proc/bus/input/devices | grep "B: KEY"'
+
+decoded as a bitmap, gives 304 305 307 308 310 311 314 315 316 317 318 - and
+the Nth of those is SDL index N. Established on 2026-08-29 after an attempt
+to identify X and Y by pressing them and watching the screen produced a
+confident wrong answer: Eric was holding the device and pressing buttons at
+the same time, so half the observed transitions were his. Injection and hands
+on the device do not mix, and the capability bitmap does not care who is
+holding it.
 
 Injected presses reach the game too, so a stray A is a stray jump.
 

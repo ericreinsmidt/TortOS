@@ -910,9 +910,15 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 		 * working row as well left the entire menu reading as grayed out. */
 		if (rows[i].live) lc = i == sel ? UI_TEXT      : UI_TEXT_SOFT;
 		else              lc = i == sel ? UI_TEXT_SOFT : UI_TEXT_DIM;
+		/* The panel's own accent, not a->tint. These were the same value for
+		 * as long as Display mode was the only live row, because that row is
+		 * in the SYSTEM menu where the accent IS the system tint. The first
+		 * live row in the TortOS menu made them diverge and drew a red value
+		 * inside a cyan panel. `accent` is already MENU_ACCENT for one menu
+		 * and the system tint for the other, which is the answer in both. */
 		vc = rows[i].live && i == sel
-		     ? (SDL_Color){ (Uint8)(a->tint >> 16), (Uint8)(a->tint >> 8),
-		                    (Uint8)a->tint, 255 }
+		     ? (SDL_Color){ (Uint8)(accent >> 16), (Uint8)(accent >> 8),
+		                    (Uint8)accent, 255 }
 		     : UI_TEXT_DIM;
 
 		if (two_col) {
@@ -995,7 +1001,17 @@ static int menu_build(app *a, screen_id screen, int sys,
 
 	snprintf(b->a, sizeof b->a, "%d%%", (int)(ui_get_font_scale() * 100.0f + 0.5f));
 	*heading = "TortOS";
-	out[PM_WIFI]         = (menu_row){ "Wi-Fi",             "not yet", false };
+	{	/* Reported rather than remembered: the radio can be brought up or
+		 * dropped from outside the launcher, so asking is the only answer that
+		 * is true when it is drawn. */
+		char ss[WIFI_SSID_MAX];
+		wifi_state ws = wifi_status(ss, sizeof ss, NULL, 0);
+		if (ws == WIFI_CONNECTED && ss[0]) snprintf(b->b, sizeof b->b, "%s", ss);
+		else snprintf(b->b, sizeof b->b, "%s",
+		              ws == WIFI_CONNECTING ? "connecting" :
+		              ws == WIFI_IDLE       ? "not connected" : "off");
+		out[PM_WIFI]     = (menu_row){ "Wi-Fi",             b->b,      true  };
+	}
 	out[PM_BT]           = (menu_row){ "Bluetooth",         "not yet", false };
 	out[PM_ACHIEVEMENTS] = (menu_row){ "RetroAchievements", "not yet", false };
 	out[PM_SCRAPE]       = (menu_row){ "Box art scraping",  "not yet", false };
@@ -1004,6 +1020,141 @@ static int menu_build(app *a, screen_id screen, int sys,
 	out[PM_ABOUT]        = (menu_row){ "About TortOS",      NULL,      false };
 	out[PM_POWER]        = (menu_row){ "Power off",         NULL,      true  };
 	return PM_ROWS;
+}
+
+
+/* ---------- the WiFi screen ----------------------------------------------- */
+
+/* One frame with a single line on it, drawn before each blocking call.
+ *
+ * wifi_up can take twenty seconds waiting out the stock service's retry loop,
+ * a scan takes several, and an association takes up to twenty more. None of
+ * that is asynchronous here, so the loop is not running and input is not read
+ * while it happens. Painting the reason first is the difference between a
+ * device that is working and a device that has hung: the picture is identical
+ * otherwise, and the second reading is the one that gets a power cycle. */
+static void wifi_wait(app *a, const char *msg)
+{
+	menu_row row = { msg, NULL, false };
+
+	draw_shelf(a);
+	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+	SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
+	SDL_RenderFillRect(a->r, NULL);
+	menu_draw(a, "Wi-Fi", &row, 1, -1, 0, MENU_ACCENT);
+	plat_draw_osd(a->r);
+	SDL_RenderPresent(a->r);
+}
+
+/* Signal as a word. dBm is the honest number and it is also jargon; the list
+ * is sorted strongest first anyway, so the word only has to separate "this
+ * will work" from "this will not". */
+static const char *wifi_strength(int dbm)
+{
+	if (dbm >= -60) return "strong";
+	if (dbm >= -72) return "good";
+	return "weak";
+}
+
+static void wifi_backdrop(void *ctx)
+{
+	app *a = ctx;
+	draw_shelf(a);
+	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+	SDL_SetRenderDrawColor(a->r, 0, 0, 0, 150);
+	SDL_RenderFillRect(a->r, NULL);
+}
+
+static void wifi_screen(app *a)
+{
+	wifi_net nets[WIFI_MAX_NETS];
+	char vals[WIFI_MAX_NETS][32];
+	menu_row rows[WIFI_MAX_NETS + 1];
+	char status[96], ssid[WIFI_SSID_MAX], ip[64];
+	int n = 0, sel = 0, i;
+	bool done = false, rescan = true;
+
+	wifi_wait(a, "Turning Wi-Fi on...");
+	if (!wifi_up()) {
+		wifi_wait(a, "Wi-Fi did not come up");
+		SDL_Delay(1800);
+		return;
+	}
+
+	while (!done && !want_quit && a->running) {
+		if (rescan) {
+			wifi_wait(a, "Scanning...");
+			n = wifi_scan(nets, WIFI_MAX_NETS);
+			if (n < 0) n = 0;
+			for (i = 0; i < n; i++)
+				snprintf(vals[i], sizeof vals[i], "%s%s",
+				         wifi_strength(nets[i].signal),
+				         nets[i].known ? " - saved"
+				                       : nets[i].secured ? "" : " - open");
+			if (sel >= n) sel = n ? n - 1 : 0;
+			rescan = false;
+		}
+
+		for (i = 0; i < n; i++)
+			rows[i] = (menu_row){ nets[i].ssid, vals[i], true };
+		if (n == 0)
+			rows[n++] = (menu_row){ "No networks found", NULL, false };
+
+		plat_input_poll(&a->in);
+		if (a->in.quit_requested) { a->running = false; return; }
+		if (a->in.pressed[IN_POWER]) { power_off(a); return; }
+
+		if (in_repeat(&a->in, IN_UP))   sel = (sel + n - 1) % n;
+		if (in_repeat(&a->in, IN_DOWN)) sel = (sel + 1) % n;
+		if (a->in.pressed[IN_Y]) rescan = true;
+		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = true;
+
+		if (a->in.pressed[IN_ACCEPT] && sel < n && rows[sel].live) {
+			char psk[80] = "";
+			bool ok;
+
+			/* A saved network already has its passphrase in
+			 * wpa_supplicant.conf, so asking again would be asking the user
+			 * to retype something the device is holding. An open network has
+			 * none to ask for. */
+			if (nets[sel].secured && !nets[sel].known) {
+				kb_result kr = kb_prompt(a->r, &a->in, nets[sel].ssid,
+				                         psk, (int)sizeof psk, MENU_ACCENT,
+				                         wifi_backdrop, a);
+				if (kr == KB_POWER) { power_off(a); return; }
+				if (kr != KB_ACCEPT) continue;
+			}
+
+			wifi_wait(a, "Connecting...");
+			ok = wifi_connect(nets[sel].ssid, psk[0] ? psk : NULL);
+			/* Wiped as soon as it has been handed over. It still exists in
+			 * the supplicant's config, which is the point, but there is no
+			 * reason for a copy to sit in the launcher's stack afterwards. */
+			memset(psk, 0, sizeof psk);
+
+			if (ok) {
+				wifi_status(ssid, sizeof ssid, ip, sizeof ip);
+				snprintf(status, sizeof status, "Connected to %s", ssid);
+			} else {
+				snprintf(status, sizeof status,
+				         "Could not connect to %s", nets[sel].ssid);
+			}
+			wifi_wait(a, status);
+			SDL_Delay(1800);
+			rescan = true;
+			continue;
+		}
+
+		tick_tint(a);
+		draw_shelf(a);
+		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
+		SDL_RenderFillRect(a->r, NULL);
+		menu_draw(a, "Wi-Fi", rows, n, sel, 0, MENU_ACCENT);
+		plat_draw_osd(a->r);
+		SDL_RenderPresent(a->r);
+		SDL_Delay(8);
+	}
 }
 
 /* The widest row of one built menu. */
@@ -1126,6 +1277,8 @@ static void tortos_menu(app *a)
 		 * system menu would power the device off. */
 		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
 		    sel == PM_POWER) { power_off(a); return; }
+		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
+		    sel == PM_WIFI) wifi_screen(a);
 
 		tick_tint(a);
 		draw_shelf(a);
