@@ -82,7 +82,7 @@ typedef struct {
 } app;
 
 static volatile sig_atomic_t want_quit;
-static void on_sigterm(int sig) { (void)sig; want_quit = 1; }
+static void on_sigterm(int sig) { (void)sig; want_quit = 1; plat_terminate(); }
 
 /* Boot time is the one number a launcher cannot be careless about, so the
  * phases are timed and logged rather than guessed at. On the project this

@@ -54,6 +54,10 @@ void plat_input_poll(in_state *st);
 void plat_input_flush(void);
 bool in_repeat(in_state *st, in_button b);
 
+/* Tell the input layer the process is going away. The next plat_input_poll
+ * raises quit_requested, which every loop already checks. */
+void plat_terminate(void);
+
 /* Run a child to completion, watching the power button while it runs.
  * envkv is a NULL-terminated array of "KEY=value" strings. */
 int  plat_run(char *const argv[], const char *const envkv[], const char *workdir);

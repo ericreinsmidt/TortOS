@@ -28,8 +28,18 @@
 #define CODE_FN_LEFT  317
 #define CODE_FN_RIGHT 318
 
-/* SDL joystick button indices on the Brick's "TRIMUI Player1" device
- * (BTN_SOUTH..BTN_THUMBR enumerate to 0..10; the d-pad is hat 0). */
+/* SDL joystick button indices on the Brick's "TRIMUI Player1" device.
+ *
+ * SDL numbers these in ascending evdev-code order and the device declares
+ * 304 305 307 308 310 311 314 315 316 317 318, so index 2 is BTN_NORTH and
+ * index 3 is BTN_WEST. The buttons printed on this shell are Y and X
+ * respectively - crossed from the evdev names, as A and B already are.
+ *
+ * These were swapped here on 2026-08-29 and swapped straight back, because
+ * the change was reasoned from the evdev names rather than tested, and Eric
+ * pressing the buttons settled it in one try. The table below is correct;
+ * this note exists so the next person to notice that JOY_Y sits at the index
+ * called BTN_NORTH does not "fix" it again. */
 enum {
 	JOY_B = 0, JOY_A = 1, JOY_Y = 2, JOY_X = 3,
 	JOY_L1 = 4, JOY_R1 = 5, JOY_SELECT = 6, JOY_START = 7,
@@ -311,9 +321,21 @@ static in_button map_key(SDL_Keycode k)
 	}
 }
 
+/* Set from main's SIGTERM handler. Surfaced here rather than checked at each
+ * call site because `quit_requested` is already polled by every loop in the
+ * program, so one assignment reaches all of them - including modal loops that
+ * were written later and would otherwise have to remember. The keyboard was
+ * exactly that case: it checked quit_requested and not main's want_quit, so
+ * SIGTERM was ignored while it was open and `make adb-restart` silently did
+ * nothing until the process was killed with -9. */
+static volatile sig_atomic_t g_terminating;
+
+void plat_terminate(void) { g_terminating = 1; }
+
 void plat_input_poll(in_state *st)
 {
 	memset(st->pressed, 0, sizeof st->pressed);
+	if (g_terminating) st->quit_requested = true;
 	SDL_Event e;
 	while (SDL_PollEvent(&e)) {
 		switch (e.type) {
