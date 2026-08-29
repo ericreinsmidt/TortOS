@@ -278,15 +278,53 @@ wifi_state wifi_status(char *ssid, int ssid_cap, char *ip, int ip_cap)
 	return WIFI_CONNECTING;
 }
 
+/* The id wpa_supplicant already has for this SSID, or -1. */
+static int saved_id(const char *ssid, char *out_id, size_t cap)
+{
+	char out[4096];
+	char *line, *save;
+
+	if (wpa(out, sizeof out, "list_networks", NULL, NULL, NULL) != 0) return -1;
+	for (line = strtok_r(out, "\n", &save); line;
+	     line = strtok_r(NULL, "\n", &save)) {
+		char *tab = strchr(line, '\t'), *end;
+		if (!tab || !strncmp(line, "network id", 10)) continue;
+		*tab = '\0';
+		end = strchr(++tab, '\t');
+		if (end) *end = '\0';
+		if (strcmp(tab, ssid)) continue;
+		snprintf(out_id, cap, "%.15s", line);
+		return 0;
+	}
+	return -1;
+}
+
 bool wifi_connect(const char *ssid, const char *psk)
 {
 	char out[256], id[16], quoted[WIFI_SSID_MAX + 4], qpsk[80];
+	bool reused = false;
 	int i;
 
 	if (!ssid || !*ssid) return false;
 	if (!wifi_up()) return false;
 
-	if (wpa(out, sizeof out, "add_network", NULL, NULL, NULL) != 0) return false;
+	/* An already-saved network is joined by its id. Creating a second entry
+	 * for it and handing that entry no passphrase produced a key_mgmt=NONE
+	 * config - an OPEN network - pointed at a WPA2 access point, which cannot
+	 * associate. That is what "connect to a saved network" did until
+	 * 2026-08-29, and it failed every time. */
+	if (psk && *psk) {
+		/* A new passphrase for a known SSID replaces the old entry rather
+		 * than sitting beside it, or the stale one competes to associate. */
+		if (saved_id(ssid, id, sizeof id) == 0)
+			wpa(out, sizeof out, "remove_network", id, NULL, NULL);
+	} else if (saved_id(ssid, id, sizeof id) == 0) {
+		reused = true;
+	}
+
+	if (!reused && wpa(out, sizeof out, "add_network", NULL, NULL, NULL) != 0)
+		return false;
+	if (!reused)
 	{	/* the id is the last line, and there may be a status line above it */
 		char *nl = strrchr(out, '\n');
 		char *v = out;
@@ -299,14 +337,17 @@ bool wifi_connect(const char *ssid, const char *psk)
 	/* wpa_supplicant wants the value quoted INSIDE the argument: the quotes
 	 * are part of the config syntax, not shell quoting, and execv would never
 	 * have stripped them anyway. */
-	snprintf(quoted, sizeof quoted, "\"%s\"", ssid);
-	if (!wpa_ok("set_network", id, "ssid", quoted)) goto fail;
+	if (!reused) {
+		snprintf(quoted, sizeof quoted, "\"%s\"", ssid);
+		if (!wpa_ok("set_network", id, "ssid", quoted)) goto fail;
 
-	if (psk && *psk) {
-		snprintf(qpsk, sizeof qpsk, "\"%s\"", psk);
-		if (!wpa_ok("set_network", id, "psk", qpsk)) goto fail;
-	} else {
-		if (!wpa_ok("set_network", id, "key_mgmt", "NONE")) goto fail;
+		if (psk && *psk) {
+			snprintf(qpsk, sizeof qpsk, "\"%s\"", psk);
+			if (!wpa_ok("set_network", id, "psk", qpsk)) goto fail;
+		} else {
+			/* Genuinely open, and only because the scan said so. */
+			if (!wpa_ok("set_network", id, "key_mgmt", "NONE")) goto fail;
+		}
 	}
 
 	if (!wpa_ok("enable_network", id, NULL, NULL)) goto fail;
@@ -335,7 +376,12 @@ bool wifi_connect(const char *ssid, const char *psk)
 	return true;
 
 fail:
-	wpa(out, sizeof out, "remove_network", id, NULL, NULL);
+	/* select_network disables every OTHER network, so a failed attempt used
+	 * to leave the whole saved list switched off - one bad try and the device
+	 * never rejoined anything again, silently, with wpa_state sitting at
+	 * INACTIVE and the saved entry marked [DISABLED]. Put them back. */
+	if (!reused) wpa(out, sizeof out, "remove_network", id, NULL, NULL);
+	wpa(out, sizeof out, "enable_network", "all", NULL, NULL);
 	return false;
 }
 

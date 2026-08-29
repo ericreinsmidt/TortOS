@@ -1266,13 +1266,21 @@ static void wifi_screen(app *a)
 	while (!done && !want_quit && a->running) {
 		if (rescan) {
 			wifi_wait(a, "Scanning...");
+			char cur[WIFI_SSID_MAX];
 			n = wifi_scan(nets, WIFI_MAX_NETS);
 			if (n < 0) n = 0;
+			if (wifi_status(cur, sizeof cur, NULL, 0) != WIFI_CONNECTED)
+				cur[0] = '\0';
 			for (i = 0; i < n; i++)
+				/* "connected" outranks "saved": after a successful connect the
+				 * list was redrawn saying only that the network was known,
+				 * which is what it said before the connect too, so the screen
+				 * gave no sign anything had happened. */
 				snprintf(vals[i], sizeof vals[i], "%s%s",
 				         wifi_strength(nets[i].signal),
-				         nets[i].known ? " - saved"
-				                       : nets[i].secured ? "" : " - open");
+				         (cur[0] && !strcmp(cur, nets[i].ssid)) ? " - connected"
+				         : nets[i].known ? " - saved"
+				                         : nets[i].secured ? "" : " - open");
 			if (sel >= n) sel = n ? n - 1 : 0;
 			rescan = false;
 		}
@@ -1354,6 +1362,12 @@ static void wifi_screen(app *a)
 			}
 			wifi_wait(a, status);
 			SDL_Delay(1800);
+			/* Out on success, because the job is done and the menu row behind
+			 * this screen already names the network - staying in the list
+			 * makes you back out by hand to see the result. On failure stay,
+			 * because the next thing wanted is another try or another
+			 * network, and both are here. */
+			if (ok) { done = true; continue; }
 			rescan = true;
 			continue;
 		}
