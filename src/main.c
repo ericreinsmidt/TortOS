@@ -15,6 +15,7 @@
 #include "library.h"
 #include "platform.h"
 #include "keyboard.h"
+#include "wifi.h"
 #include "ui.h"
 
 #include <SDL.h>
@@ -2060,6 +2061,32 @@ int main(int argc, char *argv[])
 				shot_slot_aspect = (float)atof(argv[++i]);
 		}
 	}
+	/* --wifi prints what the radio can see and exits. The wifi module talks
+	 * to firmware that only exists on the device, so it cannot be exercised
+	 * from the host at all, and a flag that reports its view is the cheapest
+	 * way to tell "the machinery is wrong" from "the network is". */
+	if (argc > 1 && !strcmp(argv[1], "--wifi")) {
+		wifi_net nets[WIFI_MAX_NETS];
+		char ssid[WIFI_SSID_MAX], ip[64];
+		int n, i;
+		wifi_state st;
+
+		printf("bringing the supplicant up ...\n");
+		printf("  wifi_up: %s\n", wifi_up() ? "ok" : "FAILED");
+		st = wifi_status(ssid, sizeof ssid, ip, sizeof ip);
+		printf("  status: %s  ssid=[%s] ip=[%s]\n",
+		       st == WIFI_CONNECTED  ? "connected"  :
+		       st == WIFI_CONNECTING ? "connecting" :
+		       st == WIFI_IDLE       ? "idle"       : "off", ssid, ip);
+		n = wifi_scan(nets, WIFI_MAX_NETS);
+		printf("  scan: %d network(s)\n", n);
+		for (i = 0; i < n; i++)
+			printf("    %-32s %4d dBm  %-9s %s\n", nets[i].ssid,
+			       nets[i].signal, nets[i].secured ? "secured" : "open",
+			       nets[i].known ? "known" : "");
+		return n < 0 ? 1 : 0;
+	}
+
 	signal(SIGTERM, on_sigterm);
 	signal(SIGINT, on_sigterm);
 
