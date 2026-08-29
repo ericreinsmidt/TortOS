@@ -205,9 +205,34 @@ radio_off() {
 	echo "wifi: supplicant still up after ${i}s, giving up" >> "$LOGS_PATH/tortos.log"
 }
 
-WIFI=$(getcfg wifi)
+# Bring the radio up and take a lease. Associating is not connecting: the
+# supplicant joins a saved network on its own, but nothing on this device runs
+# a DHCP client at boot, so without this the interface comes up with no address
+# and every fetch fails in a way that looks like a dead network rather than a
+# missing lease.
+wifi_on() {
+	i=0
+	/etc/init.d/wpa_supplicant start > /dev/null 2>&1
+	while [ $i -lt 25 ]; do
+		if wpa_cli -p /etc/wifi/sockets -i wlan0 status 2> /dev/null \
+		   | grep -q '^wpa_state=COMPLETED'; then
+			udhcpc -i wlan0 -S -t 5 -T 7 -b -q > /dev/null 2>&1
+			return 0
+		fi
+		sleep 1
+		i=$((i + 1))
+	done
+	echo "wifi: no association after ${i}s" >> "$LOGS_PATH/tortos.log"
+}
+
+# The state the player left it in wins over the shipped default, the same way
+# a saved brightness level does. tortos.cfg says what a fresh card does;
+# .userdata/wifi.cfg says what THIS device was doing when it was last shut
+# down, which is what someone who turned wifi on expects to find.
+WIFI=$(sed -n 's/^wifi=//p' "$USERDATA_PATH/wifi.cfg" 2> /dev/null | head -1)
+[ -n "$WIFI" ] || WIFI=$(getcfg wifi)
 if [ "$WIFI" = "1" ] || [ -f "$TORTOS_DIR/.devwifi" ]; then
-	/etc/init.d/wpa_supplicant start > /dev/null 2>&1 &
+	wifi_on &
 else
 	radio_off &
 fi

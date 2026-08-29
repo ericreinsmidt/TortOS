@@ -460,6 +460,28 @@ static void free_all_textures(app *a)
 	}
 }
 
+/* Whether the radio should come up at boot.
+ *
+ * In .userdata rather than tortos.cfg, on the same split as brightness: the
+ * shipped config says what a fresh card does, .userdata says what THIS device
+ * was last doing. launch.sh reads this file first and falls back to the
+ * config, so a card with no preference yet behaves as shipped.
+ *
+ * Written the moment it changes rather than at shutdown, because a handheld
+ * is switched off by holding a button or by running the battery flat, and
+ * neither of those is a chance to save anything. */
+static void wifi_pref_save(bool on)
+{
+	char p[CFG_STR * 2];
+	FILE *f;
+
+	snprintf(p, sizeof p, "%s/wifi.cfg", P_USERDATA);
+	f = fopen(p, "w");
+	if (!f) return;
+	fprintf(f, "wifi=%d\n", on ? 1 : 0);
+	fclose(f);
+}
+
 /* Beside the save states and keyed like them, so a favorite travels with the
  * saves it belongs next to and survives a card reflash. */
 static void fav_path(char *out, size_t n)
@@ -1231,15 +1253,15 @@ static void wifi_screen(app *a)
 	char vals[WIFI_MAX_NETS][32];
 	menu_row rows[WIFI_MAX_NETS + 1];
 	char status[96], ssid[WIFI_SSID_MAX], ip[64];
+	int nrows;
 	int n = 0, sel = 0, i;
-	bool done = false, rescan = true;
+	bool done = false, rescan = false, on;
 
-	wifi_wait(a, "Turning Wi-Fi on...");
-	if (!wifi_up()) {
-		wifi_wait(a, "Wi-Fi did not come up");
-		SDL_Delay(1800);
-		return;
-	}
+	/* Entering does not switch the radio on. It used to, which made the
+	 * screen impossible to leave in the off state: you opened it to turn
+	 * wifi OFF and the act of opening it turned wifi on. */
+	on = wifi_status(NULL, 0, NULL, 0) != WIFI_OFF;
+	if (on) rescan = true;
 
 	while (!done && !want_quit && a->running) {
 		if (rescan) {
@@ -1255,21 +1277,49 @@ static void wifi_screen(app *a)
 			rescan = false;
 		}
 
+		/* The switch is row 0 and the networks follow it, so the state of the
+		 * radio is the first thing read and the first thing reachable. */
+		rows[0] = (menu_row){ "Wi-Fi", on ? "on" : "off", true };
 		for (i = 0; i < n; i++)
-			rows[i] = (menu_row){ nets[i].ssid, vals[i], true };
-		if (n == 0)
-			rows[n++] = (menu_row){ "No networks found", NULL, false };
+			rows[i + 1] = (menu_row){ nets[i].ssid, vals[i], true };
+		nrows = n + 1;
+		if (!on)
+			rows[nrows++] = (menu_row){ "Turn Wi-Fi on to scan", NULL, false };
+		else if (n == 0)
+			rows[nrows++] = (menu_row){ "No networks found", NULL, false };
 
 		plat_input_poll(&a->in);
 		if (a->in.quit_requested) { a->running = false; return; }
 		if (a->in.pressed[IN_POWER]) { power_off(a); return; }
 
-		if (in_repeat(&a->in, IN_UP))   sel = (sel + n - 1) % n;
-		if (in_repeat(&a->in, IN_DOWN)) sel = (sel + 1) % n;
-		if (a->in.pressed[IN_Y]) rescan = true;
+		if (in_repeat(&a->in, IN_UP))   sel = (sel + nrows - 1) % nrows;
+		if (in_repeat(&a->in, IN_DOWN)) sel = (sel + 1) % nrows;
+		if (a->in.pressed[IN_Y] && on) rescan = true;
 		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = true;
 
-		if (a->in.pressed[IN_ACCEPT] && sel < n && rows[sel].live) {
+		/* The switch. Saved on every change rather than on the way out: the
+		 * way out of a handheld is often the power button. */
+		if (a->in.pressed[IN_ACCEPT] && sel == 0) {
+			if (on) {
+				wifi_down();
+				wifi_pref_save(false);
+				on = false;
+				n = 0;
+			} else {
+				wifi_wait(a, "Turning Wi-Fi on...");
+				on = wifi_up();
+				wifi_pref_save(on);
+				if (!on) {
+					wifi_wait(a, "Wi-Fi did not come up");
+					SDL_Delay(1800);
+				}
+				rescan = on;
+			}
+			continue;
+		}
+
+		if (a->in.pressed[IN_ACCEPT] && sel >= 1 && sel <= n) {
+			int k = sel - 1;
 			char psk[80] = "";
 			bool ok;
 
@@ -1277,8 +1327,8 @@ static void wifi_screen(app *a)
 			 * wpa_supplicant.conf, so asking again would be asking the user
 			 * to retype something the device is holding. An open network has
 			 * none to ask for. */
-			if (nets[sel].secured && !nets[sel].known) {
-				kb_result kr = kb_prompt(a->r, &a->in, nets[sel].ssid,
+			if (nets[k].secured && !nets[k].known) {
+				kb_result kr = kb_prompt(a->r, &a->in, nets[k].ssid,
 				                         psk, (int)sizeof psk, MENU_ACCENT,
 				                         wifi_backdrop, a);
 				if (kr == KB_POWER) { power_off(a); return; }
@@ -1286,18 +1336,21 @@ static void wifi_screen(app *a)
 			}
 
 			wifi_wait(a, "Connecting...");
-			ok = wifi_connect(nets[sel].ssid, psk[0] ? psk : NULL);
+			ok = wifi_connect(nets[k].ssid, psk[0] ? psk : NULL);
 			/* Wiped as soon as it has been handed over. It still exists in
 			 * the supplicant's config, which is the point, but there is no
 			 * reason for a copy to sit in the launcher's stack afterwards. */
 			memset(psk, 0, sizeof psk);
 
 			if (ok) {
+				/* Connecting is turning it on, whatever the switch said. */
+				wifi_pref_save(true);
+				on = true;
 				wifi_status(ssid, sizeof ssid, ip, sizeof ip);
 				snprintf(status, sizeof status, "Connected to %s", ssid);
 			} else {
 				snprintf(status, sizeof status,
-				         "Could not connect to %s", nets[sel].ssid);
+				         "Could not connect to %s", nets[k].ssid);
 			}
 			wifi_wait(a, status);
 			SDL_Delay(1800);
@@ -1310,7 +1363,7 @@ static void wifi_screen(app *a)
 		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
 		SDL_RenderFillRect(a->r, NULL);
-		menu_draw(a, "Wi-Fi", rows, n, sel, 0, MENU_ACCENT);
+		menu_draw(a, "Wi-Fi", rows, nrows, sel, 0, MENU_ACCENT);
 		plat_draw_osd(a->r);
 		SDL_RenderPresent(a->r);
 		SDL_Delay(8);
