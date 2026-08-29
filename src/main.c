@@ -1003,13 +1003,32 @@ static int menu_build(app *a, screen_id screen, int sys,
 	*heading = "TortOS";
 	{	/* Reported rather than remembered: the radio can be brought up or
 		 * dropped from outside the launcher, so asking is the only answer that
-		 * is true when it is drawn. */
-		char ss[WIFI_SSID_MAX];
-		wifi_state ws = wifi_status(ss, sizeof ss, NULL, 0);
-		if (ws == WIFI_CONNECTED && ss[0]) snprintf(b->b, sizeof b->b, "%s", ss);
-		else snprintf(b->b, sizeof b->b, "%s",
-		              ws == WIFI_CONNECTING ? "connecting" :
-		              ws == WIFI_IDLE       ? "not connected" : "off");
+		 * is true when it is drawn.
+		 *
+		 * Cached for two seconds, on the same reasoning as battery_low(), and
+		 * for a sharper reason: menu_build runs every frame and wifi_status
+		 * forks wpa_cli, so the first version of this was spawning a process
+		 * about 125 times a second on a 1GHz device for a line that changes
+		 * a few times an hour.
+		 *
+		 * The network's name, not its address. A settings row should say what
+		 * the setting IS; the address is a fact about the machine and lives on
+		 * the About page with the other ones. */
+		static unsigned next_check;
+		static char cached[CFG_STR];
+		unsigned now = plat_now_ms();
+
+		if (next_check == 0 || now >= next_check) {
+			char ss[WIFI_SSID_MAX], ip[64];
+			wifi_state ws = wifi_status(ss, sizeof ss, ip, sizeof ip);
+			next_check = now + 2000;
+			(void)ip;
+			if (ws == WIFI_CONNECTED && ss[0]) snprintf(cached, sizeof cached, "%s", ss);
+			else snprintf(cached, sizeof cached, "%s",
+			              ws == WIFI_CONNECTING ? "connecting" :
+			              ws == WIFI_IDLE       ? "not connected" : "off");
+		}
+		snprintf(b->b, sizeof b->b, "%s", cached);
 		out[PM_WIFI]     = (menu_row){ "Wi-Fi",             b->b,      true  };
 	}
 	out[PM_BT]           = (menu_row){ "Bluetooth",         "not yet", false };
@@ -1017,7 +1036,7 @@ static int menu_build(app *a, screen_id screen, int sys,
 	out[PM_SCRAPE]       = (menu_row){ "Box art scraping",  "not yet", false };
 	out[PM_TEXT]         = (menu_row){ "Text size",         b->a,      false };
 	out[PM_SLEEP]        = (menu_row){ "Sleep timer",       "not yet", false };
-	out[PM_ABOUT]        = (menu_row){ "About TortOS",      NULL,      false };
+	out[PM_ABOUT]        = (menu_row){ "About TortOS",      NULL,      true  };
 	out[PM_POWER]        = (menu_row){ "Power off",         NULL,      true  };
 	return PM_ROWS;
 }
@@ -1157,6 +1176,80 @@ static void wifi_screen(app *a)
 	}
 }
 
+
+/* ---------- About --------------------------------------------------------- */
+
+#ifndef TORTOS_VERSION
+#define TORTOS_VERSION "0.0"       /* set by the makefiles from Makefile's VERSION */
+#endif
+
+/* Facts about the machine, which is a different thing from settings. The
+ * address in particular has nowhere else to live: the Wi-Fi screen names the
+ * network, and short of asking the router there is no way to find out what
+ * address the device took. */
+static void about_screen(app *a)
+{
+	char ver[48], addr[80], batt[32], up[48];
+	menu_row rows[4];
+	char ssid[WIFI_SSID_MAX], ip[64];
+	int pct = 0;
+	bool charging = false;
+	unsigned secs;
+	bool done = false;
+
+	snprintf(ver, sizeof ver, "%s", TORTOS_VERSION);
+
+	while (!done && !want_quit && a->running) {
+		static unsigned next_check;
+		unsigned now = plat_now_ms();
+
+		/* Same two-second cache as the menu row, and for the same reason:
+		 * this loop runs every frame and wifi_status forks wpa_cli. */
+		if (next_check == 0 || now >= next_check) {
+			wifi_state ws = wifi_status(ssid, sizeof ssid, ip, sizeof ip);
+			next_check = now + 2000;
+			if (ws == WIFI_CONNECTED && ip[0])
+				snprintf(addr, sizeof addr, "%s", ip);
+			else if (ws == WIFI_CONNECTED)
+				snprintf(addr, sizeof addr, "no address yet");
+			else
+				snprintf(addr, sizeof addr, "not connected");
+			if (plat_battery(&pct, &charging))
+				snprintf(batt, sizeof batt, "%d%%%s", pct,
+				         charging ? " charging" : "");
+			else
+				snprintf(batt, sizeof batt, "unknown");
+		}
+		secs = now / 1000;
+		snprintf(up, sizeof up, "%uh %02um", secs / 3600, (secs / 60) % 60);
+
+		rows[0] = (menu_row){ "Version",   ver,  false };
+		rows[1] = (menu_row){ "Address",   addr, false };
+		rows[2] = (menu_row){ "Battery",   batt, false };
+		rows[3] = (menu_row){ "Awake for", up,   false };
+
+		plat_input_poll(&a->in);
+		if (a->in.quit_requested) { a->running = false; return; }
+		if (a->in.pressed[IN_POWER]) { power_off(a); return; }
+		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = true;
+
+		if (in_repeat(&a->in, IN_VOLUP))    plat_volume_nudge(+1);
+		if (in_repeat(&a->in, IN_VOLDN))    plat_volume_nudge(-1);
+		if (in_repeat(&a->in, IN_BRIGHTUP)) plat_brightness_nudge(+1);
+		if (in_repeat(&a->in, IN_BRIGHTDN)) plat_brightness_nudge(-1);
+
+		tick_tint(a);
+		draw_shelf(a);
+		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
+		SDL_RenderFillRect(a->r, NULL);
+		menu_draw(a, "About TortOS", rows, 4, -1, 0, MENU_ACCENT);
+		plat_draw_osd(a->r);
+		SDL_RenderPresent(a->r);
+		SDL_Delay(8);
+	}
+}
+
 /* The widest row of one built menu. */
 static int menu_measure(const menu_row *rows, int n, const char *heading)
 {
@@ -1279,6 +1372,8 @@ static void tortos_menu(app *a)
 		    sel == PM_POWER) { power_off(a); return; }
 		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
 		    sel == PM_WIFI) wifi_screen(a);
+		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
+		    sel == PM_ABOUT) about_screen(a);
 
 		tick_tint(a);
 		draw_shelf(a);

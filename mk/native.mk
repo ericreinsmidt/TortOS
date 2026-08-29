@@ -8,7 +8,8 @@ BUILD := build-native
 SRC := $(wildcard src/*.c)
 
 PKGS := sdl2 SDL2_image SDL2_ttf
-CFLAGS := -O1 -g -Wall -Wextra -Wno-unused-parameter -std=gnu11 -D_GNU_SOURCE \
+VERSION ?= 0.0
+CFLAGS := -DTORTOS_VERSION='"$(VERSION)"' -O1 -g -Wall -Wextra -Wno-unused-parameter -std=gnu11 -D_GNU_SOURCE \
           $(shell pkg-config --cflags $(PKGS))
 LDLIBS := $(shell pkg-config --libs $(PKGS)) -lm
 

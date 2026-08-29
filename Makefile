@@ -12,13 +12,16 @@ SSH := sshpass -p 'tina' ssh -o StrictHostKeyChecking=no root@$(BRICK)
 
 all: build/tortos.elf
 
+# One version number: the zip name and the About page both read it from here.
+VERSION ?= 1.0
+
 build/tortos.elf: $(wildcard src/*.c) $(wildcard src/*.h) tools/setbright.c mk/cross.mk
 	@docker image inspect $(IMAGE) > /dev/null 2>&1 || { \
 		echo "toolchain image missing; run: make toolchain" >&2; exit 1; }
 	@[ -d sysroot/usr/include/SDL2 ] || { \
 		echo "no sysroot; run: mk/fetch-sysroot.sh (needs the device)" >&2; exit 1; }
 	docker run --rm -v $(CURDIR):/work -w /work $(IMAGE) \
-		make -f mk/cross.mk SYSROOT=/work/sysroot build/tortos.elf build/setbright
+		make -f mk/cross.mk SYSROOT=/work/sysroot VERSION=$(VERSION) build/tortos.elf build/setbright
 
 # One-time: the cross-compiler image. Pinned by digest, so it does not drift.
 toolchain:
@@ -26,7 +29,7 @@ toolchain:
 
 # Host build of the launcher, for working on how the shelf looks.
 native:
-	$(MAKE) -f mk/native.mk
+	$(MAKE) -f mk/native.mk VERSION=$(VERSION)
 
 # The libretro cores TortOS redistributes, hash-pinned from libretro's own
 # buildbot. Needed once, before the first payload. No runtime libraries: the
@@ -53,7 +56,6 @@ checkmark:
 payload: all checkmark
 	./mk/payload.sh
 
-VERSION ?= 1.0
 release: payload
 	@echo "out/TortOS-v$(VERSION).zip"
 
