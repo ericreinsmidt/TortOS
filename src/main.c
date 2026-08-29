@@ -2352,10 +2352,14 @@ static void update_systems(app *a)
 	 * press of left or right took the launcher down with SIGFPE. */
 	if (n <= 0) return;
 
-	if (in_repeat(&a->in, IN_LEFT))  a->sys_cursor = (a->sys_cursor - 1 + n) % n;
-	if (in_repeat(&a->in, IN_RIGHT)) a->sys_cursor = (a->sys_cursor + 1) % n;
+	/* The direction is carried through, not inferred from the cursor: on a
+	 * shelf of two, moving from either card to the other is one step in BOTH
+	 * directions, and only the press says which. */
+	int dir = 0;
+	if (in_repeat(&a->in, IN_LEFT))  { a->sys_cursor = (a->sys_cursor - 1 + n) % n; dir = -1; }
+	if (in_repeat(&a->in, IN_RIGHT)) { a->sys_cursor = (a->sys_cursor + 1) % n; dir = +1; }
 	if (a->in.pressed[IN_ACCEPT])    enter_system(a);
-	cf_set_cursor(&a->cf_sys, a->sys_cursor, n);
+	cf_set_cursor_dir(&a->cf_sys, a->sys_cursor, n, dir);
 }
 
 /* The first alphanumeric character of a name, upper-cased, or '\0' for a name
@@ -2423,8 +2427,9 @@ static void update_games(app *a)
 	sysview *v = &a->view[a->sys_cursor];
 	int n = v->list.count;
 	if (n <= 0) { a->screen = SCREEN_SYSTEMS; return; }
-	if (in_repeat(&a->in, IN_LEFT))  v->cursor = (v->cursor - 1 + n) % n;
-	if (in_repeat(&a->in, IN_RIGHT)) v->cursor = (v->cursor + 1) % n;
+	int dir = 0;
+	if (in_repeat(&a->in, IN_LEFT))  { v->cursor = (v->cursor - 1 + n) % n; dir = -1; }
+	if (in_repeat(&a->in, IN_RIGHT)) { v->cursor = (v->cursor + 1) % n; dir = +1; }
 	if (in_repeat(&a->in, IN_DOWN))  v->cursor = shelf_letter_jump(v, +1);
 	if (in_repeat(&a->in, IN_UP))    v->cursor = shelf_letter_jump(v, -1);
 	/* L1/R1 jump a screenful, so a long shelf is crossable. Wrapped the long
@@ -2454,7 +2459,7 @@ static void update_games(app *a)
 		return;
 	}
 	if (a->in.pressed[IN_ACCEPT]) { launch(a); return; }
-	cf_set_cursor(&v->cf, v->cursor, n);
+	cf_set_cursor_dir(&v->cf, v->cursor, n, dir);
 }
 
 /* ---------- main ---------------------------------------------------------- */

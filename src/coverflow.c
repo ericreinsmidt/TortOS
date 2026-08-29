@@ -88,7 +88,7 @@ void cf_reset(coverflow *cf, int cursor)
 	cf->primed = true;
 }
 
-void cf_set_cursor(coverflow *cf, int cursor, int count)
+void cf_set_cursor_dir(coverflow *cf, int cursor, int count, int dir)
 {
 	if (!cf->primed) { cf_reset(cf, cursor); return; }
 	if (cursor == cf->last_cursor) return;
@@ -100,7 +100,15 @@ void cf_set_cursor(coverflow *cf, int cursor, int count)
 		 * is a single smooth step, not a slide across the whole list */
 		while (raw > count / 2) raw -= count;
 		while (raw < -count / 2) raw += count;
+		/* A ring of TWO has both neighbours one step away, so "shortest way
+		 * around" has no answer and the rule above returns the literal
+		 * difference every time: +1, -1, +1, -1. The row then rocks right and
+		 * left rather than turning, however the cards are drawn - which is
+		 * why this looked like a drawing bug and is not one. When the caller
+		 * knows which way the press was, believe it over the arithmetic. */
+		if (count == 2 && dir) raw = dir;
 	}
+	if (raw) cf->last_dir = raw > 0 ? 1 : -1;
 	cf->last_cursor = cursor;
 
 	cf->target += (float)raw;
@@ -268,18 +276,6 @@ bool cf_draw(coverflow *cf, SDL_Renderer *r, int screen_w, int screen_h,
 	/* collect visible slots, then draw far-to-near so the center card wins */
 	struct slot { int item; float d; } slots[CF_WINDOW];
 	int ns = 0;
-	/* Two items are the one case where "never draw the same item twice" and
-	 * "keep rotating" cannot both hold. A wrapping carousel moves by sliding
-	 * the row leftward and bringing the next card in from the right; with two
-	 * cards the one coming in IS the one going out, so refusing the repeat
-	 * leaves nothing to slide in and the pair just swaps places on the spot.
-	 *
-	 * So at two the repeat is allowed and the row rotates. It is not a
-	 * duplicate in the sense the dedupe below prevents - it is the same card
-	 * seen twice around a short loop, which is what a carousel of two things
-	 * actually looks like. */
-	bool twin = (count == 2);
-
 	for (int k = -half; k <= half; k++) {
 		int i = base + k;
 		float d = (float)i - cf->pos;
@@ -295,12 +291,22 @@ bool cf_draw(coverflow *cf, SDL_Renderer *r, int screen_w, int screen_h,
 		 * wider than the list, wrapping offers the same item on both sides -
 		 * two items put the other one at -1 and +1 - and drawing it twice
 		 * would be worse than the bug this replaced. */
-		if (!twin) {
+		{
 			int dup = -1, q;
 			for (q = 0; q < ns; q++)
 				if (slots[q].item == item) { dup = q; break; }
 			if (dup >= 0) {
-				if (fabsf(d) < fabsf(slots[dup].d)) slots[dup].d = d;
+				float held = slots[dup].d;
+				/* Nearest wins. On an exact tie - which is every resting frame
+				 * of a two-item ring, where both copies sit one step out - put
+				 * the card BEHIND the direction of travel, so the one you just
+				 * moved past is the one you see. Choosing arbitrarily instead
+				 * meant it sat left whichever way you went, and so had to jump
+				 * across at the end of every leftward move. */
+				if (fabsf(d) < fabsf(held) ||
+				    (fabsf(d) == fabsf(held) && cf->last_dir &&
+				     (d < 0) == (cf->last_dir > 0)))
+					slots[dup].d = d;
 				continue;
 			}
 		}
@@ -333,4 +339,11 @@ bool cf_draw(coverflow *cf, SDL_Renderer *r, int screen_w, int screen_h,
 		          cw * 0.5f * scale, ch * 0.5f * scale, ang, alpha, lay);
 	}
 	return cf->active;
+}
+
+/* Direction unknown - the cursor moved by something other than a press, such
+ * as a letter jump or a list rebuild. Only a two-item ring cares. */
+void cf_set_cursor(coverflow *cf, int cursor, int count)
+{
+	cf_set_cursor_dir(cf, cursor, count, 0);
 }
