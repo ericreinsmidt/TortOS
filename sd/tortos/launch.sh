@@ -151,6 +151,26 @@ echo 227 > /sys/class/gpio/export 2> /dev/null
 echo -n out > /sys/class/gpio/gpio227/direction 2> /dev/null
 echo -n 0 > /sys/class/gpio/gpio227/value 2> /dev/null
 
+# Timezone, before anything that writes a timestamp.
+#
+# The stock firmware points /tmp/localtime at Asia/Shanghai, which is eight
+# hours out for anyone who did not buy the device there, and every date the
+# launcher shows - the one under a save slot - is local time. The zoneinfo
+# database is already on the device; this only chooses from it.
+#
+# The clock itself is not set here and does not need to be: /etc/rc.d/S98sysntpd
+# runs ntpd, which corrects the time within a minute of Wi-Fi connecting. That
+# is also why the device sat in 1970 until Wi-Fi worked - ntpd was running the
+# whole time with nothing to reach.
+TZNAME=$(getcfg timezone)
+if [ -n "$TZNAME" ] && [ -f "/usr/share/zoneinfo/$TZNAME" ]; then
+	ln -sf "/usr/share/zoneinfo/$TZNAME" /tmp/localtime
+	rm -f /tmp/TZ
+elif [ -n "$TZNAME" ]; then
+	echo "tz: no zoneinfo for '$TZNAME', keeping the firmware default" \
+	     >> "$LOGS_PATH/tortos.log"
+fi
+
 # Radio silence. TortOS has nothing to talk to yet: no downloads, no pairing,
 # no achievements. Both radios are battery drain and boot time.
 #
