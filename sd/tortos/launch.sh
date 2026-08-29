@@ -151,8 +151,8 @@ echo 227 > /sys/class/gpio/export 2> /dev/null
 echo -n out > /sys/class/gpio/gpio227/direction 2> /dev/null
 echo -n 0 > /sys/class/gpio/gpio227/value 2> /dev/null
 
-# Radio silence. TortOS has nothing to talk to: no downloads, no pairing, no
-# achievements. Both radios are battery drain and boot time.
+# Radio silence. TortOS has nothing to talk to yet: no downloads, no pairing,
+# no achievements. Both radios are battery drain and boot time.
 #
 # `wifi=1` in tortos.cfg -- or a .devwifi marker -- keeps WiFi up so a
 # development unit stays reachable over ssh. Without it there is no way to
@@ -161,13 +161,55 @@ echo -n 0 > /sys/class/gpio/gpio227/value 2> /dev/null
 #
 # Stop the supplicant and drop the interface rather than rfkill-blocking, so
 # the radio is left in a state the firmware understands.
+#
+# Both halves of this were dead until 2026-08-29, and measurably so: the
+# supplicant was running on a device whose own log said radio silence.
+#
+# The `on` half called /etc/wifi/wifi_init.sh, which does not exist anywhere
+# on the device and never has, so it failed silently and the flag did nothing.
+# The stock service is procd-managed, so starting it is what the init script
+# is for.
+#
+# The `off` half lost a race. /etc/rc.d/S96wpa_supplicant is USE_PROCD=1 and
+# procd is pid 1, so procd owns the process and respawns a bare kill. The
+# init script's `stop` handles that correctly -- but its `start_service`
+# retries `ifconfig wlan0 up` five times with usleep 500000 between, so S96
+# is still inside that loop when S99 runs us, and it finishes and starts the
+# supplicant after we asked for it to be stopped. PIDs told the story:
+# launch.sh 1839, tortos.elf 2156, wpa_supplicant 2286.
+#
+# So the stop is repeated across a window rather than once, and backgrounded,
+# because waiting out someone else's usleeps is not worth the boot time.
+#
+# The window, and not just a retry-until-gone loop, because stopping it once
+# is not the same as it staying stopped. Measured on 2026-08-29: a loop that
+# exited on the first clear reading left the supplicant gone at 20s and back
+# at 37s, restarted after tortos.elf was already up. It then exited on its
+# own around 90s, but only because wlan0 was down underneath it -- which is
+# luck, not a mechanism. Keep stopping it for the whole window instead.
+radio_off() {
+	i=0
+	while [ $i -lt 20 ]; do
+		if pgrep -f '[w]pa_supplicant' > /dev/null; then
+			/etc/init.d/wpa_supplicant stop > /dev/null 2>&1
+			killall -q udhcpc 2> /dev/null
+		fi
+		ifconfig wlan0 down 2> /dev/null
+		sleep 1
+		i=$((i + 1))
+	done
+	pgrep -f '[w]pa_supplicant' > /dev/null || return 0
+	# $LOG is not set this early and would not survive the rotation below;
+	# LOGS_PATH is exported at the top and the rotation happens seconds before
+	# this line can ever run.
+	echo "wifi: supplicant still up after ${i}s, giving up" >> "$LOGS_PATH/tortos.log"
+}
+
 WIFI=$(getcfg wifi)
 if [ "$WIFI" = "1" ] || [ -f "$TORTOS_DIR/.devwifi" ]; then
-	sh /etc/wifi/wifi_init.sh start > /dev/null 2>&1 &
+	/etc/init.d/wpa_supplicant start > /dev/null 2>&1 &
 else
-	/etc/init.d/wpa_supplicant stop 2> /dev/null
-	killall -q udhcpc wpa_supplicant 2> /dev/null
-	ifconfig wlan0 down 2> /dev/null
+	radio_off &
 fi
 
 # Bluetooth off, always.
