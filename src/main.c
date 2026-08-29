@@ -14,6 +14,7 @@
 #include "coverflow.h"
 #include "library.h"
 #include "platform.h"
+#include "keyboard.h"
 #include "ui.h"
 
 #include <SDL.h>
@@ -1932,6 +1933,8 @@ static void scan_all(app *a)
 static const char *shot_path;
 static int shot_screen = -1;
 static int shot_menu, shot_menu_sel;
+static int shot_kb, shot_kb_layer;
+static const char *shot_kb_text = "correct horse";
 static int shot_slots, shot_slot_sel;
 static int shot_jump;               /* letter-jumps to apply before drawing */
 static float shot_slot_aspect = 4.0f / 3.0f;
@@ -1991,6 +1994,8 @@ static void take_shot(app *a)
 	draw_shelf(a);
 	if (shot_menu) tortos_menu_draw(a, shot_menu_sel);
 	if (shot_slots) shot_draw_slots(a);
+	if (shot_kb) kb_preview(a->r, "Wi-Fi password", shot_kb_text,
+	                        shot_kb_layer, 1, 0, MENU_ACCENT);
 	if (out) {
 		/* Read BEFORE presenting: the backbuffer is invalid afterwards. */
 		SDL_RenderReadPixels(a->r, NULL, SDL_PIXELFORMAT_RGBA32,
@@ -2037,6 +2042,15 @@ int main(int argc, char *argv[])
 		 * device or a hand on it. */
 		else if (!strcmp(argv[i], "--jump") && i + 1 < argc) {
 			shot_jump = atoi(argv[++i]);
+		}
+		/* --keyboard [layer] [text] draws one frame of the text-entry panel,
+		 * for the same reason --menu and --slots exist: it is dense, and
+		 * laying it out against a screenshot beats a round trip to a device. */
+		else if (!strcmp(argv[i], "--keyboard")) {
+			shot_kb = 1;
+			if (i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '2')
+				shot_kb_layer = atoi(argv[++i]);
+			if (i + 1 < argc && argv[i + 1][0] != '-') shot_kb_text = argv[++i];
 		}
 		else if (!strcmp(argv[i], "--slots")) {
 			shot_slots = 1;
