@@ -61,13 +61,22 @@ static float clampf(float v, float lo, float hi)
 }
 
 /* Wrap smoothly like an infinite carousel, but never draw the same item
- * twice: cap the half-window so the visible span (2*half+1) never exceeds
- * the item count. A 1-item list is a single static card. */
+ * twice. A 1-item list is a single static card.
+ *
+ * The half-window used to be (count-1)/2, which reads as "keep the span
+ * 2*half+1 within the item count" and is right for odd counts and wrong for
+ * every even one. Two items gave half = 0, the draw loop ran from 0 to 0, and
+ * a shelf holding two games drew exactly one card while the counter under it
+ * said 1/2. Reported 2026-08-29 and reproduced on the host immediately.
+ *
+ * The span cannot be both odd and equal to an even count, so the duplicate is
+ * dropped where it actually happens - in the slot collection - rather than
+ * prevented by shrinking the window until it cannot occur. */
 static bool cf_loops(int count) { return count >= 2; }
 
 static int cf_half(int count)
 {
-	int h = (count - 1) / 2;
+	int h = count - 1;
 	return h < CF_HALF_WINDOW ? h : CF_HALF_WINDOW;
 }
 
@@ -269,6 +278,19 @@ bool cf_draw(coverflow *cf, SDL_Renderer *r, int screen_w, int screen_h,
 			if (item < 0) item += count;
 		} else if (i < 0 || i >= count) {
 			continue;
+		}
+		/* One slot per item, nearest wins. With the window now allowed to be
+		 * wider than the list, wrapping offers the same item on both sides -
+		 * two items put the other one at -1 and +1 - and drawing it twice
+		 * would be worse than the bug this replaced. */
+		{
+			int dup = -1, q;
+			for (q = 0; q < ns; q++)
+				if (slots[q].item == item) { dup = q; break; }
+			if (dup >= 0) {
+				if (fabsf(d) < fabsf(slots[dup].d)) slots[dup].d = d;
+				continue;
+			}
 		}
 		slots[ns].item = item;
 		slots[ns].d = d;
