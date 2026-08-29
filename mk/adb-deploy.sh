@@ -65,6 +65,9 @@ case $WHAT in res|all)
 	# handoff into it steps from the old color to the new one.
 	$A push "$ROOT/res/boot/bootlogo.bmp"   "$P/" > /dev/null
 	$A push "$ROOT/res/boot/splash.png"     "$P/" > /dev/null
+	# The device has curl and OpenSSL but no trust store, so without this
+	# every HTTPS request fails verification - see res/ssl/README.md.
+	$A push "$ROOT/res/ssl/cacert.pem"      "$P/" > /dev/null
 	echo "  + assets"
 esac
 case $WHAT in diatom|all)
