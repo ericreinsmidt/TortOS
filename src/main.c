@@ -14,6 +14,7 @@
 #include "coverflow.h"
 #include "library.h"
 #include "platform.h"
+#include "favorites.h"
 #include "keyboard.h"
 #include "wifi.h"
 #include "ui.h"
@@ -43,6 +44,12 @@ typedef struct {
 	int cursor;
 	int dmode;              /* index into DMODES: how this system is scaled */
 	coverflow cf;
+	/* NULL on a real shelf, where every game belongs to the system whose
+	 * shelf it is. Favorites is a shelf of games drawn from many systems, so
+	 * each entry has to carry its own - the core to load, the folder the ROM
+	 * is under, the accent, and where the save state lives all follow from
+	 * it, and every one of them would be wrong if taken from the shelf. */
+	int *owner;
 } sysview;
 
 /* Diatom's display modes, in the order TortOS offers them: the sensible
@@ -356,24 +363,37 @@ static bool game_has_state(app *a, int s, game_entry *g)
 /* Card art, in order of preference: the box art the user put in .media/, then
  * the autosave preview -- the last frame they saw, which for a game in
  * progress is a better card than any box -- then a generated slab. */
+/* The system an entry on a shelf belongs to. Real shelves answer with
+ * themselves; Favorites answers per entry. */
+static int shelf_owner(app *a, int sysidx, int item)
+{
+	sysview *v = &a->view[sysidx];
+	if (v->owner && item >= 0 && item < v->list.count) return v->owner[item];
+	return sysidx;
+}
+
 static SDL_Texture *game_get_tex(void *ctx, int i, int *w, int *h)
 {
 	app *a = ctx;
 	int s = a->sys_cursor;
 	sysview *v = &a->view[s];
+	/* The game's own system, not the shelf's: on Favorites those differ, and
+	 * every one of these three lookups would otherwise go to the wrong
+	 * folder, the wrong state directory and the wrong accent. */
+	int o = shelf_owner(a, s, i);
 
 	if (!v->tex[i]) {
 		char path[LIB_PATH * 3];
 		snprintf(path, sizeof path, "%s/%s/.media/%s.png",
-		         P_ROMS, a->sys.systems[s].folder, v->list.items[i].name);
+		         P_ROMS, a->sys.systems[o].folder, v->list.items[i].name);
 		v->tex[i] = load_image(a->r, path, &v->tw[i], &v->th[i]);
 		if (!v->tex[i]) {
-			preview_path(a, s, &v->list.items[i], path, sizeof path);
+			preview_path(a, o, &v->list.items[i], path, sizeof path);
 			v->tex[i] = load_image(a->r, path, &v->tw[i], &v->th[i]);
 		}
 		if (!v->tex[i])
 			v->tex[i] = ui_make_card(a->r, v->list.items[i].title,
-			                         a->sys.systems[s].accent,
+			                         a->sys.systems[o].accent,
 			                         &v->tw[i], &v->th[i]);
 	}
 	*w = v->tw[i];
@@ -434,6 +454,13 @@ static void free_all_textures(app *a)
 				a->view[i].tex[k] = NULL;
 			}
 	}
+}
+
+/* Beside the save states and keyed like them, so a favorite travels with the
+ * saves it belongs next to and survives a card reflash. */
+static void fav_path(char *out, size_t n)
+{
+	snprintf(out, n, "%s/.tortos/favorites.cfg", P_SHARED);
 }
 
 /* ---------- where you were ------------------------------------------------ */
@@ -514,6 +541,36 @@ static void draw_hex(SDL_Renderer *r, float cx, float cy, float rad, SDL_Color c
  * `dim` is what makes its arrival visible: the blue is the one lit thing in
  * either mark - the same color as the boot line and the menu chrome - so
  * covering it is the light going out, and the shell closes dark. */
+/* A five-pointed star, as a fan over ten alternating points. Same primitive
+ * as draw_hex: SDL has no polygon fill, and SDL_RenderGeometry is already
+ * how the mark is drawn. The inner radius is 0.45 rather than the 0.382 a
+ * true pentagram wants - at the size this is drawn, the geometric answer
+ * reads as spindly. */
+static void draw_star(SDL_Renderer *r, float cx, float cy, float rad,
+                      SDL_Color col)
+{
+	SDL_Vertex v[11];
+	int idx[30], i;
+
+	v[0].position.x = cx; v[0].position.y = cy;
+	for (i = 0; i < 10; i++) {
+		float a = (float)(-M_PI / 2.0 + i * M_PI / 5.0);
+		float rr = (i & 1) ? rad * 0.45f : rad;
+		v[i + 1].position.x = cx + rr * cosf(a);
+		v[i + 1].position.y = cy + rr * sinf(a);
+	}
+	for (i = 0; i < 11; i++) {
+		v[i].color = col;
+		v[i].tex_coord.x = v[i].tex_coord.y = 0;
+	}
+	for (i = 0; i < 10; i++) {
+		idx[i * 3 + 0] = 0;
+		idx[i * 3 + 1] = 1 + i;
+		idx[i * 3 + 2] = 1 + (i + 1) % 10;
+	}
+	SDL_RenderGeometry(r, NULL, v, 11, idx, 30);
+}
+
 static void draw_shell(SDL_Renderer *r, float cx, float cy, float rad,
                        float head, float dim, Uint8 alpha)
 {
@@ -612,6 +669,10 @@ static void draw_games(app *a)
 {
 	sysview *v = &a->view[a->sys_cursor];
 	const system_cfg *s = &a->sys.systems[a->sys_cursor];
+	/* On Favorites the focused game's own system, so its accent, its state
+	 * and its favorite key all come from the console it belongs to. */
+	const system_cfg *gs = &a->sys.systems[
+		shelf_owner(a, a->sys_cursor, v->cursor)];
 	SDL_Rect focus;
 	char count[64];
 
@@ -629,15 +690,35 @@ static void draw_games(app *a)
 		 * its name: pressing A on it does not start it, it continues it.
 		 * Sized and centered off the title's own line, so it keeps sitting
 		 * with the text when the type scale moves. */
-		if (game_has_state(a, a->sys_cursor, g)) {
+		if (game_has_state(a, shelf_owner(a, a->sys_cursor, v->cursor), g)) {
 			int line = ui_font_line(UI_F_TITLE);
 			int rad = line / 8, dx = tx - tw / 2 - rad * 3, dy = 40 + line / 2;
-			SDL_SetRenderDrawColor(a->r, (Uint8)(s->accent >> 16),
-			                       (Uint8)(s->accent >> 8), (Uint8)s->accent, 255);
+			SDL_SetRenderDrawColor(a->r, (Uint8)(gs->accent >> 16),
+			                       (Uint8)(gs->accent >> 8), (Uint8)gs->accent, 255);
 			for (int k = -rad; k <= rad; k++) {
 				int w = (int)(sqrt((double)(rad * rad - k * k)) + 0.5);
 				SDL_RenderDrawLine(a->r, dx - w, dy + k, dx + w, dy + k);
 			}
+		}
+		/* On the right, because the autosave dot already owns the left. The
+		 * two say different things - one is "this is where you left off", the
+		 * other "you chose this" - and a reader should not have to work out
+		 * which mark is which by its shape alone. */
+		if (fav_is(gs->tag, g->file)) {
+			TTF_Font *ft = ui_font(UI_F_TITLE);
+			int line = ui_font_line(UI_F_TITLE);
+			int rad = line / 4;
+			/* Centered on the title's INK, not its em box. The box reserves a
+			 * descender's depth that most titles never use, so a mark placed
+			 * at the box's middle sits visibly below the letters. Descent is
+			 * negative, so half of it lifts. The autosave dot on the other
+			 * side predates this and still rides low; it should get the same
+			 * treatment. */
+			int dy = 40 + line / 2 + (ft ? TTF_FontDescent(ft) / 2 : 0);
+			SDL_Color c = { (Uint8)(gs->accent >> 16), (Uint8)(gs->accent >> 8),
+			                (Uint8)gs->accent, 255 };
+			draw_star(a->r, (float)(tx + tw / 2 + rad * 2), (float)dy,
+			          (float)rad, c);
 		}
 		ui_text(a->r, ui_font(UI_F_TITLE), g->title, tx, 40, 0, UI_TEXT);
 		snprintf(count, sizeof count, "%d / %d", v->cursor + 1, v->list.count);
@@ -1940,7 +2021,11 @@ static void respawn_resident(app *a)
 static void launch(app *a)
 {
 	sysview *v = &a->view[a->sys_cursor];
-	const system_cfg *s = &a->sys.systems[a->sys_cursor];
+	/* The game's system, not the shelf's. Launching a favorite off the
+	 * Favorites shelf otherwise loads whatever core the shelf claims, which
+	 * is none, and looks for the ROM under a folder that does not exist. */
+	int o = shelf_owner(a, a->sys_cursor, v->cursor);
+	const system_cfg *s = &a->sys.systems[o];
 	char core[CFG_STR * 2], elf[CFG_STR * 2], rom[LIB_PATH * 2];
 	char st[LIB_PATH * 2], pv[LIB_PATH * 2];
 	char save[CFG_STR * 2], bios[CFG_STR * 2];
@@ -1963,7 +2048,7 @@ static void launch(app *a)
 	/* The autosave story, by path rather than by convention: the state and the
 	 * preview live beside each other, the launch hands both over, and a game
 	 * always comes up where it was left. */
-	state_path(a, a->sys_cursor, &v->list.items[v->cursor], st, sizeof st);
+	state_path(a, o, &v->list.items[v->cursor], st, sizeof st);
 	preview_path(a, a->sys_cursor, &v->list.items[v->cursor], pv, sizeof pv);
 	persist_dir_ensure(a, a->sys_cursor);
 
@@ -2206,6 +2291,16 @@ static void update_games(app *a)
 		evict_far(v, TEX_KEEP_FAR);
 		return;
 	}
+	/* Y favorites what is under the cursor. Written through immediately:
+	 * there is no confirm step to hang the save off, and the alternative is
+	 * losing the choice to a flat battery. */
+	if (a->in.pressed[IN_Y] && n > 0) {
+		char p[CFG_STR * 2];
+		fav_toggle(a->sys.systems[shelf_owner(a, a->sys_cursor, v->cursor)].tag,
+		           v->list.items[v->cursor].file);
+		fav_path(p, sizeof p);
+		fav_save(p);
+	}
 	if (a->in.pressed[IN_ACCEPT]) { launch(a); return; }
 	cf_set_cursor(&v->cf, v->cursor, n);
 }
@@ -2246,6 +2341,111 @@ static void hide_empty_systems(app *a)
 	if (a->sys_cursor >= n) a->sys_cursor = n ? n - 1 : 0;
 }
 
+/* Build the Favorites shelf: one shelf whose games come from every other.
+ *
+ * Resolved against the shelves that actually scanned, so a favorite whose ROM
+ * is off the card simply does not appear - which is the same rule as hiding
+ * an empty system, and better than a card that opens onto a game that is not
+ * there. Sorted by name like every other shelf rather than by the order
+ * someone pressed Y, so it reads as a shelf and not as a history.
+ *
+ * Inserted at the front, which shifts every system index up by one, so the
+ * owners recorded during resolution are corrected afterwards. Runs before
+ * prime_sys_window, so there are no textures to move with them.
+ *
+ * It is NOT a system: no core, no folder, no extensions. Nothing may read
+ * those from a->sys.systems[] for a game on this shelf - shelf_owner() is how
+ * every one of them is found instead. */
+static void build_favorites_shelf(app *a)
+{
+	game_entry *items;
+	int *owner;
+	int n = 0, i, k, si, real;
+
+	if (fav_count() <= 0 || a->sys.count <= 0) return;
+	if (a->sys.count >= CFG_MAX_SYSTEMS) {
+		fprintf(stderr, "scan: no room for a Favorites shelf\n");
+		return;
+	}
+
+	items = calloc(FAV_MAX, sizeof *items);
+	owner = calloc(FAV_MAX, sizeof *owner);
+	if (!items || !owner) { free(items); free(owner); return; }
+
+	real = a->sys.count;
+	for (i = 0; i < fav_count(); i++) {
+		const char *tag, *file;
+		bool found = false;
+		if (!fav_at(i, &tag, &file)) continue;
+		for (si = 0; si < real; si++) {
+			if (strcmp(a->sys.systems[si].tag, tag)) continue;
+			for (k = 0; k < a->view[si].list.count; k++) {
+				if (strcmp(a->view[si].list.items[k].file, file)) continue;
+				items[n] = a->view[si].list.items[k];
+				owner[n] = si;
+				n++;
+				found = true;
+				break;
+			}
+			break;
+		}
+		/* Said out loud. A favorite that does not resolve is either a ROM
+		 * that has left the card or a key that never matched, and silently
+		 * showing one fewer game than the file lists is the kind of thing
+		 * that gets noticed months later. */
+		if (!found) fprintf(stderr, "fav: unresolved %s\t%s\n", tag, file);
+		if (n >= FAV_MAX) break;
+	}
+	if (n == 0) { free(items); free(owner); return; }
+
+	/* Insertion sort on the shown title, carrying the owner with it. n is at
+	 * most FAV_MAX and realistically a dozen. */
+	for (i = 1; i < n; i++) {
+		game_entry t = items[i];
+		int to = owner[i], j = i - 1;
+		while (j >= 0 && strcasecmp(items[j].name, t.name) > 0) {
+			items[j + 1] = items[j];
+			owner[j + 1] = owner[j];
+			j--;
+		}
+		items[j + 1] = t;
+		owner[j + 1] = to;
+	}
+
+	for (i = a->sys.count; i > 0; i--) {
+		a->sys.systems[i] = a->sys.systems[i - 1];
+		a->view[i] = a->view[i - 1];
+	}
+	for (i = 0; i < n; i++) owner[i]++;          /* everything moved up one */
+
+	memset(&a->sys.systems[0], 0, sizeof a->sys.systems[0]);
+	snprintf(a->sys.systems[0].name, CFG_STR, "%s", "Favorites");
+	snprintf(a->sys.systems[0].tag, sizeof a->sys.systems[0].tag, "%s", "FAV");
+	snprintf(a->sys.systems[0].card, CFG_STR, "%s", "FAVORITES.png");
+	a->sys.systems[0].accent = MENU_ACCENT;      /* TortOS's, not a console's */
+
+	memset(&a->view[0], 0, sizeof a->view[0]);
+	a->view[0].list.items = items;
+	a->view[0].list.count = n;
+	a->view[0].list.scanned = true;
+	a->view[0].owner = owner;
+	a->view[0].tex = calloc((size_t)n, sizeof *a->view[0].tex);
+	a->view[0].tw  = calloc((size_t)n, sizeof *a->view[0].tw);
+	a->view[0].th  = calloc((size_t)n, sizeof *a->view[0].th);
+	if (!a->view[0].tex || !a->view[0].tw || !a->view[0].th) {
+		free(a->view[0].tex); free(a->view[0].tw); free(a->view[0].th);
+		free(items); free(owner);
+		memset(&a->view[0], 0, sizeof a->view[0]);
+		for (i = 0; i < a->sys.count; i++) {
+			a->sys.systems[i] = a->sys.systems[i + 1];
+			a->view[i] = a->view[i + 1];
+		}
+		return;
+	}
+	a->sys.count++;
+	fprintf(stderr, "scan: %-16s %d games\n", "Favorites", n);
+}
+
 static void scan_all(app *a)
 {
 	for (int i = 0; i < a->sys.count; i++) {
@@ -2267,6 +2467,7 @@ static void scan_all(app *a)
 		        v->list.count);
 	}
 	hide_empty_systems(a);
+	build_favorites_shelf(a);
 }
 
 /* --shot <file.png> [--screen games|systems] draws one frame, writes it out
@@ -2442,6 +2643,13 @@ int main(int argc, char *argv[])
 	}
 	snprintf(path, sizeof path, "%s/tortos.cfg", P_ROOT);
 	cfg_load_tortos(path, &a.cfg);
+
+	/* Before the scan, because the scan builds the Favorites shelf out of
+	 * them and a shelf cannot be built from a list that has not been read. */
+	{	char fp[CFG_STR * 2];
+		fav_path(fp, sizeof fp);
+		fav_load(fp);
+	}
 
 	/* Scan every system now, not when one is opened: it is three directory
 	 * reads, it happens behind the boot animation, and it means walking into
