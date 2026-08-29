@@ -181,19 +181,49 @@ static void display_load(app *a)
 	fclose(f);
 }
 
-/* Every system every time: the file is one short line each, and rewriting the
- * lot means there is no way for it to drift out of step with systems.cfg. */
+/* Every visible system every time, plus whatever was already in the file for
+ * systems that are not on the shelf right now.
+ *
+ * The second half is not tidiness. Empty systems are hidden, so "every system"
+ * means "every system with games in it today" - and a plain rewrite would
+ * quietly erase the display mode of any system whose ROMs happen to be off
+ * the card at the moment. Take the ROMs out, change one unrelated setting,
+ * put the ROMs back, and the mode you had chosen is gone with no indication
+ * it ever existed. Preserving unknown tags costs one pass over a file that is
+ * nine short lines. */
 static void display_save(app *a)
 {
-	char p[CFG_STR * 2];
+	char p[CFG_STR * 2], line[CFG_STR];
+	char keep[CFG_MAX_SYSTEMS * 2][CFG_STR];
+	int nkeep = 0;
 	FILE *f;
 	int i;
 
 	snprintf(p, sizeof p, "%s/display.cfg", P_USERDATA);
+
+	f = fopen(p, "r");
+	if (f) {
+		while (fgets(line, sizeof line, f) && nkeep < (int)(sizeof keep / sizeof keep[0])) {
+			char *eq;
+			line[strcspn(line, "\r\n")] = '\0';
+			if (!line[0]) continue;
+			eq = strchr(line, '=');
+			if (!eq) continue;
+			*eq = '\0';
+			for (i = 0; i < a->sys.count; i++)
+				if (!strcmp(a->sys.systems[i].tag, line)) break;
+			*eq = '=';
+			if (i == a->sys.count) snprintf(keep[nkeep++], CFG_STR, "%s", line);
+		}
+		fclose(f);
+	}
+
 	f = fopen(p, "w");
 	if (!f) return;
 	for (i = 0; i < a->sys.count; i++)
 		fprintf(f, "%s=%s\n", a->sys.systems[i].tag, DMODES[a->view[i].dmode].name);
+	for (i = 0; i < nkeep; i++)
+		fprintf(f, "%s\n", keep[i]);
 	fclose(f);
 }
 
@@ -624,10 +654,31 @@ static void draw_games(app *a)
 /* The shelf, without presenting it: the options menu draws over a live one, so
  * the cards keep their tint easing behind the panel rather than freezing into
  * a still. */
+/* Nothing on the card at all.
+ *
+ * Hiding empty systems has an edge that hiding one system does not: if every
+ * system is empty the shelf is simply blank, and a blank screen is what a
+ * broken launcher looks like. Someone who has just written a card, or put the
+ * ROMs one directory too deep, needs to be told where the games go rather
+ * than left to conclude the device is dead. The path is named because that is
+ * the actual question being asked. */
+static void draw_no_games(app *a)
+{
+	int cy = TORTOS_SCREEN_H / 2;
+
+	ui_text(a->r, ui_font(UI_F_TITLE), "No games found",
+	        TORTOS_SCREEN_W / 2, cy - 60, 0, UI_TEXT_SOFT);
+	ui_text(a->r, ui_font(UI_F_MENU), "Put ROMs in Roms/<System>/ on the card",
+	        TORTOS_SCREEN_W / 2, cy + 6, 0, UI_TEXT_DIM);
+	ui_text(a->r, ui_font(UI_F_META), "one folder per system, named as in systems.cfg",
+	        TORTOS_SCREEN_W / 2, cy + 56, 0, UI_TEXT_DIM);
+}
+
 static void draw_shelf(app *a)
 {
 	draw_background(a);
-	if (a->screen == SCREEN_SYSTEMS) draw_systems(a);
+	if (a->sys.count <= 0) draw_no_games(a);
+	else if (a->screen == SCREEN_SYSTEMS) draw_systems(a);
 	else draw_games(a);
 	if (battery_low()) draw_low_battery_dot(a->r);
 }
@@ -2062,6 +2113,13 @@ static void enter_system(app *a)
 static void update_systems(app *a)
 {
 	int n = a->sys.count;
+
+	/* No systems means the modulo below divides by zero. Reachable the moment
+	 * empty systems started being hidden: a card with no ROMs on it, or ROMs
+	 * one directory too deep, now leaves nothing on the shelf and the first
+	 * press of left or right took the launcher down with SIGFPE. */
+	if (n <= 0) return;
+
 	if (in_repeat(&a->in, IN_LEFT))  a->sys_cursor = (a->sys_cursor - 1 + n) % n;
 	if (in_repeat(&a->in, IN_RIGHT)) a->sys_cursor = (a->sys_cursor + 1) % n;
 	if (a->in.pressed[IN_ACCEPT])    enter_system(a);
@@ -2154,6 +2212,40 @@ static void update_games(app *a)
 
 /* ---------- main ---------------------------------------------------------- */
 
+/* Drop systems with nothing in them.
+ *
+ * A card is a promise that opening it leads somewhere, and nine cards where
+ * three have games is eight swipes to find the one you wanted. systems.cfg
+ * stays the full list of what TortOS knows how to run; this is only what is
+ * worth showing today.
+ *
+ * Compacted in place rather than filtered at draw time because sys_cursor
+ * indexes sys.systems[] directly in a dozen places - the tint, the card art,
+ * the launch, the resume - and an index layer over all of them would be a lot
+ * of surface for a cosmetic rule. Both arrays move together or the shelf
+ * shows one system's card over another's games.
+ *
+ * Textures are not freed here: this runs before prime_sys_window, so there
+ * are none yet. */
+static void hide_empty_systems(app *a)
+{
+	int i, n = 0;
+
+	for (i = 0; i < a->sys.count; i++) {
+		if (a->view[i].list.count <= 0) continue;
+		if (n != i) {
+			a->sys.systems[n] = a->sys.systems[i];
+			a->view[n] = a->view[i];
+			memset(&a->view[i], 0, sizeof a->view[i]);
+		}
+		n++;
+	}
+	if (n != a->sys.count)
+		fprintf(stderr, "scan: %d of %d systems have games\n", n, a->sys.count);
+	a->sys.count = n;
+	if (a->sys_cursor >= n) a->sys_cursor = n ? n - 1 : 0;
+}
+
 static void scan_all(app *a)
 {
 	for (int i = 0; i < a->sys.count; i++) {
@@ -2174,6 +2266,7 @@ static void scan_all(app *a)
 		fprintf(stderr, "scan: %-16s %d games\n", a->sys.systems[i].folder,
 		        v->list.count);
 	}
+	hide_empty_systems(a);
 }
 
 /* --shot <file.png> [--screen games|systems] draws one frame, writes it out
