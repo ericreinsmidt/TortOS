@@ -8,7 +8,7 @@ SSH := sshpass -p 'tina' ssh -o StrictHostKeyChecking=no root@$(BRICK)
 
 .PHONY: all clean native toolchain vendor boot checkmark payload release install-card \
         adb adb-elf adb-res adb-vendor adb-restart adb-run adb-log \
-        deploy restart logs
+        check-cheevos deploy restart logs
 
 all: build/tortos.elf
 
@@ -22,6 +22,17 @@ build/tortos.elf: $(wildcard src/*.c) $(wildcard src/*.h) tools/setbright.c mk/c
 		echo "no sysroot; run: mk/fetch-sysroot.sh (needs the device)" >&2; exit 1; }
 	docker run --rm -v $(CURDIR):/work -w /work $(IMAGE) \
 		make -f mk/cross.mk SYSROOT=/work/sysroot VERSION=$(VERSION) build/tortos.elf build/setbright
+
+# The achievement half, checked on the host. It parses a file and filters a
+# list - no SDL, no device, no emulator - and every one of its claims fails
+# invisibly on hardware, which is the argument for checking it here.
+check-cheevos: build-native/cheevos-check
+	@./build-native/cheevos-check
+
+build-native/cheevos-check: tools/cheevos-check.c src/cheevos.c src/cheevos.h
+	@mkdir -p build-native
+	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
+	      -o $@ tools/cheevos-check.c src/cheevos.c
 
 # One-time: the cross-compiler image. Pinned by digest, so it does not drift.
 toolchain:

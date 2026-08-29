@@ -58,7 +58,7 @@ void cf_reset(coverflow *cf, int cursor);
 /* Move toward cursor (shortest path when wrapping). */
 void cf_set_cursor(coverflow *cf, int cursor, int count);
 /* Same, with the direction the user actually pressed: -1, 0 or +1. A ring of
- * two has both neighbours one step away, so it is the only size where the
+ * two has both neighbors one step away, so it is the only size where the
  * shortest-path arithmetic cannot work out which way to turn. */
 void cf_set_cursor_dir(coverflow *cf, int cursor, int count, int dir);
 /* Step animation and draw. Returns true while still animating. */

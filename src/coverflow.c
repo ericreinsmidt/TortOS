@@ -4,7 +4,7 @@
 #include <math.h>
 #include <string.h>
 
-/* The systems row: three cards, so they are large and the neighbours sit
+/* The systems row: three cards, so they are large and the neighbors sit
  * close. center_y is high because the reflection owns the bottom of the
  * screen and the shelf rail sits under it.
  *
@@ -100,7 +100,7 @@ void cf_set_cursor_dir(coverflow *cf, int cursor, int count, int dir)
 		 * is a single smooth step, not a slide across the whole list */
 		while (raw > count / 2) raw -= count;
 		while (raw < -count / 2) raw += count;
-		/* A ring of TWO has both neighbours one step away, so "shortest way
+		/* A ring of TWO has both neighbors one step away, so "shortest way
 		 * around" has no answer and the rule above returns the literal
 		 * difference every time: +1, -1, +1, -1. The row then rocks right and
 		 * left rather than turning, however the cards are drawn - which is

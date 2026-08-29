@@ -149,7 +149,7 @@ static void kb_draw(SDL_Renderer *r, const kb_state *k, const char *title,
 		SDL_RenderSetClipRect(r, NULL);
 
 		/* Caret at the measured pixel width rather than a fixed advance,
-		 * which a proportional face would not honour. */
+		 * which a proportional face would not honor. */
 		caret = f.x + 12 + pre - shift;
 		SDL_SetRenderDrawColor(r, (Uint8)(accent >> 16), (Uint8)(accent >> 8),
 		                       (Uint8)accent, 255);

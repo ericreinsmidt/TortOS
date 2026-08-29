@@ -106,6 +106,13 @@ static void coreopts_load(void)
 			continue;
 		}
 		if (!strchr(p, '=')) continue;         /* not key=value */
+		/* A line too long for the slot is REFUSED, not stored short. Half a
+		 * key=value pair is still a valid-looking key=value pair, and it would
+		 * be sent to a core as though someone meant it. */
+		if (strlen(p) >= sizeof coreopts[0].kv) {
+			fprintf(stderr, "coreopts.cfg: line too long, ignoring: %.40s...\n", p);
+			continue;
+		}
 		snprintf(coreopts[ncoreopts].tag, sizeof coreopts[0].tag, "%s", section);
 		snprintf(coreopts[ncoreopts].kv,  sizeof coreopts[0].kv,  "%s", p);
 		ncoreopts++;
@@ -610,9 +617,14 @@ bool plat_resident_ready(void)
 
 /* Ask for a game. Returns immediately -- the caller draws its launch
  * animation while the game loads, which is most of what a launch costs. */
+static void (*d_on_unlock)(int id);
+
+void plat_resident_on_unlock(void (*fn)(int id)) { d_on_unlock = fn; }
+
 bool plat_resident_send(const char *tag, const char *core, const char *rom,
                         const char *resume, const char *exit_state,
-                        const char *preview)
+                        const char *preview,
+                        int console, const char *cheevos)
 {
 	run_power_pressed = false;
 
@@ -642,11 +654,18 @@ bool plat_resident_send(const char *tag, const char *core, const char *rom,
 			}
 		}
 
+		/* console and cheevos on RUN rather than after it, so a set is
+		 * watched from the first frame - an achievement can fire in the
+		 * opening seconds and Diatom cannot evaluate what it has not been
+		 * given yet. Both are ignored by an older Diatom, which is what
+		 * ADR-0009 promises about unknown keys. */
 		if (!dsend("RUN\tcore=%s\trom=%s\ttag=%s"
-		           "\tresume=%s\texit_state=%s\tpreview=%s",
+		           "\tresume=%s\texit_state=%s\tpreview=%s"
+		           "\tconsole=%d\tcheevos=%s",
 		           core, rom, tag,
 		           resume ? resume : "", exit_state ? exit_state : "",
-		           preview ? preview : ""))
+		           preview ? preview : "",
+		           console, cheevos ? cheevos : ""))
 			return false;
 
 		/* The launcher owns levels while it draws (Diatom's ADR-0020), and
@@ -705,6 +724,20 @@ static void d_note_level(const char *l)
 	if (cnt < 2) return;
 	if (strncmp(k + 5, "volume", 6) == 0)          { d_pend_vol = idx; d_pend_vol_n = cnt; }
 	else if (strncmp(k + 5, "brightness", 10) == 0) { d_pend_bri = idx; d_pend_bri_n = cnt; }
+}
+
+/* "CHEEVO\tid=24698\tstate=unlocked". Diatom sends this the moment a
+ * condition fires, which is mid-game, when the emulator owns the display and
+ * this process cannot draw a thing. So it is recorded and shown at the next
+ * moment the launcher owns the screen: the in-game menu, or the shelf. */
+static void d_note_cheevo(const char *l)
+{
+	const char *i = strstr(l, "id=");
+	const char *st = strstr(l, "state=");
+
+	if (!i || !st) return;
+	if (strncmp(st + 6, "unlocked", 8) != 0) return;
+	if (d_on_unlock) d_on_unlock(atoi(i + 3));
 }
 
 /* "DISPLAY\tmode=native\tfilter=nearest\trect=256x224+384+272" */
@@ -790,6 +823,7 @@ static int diatom_wait(void)
 				snprintf(d_preview, sizeof d_preview, "%s", l + 13);
 			else if (strncmp(l, "LEVEL\t", 6) == 0) d_note_level(l);
 			else if (strncmp(l, "DISPLAY\t", 8) == 0) d_note_display(l);
+			else if (strncmp(l, "CHEEVO\t", 7) == 0) d_note_cheevo(l);
 			else if (strncmp(l, "EXIT", 4) == 0) { d_apply_levels(); return RES_EXIT; }
 			else if (strncmp(l, "ERROR", 5) == 0) {
 				fprintf(stderr, "diatom: %s\n", l);

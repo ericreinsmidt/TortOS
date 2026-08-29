@@ -125,6 +125,41 @@ filename, so renaming a ROM folder cannot orphan a save.
 
 ---
 
+## Achievements
+
+RetroAchievements, listed in the in-game menu, with what you have earned kept
+across games and cards.
+
+**The evaluation is Diatom's, and that is not a delegation of convenience.**
+Conditions compare against the *previous frame* - `0xH06f0<d0xH06f0` is "this
+byte is lower than it was last frame" - and the launcher only sees the socket
+every 100ms against a core running at 60Hz. Six frames in seven would be
+invisible to it, so unlocks would be missed silently. The launcher declares
+which console the game is and hands over the set; Diatom watches every frame
+(its ADR-0025 and ADR-0026).
+
+**Fetching a set is a host-side job**, `tools/ra-sets.py`, and the device never
+talks to RetroAchievements:
+
+```sh
+RA_USER=you RA_PASS=... python3 tools/ra-sets.py --roms /Volumes/TORTOS/Roms
+```
+
+That writes `Roms/<System>/.cheevos/<name>.set` beside the box art in
+`.media/`. RetroAchievements is HTTPS only and the Brick ships no TLS library,
+so putting the fetch on the device would mean vendoring one to download a file
+that never changes. Detection needs no network at all once the set is on the
+card. Measured 2026-08-29 over the 180-ROM test library: **166 games have a
+set, 8,297 achievements in total, and every condition in all of them parses.**
+
+**Submitting unlocks back to an account is not implemented**, and is blocked on
+registering this client with RetroAchievements rather than on code. Until then
+an unregistered client is served sets with a `Warning: Unknown Emulator` entry
+injected, which `ra-sets.py` drops and counts rather than showing you a fake
+achievement that unlocks itself five seconds into every game.
+
+---
+
 ## Controls
 
 | | |
@@ -220,7 +255,7 @@ game and a level set on the shelf mean the same thing on both sides.
 are Diatom's, named as it names them, and the launcher hands the chosen one
 over with every launch - the emulator's mode is global and outlives a game, so
 a system that has never been set would otherwise inherit whatever the last one
-chose. An unrecognised name in that file falls back to `aspect`.
+chose. An unrecognized name in that file falls back to `aspect`.
 
 `font_scale` moves every size together. The sizes themselves are one base and
 a multiplier per role - title, menu row, heading, the quiet line of counts and
@@ -253,6 +288,7 @@ make vendor     # the libretro cores      -> vendor/
 make payload    # the installable card    -> out/sd/ and out/TortOS-v1.0.zip
 make native     # host build of the launcher, for working on how it looks
 make boot       # regenerate the boot animation
+make check-cheevos  # the achievement half, on the host: parsing and filtering
 ```
 
 `make payload` needs a built Diatom binary (`DIATOM_ELF`, defaulting to a
@@ -293,7 +329,8 @@ off when the launch loop exits.
 ```
 src/            the launcher (0BSD)
 mk/             cross build, payload, deployment
-tools/          the boot-animation and card generators, and setbright
+tools/          the boot-animation and card generators, setbright, the
+                achievement fetcher and its check
 res/            the boot animation, the system cards, the font
 config/         systems.cfg and tortos.cfg as shipped
 sd/             the boot hook and launch.sh as they land on the card

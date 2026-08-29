@@ -10,6 +10,7 @@
  * screen is a row of cards, the name of the thing under the cursor, and a
  * rail saying where you are. Nothing else.
  */
+#include "cheevos.h"
 #include "config.h"
 #include "coverflow.h"
 #include "library.h"
@@ -461,7 +462,7 @@ static void free_all_textures(app *a)
 }
 
 /* The text sizes offered, spanning ui_set_font_scale's own 0.75..1.50 clamp
- * so every step is reachable and none is silently clamped into its neighbour.
+ * so every step is reachable and none is silently clamped into its neighbor.
  * A ladder rather than a nudge, because the fonts are reopened on every
  * change and there is no sense doing that for one percent. */
 static const float TEXT_SCALES[] = { 0.75f, 0.85f, 1.00f, 1.15f, 1.30f, 1.50f };
@@ -535,6 +536,39 @@ static void wifi_pref_save(bool on)
 static void fav_path(char *out, size_t n)
 {
 	snprintf(out, n, "%s/.tortos/favorites.cfg", P_SHARED);
+}
+
+/* Beside favorites, and shared rather than per-device for the same reason:
+ * what a player has earned belongs to them, not to the card it was earned on.
+ * Keyed by RetroAchievements game id and achievement id, so it survives a ROM
+ * being renamed or moved between folders - which the tag-and-file key that
+ * favorites use would not. */
+static void chv_store_path(char *out, size_t n)
+{
+	snprintf(out, n, "%s/.tortos/cheevos.cfg", P_SHARED);
+}
+
+/* Diatom watches this file, and it is rewritten per launch: it is the set
+ * minus what has already been earned, which only this side knows. Runtime
+ * scratch, so per-device rather than shared. */
+static void chv_active_path(char *out, size_t n)
+{
+	snprintf(out, n, "%s/cheevos-active.set", P_USERDATA);
+}
+
+/* Called from inside plat_resident_wait, mid-game, when the launcher owns
+ * nothing and can draw nothing. Recording is all that happens here; the
+ * telling happens the next time this process has the screen. */
+static void on_cheevo_unlocked(int id)
+{
+	if (chv_note_unlock(id)) {
+		char p[CFG_STR * 2];
+		chv_store_path(p, sizeof p);
+		/* Written through immediately rather than at exit. A game ends by
+		 * power button as often as by menu, and an achievement lost to a flat
+		 * battery is one the player has to earn twice. */
+		chv_earned_save(p);
+	}
 }
 
 /* ---------- where you were ------------------------------------------------ */
@@ -1709,7 +1743,8 @@ static void build_child_env(void)
  * to a save, because it is the one row whose effect you judge by looking at the
  * game behind the menu. */
 typedef enum {
-	GM_CONTINUE, GM_SAVE, GM_LOAD, GM_DISPLAY, GM_RESET, GM_QUIT, GM_ROWS
+	GM_CONTINUE, GM_SAVE, GM_LOAD, GM_DISPLAY, GM_CHEEVOS, GM_RESET, GM_QUIT,
+	GM_ROWS
 } gm_row;
 
 /* The paused frame, drawn where the game actually is.
@@ -1965,12 +2000,96 @@ static void gm_cycle_display(app *a, int d)
 static void gm_build(app *a, menu_row *out)
 {
 	static const char *label[GM_ROWS] = {
-		"Continue", "Save", "Load", "Display", "Reset", "Quit"
+		"Continue", "Save", "Load", "Display", "Achievements", "Reset", "Quit"
 	};
+	/* Static because menu_row holds a pointer, not a copy, and the row has to
+	 * outlive this function. */
+	static char cheevo_val[24];
 	int i;
 
 	for (i = 0; i < GM_ROWS; i++) out[i] = (menu_row){ label[i], NULL, true };
 	out[GM_DISPLAY].value = DMODES[a->view[a->sys_cursor].dmode].label;
+
+	/* Most of a library has no set, and a row that says so plainly is better
+	 * than one that is missing: "none" answers the question the player opened
+	 * the menu to ask. Drawn quiet, and does nothing when chosen. */
+	if (chv_count() > 0) {
+		snprintf(cheevo_val, sizeof cheevo_val, "%d / %d",
+		         chv_earned(), chv_count());
+	} else {
+		snprintf(cheevo_val, sizeof cheevo_val, "none");
+		out[GM_CHEEVOS].live = false;
+	}
+	out[GM_CHEEVOS].value = cheevo_val;
+}
+
+/* The list itself, over the paused frame. menu_draw already windows a list
+ * longer than the screen, which a set of 166 certainly is.
+ *
+ * Earned rows are drawn live and unearned quiet - the same distinction
+ * menu_draw makes for a placeholder, and it reads correctly here: what you
+ * have is bright, what is still ahead of you is not. */
+static void cheevos_screen(app *a, SDL_Texture *bg)
+{
+	int n = chv_count(), sel = 0, i, done = 0;
+	menu_row *rows;
+	char (*vals)[16];
+	char heading[192];
+
+	if (n <= 0) return;
+	rows = calloc((size_t)n, sizeof *rows);
+	vals = calloc((size_t)n, sizeof *vals);
+	if (!rows || !vals) { free(rows); free(vals); return; }
+
+	for (i = 0; i < n; i++) {
+		const cheevo *c = chv_at(i);
+
+		snprintf(vals[i], sizeof vals[i], "%d", c->points);
+		rows[i].label = c->title;
+		rows[i].value = vals[i];
+		rows[i].live  = c->earned || c->earned_now;
+	}
+	snprintf(heading, sizeof heading, "%s   %d/%d   %d/%d points",
+	         chv_game_title(), chv_earned(), n,
+	         chv_points_earned(), chv_points_total());
+
+	plat_input_flush();
+	memset(&a->in, 0, sizeof a->in);
+
+	while (!done && !want_quit) {
+		plat_input_poll(&a->in);
+
+		if (in_repeat(&a->in, IN_UP))   sel = (sel + n - 1) % n;
+		if (in_repeat(&a->in, IN_DOWN)) sel = (sel + 1) % n;
+		/* A set runs to well over a hundred entries, so the shoulder buttons
+		 * page it the same way they page a shelf. */
+		if (in_repeat(&a->in, IN_L1))   sel = sel > 8 ? sel - 8 : 0;
+		if (in_repeat(&a->in, IN_R1))   sel = sel < n - 9 ? sel + 8 : n - 1;
+		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU] ||
+		    a->in.pressed[IN_ACCEPT])
+			done = 1;
+		/* Power still stops the game from in here. Not trapping it would
+		 * make this screen the one place in the launcher that ignores it. */
+		if (a->in.pressed[IN_POWER]) {
+			plat_resident_line("STOP");
+			done = 1;
+		}
+
+		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 255);
+		SDL_RenderClear(a->r);
+		draw_paused_frame(a, bg);
+		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 185);
+		SDL_RenderFillRect(a->r, NULL);
+		menu_draw(a, heading, rows, n, sel, 0, a->tint);
+		SDL_RenderPresent(a->r);
+		SDL_Delay(8);
+	}
+
+	free(rows);
+	free(vals);
+	plat_input_flush();
+	memset(&a->in, 0, sizeof a->in);
 }
 
 /* Measured across every mode label, so cycling the row does not resize the
@@ -2067,6 +2186,9 @@ static void game_menu(app *a)
 			 * answered to left and right was a row that looked broken. */
 			case GM_DISPLAY:
 				gm_cycle_display(a, +1);
+				break;
+			case GM_CHEEVOS:
+				cheevos_screen(a, bg);
 				break;
 			case GM_RESET:
 				plat_resident_line("RESET");
@@ -2176,6 +2298,8 @@ static void launch(app *a)
 	char core[CFG_STR * 2], elf[CFG_STR * 2], rom[LIB_PATH * 2];
 	char st[LIB_PATH * 2], pv[LIB_PATH * 2];
 	char save[CFG_STR * 2], bios[CFG_STR * 2];
+	char active[LIB_PATH * 2] = "";
+	int  console = 0;
 	/* 18 fixed entries plus NULL, then two per core option. Sized off the
 	 * loader's own cap so the two cannot drift apart: the previous 20 was
 	 * already 18 full, and a silent bound check would have dropped every
@@ -2199,6 +2323,28 @@ static void launch(app *a)
 	preview_path(a, a->sys_cursor, &v->list.items[v->cursor], pv, sizeof pv);
 	persist_dir_ensure(a, a->sys_cursor);
 
+	/* Achievements, if this game has any. Most of a library does not, and that
+	 * is not a failure: chv_load says so by returning false and everything
+	 * below carries on with console 0 and no set, which is what Diatom reads
+	 * as "this game has none". */
+	{
+		char set[LIB_PATH * 2];
+
+		chv_path(P_ROMS, s->folder, v->list.items[v->cursor].name,
+		         set, sizeof set);
+		if (chv_load(set)) {
+			chv_active_path(active, sizeof active);
+			if (chv_write_active(active)) {
+				console = chv_console();
+			} else {
+				/* Everything in the set is already earned. Nothing to watch,
+				 * and sending an empty file would have Diatom log a set with
+				 * no achievements in it every launch. */
+				active[0] = '\0';
+			}
+		}
+	}
+
 	remember_place(a);
 
 	if (plat_resident_ready()) {
@@ -2211,7 +2357,8 @@ static void launch(app *a)
 		 * because this process is blocked - except when the player opens
 		 * the in-game menu, which is drawn HERE now, over the frame the
 		 * emulator hands us on the way into its pause. */
-		if (plat_resident_send(s->tag, core, rom, st, st, pv)) {
+		if (plat_resident_send(s->tag, core, rom, st, st, pv,
+		                       console, active[0] ? active : NULL)) {
 			int r;
 
 			/* Straight after RUN and the levels, and for the same reason: the
@@ -2902,6 +3049,12 @@ int main(int argc, char *argv[])
 		fav_load(fp);
 	}
 
+	{	char cp[CFG_STR * 2];
+		chv_store_path(cp, sizeof cp);
+		chv_earned_load(cp);
+		plat_resident_on_unlock(on_cheevo_unlocked);
+	}
+
 	/* Scan every system now, not when one is opened: it is three directory
 	 * reads, it happens behind the boot animation, and it means walking into
 	 * a system is a frame rather than a wait. */
@@ -3014,7 +3167,7 @@ int main(int argc, char *argv[])
 	wait_for_boot_anim();
 
 	/* Swallow the input noise a boot produces -- replayed wake presses, the
-	 * bursts input devices emit as they come up -- before honouring anything. */
+	 * bursts input devices emit as they come up -- before honoring anything. */
 	{
 		Uint32 grace = SDL_GetTicks() + 350;
 		while (SDL_GetTicks() < grace) { plat_input_poll(&a.in); SDL_Delay(8); }

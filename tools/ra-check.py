@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Report which games RetroAchievements recognises, and which have a set.
+"""Report which games RetroAchievements recognizes, and which have a set.
 
     tools/ra-check.py [--roms DIR] [--system NAME] [--verbose]
 
@@ -17,7 +17,7 @@ coverage. The real figure was 93%. Anything that turns a network failure into
 a negative result will eventually tell you a confident lie; failures are
 retried here and counted separately.
 
-Measured 2026-08-29 over 180 ROMs: 168 recognised. Of the 12 that are not,
+Measured 2026-08-29 over 180 ROMs: 168 recognized. Of the 12 that are not,
 8 are fan translations - romhacks are in no No-Intro-derived database under
 those names, so RA has never seen their hashes and never will.
 """
@@ -138,7 +138,7 @@ def main():
               f"   unanswered: {failed}")
     tr = [m for m in misses if "Translated" in m[1]]
     if misses:
-        print(f"\n  not recognised: {len(misses)}, of which fan translations: {len(tr)}")
+        print(f"\n  not recognized: {len(misses)}, of which fan translations: {len(tr)}")
         for folder, f in misses:
             if "Translated" not in f:
                 print(f"    {folder}: {f}")
