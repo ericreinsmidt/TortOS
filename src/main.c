@@ -460,6 +460,54 @@ static void free_all_textures(app *a)
 	}
 }
 
+/* The text sizes offered, spanning ui_set_font_scale's own 0.75..1.50 clamp
+ * so every step is reachable and none is silently clamped into its neighbour.
+ * A ladder rather than a nudge, because the fonts are reopened on every
+ * change and there is no sense doing that for one percent. */
+static const float TEXT_SCALES[] = { 0.75f, 0.85f, 1.00f, 1.15f, 1.30f, 1.50f };
+#define TEXT_SCALE_COUNT ((int)(sizeof TEXT_SCALES / sizeof TEXT_SCALES[0]))
+
+static int text_scale_step(void)
+{
+	float cur = ui_get_font_scale();
+	int i, best = 0;
+	float bd = 1e9f;
+
+	/* Nearest, not equal: the value may have come from tortos.cfg, where
+	 * anything in range is legal and 1.07 is as valid as 1.00. */
+	for (i = 0; i < TEXT_SCALE_COUNT; i++) {
+		float d = cur > TEXT_SCALES[i] ? cur - TEXT_SCALES[i] : TEXT_SCALES[i] - cur;
+		if (d < bd) { bd = d; best = i; }
+	}
+	return best;
+}
+
+static void text_scale_save(float scale)
+{
+	char p[CFG_STR * 2];
+	FILE *f;
+
+	snprintf(p, sizeof p, "%s/textsize.cfg", P_USERDATA);
+	f = fopen(p, "w");
+	if (!f) return;
+	fprintf(f, "font_scale=%.2f\n", (double)scale);
+	fclose(f);
+}
+
+static float text_scale_load(float fallback)
+{
+	char p[CFG_STR * 2];
+	FILE *f;
+	float v = 0.0f;
+
+	snprintf(p, sizeof p, "%s/textsize.cfg", P_USERDATA);
+	f = fopen(p, "r");
+	if (!f) return fallback;
+	if (fscanf(f, "font_scale=%f", &v) != 1) v = 0.0f;
+	fclose(f);
+	return v > 0.0f ? v : fallback;
+}
+
 /* Whether the radio should come up at boot.
  *
  * In .userdata rather than tortos.cfg, on the same split as brightness: the
@@ -1197,7 +1245,7 @@ static int menu_build(app *a, screen_id screen, int sys,
 	out[PM_BT]           = (menu_row){ "Bluetooth",         "not yet", false };
 	out[PM_ACHIEVEMENTS] = (menu_row){ "RetroAchievements", "not yet", false };
 	out[PM_SCRAPE]       = (menu_row){ "Box art scraping",  "not yet", false };
-	out[PM_TEXT]         = (menu_row){ "Text size",         b->a,      false };
+	out[PM_TEXT]         = (menu_row){ "Text size",         b->a,      true  };
 	out[PM_SLEEP]        = (menu_row){ "Sleep timer",       "not yet", false };
 	out[PM_ABOUT]        = (menu_row){ "About TortOS",      NULL,      true  };
 	out[PM_POWER]        = (menu_row){ "Power off",         NULL,      true  };
@@ -1563,6 +1611,29 @@ static void tortos_menu(app *a)
 				sysview *v = &a->view[a->sys_cursor];
 				v->dmode = (v->dmode + d + DMODE_COUNT) % DMODE_COUNT;
 				display_save(a);
+			}
+		}
+		/* Text size, on the same left/right idiom as Display mode. Changing it
+		 * reopens every font, so the whole UI is rebuilt: the panel's cached
+		 * width is measured from font metrics, and any card generated for a
+		 * game with no box art has its title baked in at the old size. Both
+		 * are dropped here rather than left to look subtly wrong. */
+		if (a->screen == SCREEN_SYSTEMS && sel == PM_TEXT) {
+			int d = in_repeat(&a->in, IN_RIGHT) ? 1
+			      : in_repeat(&a->in, IN_LEFT)  ? -1 : 0;
+			if (d) {
+				int k = text_scale_step() + d;
+				if (k < 0) k = 0;
+				if (k >= TEXT_SCALE_COUNT) k = TEXT_SCALE_COUNT - 1;
+				if (TEXT_SCALES[k] != ui_get_font_scale()) {
+					free_all_textures(a);
+					ui_quit();
+					ui_set_font_scale(TEXT_SCALES[k]);
+					ui_init(a->r, P_FONT);
+					a->menu_w = 0;      /* fonts reopened: remeasure the panel */
+					prime_sys_window(a);
+					text_scale_save(TEXT_SCALES[k]);
+				}
 			}
 		}
 		/* Volume and brightness keep working here, as they do everywhere. */
@@ -2860,7 +2931,10 @@ int main(int argc, char *argv[])
 
 	/* Before ui_init, which is where the sizes are decided; it persists across
 	 * the ui_quit/ui_init pair the standalone-emulator fallback goes through. */
-	ui_set_font_scale(a.cfg.font_scale);
+	/* The size the player chose beats the shipped default, the same way a
+	 * saved brightness does. Read before ui_init, which is when the scale is
+	 * applied. */
+	ui_set_font_scale(text_scale_load(a.cfg.font_scale));
 	if (!ui_init(a.r, P_FONT)) fprintf(stderr, "font init failed\n");
 	t_mark("font+settings");
 
