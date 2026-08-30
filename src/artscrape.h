@@ -62,7 +62,13 @@ int art_step(void);
 typedef struct {
 	int  systems, systems_done;
 	int  found, missing, skipped;
-	char now[128];
+	char now[128];       /* what it is doing: a game, or a system */
+	/* Why a whole system was passed over, if one was. Kept apart from `now`
+	 * because the two are wanted at different times: `now` is progress and is
+	 * meaningless once the run ends, while this is the only thing worth
+	 * saying afterwards. Showing `now` at the end left the panel naming the
+	 * last game it fetched, which reads as still working on it. */
+	char problem[128];
 } art_progress;
 
 void art_status(art_progress *out);

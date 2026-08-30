@@ -2562,8 +2562,13 @@ static void art_screen(app *a, const char *only, const char *one,
 			                      NULL, false };
 			nrows = 2;
 		} else {
+			/* Running: what it is doing. Finished: what went wrong, or
+			 * that it is done - never the last game it happened to fetch,
+			 * which is what this said before and reads as still working
+			 * on it. */
 			art_head(head, sizeof head,
-			         p.now[0] ? p.now : (working ? "starting" : "nothing to do"));
+			         working ? (p.now[0] ? p.now : "starting")
+			         : p.problem[0] ? p.problem : "Done");
 			nrows = art_rows(rows, where, counts, working);
 		}
 

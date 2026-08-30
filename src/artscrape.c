@@ -597,6 +597,7 @@ static int next_system(const char *why)
 	if (why) {
 		snprintf(g_st.now, sizeof g_st.now, "%s: %s",
 		         g_si < g_nsys ? g_sys[g_si].folder : "?", why);
+		snprintf(g_st.problem, sizeof g_st.problem, "%s", g_st.now);
 		fprintf(stderr, "art: %s\n", g_st.now);
 	}
 	g_si++;
