@@ -15,9 +15,66 @@
  * the same shape as check-rahash, and for the same reason.
  */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "../src/artscrape.h"
+
+static int failures;
+
+#define BEATS(want, a, b)                                                     \
+	do {                                                                      \
+		int sa = art_tag_score((want), (a)), sb = art_tag_score((want), (b)); \
+		if (sa <= sb) {                                                       \
+			fprintf(stderr, "  FAIL: for %s\n        %s (%d) should beat"    \
+			        " %s (%d)\n", (want), (a), sa, (b), sb);                  \
+			failures++;                                                       \
+		}                                                                     \
+	} while (0)
+
+/* Which of several candidates a game gets.
+ *
+ * 1703 of NES's 13418 entries normalise to a title some other entry also
+ * normalises to - "contra" alone has eight - so the fuzzy pass is choosing,
+ * not finding. It used to take whichever sorted first, which is alphabetical,
+ * which is a Japanese release as often as a US one. Nothing about the result
+ * says which happened: you get box art, it is just the wrong box.
+ *
+ * The candidates below are real, copied out of the NES listing.
+ */
+static void check_scoring(void)
+{
+	fprintf(stderr, "  picking between candidates that normalise alike:\n");
+
+	/* The plain case, and the one that was going wrong. */
+	BEATS("Contra (USA)", "Contra (USA)", "Contra (Japan)");
+	BEATS("Contra (USA)", "Contra (USA)", "Contra (Japan) (Sample)");
+
+	/* A TOSEC-style name spells the region differently. Without the alias
+	 * table this scored the same as the Japanese one. */
+	BEATS("Contra (USA)", "Contra (1988-02)(Konami)(US)",
+	      "Contra (1988-02-09)(Konami)(JP)");
+
+	/* Extra tags cost something, but never enough to lose to the wrong
+	 * region: a revision of the right release beats the wrong release. */
+	BEATS("Crystalis (USA)", "Crystalis (USA)", "Crystalis (USA) (Beta)");
+	BEATS("Blaster Master (USA)", "Blaster Master (USA) (Beta) (1988-05-20)",
+	      "Blaster Master (Japan) (Virtual Console)");
+
+	/* Several regions in one group, and a language marker the card lacks. */
+	BEATS("Sonic The Hedgehog (USA, Europe, Brazil)",
+	      "Sonic The Hedgehog (USA, Europe, Brazil) (En)",
+	      "Sonic The Hedgehog (Japan)");
+
+	/* A World dump is what a US card wants when there is no US one. */
+	BEATS("Alex Kidd in Miracle World (USA)",
+	      "Alex Kidd in Miracle World (World)",
+	      "Alex Kidd in Miracle World (Japan)");
+
+	/* And an untagged entry must not beat the right region, or "Contra"
+	 * would win over "Contra (USA)" for every card. */
+	BEATS("Contra (USA)", "Contra (USA)", "Contra");
+}
 
 int main(int argc, char **argv)
 {
@@ -25,6 +82,15 @@ int main(int argc, char **argv)
 	size_t n;
 
 	(void)argc; (void)argv;
+	if (getenv("ART_SCORING")) {
+		check_scoring();
+		if (failures) {
+			fprintf(stderr, "\n  %d scoring check(s) failed\n", failures);
+			return 1;
+		}
+		fprintf(stderr, "  ok: every candidate was chosen correctly\n");
+		return 0;
+	}
 	/* One name per line in, one normalised form per line out. Deliberately
 	 * dumb: the Python drives it, so this stays a pipe rather than growing
 	 * its own idea of where a library is. */

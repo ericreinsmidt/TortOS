@@ -77,4 +77,14 @@ void art_status(art_progress *out);
  * against each other. */
 void art_norm(const char *in, char *out, size_t outn);
 
+/* How well `cand`'s region and language tags match `want`'s. Higher is better
+ * and it may go negative.
+ *
+ * Exposed because it decides which of several identical-looking candidates a
+ * game gets, and getting that wrong is silent: 1703 of the 13418 NES entries
+ * normalise to a title some other entry also normalises to, so a US dump could
+ * be handed Japanese box art and nothing would say so. tools/artscrape-check.c
+ * asserts the orderings that matter. */
+int art_tag_score(const char *want, const char *cand);
+
 #endif

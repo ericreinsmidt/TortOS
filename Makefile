@@ -96,6 +96,7 @@ build-native/idle-check: tools/idle-check.c src/idle.c src/idle.h FORCE
 # The device's title matcher against the host tool's. A drift here does not
 # fail, it just finds fewer games - see tools/artscrape-check.c.
 check-artscrape: build-native/artscrape-check
+	@ART_SCORING=1 ./build-native/artscrape-check
 	@python3 tools/artscrape-check.py
 
 build-native/artscrape-check: tools/artscrape-check.c src/artscrape.c src/artscrape.h

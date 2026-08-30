@@ -132,6 +132,121 @@ void art_norm(const char *in, char *out, size_t outn)
 	out[o] = '\0';
 }
 
+/* ---- choosing between candidates that normalise alike ------------------ */
+
+#define TAG_MAX   24
+#define TAGS_MAX  12
+
+/* Two catalogues spell the same region differently. No-Intro says USA and
+ * Europe; the TOSEC-style names libretro also carries say US and EU. Without
+ * this, "Contra (1988-02)(Konami)(US)" shares nothing with "Contra (USA)" and
+ * scores the same as the Japanese release. */
+static const struct { const char *from, *to; } TAG_ALIAS[] = {
+	{ "us",     "usa" },
+	{ "eu",     "europe" },
+	{ "jp",     "japan" },
+	{ "world",  "usa" },        /* a World dump is the one a US card wants */
+};
+
+/* Tags likely to mean "not the release you have": prototypes, betas, and the
+ * demo discs that share a title with the game. A candidate carrying one of
+ * these is only picked when nothing else matched. */
+static const char *TAG_BAD[] = {
+	"beta", "proto", "prototype", "sample", "demo", "alpha", "hack", "unl",
+};
+
+/* Every parenthesised group in `s`, split on commas, lowercased. "Sonic (USA,
+ * Europe, Brazil) (En)" gives usa, europe, brazil, en. */
+static int name_tags(const char *s, char out[][TAG_MAX], int max)
+{
+	int n = 0;
+
+	while (*s && n < max) {
+		const char *e;
+		size_t len;
+
+		if (*s != '(') { s++; continue; }
+		s++;
+		e = strchr(s, ')');
+		if (!e) break;
+		while (s < e && n < max) {
+			const char *c = s;
+			size_t i, o = 0;
+
+			while (c < e && *c != ',') c++;
+			len = (size_t)(c - s);
+			for (i = 0; i < len && o + 1 < TAG_MAX; i++) {
+				unsigned char ch = (unsigned char)s[i];
+
+				if (isalnum(ch)) out[n][o++] = (char)tolower(ch);
+				else if (o && out[n][o - 1] != ' ') out[n][o++] = ' ';
+			}
+			while (o && out[n][o - 1] == ' ') o--;
+			out[n][o] = '\0';
+			if (o) {
+				size_t k;
+
+				for (k = 0; k < sizeof TAG_ALIAS / sizeof TAG_ALIAS[0]; k++)
+					if (!strcmp(out[n], TAG_ALIAS[k].from)) {
+						snprintf(out[n], TAG_MAX, "%s", TAG_ALIAS[k].to);
+						break;
+					}
+				n++;
+			}
+			s = c < e ? c + 1 : e;
+		}
+		s = e + 1;
+	}
+	return n;
+}
+
+int art_tag_score(const char *want, const char *cand)
+{
+	char w[TAGS_MAX][TAG_MAX], c[TAGS_MAX][TAG_MAX];
+	int nw = name_tags(want, w, TAGS_MAX);
+	int nc = name_tags(cand, c, TAGS_MAX);
+	int i, j, score = 0;
+
+	/* REGION HAS TO DOMINATE, and the weights are what make it. This is box
+	 * art: what the box looks like is decided by which region pressed it, so
+	 * a prototype of the right release still shows the right box while a
+	 * different region shows a different one.
+	 *
+	 * The first version penalised a bad-dump tag by 8, enough to drop
+	 * "Blaster Master (USA) (Beta)" below "Blaster Master (Japan) (Virtual
+	 * Console)" - a Japanese box for a US card, chosen deliberately. The
+	 * check caught it on its first run. A dump tag breaks ties inside a
+	 * region now; it never flips one.
+	 *
+	 *     shared tag   +3     the region matched
+	 *     stray tag    -1     it carries something we did not ask for
+	 *     missing tag  -2     we asked for something it does not have
+	 *     bad dump     -2     beta, proto, sample - on top of the stray
+	 */
+	for (i = 0; i < nc; i++) {
+		bool shared = false;
+		size_t k;
+
+		for (j = 0; j < nw; j++)
+			if (!strcmp(c[i], w[j])) { shared = true; break; }
+		if (shared) { score += 3; continue; }
+		score -= 1;
+
+		for (k = 0; k < sizeof TAG_BAD / sizeof TAG_BAD[0]; k++)
+			if (!strcmp(c[i], TAG_BAD[k])) { score -= 2; break; }
+	}
+	/* A tag we wanted and did not get costs more than a stray one, or an
+	 * untagged "Contra" would beat "Contra (USA)" for a USA card. */
+	for (j = 0; j < nw; j++) {
+		bool shared = false;
+
+		for (i = 0; i < nc; i++)
+			if (!strcmp(c[i], w[j])) { shared = true; break; }
+		if (!shared) score -= 2;
+	}
+	return score;
+}
+
 /* ---- percent-encoding a path segment ----------------------------------- */
 
 /* For a URL, so spaces and the punctuation in "Sega - Mega Drive - Genesis"
@@ -354,6 +469,7 @@ static bool match(const char *base, char *out, size_t outn)
 	char nb[NAME_MAX_], cand[NAME_MAX_], cnorm[NAME_MAX_];
 	const char *p;
 	bool have_norm = false;
+	int best = 0;
 
 	art_norm(base, nb, sizeof nb);
 
@@ -376,11 +492,20 @@ static bool match(const char *base, char *out, size_t outn)
 			snprintf(out, outn, "%s", cand);
 			return true;
 		}
-		if (!have_norm && nb[0]) {
+		if (nb[0]) {
 			art_norm(cand, cnorm, sizeof cnorm);
 			if (!strcmp(cnorm, nb)) {
-				snprintf(out, outn, "%s", cand);
-				have_norm = true;               /* but keep looking for one */
+				/* Several entries normalise alike - 1703 of NES's 13418 - and
+				 * taking the first meant taking whichever sorted first, which
+				 * is a Japanese release as often as not. Score them on how
+				 * well their region and language tags overlap the card's. */
+				int sc = art_tag_score(base, cand);
+
+				if (!have_norm || sc > best) {
+					best = sc;
+					snprintf(out, outn, "%s", cand);
+					have_norm = true;
+				}
 			}
 		}
 	}
