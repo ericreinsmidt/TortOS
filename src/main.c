@@ -90,6 +90,10 @@ typedef struct {
 	unsigned tint;          /* eased toward the focused system's accent */
 	in_state in;
 	bool running;
+	/* Set for one launch only: the game that comes back after a shutdown
+	 * opens with the menu up. Cleared as it is used, so quitting to the
+	 * shelf and launching the same game again behaves normally. */
+	bool resume_menu;
 	SDL_Renderer *r;
 } app;
 
@@ -701,6 +705,86 @@ static void remember_place(app *a)
 	fprintf(f, "%s\n%s\n", a->sys.systems[a->sys_cursor].tag,
 	        v->list.count ? v->list.items[v->cursor].file : "");
 	fclose(f);
+}
+
+/* Whether a game was running when this process last stopped.
+ *
+ * `.last` says what you were LOOKING at, which is not the same question - it
+ * is written when the shelf moves as well as when a game starts, and it says
+ * nothing about whether that game was still up. This is written at launch and
+ * cleared only on a clean return to the shelf, so a power-off mid-game and a
+ * quit are distinguishable, which is the whole point.
+ *
+ * Beside `.last` and in the same shape, because it is the same two facts. */
+static void playing_path(char *out, size_t n)
+{
+	snprintf(out, n, "%s/.playing", P_ROOT);
+}
+
+static void playing_set(app *a)
+{
+	char p[CFG_STR * 2];
+	sysview *v = &a->view[a->sys_cursor];
+	int o = shelf_owner(a, a->sys_cursor, v->cursor);
+	FILE *f;
+
+	if (v->list.count == 0) return;
+	playing_path(p, sizeof p);
+	f = fopen(p, "w");
+	if (!f) return;
+	/* The GAME's system, not the shelf's - launching from Favorites otherwise
+	 * records a system that does not own the ROM, exactly as the launch path
+	 * itself had to learn. */
+	fprintf(f, "%s\n%s\n", a->sys.systems[o].tag, v->list.items[v->cursor].file);
+	fclose(f);
+}
+
+static void playing_clear(void)
+{
+	char p[CFG_STR * 2];
+
+	playing_path(p, sizeof p);
+	remove(p);
+}
+
+/* Point the cursor at whatever was being played, if anything was, and say so.
+ * Only when there is a state to come back to: without one, "resume" would
+ * mean starting the game from its title screen, which is not what anyone
+ * powering off mid-game is asking for. */
+static bool playing_restore(app *a)
+{
+	char p[CFG_STR * 2], tag[64] = { 0 }, file[LIB_PATH] = { 0 }, st[LIB_PATH * 2];
+	FILE *f;
+	int i, k;
+
+	playing_path(p, sizeof p);
+	f = fopen(p, "r");
+	if (!f) return false;
+	if (fgets(tag, sizeof tag, f)) tag[strcspn(tag, "\r\n")] = 0;
+	if (fgets(file, sizeof file, f)) file[strcspn(file, "\r\n")] = 0;
+	fclose(f);
+	if (!tag[0] || !file[0]) { playing_clear(); return false; }
+
+	for (i = 0; i < a->sys.count; i++) {
+		if (strcmp(a->sys.systems[i].tag, tag) != 0) continue;
+		for (k = 0; k < a->view[i].list.count; k++) {
+			if (strcmp(a->view[i].list.items[k].file, file) != 0) continue;
+
+			state_path(a, i, &a->view[i].list.items[k], st, sizeof st);
+			if (access(st, R_OK) != 0) {
+				/* The game is gone from under the state, or the autosave
+				 * never landed. Clear the marker rather than trying every
+				 * boot from here on. */
+				playing_clear();
+				return false;
+			}
+			a->sys_cursor = i;
+			a->view[i].cursor = k;
+			return true;
+		}
+	}
+	playing_clear();                  /* the ROM or its system is no longer here */
+	return false;
 }
 
 static void restore_place(app *a)
@@ -2488,7 +2572,7 @@ static void launch(app *a)
 	 * already 18 full, and a silent bound check would have dropped every
 	 * option rather than failing loudly. */
 	char *argv[20 + 2 * 32];
-	bool resident = false;
+	bool resident = false, want_menu;
 	int n = 0;
 
 	if (v->list.count == 0) return;
@@ -2547,6 +2631,15 @@ static void launch(app *a)
 	}
 
 	remember_place(a);
+	/* Before the launch, not after: a device that loses power during the load
+	 * was still playing this game. */
+	playing_set(a);
+
+	/* Read and cleared together. Leaving it set would have the NEXT game
+	 * launched in this session open with its menu up too, which is the sort
+	 * of thing that looks like a haunting rather than a bug. */
+	want_menu = a->resume_menu;
+	a->resume_menu = false;
 
 	if (plat_resident_ready()) {
 		/* The emulator is already up, holding its context and every core,
@@ -2568,6 +2661,11 @@ static void launch(app *a)
 			 * whatever the previous one chose. Ordered on the same socket, so
 			 * it lands before the first frame. */
 			plat_resident_line("SETDISPLAY\tmode=%s", DMODES[v->dmode].name);
+			/* Coming back from a shutdown: the game loads and the menu is
+			 * already up, so nothing is handed control of a game the player
+			 * may not have meant to resume. Ordered on the same socket, so it
+			 * lands before the first frame the player could act on. */
+			if (want_menu) plat_resident_line("PAUSE");
 			/* No launch animation, and it is a display-safety rule, not a
 			 * taste call: Diatom presents through fbdev, this process
 			 * through GL, and the handoff spike's one invariant is that
@@ -2671,6 +2769,11 @@ static void launch(app *a)
 	/* Power was pressed during the game. The emulator no longer handles that
 	 * key itself, so the press arrived here. */
 	if (plat_run_power_pressed()) { power_off(a); return; }
+
+	/* Past both power checks, so this is a real return to the shelf rather
+	 * than a shutdown. Everything above leaves the marker standing, which is
+	 * what makes the next boot able to tell them apart. */
+	playing_clear();
 
 	/* Straight to the shelf, no fade. The card decode inside this render is
 	 * the only real cost left on the way back, and a fade laid over the top of
@@ -3358,6 +3461,11 @@ int main(int argc, char *argv[])
 				break;
 			}
 	restore_place(&a);
+	/* After restore_place, so it wins: `.last` says where the shelf was and
+	 * this says what was actually being played. Before the card priming
+	 * below, because that loads textures for whatever the cursor is on, and
+	 * a fallback to the shelf should find the right ones there. */
+	a.resume_menu = playing_restore(&a);
 	cf_reset(&a.cf_sys, a.sys_cursor);
 	a.tint = a.sys.systems[a.sys_cursor].accent;
 	prime_sys_window(&a);
@@ -3426,6 +3534,14 @@ int main(int argc, char *argv[])
 		Uint32 grace = SDL_GetTicks() + 350;
 		while (SDL_GetTicks() < grace) { plat_input_poll(&a.in); SDL_Delay(8); }
 		memset(&a.in, 0, sizeof a.in);
+	}
+
+	/* Straight back into the game, before the shelf is ever drawn. After the
+	 * input grace above, so a wake press replayed by the boot does not land in
+	 * the menu that is about to open. */
+	if (a.resume_menu && a.running) {
+		a.screen = SCREEN_GAMES;
+		launch(&a);
 	}
 
 	while (a.running) {
