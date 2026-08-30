@@ -163,9 +163,24 @@ After that, every `fb_open` blocks in `D` state - uninterruptible, so no
 signal reaches it, including SIGKILL. Both the launcher and the emulator end
 up stuck and the only way out is power.
 
-Measured 2026-08-29, and caused by escalating: `killall -q tortos.elf`
-appeared not to work, so `kill -9` seemed reasonable. It was not, and the
-right response to killall not working is to find out why, not to hit harder.
+Measured 2026-08-29, and caused by escalating on a bad measurement.
+
+**Both tools worked the whole time.** `killall -q tortos.elf` restarts the
+launcher in about a second, and SIGTERM stops an idle `diatom` in one. What
+made them look broken:
+
+  - `ps | grep tortos.elf` matches THE SHELL RUNNING THAT COMMAND, because the
+    pattern is in its own command line. The launcher had already restarted
+    under a new pid and the "still running" line was my own grep. Match on
+    /proc/*/cmdline, or accept that a changed pid means it worked.
+  - The one SIGTERM that genuinely did nothing was sent to a `diatom --core`
+    already stuck in `D` on the display. That is not a process ignoring a
+    signal, it is a process the kernel will not deliver one to - and by then
+    the damage was already done.
+
+So the rule is not "the gentle tools are unreliable". It is that a process
+which looks unkillable is telling you something, and `kill -9` answers the
+wrong question.
 
 **Use `make adb-restart`** (SIGTERM) and give it a few seconds. If a process
 will not go, that is information about the process, not a reason for a bigger
