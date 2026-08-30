@@ -589,8 +589,19 @@ static void ra_sync_game(app *a, const char *rom, const char *tag)
 	n = ra_account_unlocks(chv_game(), ids, CHV_MAX);
 	if (n < 0) return;               /* could not ask: not the same as none */
 
-	for (i = 0; i < n; i++)
+	/* Only ids the set actually has. The account carries entries the set does
+	 * not - RetroAchievements' "Unknown Emulator" notice is one, and it went
+	 * straight into the store the first time this ran. Recording those adds a
+	 * row that can never be displayed and could later be submitted as a
+	 * duplicate of something that was never an achievement. */
+	for (i = 0; i < n; i++) {
+		int k;
+
+		for (k = 0; k < chv_count(); k++)
+			if (chv_at(k)->id == ids[i]) break;
+		if (k == chv_count()) continue;
 		if (chv_note_earned(chv_game(), ids[i], true)) added++;
+	}
 
 	if (added) {
 		char p[CFG_STR * 2];
