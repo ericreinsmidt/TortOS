@@ -272,14 +272,21 @@ static void route_list(httpd_req *r)
 			continue;
 		if (stat(full, &st) != 0) continue;
 
-		if (!first) jput(&j, ",", 1);
-		first = false;
-		jput(&j, "{\"name\":", 8);
-		jstr(&j, e->d_name);
-		jput(&j, ",\"path\":", 8);
 		{
 			char child[XFER_PATH_MAX];
-			snprintf(child, sizeof child, "%s/%s", req, e->d_name);
+
+			/* Skipped rather than truncated. A cut path is not this file's
+			 * path, it is some other file's - and the browser would send it
+			 * back as though it meant this one. Better to be absent from the
+			 * listing than to be a name for the wrong thing. */
+			if (snprintf(child, sizeof child, "%s/%s", req, e->d_name)
+			    >= (int)sizeof child)
+				continue;
+			if (!first) jput(&j, ",", 1);
+			first = false;
+			jput(&j, "{\"name\":", 8);
+			jstr(&j, e->d_name);
+			jput(&j, ",\"path\":", 8);
 			jstr(&j, child);
 		}
 		jfmt(&j, ",\"dir\":%s,\"size\":%lld}",
@@ -373,7 +380,10 @@ static void on_request(httpd_req *r, bool done, void *ctx)
 		 * rebuild. The name is checked the same way a rename target is:
 		 * these are assets, not a directory to browse. */
 		if (!xfer_name_ok(name)) { httpd_reply_status(r, 404, "no"); return; }
-		snprintf(file, sizeof file, "%s/%s", g_web, name);
+		if (snprintf(file, sizeof file, "%s/%s", g_web, name) >= (int)sizeof file) {
+			httpd_reply_status(r, 404, "no");
+			return;
+		}
 		httpd_reply_file(r, file, mime_for(name), NULL);
 		return;
 	}
@@ -392,7 +402,8 @@ static void on_request(httpd_req *r, bool done, void *ctx)
 	}
 
 	if (!strcmp(path, "/api/file") && !strcmp(m, "GET")) {
-		char req[XFER_PATH_MAX], abs[XFER_PATH_MAX], extra[256];
+		char req[XFER_PATH_MAX], abs[XFER_PATH_MAX];
+		char extra[XFER_PATH_MAX + 64];
 
 		if (!done) httpd_want_body(r, HTTPD_BODY_NONE, NULL);
 		httpd_query(r, "p", req, sizeof req);
@@ -403,11 +414,18 @@ static void on_request(httpd_req *r, bool done, void *ctx)
 		/* Named, so a browser saves it as itself rather than as "file". The
 		 * name is quoted and cannot contain a quote - xfer_name_ok refused
 		 * control bytes and the filesystem refuses the rest. */
-		snprintf(extra, sizeof extra,
-		         "Content-Disposition: attachment; filename=\"%s\"\r\n",
-		         base_of(abs));
+		if (snprintf(extra, sizeof extra,
+		             "Content-Disposition: attachment; filename=\"%s\"\r\n",
+		             base_of(abs)) >= (int)sizeof extra) {
+			/* Dropped whole rather than cut. A truncated header has no
+			 * closing quote and no CRLF, so it does not become a shorter
+			 * header - it becomes a broken response, with the next header
+			 * running into this one. The download still works; the browser
+			 * just names the file from the URL. */
+			extra[0] = '\0';
+		}
 		note("sending %s", base_of(abs));
-		httpd_reply_file(r, abs, mime_for(abs), extra);
+		httpd_reply_file(r, abs, mime_for(abs), extra[0] ? extra : NULL);
 		return;
 	}
 
@@ -447,8 +465,15 @@ static void on_request(httpd_req *r, bool done, void *ctx)
 		{
 			char part[XFER_PATH_MAX];
 
-			snprintf(part, sizeof part, "%s.part", abs);
+			/* Checked again, though the first call already refused a name
+			 * this long: the two have to agree about where the bytes went,
+			 * and "it cannot happen here because of something forty lines
+			 * up" is a thing that stops being true when one of them moves. */
 			if (g_uploads > 0) g_uploads--;
+			if (snprintf(part, sizeof part, "%s.part", abs) >= (int)sizeof part) {
+				httpd_reply_status(r, 500, "that name is too long");
+				return;
+			}
 			if (rename(part, abs) != 0) {
 				remove(part);
 				httpd_reply_status(r, 500, "could not put that in place");
