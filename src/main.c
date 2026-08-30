@@ -2374,18 +2374,20 @@ static int gi_rows(menu_row *out, const game_info *gi, bool net)
  * difference between twenty images and a hundred and eighty. It is worth much
  * less afterwards: since the direct-name pass landed, a whole-library re-run
  * over a full card is nine directory sweeps and no network at all. */
-static void art_screen(app *a, const char *only)
+static void art_screen(app *a, const char *only, const char *one,
+                       unsigned accent)
 {
 	menu_row     rows[3];
 	art_progress p;
 	char         counts[64], where[64], head[192];
+	int          nrows = 3;
 	bool         done = false, working = true;
 
 	if (!net_online()) {
 		menu_row row = { "No network", NULL, false };
 
 		draw_shelf(a);
-		menu_draw(a, "Box Art", &row, 1, -1, 0, MENU_ACCENT);
+		menu_draw(a, "Box Art", &row, 1, -1, 0, accent);
 		plat_draw_osd(a->r);
 		SDL_RenderPresent(a->r);
 		SDL_Delay(1600);
@@ -2424,10 +2426,24 @@ static void art_screen(app *a, const char *only)
 		snprintf(counts, sizeof counts, "%d found, %d missing, %d already",
 		         p.found, p.missing, p.skipped);
 		snprintf(where, sizeof where, "%d of %d", p.systems_done, p.systems);
-		art_head(head, sizeof head,
-		         p.now[0] ? p.now : (working ? "starting" : "nothing to do"));
-
-		art_rows(rows, where, counts, working);
+		if (one) {
+			/* Asked about one game, answer about one game. Routing a replace
+			 * through the system scrape is right - it finds the one thing
+			 * missing and fetches it - but reporting the system's tallies
+			 * back was not: "1 found, 19 already" is a true statement about
+			 * work the player did not ask for. */
+			art_head(head, sizeof head, one);
+			rows[0] = (menu_row){ "Box Art",
+			                      working ? "fetching"
+			                      : p.found ? "replaced" : "not found", false };
+			rows[1] = (menu_row){ working ? "B to stop" : "B to close",
+			                      NULL, false };
+			nrows = 2;
+		} else {
+			art_head(head, sizeof head,
+			         p.now[0] ? p.now : (working ? "starting" : "nothing to do"));
+			nrows = art_rows(rows, where, counts, working);
+		}
 
 		plat_input_poll(&a->in);
 		if (a->in.quit_requested) { art_cancel(); a->running = false; return; }
@@ -2457,7 +2473,7 @@ static void art_screen(app *a, const char *only)
 		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
 		SDL_RenderFillRect(a->r, NULL);
-		menu_draw(a, head, rows, 3, -1, 0, MENU_ACCENT);
+		menu_draw(a, head, rows, nrows, -1, 0, accent);
 		plat_draw_osd(a->r);
 		SDL_RenderPresent(a->r);
 		SDL_Delay(8);
@@ -2551,7 +2567,8 @@ static void game_info_screen(app *a)
 				snprintf(p, sizeof p, "%s/%s/.media/%s.png",
 				         P_ROMS, a->sys.systems[owner].folder, g->name);
 				remove(p);
-				art_screen(a, a->sys.systems[owner].folder);
+				art_screen(a, a->sys.systems[owner].folder, g->title,
+				           a->sys.systems[owner].accent);
 			}
 			gi_gather(a, owner, g, &gi);
 			plat_input_flush();
@@ -2768,7 +2785,11 @@ static void tortos_menu(app *a)
 		 * because there is no confirm step to hang the write off. */
 		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_GAMES &&
 		    sel == SM_BOXART)
-			art_screen(a, a->sys.systems[a->sys_cursor].folder);
+			/* The system's own colour, not the menu's. This acts on the
+			 * shelf you are looking at, and menu_draw already follows that
+			 * rule everywhere else. */
+			art_screen(a, a->sys.systems[a->sys_cursor].folder, NULL,
+			           a->sys.systems[a->sys_cursor].accent);
 		if (a->screen == SCREEN_GAMES && sel == SM_DISPLAY) {
 			int d = in_repeat(&a->in, IN_RIGHT) ? 1
 			      : in_repeat(&a->in, IN_LEFT)  ? -1 : 0;
@@ -2837,7 +2858,7 @@ static void tortos_menu(app *a)
 		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
 		    sel == PM_XFER) xfer_screen(a);
 		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
-		    sel == PM_SCRAPE) art_screen(a, NULL);
+		    sel == PM_SCRAPE) art_screen(a, NULL, NULL, MENU_ACCENT);
 		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
 		    sel == PM_ACHIEVEMENTS) ra_signin_screen(a);
 		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
