@@ -628,7 +628,7 @@ static void ra_sync_collect_and_merge(void)
 static void ra_flush_unlocks(const char *rom, const char *tag)
 {
 	char hash[33] = "";
-	int game, id, sent = 0;
+	int game, id, sent = 0, settled = 0;
 
 	if (!ra_signed_in() || chv_pending_count() == 0 || !ra_online()) return;
 
@@ -647,14 +647,21 @@ static void ra_flush_unlocks(const char *rom, const char *tag)
 		 * will not go, the rest will not either. */
 		if (rc < 0) break;
 		chv_mark_synced(game, id);
+		settled++;
 		if (rc > 0) sent++;
 	}
-	if (sent) {
+	/* On `settled`, not on `sent`. A row the account already had is settled
+	 * without being sent, and writing only when something was sent left that
+	 * mark in memory only - so it came back pending on the next boot and was
+	 * retried, forever. Seen on the device: one unlock submitted by hand
+	 * outside the launcher, refused as already-held, and asked again at the
+	 * end of every game after that. */
+	if (settled) {
 		char p[CFG_STR * 2];
 		chv_store_path(p, sizeof p);
 		chv_earned_save(p);
-		fprintf(stderr, "ra: submitted %d unlock%s, %d still queued\n",
-		        sent, sent == 1 ? "" : "s", chv_pending_count());
+		fprintf(stderr, "ra: %d sent, %d already held, %d still queued\n",
+		        sent, settled - sent, chv_pending_count());
 	}
 }
 
