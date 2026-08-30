@@ -25,7 +25,7 @@
  * would eventually disagree with the first about which achievements exist.
  */
 
-#define CHV_MAX     256    /* the largest set measured is 166 - Super Metroid */
+#define CHV_MAX     256    /* the largest measured is 203 - Mickey's Speedway USA */
 #define CHV_TITLE    96
 #define CHV_DESC    192
 

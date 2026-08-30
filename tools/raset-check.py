@@ -30,9 +30,15 @@ UA = "TortOS/1.0 (+converter check)"
 
 # A spread rather than a favorite: a small set, two large ones, and one whose
 # conditions are long enough to have broken a fixed buffer.
-GAMES = [(1459, "Blaster Master"), (355, "Zelda: A Link to the Past"),
-         (10003, "Super Metroid"), (11278, "Mega Man 2"),
-         (1447, "Castlevania"), (4646, "Metroid Fusion")]
+#
+# IDS ONLY. An earlier version carried a name beside each one, written from
+# memory and never checked, and it printed "Castlevania" for a set that is
+# Contra's. The comparison was still correct - it diffs two converters over
+# whatever came back - but the report was a confident lie, and it took a human
+# who knew he had not played Castlevania to catch it. The title is read from
+# RetroAchievements' own response now, so it cannot be wrong without RA being
+# wrong.
+GAMES = [1459, 355, 10003, 11278, 1447, 4646]
 
 
 def post(**kw):
@@ -59,8 +65,9 @@ def main():
 
     tmp = tempfile.mkdtemp(prefix="raset-check-")
     bad = 0
-    for gid, name in GAMES:
+    for gid in GAMES:
         d = post(r="patch", u=user, t=tok, g=gid)
+        name = (d.get("PatchData") or {}).get("Title") or f"game {gid}"
         raw = os.path.join(tmp, f"{gid}.json")
         with open(raw, "w", encoding="utf-8") as f:
             json.dump(d, f, ensure_ascii=False)
