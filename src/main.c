@@ -727,11 +727,37 @@ static void ra_flush_unlocks(const char *rom, const char *tag)
 static char g_pending_set[LIB_PATH * 2];
 static char g_pending_active[LIB_PATH * 2];
 
+/* Auto Off while a game runs. Diatom holds the clock, because it owns the pad
+ * and this process is blocked in plat_resident_wait; the launcher's part is
+ * telling it the number and keeping that number true as the charger comes and
+ * goes. See on_charger, which lives beside battery_low. */
+static bool on_charger(void);
+static int  g_idle_secs;         /* the Auto Off setting, 0 off */
+static bool g_idle_charging;     /* what was true when SETIDLE was last sent */
+
 static void on_game_tick(void)
 {
 	char msg[96];
 
 	int rc;
+
+	/* The charger, followed rather than sampled once at launch. Plugging in
+	 * mid-game has to stop the countdown and unplugging has to start a fresh
+	 * one, and SETIDLE does both: Diatom restarts its clock on every one it
+	 * receives.
+	 *
+	 * Which is also why this only sends on a CHANGE. Sending it every tick
+	 * would restart that clock ten times a second and Auto Off would never
+	 * fire at all. */
+	if (g_idle_secs > 0) {
+		bool ch = on_charger();
+
+		if (ch != g_idle_charging) {
+			g_idle_charging = ch;
+			plat_resident_line("SETIDLE\tms=%d",
+			                   ch ? 0 : g_idle_secs * 1000);
+		}
+	}
 
 	if (!g_pending_set[0]) return;
 
@@ -1038,6 +1064,31 @@ static bool battery_low(void)
 		low = plat_battery(&pct, &charging) && !charging && pct <= BATT_LOW_PCT;
 	}
 	return low;
+}
+
+/* On the charger, cached. Both halves of Auto Off ask this - the shelf every
+ * frame, the in-game tick ten times a second - and every call is two sysfs
+ * files opened, read and closed. Two seconds is well inside the shortest
+ * timeout anyone can set, so the lag is not observable. Same trick and the
+ * same reasoning as battery_low() above.
+ *
+ * plat_battery leaves its out-parameter alone when it fails, so the answer is
+ * written before the call rather than after it. */
+static bool on_charger(void)
+{
+	static unsigned last;
+	static bool     charging, primed;
+	unsigned now = plat_now_ms();
+
+	/* Elapsed, not a deadline compare: unsigned subtraction is right across
+	 * the wrap and `now >= next_check` is not. */
+	if (!primed || now - last >= 2000) {
+		primed = true;
+		last = now;
+		charging = false;
+		plat_battery(NULL, &charging);
+	}
+	return charging;
 }
 
 /* The one piece of chrome: a small accent disc, top right, when the battery is
@@ -2827,18 +2878,6 @@ static void launch(app *a)
 			/* The account's answer, without the launch waiting for it. On a
 			 * first play there is nothing to ask about yet; that sync starts
 			 * once the set arrives. */
-			/* Auto Off, unless on the charger: the feature exists to stop a
-			 * game running unattended on battery, and plugged in there is no
-			 * battery reason and no cost to leaving it. */
-			{
-				bool charging = false;
-
-				plat_battery(NULL, &charging);
-				plat_resident_line("SETIDLE\tms=%d",
-				                   (a->auto_off > 0 && !charging)
-				                       ? a->auto_off * 1000 : 0);
-			}
-
 			if (!first_play) ra_sync_begin(chv_game());
 
 
@@ -2890,6 +2929,22 @@ static void launch(app *a)
 			 * whatever the previous one chose. Ordered on the same socket, so
 			 * it lands before the first frame. */
 			plat_resident_line("SETDISPLAY\tmode=%s", DMODES[v->dmode].name);
+
+			/* Auto Off. Out here rather than inside the chv_load branch
+			 * above, which is where the first version put it and is the same
+			 * mistake the paragraph below describes: that branch is the one a
+			 * game with no achievements never takes, so Auto Off only ever
+			 * worked for games that happened to have a cached set.
+			 *
+			 * Unless on the charger - the feature exists to stop a game
+			 * running unattended on battery, and plugged in there is no
+			 * battery reason and no cost to leaving it. on_game_tick keeps
+			 * this true if the cable changes mid-game. */
+			g_idle_secs = a->auto_off;
+			g_idle_charging = on_charger();
+			plat_resident_line("SETIDLE\tms=%d",
+			                   (g_idle_secs > 0 && !g_idle_charging)
+			                       ? g_idle_secs * 1000 : 0);
 
 			/* The first play of this game: nothing was cached, so there is a
 			 * set to go and find. Out here and not inside the chv_load branch
@@ -3011,6 +3066,13 @@ static void launch(app *a)
 
 	plat_input_flush();
 	memset(&a->in, 0, sizeof a->in);
+	/* The shelf's idle clock has been stopped for the whole session - the pad
+	 * was Diatom's and nothing here saw a press. Left running it would come
+	 * back expired by however long the game lasted and power the device off
+	 * the instant the shelf appeared, which is the charger defect above in a
+	 * different hat: a clock that kept counting through a stretch when nobody
+	 * was watching it. */
+	a->idle_since_ms = plat_now_ms();
 
 	/* This one exits without power_off(), so it darkens the lights itself. */
 	if (access(TORTOS_POWEROFF_FLAG, F_OK) == 0) {
@@ -3862,16 +3924,24 @@ int main(int argc, char *argv[])
 		 * mashing a button the shelf ignores is still somebody there. */
 		if (a.auto_off > 0) {
 			int b;
-			bool pressed = false, charging = false;
+			bool pressed = false;
 
 			for (b = 0; b < IN_COUNT; b++)
 				if (a.in.pressed[b] || a.in.down[b]) { pressed = true; break; }
-			if (pressed) a.idle_since_ms = plat_now_ms();
 
-			plat_battery(NULL, &charging);
-			if (!charging &&
-			    plat_now_ms() - a.idle_since_ms >
-			        (unsigned)a.auto_off * 1000u) {
+			/* The charger HOLDS the clock. It used to gate only the shot,
+			 * which let the countdown run to zero while plugged in and sit
+			 * there expired - so unplugging powered the device off in the
+			 * same instant, however long it had been on the cable. Found on
+			 * the device 2026-08-30 at a 30s timeout.
+			 *
+			 * Counting the charger as activity is also what the setting
+			 * says: unplugging starts a whole fresh countdown, because until
+			 * that moment the timeout was not running at all. */
+			if (pressed || on_charger()) a.idle_since_ms = plat_now_ms();
+
+			if (plat_now_ms() - a.idle_since_ms >
+			    (unsigned)a.auto_off * 1000u) {
 				power_off(&a);
 				break;
 			}
