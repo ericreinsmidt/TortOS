@@ -9,6 +9,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "atomic.h"
 #include "rafetch.h"
 #include "rahash.h"
 #include "rajson.h"
@@ -62,18 +63,15 @@ bool ra_creds_load(const char *path)
 bool ra_creds_save(const char *path)
 {
 	FILE *f;
-	int fd;
 
 	if (!ra_signed_in()) { unlink(path); return true; }
 	/* 0600 from creation. A token is a credential: anything that can read it
-	 * can act as this account. */
-	fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
-	if (fd < 0) return false;
-	f = fdopen(fd, "w");
-	if (!f) { close(fd); return false; }
+	 * can act as this account. Atomically too - losing this to a power cut
+	 * would silently sign the device out. */
+	f = atomic_open(path, 0600);
+	if (!f) return false;
 	fprintf(f, "user=%s\ntoken=%s\n", g_user, g_token);
-	fclose(f);
-	return true;
+	return atomic_commit(f, path);
 }
 
 bool ra_sign_in(const char *user, const char *password, char *err, size_t errn)

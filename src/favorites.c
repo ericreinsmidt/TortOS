@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "atomic.h"
 #include "favorites.h"
 
 typedef struct {
@@ -66,14 +67,16 @@ void fav_load(const char *path)
 
 bool fav_save(const char *path)
 {
-	FILE *f = fopen(path, "w");
+	/* Atomically - see atomic.h. Favorites accumulate, and this is rewritten
+	 * whole on every toggle. */
+	FILE *f = atomic_open(path, 0644);
 	int i;
 
 	if (!f) return false;
 	fprintf(f, "# TortOS favorites: one <system tag>\\t<rom file> per line.\n");
 	for (i = 0; i < g_count; i++)
 		fprintf(f, "%s\t%s\n", g_fav[i].tag, g_fav[i].file);
-	fclose(f);
+	if (!atomic_commit(f, path)) return false;
 	return true;
 }
 

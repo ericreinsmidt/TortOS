@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "atomic.h"
 #include "cheevos.h"
 
 static cheevo g_ach[CHV_MAX];
@@ -162,7 +163,10 @@ bool chv_write_active(const char *path)
 	if (!g_src[0] || !path || !*path) return false;
 	in = fopen(g_src, "r");
 	if (!in) return false;
-	out = fopen(path, "w");
+	/* Atomically too, though this one is scratch: Diatom is handed the path
+	 * moments after and a torn file would be a half a set it takes at face
+	 * value. Cheap, and one rule rather than two. */
+	out = atomic_open(path, 0644);
 	if (!out) { fclose(in); return false; }
 
 	while (getline(&line, &cap, in) > 0) {
@@ -189,10 +193,11 @@ bool chv_write_active(const char *path)
 	}
 	free(line);
 	fclose(in);
-	fclose(out);
 
-	if (kept == 0) { remove(path); return false; }
-	return true;
+	/* Nothing left to watch. Discard rather than commit, so the previous
+	 * game's active set is not left standing under this game's name. */
+	if (kept == 0) { atomic_abort(out, path); remove(path); return false; }
+	return atomic_commit(out, path);
 }
 
 bool chv_note_earned(int game, int id, bool synced)
@@ -311,7 +316,10 @@ bool chv_earned_save(const char *path)
 	int i;
 
 	if (!g_earned_dirty) return true;
-	f = fopen(path, "w");
+	/* Atomically: this is the only record of anything earned that the account
+	 * has not seen, and it is written on every unlock - including the ones
+	 * that happen just before somebody presses the power button. */
+	f = atomic_open(path, 0644);
 	if (!f) return false;
 	/* Whole file, every time, for the same reason favorites are written that
 	 * way: it is two numbers a line and rewriting the lot means what is on
@@ -319,7 +327,7 @@ bool chv_earned_save(const char *path)
 	for (i = 0; i < g_nearned; i++)
 		fprintf(f, "%d\t%d\t%c\n", g_earned[i].game, g_earned[i].id,
 		        g_earned[i].synced ? 's' : 'p');
-	fclose(f);
+	if (!atomic_commit(f, path)) return false;
 	g_earned_dirty = false;
 	return true;
 }

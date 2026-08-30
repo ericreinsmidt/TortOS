@@ -21,6 +21,9 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <sys/stat.h>
+
+#include "../src/atomic.h"
 #include "../src/cheevos.h"
 
 static int failures;
@@ -188,6 +191,46 @@ int main(void)
 		CHECK(chv_pending_count() == 2,
 		      "a store with no state column should read as all owed, got %d",
 		      chv_pending_count());
+	}
+
+	/* ---- the store is replaced, never emptied ---------------------------
+	 *
+	 * Every config in this launcher used to be written with fopen(path,"w"),
+	 * which truncates first. A power cut between the truncate and the write
+	 * leaves nothing - on a device whose normal shutdown is a button press,
+	 * and which is about to start powering itself off on a timer. */
+	printf("  writing a store never leaves it empty:\n");
+	{
+		char tmp[160];
+		FILE *f;
+		struct stat st;
+
+		/* From nothing: the block above leaves two rows behind, and inheriting
+		 * them made this expect one and find two - the test being wrong, not
+		 * the code. */
+		remove(g_store);
+		chv_earned_load(g_store);
+		chv_note_earned(1459, 24698, true);
+		CHECK(chv_earned_save(g_store), "the store did not write");
+		CHECK(line_count(g_store, NULL) == 1,
+		      "expected one row, got %d", line_count(g_store, NULL));
+
+		snprintf(tmp, sizeof tmp, "%s.new", g_store);
+		CHECK(stat(tmp, &st) != 0, "a committed write left its temporary behind");
+
+		/* A write that is abandoned must leave the original untouched, which
+		 * is the whole property: wholly the old contents or wholly the new. */
+		f = atomic_open(g_store, 0644);
+		CHECK(f != NULL, "atomic_open failed");
+		if (f) {
+			fputs("garbage that must never land\n", f);
+			CHECK(line_count(g_store, NULL) == 1,
+			      "the original changed while a replacement was open");
+			atomic_abort(f, g_store);
+		}
+		CHECK(line_count(g_store, NULL) == 1,
+		      "an abandoned write damaged the original");
+		CHECK(stat(tmp, &st) != 0, "an abandoned write left its temporary behind");
 	}
 
 	remove(g_set); remove(g_active); remove(g_store);

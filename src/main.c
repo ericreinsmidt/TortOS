@@ -10,6 +10,7 @@
  * screen is a row of cards, the name of the thing under the cursor, and a
  * rail saying where you are. Nothing else.
  */
+#include "atomic.h"
 #include "cheevos.h"
 #include "config.h"
 #include "coverflow.h"
@@ -238,13 +239,13 @@ static void display_save(app *a)
 		fclose(f);
 	}
 
-	f = fopen(p, "w");
+	f = atomic_open(p, 0644);
 	if (!f) return;
 	for (i = 0; i < a->sys.count; i++)
 		fprintf(f, "%s=%s\n", a->sys.systems[i].tag, DMODES[a->view[i].dmode].name);
 	for (i = 0; i < nkeep; i++)
 		fprintf(f, "%s\n", keep[i]);
-	fclose(f);
+	atomic_commit(f, p);
 }
 
 /* ---------- textures ----------------------------------------------------- */
@@ -497,10 +498,10 @@ static void text_scale_save(float scale)
 	FILE *f;
 
 	snprintf(p, sizeof p, "%s/textsize.cfg", P_USERDATA);
-	f = fopen(p, "w");
+	f = atomic_open(p, 0644);
 	if (!f) return;
 	fprintf(f, "font_scale=%.2f\n", (double)scale);
-	fclose(f);
+	atomic_commit(f, p);
 }
 
 static float text_scale_load(float fallback)
@@ -533,10 +534,10 @@ static void wifi_pref_save(bool on)
 	FILE *f;
 
 	snprintf(p, sizeof p, "%s/wifi.cfg", P_USERDATA);
-	f = fopen(p, "w");
+	f = atomic_open(p, 0644);
 	if (!f) return;
 	fprintf(f, "wifi=%d\n", on ? 1 : 0);
-	fclose(f);
+	atomic_commit(f, p);
 }
 
 /* Beside the save states and keyed like them, so a favorite travels with the
@@ -763,11 +764,11 @@ static void remember_place(app *a)
 	sysview *v = &a->view[a->sys_cursor];
 	FILE *f;
 	snprintf(p, sizeof p, "%s/.last", P_ROOT);
-	f = fopen(p, "w");
+	f = atomic_open(p, 0644);
 	if (!f) return;
 	fprintf(f, "%s\n%s\n", a->sys.systems[a->sys_cursor].tag,
 	        v->list.count ? v->list.items[v->cursor].file : "");
-	fclose(f);
+	atomic_commit(f, p);
 }
 
 /* Whether a game was running when this process last stopped.
@@ -793,13 +794,13 @@ static void playing_set(app *a)
 
 	if (v->list.count == 0) return;
 	playing_path(p, sizeof p);
-	f = fopen(p, "w");
+	f = atomic_open(p, 0644);
 	if (!f) return;
 	/* The GAME's system, not the shelf's - launching from Favorites otherwise
 	 * records a system that does not own the ROM, exactly as the launch path
 	 * itself had to learn. */
 	fprintf(f, "%s\n%s\n", a->sys.systems[o].tag, v->list.items[v->cursor].file);
-	fclose(f);
+	atomic_commit(f, p);
 }
 
 static void playing_clear(void)

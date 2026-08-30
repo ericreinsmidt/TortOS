@@ -29,10 +29,11 @@ build/tortos.elf: $(wildcard src/*.c) $(wildcard src/*.h) tools/setbright.c mk/c
 check-cheevos: build-native/cheevos-check
 	@./build-native/cheevos-check
 
-build-native/cheevos-check: tools/cheevos-check.c src/cheevos.c src/cheevos.h
+build-native/cheevos-check: tools/cheevos-check.c src/cheevos.c src/cheevos.h \
+                            src/atomic.c src/atomic.h
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
-	      -o $@ tools/cheevos-check.c src/cheevos.c
+	      -o $@ tools/cheevos-check.c src/cheevos.c src/atomic.c
 
 # The two hashers - one C for the device, one Python for the host tools - over
 # every ROM in the library. A wrong rule does not crash; it produces a hash RA
@@ -51,10 +52,10 @@ build-native/rahash-check: tools/rahash-check.c src/rahash.c src/rahash.h
 check-raset: build-native/raset-check
 	@python3 tools/raset-check.py
 
-build-native/raset-check: tools/raset-check.c src/rafetch.c src/rajson.c src/rahash.c src/ranet.c
+build-native/raset-check: tools/raset-check.c src/rafetch.c src/rajson.c src/rahash.c src/ranet.c src/atomic.c
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g -DTORTOS_VERSION='"check"' \
-	      -o $@ tools/raset-check.c src/rafetch.c src/rajson.c src/rahash.c src/ranet.c
+	      -o $@ tools/raset-check.c src/rafetch.c src/rajson.c src/rahash.c src/ranet.c src/atomic.c
 
 # One-time: the cross-compiler image. Pinned by digest, so it does not drift.
 toolchain:

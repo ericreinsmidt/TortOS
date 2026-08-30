@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: 0BSD */
+#include "atomic.h"
 #include "platform.h"
 
 #include "ui.h"   /* the settings line shares the rail's weight and palette */
@@ -1086,10 +1087,10 @@ static void levels_save(void)
 	FILE *f;
 
 	if (!levels_file[0]) return;
-	f = fopen(levels_file, "w");
+	f = atomic_open(levels_file, 0644);
 	if (!f) return;
 	fprintf(f, "volume=%d\nbrightness=%d\n", cur_vol, cur_bright);
-	fclose(f);
+	atomic_commit(f, levels_file);
 }
 
 static void apply_volume(int v)
