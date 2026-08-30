@@ -1521,7 +1521,7 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
  * does nothing states that more honestly than an empty menu does. */
 typedef enum {
 	PM_WIFI, PM_BT, PM_ACHIEVEMENTS, PM_SCRAPE,
-	PM_TEXT, PM_SLEEP, PM_ABOUT, PM_POWER, PM_ROWS
+	PM_TEXT, PM_SLEEP, PM_ABOUT, PM_ROWS
 } pm_row;
 
 /* The system menu. Games and Core carry real values rather than invented ones,
@@ -1603,7 +1603,6 @@ static int menu_build(app *a, screen_id screen, int sys,
 	 * were, which is what sleep would have been for. */
 	out[PM_SLEEP]        = (menu_row){ "Auto Power Off",    "not yet", false };
 	out[PM_ABOUT]        = (menu_row){ "About TortOS",      NULL,      true  };
-	out[PM_POWER]        = (menu_row){ "Power Off",         NULL,      true  };
 	return PM_ROWS;
 }
 
@@ -2063,12 +2062,11 @@ static void tortos_menu(app *a)
 		if (in_repeat(&a->in, IN_BRIGHTDN)) plat_brightness_nudge(-1);
 
 		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = 1;
+		/* The power button, which works here and on the shelf and in the
+		 * in-game menu. There was a Power Off row as well, directly above
+		 * Auto Power Off - a setting and an action a row apart with almost
+		 * the same name, duplicating a button the device already has. */
 		if (a->in.pressed[IN_POWER]) { power_off(a); return; }
-		/* The only row either menu acts on, and it exists in one of them - the
-		 * screen has to be checked as well as the index, or row 7 of the
-		 * system menu would power the device off. */
-		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
-		    sel == PM_POWER) { power_off(a); return; }
 		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
 		    sel == PM_WIFI) wifi_screen(a);
 		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
