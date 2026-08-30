@@ -186,5 +186,26 @@ wrong question.
 will not go, that is information about the process, not a reason for a bigger
 hammer.
 
-The same applies to `diatom` while it holds the display. SIGTERM, wait, and
-only consider SIGKILL once it has stopped presenting.
+The same applies to `diatom`, and it holds the display more of the time than
+"while presenting" suggests. Checked 2026-08-30 on an idle one that had never
+run a game since boot: `/proc/<pid>/fd` had both `/dev/disp` and `/dev/fb0`
+open. They are opened at startup, not at first frame. So there is no window
+where SIGKILL on `diatom` is obviously safe, and the answer to one that will
+not go is a reboot, not a bigger signal.
+
+**"SIGTERM stops an idle diatom in one second" was true of the binary that
+sentence was written about, and stopped being true.** On 2026-08-30 an idle
+`diatom` took SIGTERM and kept sleeping - not in `D`, not stuck on the
+display, just never woken. The handler was installed as part of starting a
+game, so a process that had not run one had none of its own, and SDL's
+handler was catching SIGTERM into a flag the idle loop never read. Fixed in
+Diatom, but the diagnostic is worth keeping:
+
+    adb shell 'grep -E "^Sig(Cgt|Ign|Blk)" /proc/<pid>/status'
+    adb shell 'for t in /proc/<pid>/task/*; do
+        printf "%s %s %s\n" $(basename $t) "$(cat $t/comm)" "$(cat $t/wchan)"; done'
+
+`SigCgt` says which signals have handlers - a missing bit for one this
+program installs means the install never ran. `wchan` per thread says where
+it is parked; `poll_schedule_timeout` on the main thread with the flag set is
+a wakeup problem, not a signal problem.
