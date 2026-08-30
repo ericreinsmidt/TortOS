@@ -250,24 +250,39 @@ void ui_text_marquee(SDL_Renderer *r, TTF_Font *f, const char *s,
 		if (!e) { SDL_RenderSetClipRect(r, had ? &was : NULL); return; }
 		dst.x = x - off; dst.y = y; dst.w = e->w; dst.h = e->h;
 
-		/* The middle, at full strength. */
-		clip.x = x + MQ_FADE_PX;
-		clip.w = w - MQ_FADE_PX * 2;
+		/* A FADE MEANS "MORE TEXT THIS WAY", so each side only fades when
+		 * there is something hidden on it. Both faded unconditionally at
+		 * first, which put a soft left edge on a title resting at its
+		 * beginning - nothing was hidden there, and it read as the name
+		 * starting halfway through a word.
+		 *
+		 * The width is the amount hidden, capped. So it grows from nothing as
+		 * the text pulls away and shrinks back to nothing as it returns,
+		 * which also means neither end pops. */
+		int lf = off < MQ_FADE_PX ? off : MQ_FADE_PX;
+		int rf = (over - off) < MQ_FADE_PX ? (over - off) : MQ_FADE_PX;
+
+		clip.x = x + lf;
+		clip.w = w - lf - rf;
 		if (clip.w > 0) {
 			SDL_RenderSetClipRect(r, &clip);
 			SDL_SetTextureAlphaMod(e->tex, col.a);
 			SDL_RenderCopy(r, e->tex, NULL, &dst);
 		}
 
-		for (i = 0; i < MQ_FADE_PX; i += MQ_FADE_STEP) {
-			Uint8 a2 = (Uint8)(col.a * i / MQ_FADE_PX);
-
-			SDL_SetTextureAlphaMod(e->tex, a2);
-			clip.w = MQ_FADE_STEP;
-			clip.x = x + i;                       /* left, dark to bright */
+		for (i = 0; i < lf; i += MQ_FADE_STEP) {
+			SDL_SetTextureAlphaMod(e->tex, (Uint8)(col.a * i / lf));
+			clip.x = x + i;
+			clip.w = lf - i < MQ_FADE_STEP ? lf - i : MQ_FADE_STEP;
 			SDL_RenderSetClipRect(r, &clip);
 			SDL_RenderCopy(r, e->tex, NULL, &dst);
-			clip.x = x + w - MQ_FADE_STEP - i;    /* right, mirrored */
+		}
+		for (i = 0; i < rf; i += MQ_FADE_STEP) {
+			int sw = rf - i < MQ_FADE_STEP ? rf - i : MQ_FADE_STEP;
+
+			SDL_SetTextureAlphaMod(e->tex, (Uint8)(col.a * i / rf));
+			clip.x = x + w - sw - i;
+			clip.w = sw;
 			SDL_RenderSetClipRect(r, &clip);
 			SDL_RenderCopy(r, e->tex, NULL, &dst);
 		}
