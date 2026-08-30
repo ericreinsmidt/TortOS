@@ -473,11 +473,25 @@ static void free_all_textures(app *a)
 	}
 }
 
-/* The text sizes offered, spanning ui_set_font_scale's own 0.75..1.50 clamp
- * so every step is reachable and none is silently clamped into its neighbor.
+/* The text sizes offered.
+ *
+ * Three, not six, and 0.85 to 1.15 rather than 0.75 to 1.50. The panels this
+ * type sits in are laid out in fixed pixels, and the wider ladder wrote
+ * cheques they could not cash: at 1.50 the keyboard's title overlapped its
+ * own text field, the space key clipped its label, and the button hints ran
+ * off the panel edge. Rendered and looked at, 2026-08-30, which is the only
+ * way any of that is visible.
+ *
+ * The honest fix is to make those panels flow from the type rather than from
+ * constants, and that is a rework. Offering only what fits is the small one.
+ *
  * A ladder rather than a nudge, because the fonts are reopened on every
- * change and there is no sense doing that for one percent. */
-static const float TEXT_SCALES[] = { 0.75f, 0.85f, 1.00f, 1.15f, 1.30f, 1.50f };
+ * change and there is no sense doing that for one percent.
+ *
+ * The third label is a private joke and is meant to be there. It is not a
+ * placeholder, a leftover, or a string that failed to get localized. */
+static const float TEXT_SCALES[] = { 0.85f, 1.00f, 1.15f };
+static const char *TEXT_NAMES[]  = { "85%", "100%", "KitFox" };
 #define TEXT_SCALE_COUNT ((int)(sizeof TEXT_SCALES / sizeof TEXT_SCALES[0]))
 
 static int text_scale_step(void)
@@ -518,7 +532,24 @@ static float text_scale_load(float fallback)
 	if (!f) return fallback;
 	if (fscanf(f, "font_scale=%f", &v) != 1) v = 0.0f;
 	fclose(f);
-	return v > 0.0f ? v : fallback;
+	if (v <= 0.0f) return fallback;
+
+	/* Snapped onto the ladder, because the ladder shrank. A device left on
+	 * the old 1.50 would otherwise come back at 1.50 - a size no longer
+	 * offered, which the menu would then label as the largest step while
+	 * rendering something bigger than it. ui_set_font_scale clamps too, but
+	 * into a range, and a value inside the range that is not a step is
+	 * exactly the case that lies. */
+	{	int i, best = 0;
+		float bd = 1e9f;
+
+		for (i = 0; i < TEXT_SCALE_COUNT; i++) {
+			float d = v > TEXT_SCALES[i] ? v - TEXT_SCALES[i]
+			                             : TEXT_SCALES[i] - v;
+			if (d < bd) { bd = d; best = i; }
+		}
+		return TEXT_SCALES[best];
+	}
 }
 
 /* Whether the radio should come up at boot.
@@ -1701,7 +1732,7 @@ static int menu_build(app *a, screen_id screen, int sys,
 		return SM_ROWS;
 	}
 
-	snprintf(b->a, sizeof b->a, "%d%%", (int)(ui_get_font_scale() * 100.0f + 0.5f));
+	snprintf(b->a, sizeof b->a, "%s", TEXT_NAMES[text_scale_step()]);
 	*heading = "TortOS";
 	{	/* Reported rather than remembered: the radio can be brought up or
 		 * dropped from outside the launcher, so asking is the only answer that

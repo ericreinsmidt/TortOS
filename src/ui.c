@@ -71,10 +71,12 @@ static SDL_Texture *make_glow(SDL_Renderer *r)
 
 void ui_set_font_scale(float scale)
 {
-	/* The ceiling is where the longest menu label still fits across the panel;
-	 * past it the two columns start colliding rather than merely being large. */
-	if (scale < 0.75f) scale = 0.75f;
-	if (scale > 1.50f) scale = 1.50f;
+	/* Matched to the three steps the launcher offers - see TEXT_SCALES. The
+	 * range used to run to 1.50, which the menu panel survived and the
+	 * keyboard panel did not. A hand-edited config should not be able to
+	 * reach a size nothing was checked at. */
+	if (scale < 0.85f) scale = 0.85f;
+	if (scale > 1.15f) scale = 1.15f;
 	font_scale = scale;
 }
 
