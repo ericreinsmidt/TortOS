@@ -1,0 +1,80 @@
+/* SPDX-License-Identifier: 0BSD */
+#ifndef TORTOS_ARTSCRAPE_H
+#define TORTOS_ARTSCRAPE_H
+
+#include <stdbool.h>
+#include <stddef.h>
+
+#include "config.h"
+
+/* Box art, from libretro's thumbnail collection.
+ *
+ * A port of tools/scrape-art.py, which is still the way to fill a card from a
+ * host. The rules are the tool's and were measured there over 178 ROMs on
+ * 2026-08-29; carrying them over exactly is the point, because the tempting
+ * simplification is the one that loses a sixth of the library:
+ *
+ *     exact filename only                       148/178   83%
+ *     plus stripping (Translated) and friends   158/178   88%
+ *     fetch the index, match normalised titles  174/178   97%
+ *
+ * MATCHING IS AGAINST THE DIRECTORY INDEX, NOT BY GUESSING FILENAMES. Guessing
+ * cannot find what it does not know to guess: Master System sat at 9 of 20
+ * under every variant scheme, because libretro carries `Sonic The Hedgehog
+ * (USA, Europe, Brazil) (En)` and the card has the same game without the
+ * `(En)`. One index fetch shows that immediately and costs nine requests for
+ * the whole library rather than one probe per ROM per guess.
+ *
+ * No account, no API key. That is why this source was chosen: ScreenScraper
+ * refuses every call without a devid it issues by hand, and TheGamesDB now
+ * refuses keyless requests outright.
+ *
+ * The four it cannot match are fan translations - romhacks, absent from any
+ * No-Intro-derived database under those names. No provider has them and they
+ * want art supplied by hand, which is what Over The Hare is for.
+ */
+
+/* One index fetch per system, then one download per game that has no art. Art
+ * that is already there costs nothing: it is skipped without a request, which
+ * is what makes running this again cheap and a cancelled run free to restart.
+ *
+ * NOT driven from a frame loop. Each step blocks for up to its timeout, so the
+ * caller must own the screen and must be somewhere the power button is still
+ * being read - see art_step.
+ *
+ * The library is passed in rather than reached for. Nothing here should know
+ * how the launcher stores its config, and a scraper that reads a global is a
+ * scraper no check can hand a fixture to. */
+void art_begin(const systems_cfg *sys, const char *roms_dir);
+void art_cancel(void);
+
+/* One unit of work, so the caller can draw between them. Returns:
+ *
+ *    1  still going    - `now` says what it is doing
+ *    0  finished
+ *   -1  nothing started, or it could not begin at all
+ *
+ * A step is one index fetch or one image, so the longest a caller can be
+ * blocked is one request. */
+int art_step(void);
+
+/* What to put on screen. `now` is a game or a system name, never a URL. */
+typedef struct {
+	int  systems, systems_done;
+	int  found, missing, skipped;
+	char now[128];
+} art_progress;
+
+void art_status(art_progress *out);
+
+/* The matching rule, exposed because it IS the feature.
+ *
+ * Every percentage in the comment above rests on this one function agreeing
+ * with tools/scrape-art.py's norm(). A port that drifts here does not fail -
+ * it quietly finds a sixth fewer games, which looks exactly like libretro
+ * having less art than it does. tools/artscrape-check.c runs both over the
+ * real library and compares, the same way the two ROM hashers are checked
+ * against each other. */
+void art_norm(const char *in, char *out, size_t outn);
+
+#endif

@@ -93,6 +93,17 @@ build-native/idle-check: tools/idle-check.c src/idle.c src/idle.h FORCE
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
 	      -o $@ tools/idle-check.c src/idle.c
 
+# The device's title matcher against the host tool's. A drift here does not
+# fail, it just finds fewer games - see tools/artscrape-check.c.
+check-artscrape: build-native/artscrape-check
+	@python3 tools/artscrape-check.py
+
+build-native/artscrape-check: tools/artscrape-check.c src/artscrape.c src/artscrape.h
+	@mkdir -p build-native
+	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g -Isrc \
+	      -DTORTOS_VERSION='"check"' \
+	      -o $@ tools/artscrape-check.c src/artscrape.c src/net.c
+
 # The two hashers - one C for the device, one Python for the host tools - over
 # every ROM in the library. A wrong rule does not crash; it produces a hash RA
 # has never seen, which is indistinguishable from a game RA does not know.
@@ -110,10 +121,10 @@ build-native/rahash-check: tools/rahash-check.c src/rahash.c src/rahash.h FORCE
 check-raset: build-native/raset-check
 	@python3 tools/raset-check.py
 
-build-native/raset-check: tools/raset-check.c src/rafetch.c src/rajson.c src/rahash.c src/ranet.c src/atomic.c FORCE
+build-native/raset-check: tools/raset-check.c src/rafetch.c src/rajson.c src/rahash.c src/net.c src/atomic.c FORCE
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g -DTORTOS_VERSION='"check"' \
-	      -o $@ tools/raset-check.c src/rafetch.c src/rajson.c src/rahash.c src/ranet.c src/atomic.c
+	      -o $@ tools/raset-check.c src/rafetch.c src/rajson.c src/rahash.c src/net.c src/atomic.c
 
 # One-time: the cross-compiler image. Pinned by digest, so it does not drift.
 toolchain:

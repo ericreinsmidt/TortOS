@@ -16,13 +16,14 @@
 #include "coverflow.h"
 #include "library.h"
 #include "platform.h"
+#include "artscrape.h"
 #include "favorites.h"
 #include "hare.h"
 #include "idle.h"
 #include "notice.h"
 #include "rafetch.h"
 #include "rahash.h"
-#include "ranet.h"
+#include "net.h"
 #include "keyboard.h"
 #include "wifi.h"
 #include "ui.h"
@@ -695,7 +696,7 @@ static void ra_flush_unlocks(const char *rom, const char *tag)
 	char hash[33] = "";
 	int game, id, sent = 0, settled = 0;
 
-	if (!ra_signed_in() || chv_pending_count() == 0 || !ra_online()) return;
+	if (!ra_signed_in() || chv_pending_count() == 0 || !net_online()) return;
 
 	/* The hash is what a real client sends alongside an award, and it is the
 	 * one for the game just played - so only its own unlocks carry it. */
@@ -1763,7 +1764,11 @@ static int menu_build(app *a, screen_id screen, int sys,
 	out[PM_ACHIEVEMENTS] = (menu_row){ "Cheevos",
 	                                   ra_signed_in() ? ra_user() : "sign in",
 	                                   true };
-	out[PM_SCRAPE]       = (menu_row){ "Box Art",           "not yet", false };
+	{	bool on = wifi_status(NULL, 0, NULL, 0) == WIFI_CONNECTED;
+
+		out[PM_SCRAPE]   = (menu_row){ "Box Art",
+		                               on ? NULL : "needs Wi-Fi", on };
+	}
 	out[PM_TEXT]         = (menu_row){ "Text Size",         b->a,      true  };
 	/* Not "Sleep". The device has no suspend and is not getting one - see the
 	 * backlog. This powers off, and resume-into-game brings you back where you
@@ -1990,7 +1995,7 @@ static void ra_signin_screen(app *a)
 
 	snprintf(user, sizeof user, "%s", ra_user());
 
-	if (!ra_online()) {
+	if (!net_online()) {
 		row = (menu_row){ "Not on a network. Connect Wi-Fi first.", NULL, false };
 		wifi_backdrop(a);
 		menu_draw(a, "RetroAchievements", &row, 1, -1, 0, MENU_ACCENT);
@@ -2211,6 +2216,101 @@ static void xfer_screen(app *a)
 		SDL_Delay(4);
 	}
 	hare_stop();
+	plat_input_flush();
+	memset(&a->in, 0, sizeof a->in);
+}
+
+/* Box art, from libretro. See artscrape.h for the matching rule and why it is
+ * that one.
+ *
+ * Starts as soon as the screen opens rather than asking again. The player has
+ * already pressed A on a row called Box Art; a confirmation would be a second
+ * question with the same answer. It is safe to start because it is safe to
+ * stop: art already on the card costs no request, so B is free and so is
+ * running the whole thing again tomorrow.
+ *
+ * Deliberately NOT automatic. It is a network request on someone's behalf,
+ * and a launcher that quietly fetches two hundred images the first time a
+ * card is inserted has made that decision for them. */
+static void art_screen(app *a)
+{
+	menu_row     rows[3];
+	art_progress p;
+	char         counts[64], where[64], head[192];
+	bool         done = false, working = true;
+
+	if (!net_online()) {
+		menu_row row = { "No network", NULL, false };
+
+		draw_shelf(a);
+		menu_draw(a, "Box Art", &row, 1, -1, 0, MENU_ACCENT);
+		plat_draw_osd(a->r);
+		SDL_RenderPresent(a->r);
+		SDL_Delay(1600);
+		plat_input_flush();
+		memset(&a->in, 0, sizeof a->in);
+		return;
+	}
+
+	art_begin(&a->sys, P_ROMS);
+
+	while (!done && !want_quit && a->running) {
+		/* One step per frame. A step is one request STARTED or one poll of
+		 * the request already running - never a wait for one, because this
+		 * loop is where the power button is read. */
+		if (working && art_step() == 0) working = false;
+		art_status(&p);
+
+		snprintf(counts, sizeof counts, "%d found, %d missing, %d already",
+		         p.found, p.missing, p.skipped);
+		snprintf(where, sizeof where, "%d of %d systems",
+		         p.systems_done, p.systems);
+		snprintf(head, sizeof head, "Box Art\n%s",
+		         working ? (p.now[0] ? p.now : "starting") : "Finished");
+
+		rows[0] = (menu_row){ "Systems", where,  false };
+		rows[1] = (menu_row){ "Art",     counts, false };
+		rows[2] = (menu_row){ working ? "B to stop" : "B to close", NULL, false };
+
+		plat_input_poll(&a->in);
+		if (a->in.quit_requested) { art_cancel(); a->running = false; return; }
+
+		/* A fetch in flight is not somebody in the room, so it does not hold
+		 * the idle clock the way a connected browser does in Over The Hare -
+		 * there, a person was at the other end. Here the device is talking to
+		 * itself, and a library left scraping unattended on battery is
+		 * exactly what Auto Off is for. */
+		if (a->in.pressed[IN_POWER] || idle_due(a)) {
+			art_cancel();
+			power_off(a);
+			return;
+		}
+		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) {
+			art_cancel();
+			done = true;
+		}
+
+		if (in_repeat(&a->in, IN_VOLUP))    plat_volume_nudge(+1);
+		if (in_repeat(&a->in, IN_VOLDN))    plat_volume_nudge(-1);
+		if (in_repeat(&a->in, IN_BRIGHTUP)) plat_brightness_nudge(+1);
+		if (in_repeat(&a->in, IN_BRIGHTDN)) plat_brightness_nudge(-1);
+
+		tick_tint(a);
+		draw_shelf(a);
+		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
+		SDL_RenderFillRect(a->r, NULL);
+		menu_draw(a, head, rows, 3, -1, 0, MENU_ACCENT);
+		plat_draw_osd(a->r);
+		SDL_RenderPresent(a->r);
+		SDL_Delay(8);
+	}
+
+	art_cancel();
+	/* The cards on the shelf are textures already uploaded from whatever art
+	 * existed when the shelf was built. New art on the card changes nothing
+	 * until they are dropped and read again. */
+	free_all_textures(a);
 	plat_input_flush();
 	memset(&a->in, 0, sizeof a->in);
 }
@@ -2443,6 +2543,8 @@ static void tortos_menu(app *a)
 		    sel == PM_WIFI) wifi_screen(a);
 		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
 		    sel == PM_XFER) xfer_screen(a);
+		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
+		    sel == PM_SCRAPE) art_screen(a);
 		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
 		    sel == PM_ACHIEVEMENTS) ra_signin_screen(a);
 		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
@@ -3138,7 +3240,7 @@ static void launch(app *a)
 		/* Never played here, so there is no set to hand over. The game starts
 		 * anyway and the set is found behind it - see ra_fetch_begin. Nothing
 		 * in front of the launch. */
-		first_play = ra_signed_in() && access(set, R_OK) != 0 && ra_online();
+		first_play = ra_signed_in() && access(set, R_OK) != 0 && net_online();
 
 		if (chv_load(set)) {
 			/* Reconcile with the account BEFORE deciding what to watch.
@@ -4053,7 +4155,7 @@ int main(int argc, char *argv[])
 		a.auto_off = auto_off_load();
 
 		snprintf(cp, sizeof cp, "%s/cacert.pem", P_ROOT);
-		ra_set_ca_path(cp);
+		net_set_ca_path(cp);
 		ra_creds_path(cp, sizeof cp);
 		ra_creds_load(cp);
 	}

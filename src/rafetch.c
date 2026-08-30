@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: 0BSD */
-/* See rafetch.h. The network is ranet.c, the JSON is rajson.c, the hash is
+/* See rafetch.h. The network is net.c, the JSON is rajson.c, the hash is
  * rahash.c; this is the RetroAchievements workflow those three serve. */
 #include <fcntl.h>
 #include <stdio.h>
@@ -13,7 +13,7 @@
 #include "rafetch.h"
 #include "rahash.h"
 #include "rajson.h"
-#include "ranet.h"
+#include "net.h"
 
 static char g_user[RA_USER_MAX];
 static char g_token[RA_TOKEN_MAX];
@@ -77,7 +77,7 @@ bool ra_creds_save(const char *path)
 bool ra_sign_in(const char *user, const char *password, char *err, size_t errn)
 {
 	char body[2048];
-	ra_field f[3];
+	net_field f[3];
 	jsv root, v;
 
 	if (err && errn) err[0] = '\0';
@@ -85,7 +85,7 @@ bool ra_sign_in(const char *user, const char *password, char *err, size_t errn)
 		if (err) snprintf(err, errn, "user and password are both needed");
 		return false;
 	}
-	if (!ra_online()) {
+	if (!net_online()) {
 		if (err) snprintf(err, errn, "not on a network");
 		return false;
 	}
@@ -93,7 +93,7 @@ bool ra_sign_in(const char *user, const char *password, char *err, size_t errn)
 	f[0].k = "r"; f[0].v = "login2";
 	f[1].k = "u"; f[1].v = user;
 	f[2].k = "p"; f[2].v = password;
-	if (ra_post_buf(f, 3, body, sizeof body, 20) < 0) {
+	if (net_post_buf(f, 3, body, sizeof body, 20) < 0) {
 		if (err) snprintf(err, errn, "could not reach retroachievements.org");
 		return false;
 	}
@@ -119,15 +119,15 @@ bool ra_sign_in(const char *user, const char *password, char *err, size_t errn)
 long ra_game_for_rom(const char *rom_path, const char *tag)
 {
 	char hash[33], body[512];
-	ra_field f[2];
+	net_field f[2];
 	jsv root, v;
 
 	if (!ra_hash_rom(rom_path, tag, hash)) return -1;
-	if (!ra_online()) return -1;
+	if (!net_online()) return -1;
 
 	f[0].k = "r"; f[0].v = "gameid";
 	f[1].k = "m"; f[1].v = hash;
-	if (ra_post_buf(f, 2, body, sizeof body, 20) < 0) return -1;
+	if (net_post_buf(f, 2, body, sizeof body, 20) < 0) return -1;
 
 	root = js_root(body, strlen(body));
 	if (!js_member(root, "Success", &v) || !js_is_true(v)) return -1;
@@ -249,10 +249,10 @@ bool ra_fetch_set(long gameid, const char *out_path)
 	char tmp[1024], g[24];
 	char *json;
 	size_t len;
-	ra_field f[4];
+	net_field f[4];
 	bool ok;
 
-	if (gameid <= 0 || !ra_signed_in() || !ra_online()) return false;
+	if (gameid <= 0 || !ra_signed_in() || !net_online()) return false;
 
 	snprintf(g, sizeof g, "%ld", gameid);
 	snprintf(tmp, sizeof tmp, "%s.json", out_path);
@@ -263,7 +263,7 @@ bool ra_fetch_set(long gameid, const char *out_path)
 	f[3].k = "t"; f[3].v = g_token;
 	/* Straight to a file: a big set runs past 100KB and nothing here should
 	 * have to guess how big is big enough. */
-	if (!ra_post_file(f, 4, tmp, 30)) return false;
+	if (!net_post_file(f, 4, tmp, 30)) return false;
 
 	json = read_whole(tmp, &len);
 	unlink(tmp);
@@ -280,12 +280,12 @@ int ra_account_unlocks(long gameid, int *out, int max)
 {
 	char *body;
 	char g[24];
-	ra_field f[5];
+	net_field f[5];
 	jsv root, arr, it, e;
 	int n = 0;
 
 	if (gameid <= 0 || !out || max <= 0) return -1;
-	if (!ra_signed_in() || !ra_online()) return -1;
+	if (!ra_signed_in() || !net_online()) return -1;
 
 	/* Heap rather than a guess on the stack: 200 ids is a few KB and the
 	 * reply carries more than the ids. */
@@ -298,7 +298,7 @@ int ra_account_unlocks(long gameid, int *out, int max)
 	f[2].k = "t"; f[2].v = g_token;
 	f[3].k = "g"; f[3].v = g;
 	f[4].k = "h"; f[4].v = "0";     /* softcore: TortOS enforces no hardcore */
-	if (ra_post_buf(f, 5, body, 65536, 20) < 0) { free(body); return -1; }
+	if (net_post_buf(f, 5, body, 65536, 20) < 0) { free(body); return -1; }
 
 	root = js_root(body, strlen(body));
 	if (!js_member(root, "UserUnlocks", &arr)) { free(body); return -1; }
@@ -329,12 +329,12 @@ static void fq_stop(int state)
 
 void ra_fetch_begin(const char *rom_hash, const char *set_path)
 {
-	ra_field f[2];
+	net_field f[2];
 
 	g_fq_state = FQ_IDLE;
 	g_fq_game = 0;
 	if (!rom_hash || !*rom_hash || !set_path || !*set_path) return;
-	if (!ra_signed_in() || !ra_online()) return;
+	if (!ra_signed_in() || !net_online()) return;
 
 	snprintf(g_fq_hash, sizeof g_fq_hash, "%s", rom_hash);
 	snprintf(g_fq_set, sizeof g_fq_set, "%s", set_path);
@@ -343,7 +343,7 @@ void ra_fetch_begin(const char *rom_hash, const char *set_path)
 
 	f[0].k = "r"; f[0].v = "gameid";
 	f[1].k = "m"; f[1].v = g_fq_hash;
-	if (ra_post_async(f, 2, g_fq_tmp, 25)) g_fq_state = FQ_GAMEID;
+	if (net_post_async(f, 2, g_fq_tmp, 25)) g_fq_state = FQ_GAMEID;
 	else                                   fq_stop(FQ_FAILED);
 }
 
@@ -357,7 +357,7 @@ int ra_fetch_step(void)
 	if (g_fq_state == FQ_DONE)   { g_fq_state = FQ_IDLE; return 1; }
 	if (g_fq_state == FQ_IDLE || g_fq_state == FQ_FAILED) return -1;
 
-	rc = ra_async_poll();
+	rc = net_async_poll();
 	if (rc == 0) return 0;                         /* still running */
 	if (rc < 0) { fq_stop(FQ_FAILED); return -1; }
 
@@ -366,8 +366,8 @@ int ra_fetch_step(void)
 	root = js_root(body, len);
 
 	if (g_fq_state == FQ_GAMEID) {
-		ra_field f[4];
-		static char g[24];       /* static: ra_post_async keeps the pointer */
+		net_field f[4];
+		static char g[24];       /* static: net_post_async keeps the pointer */
 
 		if (!js_member(root, "GameID", &v)) { free(body); fq_stop(FQ_FAILED); return -1; }
 		g_fq_game = js_int(v);
@@ -381,7 +381,7 @@ int ra_fetch_step(void)
 		f[1].k = "g"; f[1].v = g;
 		f[2].k = "u"; f[2].v = g_user;
 		f[3].k = "t"; f[3].v = g_token;
-		if (!ra_post_async(f, 4, g_fq_tmp, 30)) { fq_stop(FQ_FAILED); return -1; }
+		if (!net_post_async(f, 4, g_fq_tmp, 30)) { fq_stop(FQ_FAILED); return -1; }
 		g_fq_state = FQ_PATCH;
 		return 0;
 	}
@@ -408,10 +408,10 @@ static char g_sync_path[256];
 void ra_sync_begin(long gameid)
 {
 	static char g[24];              /* static: the fields outlive this call */
-	ra_field f[5];
+	net_field f[5];
 
 	g_sync_path[0] = '\0';
-	if (gameid <= 0 || !ra_signed_in() || !ra_online()) return;
+	if (gameid <= 0 || !ra_signed_in() || !net_online()) return;
 
 	snprintf(g, sizeof g, "%ld", gameid);
 	snprintf(g_sync_path, sizeof g_sync_path, "/tmp/tortos-ra-unlocks-%ld.json",
@@ -422,7 +422,7 @@ void ra_sync_begin(long gameid)
 	f[2].k = "t"; f[2].v = g_token;
 	f[3].k = "g"; f[3].v = g;
 	f[4].k = "h"; f[4].v = "0";
-	if (!ra_post_async(f, 5, g_sync_path, 25)) g_sync_path[0] = '\0';
+	if (!net_post_async(f, 5, g_sync_path, 25)) g_sync_path[0] = '\0';
 }
 
 int ra_sync_collect(int *out, int max)
@@ -436,7 +436,7 @@ int ra_sync_collect(int *out, int max)
 
 	/* Blocks only if the child somehow has not finished a request started
 	 * before a whole game session. It has. */
-	do { rc = ra_async_poll(); } while (rc == 0 && (usleep(50000), 1));
+	do { rc = net_async_poll(); } while (rc == 0 && (usleep(50000), 1));
 	if (rc != 1) { unlink(g_sync_path); g_sync_path[0] = '\0'; return -1; }
 
 	body = read_whole(g_sync_path, &len);
@@ -455,25 +455,25 @@ int ra_sync_collect(int *out, int max)
 void ra_start_session(long gameid)
 {
 	char body[1024], g[24];
-	ra_field f[4];
+	net_field f[4];
 
-	if (gameid <= 0 || !ra_signed_in() || !ra_online()) return;
+	if (gameid <= 0 || !ra_signed_in() || !net_online()) return;
 	snprintf(g, sizeof g, "%ld", gameid);
 	f[0].k = "r"; f[0].v = "startsession";
 	f[1].k = "u"; f[1].v = g_user;
 	f[2].k = "t"; f[2].v = g_token;
 	f[3].k = "g"; f[3].v = g;
-	ra_post_buf(f, 4, body, sizeof body, 15);
+	net_post_buf(f, 4, body, sizeof body, 15);
 }
 
 int ra_submit_unlock(int achievement_id, const char *rom_hash)
 {
 	char body[1024], a[24], v[33], sig[128];
-	ra_field f[7];
+	net_field f[7];
 	jsv root, m;
 	int n = 0;
 
-	if (achievement_id <= 0 || !ra_signed_in() || !ra_online()) return -1;
+	if (achievement_id <= 0 || !ra_signed_in() || !net_online()) return -1;
 
 	snprintf(a, sizeof a, "%d", achievement_id);
 	/* rcheevos builds exactly this in rc_api_init_award_achievement_request,
@@ -491,7 +491,7 @@ int ra_submit_unlock(int achievement_id, const char *rom_hash)
 	if (rom_hash && *rom_hash) { f[n].k = "m"; f[n++].v = rom_hash; }
 	f[n].k = "v"; f[n++].v = v;
 
-	if (ra_post_buf(f, n, body, sizeof body, 20) < 0) return -1;
+	if (net_post_buf(f, n, body, sizeof body, 20) < 0) return -1;
 
 	root = js_root(body, strlen(body));
 	if (js_member(root, "Success", &m) && js_is_true(m)) return 1;
@@ -520,7 +520,7 @@ bool ra_ensure_set(const char *rom_path, const char *tag, const char *set_path)
 	long gid;
 
 	if (stat(set_path, &st) == 0 && st.st_size > 0) return true;   /* cached */
-	if (!ra_signed_in() || !ra_online()) return false;
+	if (!ra_signed_in() || !net_online()) return false;
 
 	gid = ra_game_for_rom(rom_path, tag);
 	if (gid <= 0) return false;

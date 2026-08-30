@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: 0BSD */
-/* See ranet.h for why this shells out to curl and why the request is a file. */
+/* See net.h for why this shells out to curl and why the request is a file. */
 #include <errno.h>
 #include <fcntl.h>
 #include <ifaddrs.h>
@@ -13,13 +13,13 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include "ranet.h"
+#include "net.h"
 
 #define RA_URL "https://retroachievements.org/dorequest.php"
 
 static char g_ca[512];
 
-void ra_set_ca_path(const char *path)
+void net_set_ca_path(const char *path)
 {
 	snprintf(g_ca, sizeof g_ca, "%s", path ? path : "");
 }
@@ -51,7 +51,29 @@ static void cfg_quote(FILE *f, const char *v)
 	fputc('"', f);
 }
 
-static bool write_config(const char *path, const ra_field *fl, int n,
+/* The same config, for a GET of an arbitrary URL. No fields, no token, so
+ * nothing here needs hiding from a process list - but it goes through a file
+ * anyway, because two ways of invoking curl is two things to keep right. */
+static bool write_get_config(const char *path, const char *url, int timeout_s)
+{
+	FILE *f;
+	int fd;
+
+	fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+	if (fd < 0) return false;
+	f = fdopen(fd, "w");
+	if (!f) { close(fd); return false; }
+
+	fprintf(f, "silent\nshow-error\nfail\nlocation\n");
+	fprintf(f, "max-time = %d\n", timeout_s);
+	if (g_ca[0]) { fprintf(f, "cacert = "); cfg_quote(f, g_ca); fputc('\n', f); }
+	fprintf(f, "user-agent = "); cfg_quote(f, "TortOS/" TORTOS_VERSION); fputc('\n', f);
+	fprintf(f, "url = "); cfg_quote(f, url); fputc('\n', f);
+	fclose(f);
+	return true;
+}
+
+static bool write_config(const char *path, const net_field *fl, int n,
                          int timeout_s)
 {
 	FILE *f;
@@ -123,7 +145,7 @@ static void tmp_config(char *out, size_t n)
 	snprintf(out, n, "/tmp/tortos-ra-%ld.curl", (long)getpid());
 }
 
-long ra_post_buf(const ra_field *f, int n, char *out, size_t outn, int timeout_s)
+long net_post_buf(const net_field *f, int n, char *out, size_t outn, int timeout_s)
 {
 	char cfg[128], tmp[160];
 	int fd, rc;
@@ -153,7 +175,7 @@ long ra_post_buf(const ra_field *f, int n, char *out, size_t outn, int timeout_s
 	return got;
 }
 
-bool ra_post_file(const ra_field *f, int n, const char *path, int timeout_s)
+bool net_post_file(const net_field *f, int n, const char *path, int timeout_s)
 {
 	char cfg[128], tmp[1024];
 	struct stat st;
@@ -187,7 +209,7 @@ bool ra_post_file(const ra_field *f, int n, const char *path, int timeout_s)
 static pid_t g_async = -1;
 static char  g_async_cfg[160];
 
-bool ra_post_async(const ra_field *f, int n, const char *path, int timeout_s)
+bool net_post_async(const net_field *f, int n, const char *path, int timeout_s)
 {
 	const char *bin = curl_bin();
 	int fd;
@@ -220,10 +242,64 @@ bool ra_post_async(const ra_field *f, int n, const char *path, int timeout_s)
 	return true;
 }
 
-int ra_async_poll(void)
+/* Where an async GET is being written, so the poll can put it in place. Empty
+ * when the request in flight is a POST, which manages its own destination. */
+static char g_async_dest[512];
+static char g_async_part[520];
+
+bool net_get_async(const char *url, const char *path, int timeout_s)
+{
+	const char *bin = curl_bin();
+	int fd;
+
+	if (g_async > 0 || !bin) return false;
+
+	snprintf(g_async_cfg, sizeof g_async_cfg, "/tmp/tortos-get-async-%ld.curl",
+	         (long)getpid());
+	if (!write_get_config(g_async_cfg, url, timeout_s)) return false;
+
+	snprintf(g_async_dest, sizeof g_async_dest, "%s", path);
+	if (snprintf(g_async_part, sizeof g_async_part, "%s.part", path)
+	    >= (int)sizeof g_async_part) {
+		unlink(g_async_cfg);
+		g_async_dest[0] = '\0';
+		return false;
+	}
+
+	fd = open(g_async_part, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	if (fd < 0) { unlink(g_async_cfg); g_async_dest[0] = '\0'; return false; }
+
+	g_async = fork();
+	if (g_async < 0) {
+		close(fd);
+		unlink(g_async_cfg);
+		unlink(g_async_part);
+		g_async = -1;
+		g_async_dest[0] = '\0';
+		return false;
+	}
+	if (g_async == 0) {
+		char *argv[4];
+		int devnull = open("/dev/null", O_RDONLY);
+
+		if (devnull >= 0) { dup2(devnull, 0); close(devnull); }
+		dup2(fd, 1);
+		argv[0] = (char *)bin;
+		argv[1] = (char *)"-K";
+		argv[2] = g_async_cfg;
+		argv[3] = NULL;
+		execv(bin, argv);
+		_exit(127);
+	}
+	close(fd);
+	return true;
+}
+
+int net_async_poll(void)
 {
 	int st;
 	pid_t r;
+	bool ok;
 
 	if (g_async <= 0) return -1;
 	r = waitpid(g_async, &st, WNOHANG);
@@ -231,11 +307,20 @@ int ra_async_poll(void)
 
 	g_async = -1;
 	unlink(g_async_cfg);
-	if (r < 0) return -1;
-	return (WIFEXITED(st) && WEXITSTATUS(st) == 0) ? 1 : -1;
+	ok = (r > 0 && WIFEXITED(st) && WEXITSTATUS(st) == 0);
+
+	/* A GET renames into place here rather than in the child, because only
+	 * the parent knows the request succeeded. curl -f exits non-zero on an
+	 * HTTP error but has usually already written the error body. */
+	if (g_async_dest[0]) {
+		if (ok && rename(g_async_part, g_async_dest) != 0) ok = false;
+		if (!ok) unlink(g_async_part);
+		g_async_dest[0] = '\0';
+	}
+	return ok ? 1 : -1;
 }
 
-bool ra_online(void)
+bool net_online(void)
 {
 	struct ifaddrs *ifa, *p;
 	bool up = false;
@@ -251,4 +336,63 @@ bool ra_online(void)
 	}
 	freeifaddrs(ifa);
 	return up;
+}
+
+long net_get_buf(const char *url, char *out, size_t outn, int timeout_s)
+{
+	char cfg[128];
+	int fd, rc;
+	long got = -1;
+
+	if (!out || outn == 0) return -1;
+	out[0] = '\0';
+	tmp_config(cfg, sizeof cfg);
+	if (!write_get_config(cfg, url, timeout_s)) return -1;
+
+	{
+		char tmp[160];
+		FILE *rf;
+
+		snprintf(tmp, sizeof tmp, "%s.out", cfg);
+		fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+		if (fd < 0) { remove(cfg); return -1; }
+		rc = run_curl(cfg, fd);
+		close(fd);
+		remove(cfg);
+		if (rc != 0) { remove(tmp); return -1; }
+
+		rf = fopen(tmp, "rb");
+		if (!rf) { remove(tmp); return -1; }
+		got = (long)fread(out, 1, outn - 1, rf);
+		out[got < 0 ? 0 : got] = '\0';
+		fclose(rf);
+		remove(tmp);
+	}
+	return got;
+}
+
+bool net_get_file(const char *url, const char *path, int timeout_s)
+{
+	char cfg[128], tmp[512];
+	int fd, rc;
+
+	tmp_config(cfg, sizeof cfg);
+	if (!write_get_config(cfg, url, timeout_s)) return false;
+
+	/* Through a temporary and renamed. An interrupted download that left half
+	 * a PNG in place would be read by every later run as art that is already
+	 * there, and skipped forever - the one failure this whole feature could
+	 * not recover from on its own. */
+	if (snprintf(tmp, sizeof tmp, "%s.part", path) >= (int)sizeof tmp) {
+		remove(cfg);
+		return false;
+	}
+	fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	if (fd < 0) { remove(cfg); return false; }
+	rc = run_curl(cfg, fd);
+	close(fd);
+	remove(cfg);
+	if (rc != 0) { remove(tmp); return false; }
+	if (rename(tmp, path) != 0) { remove(tmp); return false; }
+	return true;
 }
