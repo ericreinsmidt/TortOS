@@ -136,10 +136,23 @@ static void kb_draw(SDL_Renderer *r, const kb_state *k, const char *title,
 	ui_text(r, ui_font(UI_F_LABEL), title, panel.x + PANEL_W / 2,
 	        panel.y + 22, 0, UI_TEXT_SOFT);
 
-	/* The field. Always in clear - see the note in keyboard.h. */
+	/* The field. Always in clear - see the note in keyboard.h.
+	 *
+	 * Sized off the font, not a round number. It was 46 tall with the text
+	 * laid in at +8, and a rendered line of UI_F_MENU is 44 at the default
+	 * type scale - so the last six pixels were clipped away, which is exactly
+	 * where g, j, p, q and y live. Reported from the device 2026-08-30 and
+	 * plain in a shot: the descenders end in a flat horizontal cut.
+	 *
+	 * TTF_FontHeight is the height of the surface SDL_ttf renders, and it can
+	 * come back a pixel or two over for some strings, so the padding is slack
+	 * as well as margin. Five keeps the field clear of the key grid at the
+	 * largest of the six text sizes, where the font is 64 tall. */
 	fieldy = panel.y + 74;
 	{
-		SDL_Rect f = { panel.x + 28, fieldy, PANEL_W - 56, 46 };
+		int fh = fk ? TTF_FontHeight(fk) : ui_font_line(UI_F_MENU);
+		int fpad = 5;
+		SDL_Rect f = { panel.x + 28, fieldy, PANEL_W - 56, fh + fpad * 2 };
 		SDL_Rect clip = { f.x + 6, f.y, f.w - 12, f.h };
 		int caret, pre, shift = 0;
 
@@ -157,15 +170,19 @@ static void kb_draw(SDL_Renderer *r, const kb_state *k, const char *title,
 		memcpy(shown, k->buf, (size_t)k->len);
 		shown[k->len] = '\0';
 		SDL_RenderSetClipRect(r, &clip);
-		ui_text(r, fk, shown, f.x + 12 - shift, f.y + 8, -1, UI_TEXT);
+		ui_text(r, fk, shown, f.x + 12 - shift, f.y + fpad, -1, UI_TEXT);
 		SDL_RenderSetClipRect(r, NULL);
 
 		/* Caret at the measured pixel width rather than a fixed advance,
-		 * which a proportional face would not honor. */
+		 * which a proportional face would not honor. Its height follows the
+		 * font for the same reason the field does - it was 32 pixels, which
+		 * is a caret shorter than the letters at every size but the smallest.
+		 * A pixel in from the text's own box, so it reads as a cursor rather
+		 * than a rule. */
 		caret = f.x + 12 + pre - shift;
 		SDL_SetRenderDrawColor(r, (Uint8)(accent >> 16), (Uint8)(accent >> 8),
 		                       (Uint8)accent, 255);
-		SDL_RenderFillRect(r, &(SDL_Rect){ caret, f.y + 7, 2, 32 });
+		SDL_RenderFillRect(r, &(SDL_Rect){ caret, f.y + fpad + 1, 2, fh - 2 });
 	}
 
 	/* The grid. */

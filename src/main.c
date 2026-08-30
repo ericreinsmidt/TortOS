@@ -1198,7 +1198,7 @@ static void draw_games(app *a)
 		if (game_has_state(a, shelf_owner(a, a->sys_cursor, v->cursor), g)) {
 			TTF_Font *ft = ui_font(UI_F_TITLE);
 			int line = ui_font_line(UI_F_TITLE);
-			int rad = line / 8, dx = tx - tw / 2 - rad * 3;
+			int rad = line / 8, dx = tx + tw / 2 + rad * 3;
 			/* Same ink-centering as the star opposite it. This sat on the em
 			 * box's middle, which is a descender's depth below the letters,
 			 * and next to a mark that was centered properly the two read as
@@ -1211,10 +1211,15 @@ static void draw_games(app *a)
 				SDL_RenderDrawLine(a->r, dx - w, dy + k, dx + w, dy + k);
 			}
 		}
-		/* On the right, because the autosave dot already owns the left. The
-		 * two say different things - one is "this is where you left off", the
-		 * other "you chose this" - and a reader should not have to work out
-		 * which mark is which by its shape alone. */
+		/* On the left, opposite the autosave dot. The two say different things
+		 * - one is "you chose this", the other "this is where you left off" -
+		 * and a reader should not have to work out which mark is which by its
+		 * shape alone. They were the other way round until 2026-08-30.
+		 *
+		 * Each keeps its own offset, which is not the same number: the star's
+		 * radius is line/4 and the dot's line/8, and the offsets are two and
+		 * three radii. That lands both marks a quarter of a line clear of the
+		 * text, so mirroring them is a mirror and not a nudge. */
 		if (fav_is(gs->tag, g->file)) {
 			TTF_Font *ft = ui_font(UI_F_TITLE);
 			int line = ui_font_line(UI_F_TITLE);
@@ -1227,7 +1232,7 @@ static void draw_games(app *a)
 			int dy = 40 + line / 2 + (ft ? TTF_FontDescent(ft) / 2 : 0);
 			SDL_Color c = { (Uint8)(gs->accent >> 16), (Uint8)(gs->accent >> 8),
 			                (Uint8)gs->accent, 255 };
-			draw_star(a->r, (float)(tx + tw / 2 + rad * 2), (float)dy,
+			draw_star(a->r, (float)(tx - tw / 2 - rad * 2), (float)dy,
 			          (float)rad, c);
 		}
 		ui_text(a->r, ui_font(UI_F_TITLE), g->title, tx, 40, 0, UI_TEXT);
