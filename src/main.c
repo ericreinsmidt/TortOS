@@ -1271,6 +1271,14 @@ static void draw_games(app *a)
 		int tw = ui_text_width(ft2, g->title);
 		int tx = TORTOS_SCREEN_W / 2;
 		bool slides = tw > boxw;
+		/* Asked for EVERY frame, not only when something slides. It is a
+		 * clock that has to watch the cursor to know when to restart, and it
+		 * cannot watch it on frames nobody calls it. Reading it only inside
+		 * the sliding branch meant a short title in between - which needs no
+		 * marquee and so never called this - left the last long one still
+		 * recorded as current; coming back to it was not a change, and it
+		 * carried on mid-scroll instead of starting over. */
+		unsigned phase = title_phase(a);
 		/* The one mark left on a card.
 		 *
 		 * There was a second, a dot on the right, for a game with an autosave
@@ -1292,7 +1300,7 @@ static void draw_games(app *a)
 		}
 		if (slides)
 			ui_text_marquee(a->r, ft2, g->title, boxx, 40, boxw,
-			                title_phase(a), UI_TEXT);
+			                phase, UI_TEXT);
 		else
 			ui_text(a->r, ft2, g->title, tx, 40, 0, UI_TEXT);
 		snprintf(count, sizeof count, "%d / %d", v->cursor + 1, v->list.count);
