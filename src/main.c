@@ -17,6 +17,7 @@
 #include "library.h"
 #include "platform.h"
 #include "favorites.h"
+#include "hare.h"
 #include "idle.h"
 #include "notice.h"
 #include "rafetch.h"
@@ -1752,11 +1753,13 @@ static int menu_build(app *a, screen_id screen, int sys,
 	 *
 	 * Directly under Wi-Fi because it is useless without it, and reads as an
 	 * answer to the row above rather than a separate idea. */
-	/* "not yet" until the screen behind it exists. It will read
-	 * WIFI_CONNECTED then - the feature is useless without a network - but a
-	 * row that looks ready and does nothing when pressed is worse than one
-	 * that says so. */
-	out[PM_XFER]         = (menu_row){ "Over The Hare",     "not yet", false };
+	{	bool on = wifi_status(NULL, 0, NULL, 0) == WIFI_CONNECTED;
+
+		/* Useless without a network, and saying so is more use than a row
+		 * that opens a screen showing no address. */
+		out[PM_XFER]     = (menu_row){ "Over The Hare",
+		                               on ? NULL : "needs Wi-Fi", on };
+	}
 	out[PM_ACHIEVEMENTS] = (menu_row){ "Cheevos",
 	                                   ra_signed_in() ? ra_user() : "sign in",
 	                                   true };
@@ -2031,6 +2034,187 @@ static void ra_signin_screen(app *a)
 	memset(&a->in, 0, sizeof a->in);
 }
 
+/* Over The Hare: the address, the PIN, and what is happening.
+ *
+ * The whole screen is a waiting room. It exists so somebody can read two
+ * things off a handheld and type them into a laptop, and then watch enough to
+ * know it is working. Everything real happens in hare.c and in a browser
+ * somewhere else on the network.
+ *
+ * The server lives exactly as long as this screen. Closing it stops
+ * listening, forgets the PIN and drops every session - which is the honest
+ * answer to "how long is my ROM folder on the network for". */
+/* Bytes, in a unit a person reads rather than the one the counter is in.
+ *
+ * The shot harness was handed "41 MB out" as a literal while this screen could
+ * only ever print kilobytes - a picture of a screen that did not exist, which
+ * is the exact failure the shared row builder was meant to stop. Sharing the
+ * layout is not enough if the fixture claims the content can be something it
+ * cannot. */
+static void human_bytes(char *out, size_t n, unsigned long long b)
+{
+	if (b < 1024ull)              snprintf(out, n, "%llu B", b);
+	else if (b < 1024ull * 1024)  snprintf(out, n, "%llu KB", b / 1024);
+	else if (b < 1024ull * 1024 * 1024)
+		snprintf(out, n, "%.1f MB", (double)b / (1024 * 1024));
+	else snprintf(out, n, "%.1f GB", (double)b / (1024ull * 1024 * 1024));
+}
+
+/* The address and the PIN go in the HEADING, not in rows.
+ *
+ * They were four rows of equal weight, and rendered it was obvious that the
+ * two things this screen exists to be read off were in the dimmest colour the
+ * launcher has: menu_draw paints a value UI_TEXT_DIM unless its row is both
+ * live and selected, and nothing on a status screen is either. The heading is
+ * UI_F_LABEL at UI_TEXT_SOFT - larger and brighter - and takes two lines when
+ * it contains a newline, which is exactly two things worth copying.
+ *
+ * Everything else is status and belongs below the rule. */
+static void hare_head(char *out, size_t n, const char *addr, const char *pin)
+{
+	snprintf(out, n, "%s\nPIN %s", addr, pin);
+}
+
+static int hare_rows(menu_row *out, const char *who, const char *moved,
+                     const char *now)
+{
+	out[0] = (menu_row){ "Browsers",    who,   false };
+	out[1] = (menu_row){ "Transferred", moved, false };
+	out[2] = (menu_row){ "Now",         now,   false };
+	return 3;
+}
+
+/* One frame of it, for the shot harness. The rows come from the same
+ * function the screen uses, so a picture of this cannot quietly stop being a
+ * picture of that. */
+void hare_preview(app *a, const char *addr, const char *pin, const char *who,
+                  const char *moved, const char *now)
+{
+	menu_row rows[3];
+	char head[192];
+	int n = hare_rows(rows, who, moved, now);
+
+	hare_head(head, sizeof head, addr, pin);
+	draw_shelf(a);
+	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+	SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
+	SDL_RenderFillRect(a->r, NULL);
+	menu_draw(a, head, rows, n, -1, 0, MENU_ACCENT);
+}
+
+static void xfer_screen(app *a)
+{
+	char       ssid[WIFI_SSID_MAX], ip[64];
+	char       addr[96], pinbuf[32], who[64], moved[64], head[192];
+	menu_row   rows[3];
+	hare_stats st;
+	unsigned long long total_in = 0, total_out = 0;
+	bool       done = false;
+
+	if (!hare_start(P_ROMS, P_CARD, P_WEB)) {
+		menu_row row = { "Could not start", NULL, false };
+
+		draw_shelf(a);
+		menu_draw(a, "Over The Hare", &row, 1, -1, 0, MENU_ACCENT);
+		plat_draw_osd(a->r);
+		SDL_RenderPresent(a->r);
+		SDL_Delay(1800);
+		plat_input_flush();
+		memset(&a->in, 0, sizeof a->in);
+		return;
+	}
+
+	snprintf(pinbuf, sizeof pinbuf, "%s", hare_pin());
+	addr[0] = '\0';
+
+	while (!done && !want_quit && a->running) {
+		static unsigned next_check;
+		unsigned now = plat_now_ms();
+		int busy;
+
+		/* The launcher's slice of the transfer. Bounded, like everything else
+		 * in a frame - see httpd.h. */
+		busy = hare_poll();
+		hare_status(&st);
+		total_in  += st.in;
+		total_out += st.out;
+
+		/* Two seconds, because wifi_status forks wpa_cli and this loop runs
+		 * every frame. Same cache the About screen uses. */
+		if (!addr[0] || now - next_check > 2000u) {
+			next_check = now;
+			if (wifi_status(ssid, sizeof ssid, ip, sizeof ip) == WIFI_CONNECTED
+			    && ip[0]) {
+				/* Port 80 needs no colon, and the address is being copied by
+				 * hand off a three-inch screen - so it is only shown when it
+				 * is not the one everybody assumes. */
+				if (hare_port() == 80)
+					snprintf(addr, sizeof addr, "%s", ip);
+				else
+					snprintf(addr, sizeof addr, "%s:%d", ip, hare_port());
+			} else {
+				snprintf(addr, sizeof addr, "Wi-Fi went away");
+			}
+		}
+
+		if (st.clients == 0)      snprintf(who, sizeof who, "waiting");
+		else if (st.clients == 1) snprintf(who, sizeof who, "1 connected");
+		else                      snprintf(who, sizeof who, "%d connected", st.clients);
+
+		if (total_in || total_out) {
+			char hin[24], hout[24];
+
+			human_bytes(hin,  sizeof hin,  total_in);
+			human_bytes(hout, sizeof hout, total_out);
+			snprintf(moved, sizeof moved, "%s in / %s out", hin, hout);
+		} else {
+			snprintf(moved, sizeof moved, "nothing yet");
+		}
+
+		hare_head(head, sizeof head, addr, pinbuf);
+		hare_rows(rows, who, moved, st.last[0] ? st.last : "waiting");
+
+		plat_input_poll(&a->in);
+		if (a->in.quit_requested) { hare_stop(); a->running = false; return; }
+
+		/* Auto Off must not shut the device down in the middle of a 900MB
+		 * upload, and it also must not shut it down while somebody is reading
+		 * a listing on the other side of the room. Bytes moving is obvious
+		 * activity; a connected browser is a person at the other end of it,
+		 * which is the same claim a button press makes and no weaker for
+		 * arriving over a network. Neither suspends Auto Off - close the tab
+		 * and the countdown resumes. */
+		if (busy || st.clients > 0) a->idle.since_ms = now;
+
+		if (a->in.pressed[IN_POWER] || idle_due(a)) {
+			hare_stop();
+			power_off(a);
+			return;
+		}
+		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = true;
+
+		if (in_repeat(&a->in, IN_VOLUP))    plat_volume_nudge(+1);
+		if (in_repeat(&a->in, IN_VOLDN))    plat_volume_nudge(-1);
+		if (in_repeat(&a->in, IN_BRIGHTUP)) plat_brightness_nudge(+1);
+		if (in_repeat(&a->in, IN_BRIGHTDN)) plat_brightness_nudge(-1);
+
+		tick_tint(a);
+		draw_shelf(a);
+		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
+		SDL_RenderFillRect(a->r, NULL);
+		menu_draw(a, head, rows, 3, -1, 0, MENU_ACCENT);
+		plat_draw_osd(a->r);
+		SDL_RenderPresent(a->r);
+		/* Shorter than the usual 8ms: this loop is also the server's, and a
+		 * transfer moves POLL_BUDGET per pass. */
+		SDL_Delay(4);
+	}
+	hare_stop();
+	plat_input_flush();
+	memset(&a->in, 0, sizeof a->in);
+}
+
 static void about_screen(app *a)
 {
 	char ver[48], addr[80], batt[32], up[48];
@@ -2257,6 +2441,8 @@ static void tortos_menu(app *a)
 		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); return; }
 		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
 		    sel == PM_WIFI) wifi_screen(a);
+		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
+		    sel == PM_XFER) xfer_screen(a);
 		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
 		    sel == PM_ACHIEVEMENTS) ra_signin_screen(a);
 		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
@@ -3585,6 +3771,10 @@ static int shot_kb, shot_kb_layer;
 static const char *shot_notice;
 static const char *shot_notice_head = "Unlocked  -  5 points";
 static int shot_cheevos;
+static int shot_hare;
+static const char *shot_hare_addr = "192.168.1.42";
+static const char *shot_hare_who  = "1 connected";
+static const char *shot_hare_head = "receiving Contra (USA).zip";
 static const char *shot_wait, *shot_wait_msg = "Scanning...";
 static const char *shot_kb_text = "correct horse";
 /* The title was hardcoded to "Wi-Fi password", so the one other thing that
@@ -3668,6 +3858,9 @@ static void take_shot(app *a)
 
 		menu_draw(a, shot_wait, &row, 1, -1, 0, MENU_ACCENT);
 	}
+	if (shot_hare)
+		hare_preview(a, shot_hare_addr, "4071", shot_hare_who,
+		             "12 KB in / 41 MB out", shot_hare_head);
 	if (shot_cheevos) {
 		static const struct { const char *t; int p; bool got; } sample[] = {
 			{ "The Path to Disaster", 5, true },
@@ -3772,6 +3965,12 @@ int main(int argc, char *argv[])
 		 * for the same reason --menu and --slots exist: it is dense, and
 		 * laying it out against a screenshot beats a round trip to a device. */
 		else if (!strcmp(argv[i], "--cheevos-screen")) shot_cheevos = 1;
+		else if (!strcmp(argv[i], "--hare")) {
+			shot_hare = 1;
+			if (i + 1 < argc && argv[i + 1][0] != '-') shot_hare_addr = argv[++i];
+			if (i + 1 < argc && argv[i + 1][0] != '-') shot_hare_who  = argv[++i];
+			if (i + 1 < argc && argv[i + 1][0] != '-') shot_hare_head = argv[++i];
+		}
 		else if (!strcmp(argv[i], "--wait") && i + 1 < argc) {
 			shot_wait = argv[++i];
 			if (i + 1 < argc && argv[i + 1][0] != '-') shot_wait_msg = argv[++i];

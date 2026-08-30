@@ -69,6 +69,10 @@ const char *P_CARD = "/mnt/SDCARD";
 const char *P_ROMS = "/mnt/SDCARD/Roms";
 const char *P_USERDATA = "/mnt/SDCARD/.userdata/tg5040";
 const char *P_SHARED = "/mnt/SDCARD/.userdata/shared";
+/* Over The Hare's page. On the card rather than in the binary so it can be
+ * restyled with a text editor and a reload, which is the whole argument for
+ * a file-transfer feature existing at all. */
+const char *P_WEB = "/mnt/SDCARD/TortOS/res/web";
 
 /* ---- core options, read once from coreopts.cfg --------------------------- */
 /* Lines before any [SECTION] apply to every game; a [TAG] section applies only
@@ -160,6 +164,7 @@ void paths_init(void)
 	if ((v = getenv("TORTOS_ROMS"))) P_ROMS = v;
 	if ((v = getenv("TORTOS_USERDATA"))) P_USERDATA = v;
 	if ((v = getenv("TORTOS_SHARED"))) P_SHARED = v;
+	if ((v = getenv("TORTOS_WEB")))    P_WEB = v;
 	if ((v = getenv("TORTOS_FONT"))) P_FONT = v;
 }
 
