@@ -44,7 +44,7 @@ static int failures;
 		}                                                                     \
 	} while (0)
 
-static char g_root[128], g_card[160], g_roms[160], g_web[160];
+static char g_root[128], g_card[160], g_roms[160], g_web[160], g_shared[160];
 static char g_cookie[128];
 
 /* ---- the server on its own thread ------------------------------------ */
@@ -62,7 +62,7 @@ static void *server_loop(void *u)
 static bool serve_up(void)
 {
 	g_stop = 0;
-	if (!hare_start(g_roms, g_card, g_web)) return false;
+	if (!hare_start(g_roms, g_card, g_shared, g_web)) return false;
 	pthread_create(&g_thread, NULL, server_loop, NULL);
 	return true;
 }
@@ -220,11 +220,20 @@ static void build_tree(void)
 	snprintf(g_card, sizeof g_card, "%s/card", g_root);
 	snprintf(g_roms, sizeof g_roms, "%s/card/Roms", g_root);
 	snprintf(g_web,  sizeof g_web,  "%s/web", g_root);
+	snprintf(g_shared, sizeof g_shared, "%s/shared", g_root);
 
 	mkdir(g_root, 0777);
 	mkdir(g_card, 0777);
 	mkdir(g_roms, 0777);
 	mkdir(g_web, 0777);
+	mkdir(g_shared, 0777);
+	snprintf(p, sizeof p, "%s/.tortos", g_shared);      mkdir(p, 0777);
+	snprintf(p, sizeof p, "%s/.tortos/NES", g_shared);  mkdir(p, 0777);
+	snprintf(p, sizeof p, "%s/.tortos/NES/Contra.state", g_shared);
+	mkfile(p, "STATEDATA");
+	/* The launcher's own, in the same directory as the states. */
+	snprintf(p, sizeof p, "%s/.tortos/cheevos.cfg", g_shared);
+	mkfile(p, "1447\t6850\ts\n");
 	snprintf(p, sizeof p, "%s/Bios", g_card);   mkdir(p, 0777);
 	snprintf(p, sizeof p, "%s/Saves", g_card);  mkdir(p, 0777);
 	snprintf(p, sizeof p, "%s/NES", g_roms);    mkdir(p, 0777);
@@ -396,6 +405,24 @@ int main(void)
 		           g_cookie) != 200, "an encoded rename escaped its directory");
 		CHECK(post("/api/rename?p=roms/NES/Contra.nes&to=sub%2fx", g_cookie)
 		      != 200, "a rename carried a separator");
+	}
+
+	printf("  save states are reachable and the config beside them is not:\n");
+	{
+		CHECK(req("GET", "/api/file?p=states/NES/Contra.state", g_cookie,
+		          NULL, 0, body, sizeof body) == 200,
+		      "a save state could not be fetched");
+		CHECK(!strcmp(body, "STATEDATA"), "the state came back as \"%s\"", body);
+		CHECK(get("/api/file?p=states/cheevos.cfg", g_cookie) == 403,
+		      "READ THE UNLOCK STORE THAT SITS BESIDE THE SAVE STATES");
+		CHECK(post("/api/delete?p=states/cheevos.cfg", g_cookie) == 403,
+		      "DELETED THE ONLY RECORD OF UNSUBMITTED UNLOCKS");
+		{
+			char p[512];
+			struct stat st;
+			snprintf(p, sizeof p, "%s/.tortos/cheevos.cfg", g_shared);
+			CHECK(stat(p, &st) == 0, "cheevos.cfg was deleted");
+		}
 	}
 
 	printf("  the lockout, which is what makes four digits a lock:\n");

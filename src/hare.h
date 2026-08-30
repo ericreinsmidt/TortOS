@@ -36,7 +36,8 @@
  * The three directories are arguments rather than the P_ globals so this whole
  * subsystem - routes, transport, path safety - links into a check without SDL
  * behind it. The launcher passes P_ROMS, P_CARD and its own res/web. */
-bool hare_start(const char *roms_dir, const char *card_dir, const char *web_dir);
+bool hare_start(const char *roms_dir, const char *card_dir,
+                const char *shared_dir, const char *web_dir);
 void hare_stop(void);
 
 /* What the screen puts on the panel. `ip` is the LAN address, from wifi. */

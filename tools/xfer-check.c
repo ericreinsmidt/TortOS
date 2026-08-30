@@ -68,19 +68,23 @@ int main(void)
 {
 	char out[XFER_PATH_MAX];
 
-	xfer_init("/mnt/SDCARD/Roms", "/mnt/SDCARD");
+	xfer_init("/mnt/SDCARD/Roms", "/mnt/SDCARD",
+	          "/mnt/SDCARD/.userdata/shared");
 
 	printf("xfer: what the browser can reach\n");
 
 	printf("  the roots:\n");
-	CHECK(xfer_root_count() == 3, "expected 3 roots, got %d", xfer_root_count());
+	CHECK(xfer_root_count() == 4, "expected 4 roots, got %d", xfer_root_count());
 	CHECK(xfer_root_at(0) && !strcmp(xfer_root_at(0)->path, "/mnt/SDCARD/Roms"),
 	      "roms root wrong: %s", xfer_root_at(0) ? xfer_root_at(0)->path : "(none)");
 	CHECK(xfer_root_at(1) && !strcmp(xfer_root_at(1)->path, "/mnt/SDCARD/Bios"),
 	      "bios root wrong: %s", xfer_root_at(1) ? xfer_root_at(1)->path : "(none)");
 	CHECK(xfer_root_at(2) && !strcmp(xfer_root_at(2)->path, "/mnt/SDCARD/Saves"),
 	      "saves root wrong: %s", xfer_root_at(2) ? xfer_root_at(2)->path : "(none)");
-	CHECK(xfer_root_at(3) == NULL, "a fourth root appeared");
+	CHECK(xfer_root_at(3) &&
+	      !strcmp(xfer_root_at(3)->path, "/mnt/SDCARD/.userdata/shared/.tortos"),
+	      "states root wrong: %s", xfer_root_at(3) ? xfer_root_at(3)->path : "(none)");
+	CHECK(xfer_root_at(4) == NULL, "a fifth root appeared");
 
 	printf("  ordinary paths land where they should:\n");
 	allow("roms", "/mnt/SDCARD/Roms");
@@ -147,6 +151,23 @@ int main(void)
 		/* Exactly at the caller's buffer, rather than at ours. */
 		CHECK(!xfer_resolve("roms/NES/Contra.zip", out, 8),
 		      "a path was written into a buffer too small to hold it");
+	}
+
+	printf("  the launcher's own config is not a save state:\n");
+	{
+		/* Save states share a directory with cheevos.cfg and favorites.cfg.
+		 * cheevos.cfg is the only record of an unlock the account has not
+		 * seen, so it must not be reachable by a route that deletes. */
+		allow("states/NES/Contra%20(USA).zip.auto.state",
+		      "/mnt/SDCARD/.userdata/shared/.tortos/NES/Contra (USA).zip.auto.state");
+		deny("states/cheevos.cfg", "unlocks the account has not seen yet");
+		deny("states/favorites.cfg", "the favorites list");
+		deny("states/NES/anything.cfg", "a config anywhere under the root");
+		deny("states/%63heevos.cfg", "the same, spelled with an escape");
+		/* Only under that root - a .cfg elsewhere is an ordinary file, and
+		 * over-blocking would be a rule that had learned a filename rather
+		 * than a reason. */
+		allow("roms/NES/notes.cfg", "/mnt/SDCARD/Roms/NES/notes.cfg");
 	}
 
 	printf("  a rename's destination is one name, not a path:\n");

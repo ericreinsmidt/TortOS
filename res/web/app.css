@@ -84,6 +84,12 @@ html, body {
 	box-shadow: 0 0 60px rgba(61, 214, 255, .12);
 }
 
+/* The mark: a tortoise that has already gone past a hare, both on the same
+ * hex lattice as everything else TortOS draws. tools/genhare.py is the
+ * definition; this only decides how big it is. */
+.mark { display: block; margin: 0 auto 14px; height: 80px; width: auto; }
+.mark.small { margin: 0 4px 0 0; height: 40px; flex-shrink: 0; }
+
 .gate h1 { margin: 0 0 6px; font-size: 26px; font-weight: 500; letter-spacing: .3px; }
 .gate .sub { margin: 0 0 22px; color: var(--dim); font-size: 15px; }
 

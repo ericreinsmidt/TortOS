@@ -194,6 +194,12 @@ static const char *mime_for(const char *path)
 	if (!strcasecmp(dot, ".js"))   return "text/javascript; charset=utf-8";
 	if (!strcasecmp(dot, ".json")) return "application/json";
 	if (!strcasecmp(dot, ".png"))  return "image/png";
+	/* The mark is an SVG, and X-Content-Type-Options: nosniff means a browser
+	 * will NOT guess when this table does not know an extension - it refuses
+	 * to render it at all. Which is the right behaviour and exactly why the
+	 * header is set; it also means a missing row here is a broken image
+	 * rather than a slightly wrong one. */
+	if (!strcasecmp(dot, ".svg"))  return "image/svg+xml";
 	if (!strcasecmp(dot, ".jpg") || !strcasecmp(dot, ".jpeg")) return "image/jpeg";
 	if (!strcasecmp(dot, ".ttf"))  return "font/ttf";
 	/* A ROM is a download, not something a browser should try to render. */
@@ -630,7 +636,8 @@ static void sweep_parts(const char *dir, int depth)
 	closedir(d);
 }
 
-bool hare_start(const char *roms_dir, const char *card_dir, const char *web_dir)
+bool hare_start(const char *roms_dir, const char *card_dir,
+                const char *shared_dir, const char *web_dir)
 {
 	/* 80 first, so the address on the screen is one somebody can type without
 	 * a colon in it. It needs root, which this process has; 8080 is there for
@@ -638,7 +645,7 @@ bool hare_start(const char *roms_dir, const char *card_dir, const char *web_dir)
 	static const int ports[] = { 80, 8080, 8081 };
 	int i;
 
-	xfer_init(roms_dir, card_dir);
+	xfer_init(roms_dir, card_dir, shared_dir);
 	snprintf(g_web, sizeof g_web, "%s", web_dir);
 	if (!make_pin()) return false;
 	g_ntoken = 0;

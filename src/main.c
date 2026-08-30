@@ -2111,7 +2111,7 @@ static void xfer_screen(app *a)
 	unsigned long long total_in = 0, total_out = 0;
 	bool       done = false;
 
-	if (!hare_start(P_ROMS, P_CARD, P_WEB)) {
+	if (!hare_start(P_ROMS, P_CARD, P_SHARED, P_WEB)) {
 		menu_row row = { "Could not start", NULL, false };
 
 		draw_shelf(a);

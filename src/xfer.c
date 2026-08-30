@@ -5,16 +5,17 @@
 
 #include "xfer.h"
 
-static xfer_root g_roots[3];
+static xfer_root g_roots[4];
 static int       g_nroots;
 
 static void add_root(const char *name, const char *label, const char *fmt,
-                     const char *base)
+                     const char *base, bool no_cfg)
 {
 	xfer_root *r;
 
 	if (g_nroots >= (int)(sizeof g_roots / sizeof g_roots[0])) return;
 	r = &g_roots[g_nroots];
+	r->no_cfg = no_cfg;
 	snprintf(r->name,  sizeof r->name,  "%s", name);
 	snprintf(r->label, sizeof r->label, "%s", label);
 	if (snprintf(r->path, sizeof r->path, fmt, base) >= (int)sizeof r->path)
@@ -22,7 +23,8 @@ static void add_root(const char *name, const char *label, const char *fmt,
 	g_nroots++;
 }
 
-void xfer_init(const char *roms_dir, const char *card_dir)
+void xfer_init(const char *roms_dir, const char *card_dir,
+               const char *shared_dir)
 {
 	g_nroots = 0;
 	/* Three, and cores/ is deliberately not among them. A .so uploaded there
@@ -32,9 +34,26 @@ void xfer_init(const char *roms_dir, const char *card_dir)
 	 * are out for the milder version of the same reason: a bad systems.cfg is
 	 * a launcher that does not start, and the way to recover it is the card
 	 * reader this feature exists to avoid needing. */
-	add_root("roms",  "ROMs",  "%s", roms_dir);
-	add_root("bios",  "BIOS",  "%s/Bios",  card_dir);
-	add_root("saves", "Saves", "%s/Saves", card_dir);
+	add_root("roms",  "ROMs",  "%s", roms_dir, false);
+	add_root("bios",  "BIOS",  "%s/Bios",  card_dir, false);
+	/* Two different things, both called saves in conversation.
+	 *
+	 * Saves/ is battery saves - the .srm a cartridge would have had - and is
+	 * flat, one file per game. Contra has none, because Contra had no
+	 * battery; looking there for it is how this gap was found.
+	 *
+	 * Save States/ is the launcher's own: 185 files on the test device, in
+	 * per-system folders, and the ones whose only backup is a copy somebody
+	 * made by hand over ADB. Leaving them unreachable made the feature miss
+	 * the data most worth carrying off the device.
+	 *
+	 * That directory also holds cheevos.cfg and favorites.cfg, which the
+	 * launcher writes and which are not save states. cheevos.cfg is the only
+	 * record of an unlock the account has not seen yet, so it is not
+	 * something a stray tap should be able to delete: no_cfg keeps every .cfg
+	 * under this root out of listings and out of every path that resolves. */
+	add_root("saves",  "Saves",       "%s/Saves", card_dir, false);
+	add_root("states", "Save States", "%s/.tortos", shared_dir, true);
 }
 
 int xfer_root_count(void) { return g_nroots; }
@@ -150,6 +169,12 @@ bool xfer_resolve(const char *url_path, char *out, size_t outn)
 		if (!strcmp(seg, "..")) return false;
 		n = strlen(seg);
 		if (n >= XFER_NAME_MAX) return false;
+		/* Refused, not merely hidden from listings: a name absent from a list
+		 * is still a name somebody can type, and the delete route acts on
+		 * whatever it is handed. Checked per COMPONENT, because by this point
+		 * `dec` has been cut into pieces by the tokenizer above - testing the
+		 * whole string here would have tested the root's name. */
+		if (root->no_cfg && n >= 4 && !strcmp(seg + n - 4, ".cfg")) return false;
 		if (used + 1 + n >= outn) return false;
 		out[used++] = '/';
 		memcpy(out + used, seg, n + 1);

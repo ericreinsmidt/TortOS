@@ -34,11 +34,16 @@ typedef struct {
 	char name[16];              /* what a URL calls it: "roms" */
 	char label[32];             /* what a person calls it: "ROMs" */
 	char path[XFER_PATH_MAX];   /* absolute, no trailing slash */
+	/* Save states share a directory with two config files the launcher
+	 * writes. Nothing under this root may be a .cfg - not listed, not
+	 * fetched, not deleted. See xfer_init. */
+	bool no_cfg;
 } xfer_root;
 
 /* Paths in, rather than platform.h out, so this links into a check without
  * dragging SDL behind it. */
-void xfer_init(const char *roms_dir, const char *card_dir);
+void xfer_init(const char *roms_dir, const char *card_dir,
+               const char *shared_dir);
 
 int              xfer_root_count(void);
 const xfer_root *xfer_root_at(int i);
