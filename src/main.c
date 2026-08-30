@@ -2602,6 +2602,15 @@ static void game_menu(app *a)
 	 * Twice because this process alternates two pages and one present only
 	 * clears the one it lands on. Before RESUME and never after: afterwards
 	 * Diatom is drawing, and this would be a second presenter. */
+	/* Asked to quit with the menu open. Leaving here without saying anything
+	 * strands the game: it is paused, waiting on this socket, and the wait
+	 * loop below would go straight back to waiting on IT. Each on the other,
+	 * and neither reachable by a signal. Seen on the device 2026-08-29.
+	 *
+	 * STOP rather than RESUME - the process is going away, and a game that
+	 * ends writes its state on the way out. */
+	if (want_quit && !resume) plat_resident_line("STOP");
+
 	if (resume) {
 		present_black(a);
 		present_black(a);

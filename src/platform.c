@@ -858,6 +858,17 @@ static int diatom_wait(void)
 			}
 		}
 #endif
+		/* A termination arriving mid-game. Without this the loop waits for a
+		 * game that nobody is going to end, and the process cannot be
+		 * signalled out of it - which is how `killall tortos.elf` came to do
+		 * nothing at all while a game was up. STOP, then the existing
+		 * escalation below applies if the core will not honor it. */
+		if (g_terminating && !sent_stop) {
+			sent_stop = 1;
+			stop_at = plat_now_ms();
+			dsend("STOP");
+		}
+
 		if (autostop_s > 0 && !sent_stop &&
 		    plat_now_ms() - start > (unsigned)autostop_s * 1000u) {
 			sent_stop = 1;
