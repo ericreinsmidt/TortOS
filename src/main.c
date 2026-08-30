@@ -1795,7 +1795,7 @@ static void ra_signin_screen(app *a)
 		return;
 	}
 
-	kr = kb_prompt(a->r, &a->in, "RetroAchievements user", user,
+	kr = kb_prompt(a->r, &a->in, "RetroAchievements User", user,
 	               (int)sizeof user, MENU_ACCENT, wifi_backdrop, a);
 	if (kr == KB_POWER) { power_off(a); return; }
 	if (kr != KB_ACCEPT || !user[0]) return;
@@ -3326,6 +3326,10 @@ static const char *shot_notice;
 static const char *shot_notice_head = "Unlocked  -  5 points";
 static int shot_cheevos;
 static const char *shot_kb_text = "correct horse";
+/* The title was hardcoded to "Wi-Fi password", so the one other thing that
+ * uses this keyboard - signing in to RetroAchievements - could not be
+ * rendered at all. A harness narrower than the thing it checks. */
+static const char *shot_kb_title = "Wi-Fi password";
 static int shot_slots, shot_slot_sel;
 static int shot_jump;               /* letter-jumps to apply before drawing */
 static float shot_slot_aspect = 4.0f / 3.0f;
@@ -3385,7 +3389,7 @@ static void take_shot(app *a)
 	draw_shelf(a);
 	if (shot_menu) tortos_menu_draw(a, shot_menu_sel);
 	if (shot_slots) shot_draw_slots(a);
-	if (shot_kb) kb_preview(a->r, "Wi-Fi password", shot_kb_text,
+	if (shot_kb) kb_preview(a->r, shot_kb_title, shot_kb_text,
 	                        shot_kb_layer, 1, 0, MENU_ACCENT);
 	/* The in-game notice is not drawn by this process - Diatom composites it
 	 * over the game - so it cannot be screenshotted like the rest. Rendered
@@ -3508,6 +3512,7 @@ int main(int argc, char *argv[])
 			if (i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '2')
 				shot_kb_layer = atoi(argv[++i]);
 			if (i + 1 < argc && argv[i + 1][0] != '-') shot_kb_text = argv[++i];
+			if (i + 1 < argc && argv[i + 1][0] != '-') shot_kb_title = argv[++i];
 		}
 		else if (!strcmp(argv[i], "--slots")) {
 			shot_slots = 1;
