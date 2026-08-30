@@ -486,12 +486,9 @@ static void free_all_textures(app *a)
  * constants, and that is a rework. Offering only what fits is the small one.
  *
  * A ladder rather than a nudge, because the fonts are reopened on every
- * change and there is no sense doing that for one percent.
- *
- * The third label is a private joke and is meant to be there. It is not a
- * placeholder, a leftover, or a string that failed to get localized. */
+ * change and there is no sense doing that for one percent. */
 static const float TEXT_SCALES[] = { 0.85f, 1.00f, 1.15f };
-static const char *TEXT_NAMES[]  = { "85%", "100%", "KitFox" };
+static const char *TEXT_NAMES[]  = { "85%", "100%", "115%" };
 #define TEXT_SCALE_COUNT ((int)(sizeof TEXT_SCALES / sizeof TEXT_SCALES[0]))
 
 static int text_scale_step(void)
