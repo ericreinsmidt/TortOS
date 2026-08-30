@@ -86,9 +86,15 @@ html, body {
 
 /* The mark: a tortoise that has already gone past a hare, both on the same
  * hex lattice as everything else TortOS draws. tools/genhare.py is the
- * definition; this only decides how big it is. */
-.mark { display: block; margin: 0 auto 14px; height: 80px; width: auto; }
-.mark.small { margin: 0 4px 0 0; height: 40px; flex-shrink: 0; }
+ * definition; this only decides how big it is.
+ *
+ * NOT .mark, which was the first name and was already taken: every row's
+ * folder/file glyph is a .mark, so the logo rule gave each of them
+ * display:block and height:80px and every row in the listing grew to 206
+ * pixels with its triangle floating in the middle. Two different things had
+ * the same name and CSS has one namespace. */
+.logo { display: block; margin: 0 auto 14px; height: 80px; width: auto; }
+.logo.small { margin: 0 4px 0 0; height: 40px; flex-shrink: 0; }
 
 .gate h1 { margin: 0 0 6px; font-size: 26px; font-weight: 500; letter-spacing: .3px; }
 .gate .sub { margin: 0 0 22px; color: var(--dim); font-size: 15px; }

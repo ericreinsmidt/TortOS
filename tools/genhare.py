@@ -4,81 +4,121 @@ Left to right: a hare's head, the speed lines the tortoise left behind, and
 the tortoise itself - up and ahead. The joke is the fable's ending rather than
 its premise, and it puts the three pieces in reading order.
 
-Lattice and palette are tools/markdef.py's. Cells are (i, j) with
-x = i*sqrt(3)*r and y = j*1.5*r; neighbours are (i +/- 1, j) and
-(i +/- 0.5, j -/+ 1), so j even wants integer i and j odd wants half-integer.
+NOTHING HERE IS REDRAWN. The shell's cells, its head, its colours and the
+three speed lines are imported from markdef.py and genmark.py, which is where
+they were already defined and already exported to tortos_logo_ideas. The first
+version of this file hand-copied the cell table (and lost the tortoise's head
+doing it) and then invented the speed lines from scratch as thin rounded bars -
+they are thick parallelograms slanted seven degrees, and that was sitting in
+genmark.py the whole time.
 
-The speed lines are three horizontal bars in the wordmark's own arrangement -
-dark green above, cyan in the middle and longest, mid green below.
+So: the only thing this module defines is the hare and where the three pieces
+sit relative to each other. Everything that already had a definition keeps it.
+
+Regenerate with:
+
+    python3 tools/genhare.py res/web/mark.svg
 """
-import math, sys
+import math
+import os
+import sys
 
-LTGRN, MIDGRN, DKGREEN, CYAN = (128,176,118), (104,138,96), (61,89,67), (61,214,255)
-# Not a new colour: the one markdef.py retired from the wordmark's "Tort" for
-# belonging to no part of the mark. The hare is the part of this mark that is
-# not a tortoise, so the colour that belonged to nothing has something to be.
-OFFWHT = (233,236,227)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-SHELL = [((-0.5,-1),LTGRN), ((0.5,-1),MIDGRN), ((1.0,0.0),LTGRN),
-         ((0.5,1),MIDGRN), ((-0.5,1),LTGRN), ((-1.0,0.0),MIDGRN), ((0.0,0.0),CYAN)]
+import genmark as G
+import markdef as M
 
-SX, SY = 3.0, -1.0            # where the tortoise is
-HX, HY = -2.0, 2.0            # where the hare's head is
+# The one colour this mark adds, and it is not a new one: markdef retired
+# OFFWHT from the wordmark's "Tort" on 2026-08-28 for belonging to no part of
+# the mark. The hare is the part of this mark that is not a tortoise, so the
+# colour that belonged to nothing has something to be.
+OFFWHT = (233, 236, 227)
 
-HEAD = [(HX-1,HY), (HX,HY), (HX+1,HY),
-        (HX-0.5,HY-1), (HX+0.5,HY-1), (HX-0.5,HY+1), (HX+0.5,HY+1)]
+R = 10.0                       # hex radius here; genmark draws at G.R
+DX, DY = math.sqrt(3.0) * R, 1.5 * R
+SCALE = R / G.R                # genmark's units into these
+
+SX, SY = 5.5, -2.0             # the tortoise: right, and up
+HX, HY = -2.0, 2.0             # the hare's head
+
+# A hex flower for the face. The seven-cell version is not a style choice: a
+# compact head detaches from the ears entirely, because its top row is two
+# lattice rows away rather than one, and only the flower bridges.
+HEAD = [(HX-1, HY), (HX, HY), (HX+1, HY),
+        (HX-0.5, HY-1), (HX+0.5, HY-1), (HX-0.5, HY+1), (HX+0.5, HY+1)]
 # Two ears with a whole empty cell between them at every row. Hexes tile with
 # no gaps, so anything adjacent merges into one mass - three earlier attempts
-# put the ears next to the head and rendered a blob. The negative space is the
-# ear.
-EARS = [(HX-1,HY-2), (HX-1.5,HY-3), (HX-1,HY-4),
-        (HX+1,HY-2), (HX+1.5,HY-3), (HX+1,HY-4)]
+# put the ears beside the head and drew a blob. The negative space is the ear.
+EARS = [(HX-1, HY-2), (HX-1.5, HY-3),
+        (HX+1, HY-2), (HX+1.5, HY-3)]
+
+
+def hexpts(cx, cy, r):
+    return [(cx + r * math.cos(math.radians(60 * k - 90)),
+             cy + r * math.sin(math.radians(60 * k - 90))) for k in range(6)]
+
 
 def cells():
-    out  = [(c, OFFWHT) for c in HEAD + EARS]
-    out += [((SX+i, SY+j), c) for (i, j), c in SHELL]
+    """(points, colour) for every hexagon: the hare, then the tortoise."""
+    out = [(hexpts(i * DX, j * DY, R * 0.94), OFFWHT) for i, j in HEAD + EARS]
+    for i, j, col in list(M.CELLS) + [M.HEAD]:
+        out.append((hexpts((SX + i) * DX, (SY + j) * DY, R * 0.94), col))
+    out.append((hexpts(SX * DX, SY * DY, R * 0.94), M.CENTER))
     return out
 
-def bars(r):
-    """(x0, x1, y, colour). In r units, then scaled - so the lines keep their
-    proportions to the hexes at any size."""
-    dx, dy = math.sqrt(3.0)*r, 1.5*r
-    left   = SX*dx - 0.95*r - 0.45*r          # a gap before the shell
-    mid    = SY*dy
-    return [(-0.2*r, left, mid - 1.15*r, DKGREEN),
-            (-1.5*r, left, mid,          CYAN),
-            ( 0.3*r, left, mid + 1.15*r, MIDGRN)]
 
-def svg(r=10.0, pad=2.0):
-    dx, dy = math.sqrt(3.0)*r, 1.5*r
-    cs = cells()
-    xs = [i*dx for (i, _), _ in cs] + [b[0] for b in bars(r)] + [b[1] for b in bars(r)]
-    ys = [j*dy for (_, j), _ in cs] + [b[2] for b in bars(r)]
-    x0, x1 = min(xs)-r-pad, max(xs)+r+pad
-    y0, y1 = min(ys)-r-pad, max(ys)+r+pad
+def bars():
+    """The wordmark's own three lines, moved into this composition.
+
+    Taken from genmark.RAW through genmark.barpts, so the thickness, the pitch,
+    the seven-degree slant and the three lengths are the ones the lockup
+    already uses. Only the placement is decided here: scaled to this hex
+    radius, then set down in the gap between the hare and the tortoise.
+
+    Free at both ends. They are the tortoise's wake, not a tether - touching
+    the shell read as a wire plugged into it, and touching the ear read as one
+    joining the two animals.
+    """
+    raw = [(G.barpts(a, b, y), c) for (y, a, b, c) in G.RAW]
+    xs = [p[0] for pts, _ in raw for p in pts]
+    ys = [p[1] for pts, _ in raw for p in pts]
+    # genmark's group, in this file's units, centred on nothing yet.
+    w = (max(xs) - min(xs)) * SCALE
+    h = (max(ys) - min(ys)) * SCALE
+
+    # (SX - 1), not SX: the shell's LEFT CELL is one step left of its centre,
+    # and measuring the gap from the centre put the bars a whole cell into it.
+    right = (SX - 1) * DX - 0.95 * R - 0.9 * R
+    left = 0.55 * R                           # clear of the hare's ear tip
+    # Squeezed horizontally to fit the gap; the vertical keeps genmark's own
+    # proportion, so the bars stay as thick relative to each other as they are
+    # in the lockup.
+    kx = (right - left) / w
+    cy = SY * DY
+
+    out = []
+    for pts, col in raw:
+        out.append(([(left + (x - min(xs)) * SCALE * kx,
+                      cy + (y - min(ys)) * SCALE - h / 2) for x, y in pts], col))
+    return out
+
+
+def svg(pad=2.0):
+    shapes = [(p, c) for p, c in bars()] + cells()
+    xs = [x for pts, _ in shapes for x, _ in pts]
+    ys = [y for pts, _ in shapes for _, y in pts]
+    x0, x1 = min(xs) - pad, max(xs) + pad
+    y0, y1 = min(ys) - pad, max(ys) + pad
     o = ['<svg viewBox="%.1f %.1f %.1f %.1f" xmlns="http://www.w3.org/2000/svg" '
-         'role="img" aria-label="A tortoise, ahead of a hare">'
-         % (x0, y0, x1-x0, y1-y0)]
-    for bx0, bx1, by, col in bars(r):
-        o.append('<rect x="%.2f" y="%.2f" width="%.2f" height="%.2f" rx="%.2f" '
-                 'fill="#%02x%02x%02x"/>'
-                 % (bx0, by - 0.16*r, bx1-bx0, 0.32*r, 0.16*r, *col))
-    for (i, j), col in cs:
-        cx, cy = i*dx, j*dy
-        p = ["%.2f,%.2f" % (cx + r*0.94*math.cos(math.radians(60*k-90)),
-                            cy + r*0.94*math.sin(math.radians(60*k-90)))
-             for k in range(6)]
-        o.append('<polygon points="%s" fill="#%02x%02x%02x"/>' % (" ".join(p), *col))
+         'role="img" aria-label="A tortoise, already past a hare">'
+         % (x0, y0, x1 - x0, y1 - y0)]
+    for pts, col in shapes:
+        o.append('<polygon points="%s" fill="#%02X%02X%02X"/>'
+                 % (" ".join("%.2f,%.2f" % p for p in pts), *col))
     o.append('</svg>')
     return "".join(o)
 
-# Written to res/web/mark.svg, which the page loads. Regenerate with:
-#
-#     python3 tools/genhare.py res/web/mark.svg
-#
-# Kept as a generator rather than as hand-written SVG for the reason
-# markdef.py exists at all: the cells and the palette have one definition, and
-# a mark edited by hand drifts from the one the device draws.
+
 if __name__ == "__main__":
     out = sys.argv[1] if len(sys.argv) > 1 else "res/web/mark.svg"
     open(out, "w").write(svg())
