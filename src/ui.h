@@ -77,6 +77,17 @@ int ui_text(SDL_Renderer *r, TTF_Font *f, const char *s, int x, int y,
             int anchor, SDL_Color col);
 int ui_text_width(TTF_Font *f, const char *s);
 
+/* Copy `src` into `dst`, shortened with an ellipsis until it fits `maxw`
+ * pixels in `f`. Bytes are stepped back one at a time and then walked off any
+ * UTF-8 continuation, so a multi-byte character is never cut in half.
+ *
+ * One implementation because there is one rule. This lived inside notice.c,
+ * where a name too long for an overlay had to be trimmed; the box art screen
+ * needs exactly the same thing for a ROM name too long for a panel, and a
+ * second copy would be a second set of decisions about where the dots go. */
+void ui_fit_text(TTF_Font *f, const char *src, char *dst, size_t dstn,
+                 int maxw);
+
 /* The panel border, in pixels. In the header because layout outside ui.c has
  * to know it: centring anything inside a panel means centring against the
  * INNER edge, since the border is a visible frame and the eye reads the space

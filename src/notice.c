@@ -62,36 +62,6 @@ static void draw_text(uint8_t *out, int ow, int oh, TTF_Font *f,
 	SDL_FreeSurface(t);
 }
 
-/* Cut a line down until it fits, with an ellipsis to say it was cut.
- *
- * Not optional. Diatom REFUSES an overlay wider than the panel rather than
- * clipping it (its ADR-0027), which is the right call there and means a long
- * name would silently show nothing at all. 144 of the achievement titles in
- * the 180-ROM test library are over 40 characters and the longest is 64 -
- * "From Johnny, Harris, Brooklyn Bob, and Reggie! Yeah Even Reggie!" - so
- * this is the common case, not the edge.
- *
- * Bytes are stepped back one at a time and then walked off any UTF-8
- * continuation, so a multi-byte character is never cut in half. */
-static void fit_text(TTF_Font *f, const char *src, char *dst, size_t dstn,
-                     int maxw)
-{
-	size_t n;
-
-	snprintf(dst, dstn, "%s", src ? src : "");
-	if (!f || ui_text_width(f, dst) <= maxw) return;
-
-	n = strlen(dst);
-	while (n > 0) {
-		n--;
-		while (n > 0 && ((unsigned char)dst[n] & 0xC0) == 0x80) n--;
-		if (n + 3 >= dstn) continue;
-		memcpy(dst + n, "...", 4);
-		if (ui_text_width(f, dst) <= maxw) return;
-		dst[n] = '\0';
-	}
-}
-
 bool notice_render(const char *heading, const char *body, const char *path)
 {
 	/* The NAME is the line worth reading, so it gets the larger face and the
@@ -131,8 +101,14 @@ bool notice_render(const char *heading, const char *body, const char *path)
 	maxw = TORTOS_SCREEN_W * 5 / 6;
 	if (maxw > NOTICE_MAX_W) maxw = NOTICE_MAX_W;
 	maxw -= padx * 2;
-	fit_text(fb, body, bodyfit, sizeof bodyfit, maxw);
-	fit_text(fh, heading, headfit, sizeof headfit, maxw);
+	/* Not optional. Diatom REFUSES an overlay wider than the panel rather than
+	 * clipping it (its ADR-0027), which is the right call there and means a
+	 * long name would silently show nothing at all. 144 of the achievement
+	 * titles in the 180-ROM test library are over 40 characters and the
+	 * longest is 64 - "From Johnny, Harris, Brooklyn Bob, and Reggie! Yeah
+	 * Even Reggie!" - so this is the common case, not the edge. */
+	ui_fit_text(fb, body, bodyfit, sizeof bodyfit, maxw);
+	ui_fit_text(fh, heading, headfit, sizeof headfit, maxw);
 	body = bodyfit;
 	heading = headfit;
 

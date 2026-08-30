@@ -181,6 +181,25 @@ int ui_text_width(TTF_Font *f, const char *s)
 	return w;
 }
 
+void ui_fit_text(TTF_Font *f, const char *src, char *dst, size_t dstn,
+                 int maxw)
+{
+	size_t n;
+
+	snprintf(dst, dstn, "%s", src ? src : "");
+	if (!f || ui_text_width(f, dst) <= maxw) return;
+
+	n = strlen(dst);
+	while (n > 0) {
+		n--;
+		while (n > 0 && ((unsigned char)dst[n] & 0xC0) == 0x80) n--;
+		if (n + 3 >= dstn) continue;
+		memcpy(dst + n, "...", 4);
+		if (ui_text_width(f, dst) <= maxw) return;
+		dst[n] = '\0';
+	}
+}
+
 void ui_glow(SDL_Renderer *r, const SDL_Rect *rect, unsigned rgb, int alpha,
              float spread)
 {

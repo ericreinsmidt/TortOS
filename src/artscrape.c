@@ -387,6 +387,18 @@ void art_begin(const systems_cfg *sys, const char *roms_dir)
 
 	if (!sys) return;
 	for (i = 0; i < sys->count && g_nsys < CFG_MAX_SYSTEMS; i++) {
+		char dir[ARTPATH_MAX];
+		struct stat st;
+
+		/* Only shelves with a ROM folder on the card. The launcher appends a
+		 * Favorites shelf to this list - games drawn from every system, with
+		 * no folder of its own - and counting it made the screen say "10 of
+		 * 10" for a nine-system library, with one of the ten always skipped.
+		 * A shelf that is not a folder has no art to fetch. */
+		if (snprintf(dir, sizeof dir, "%s/%s", g_romdir,
+		             sys->systems[i].folder) >= (int)sizeof dir) continue;
+		if (stat(dir, &st) != 0 || !S_ISDIR(st.st_mode)) continue;
+
 		snprintf(g_sys[g_nsys].folder, CFG_STR, "%s", sys->systems[i].folder);
 		snprintf(g_sys[g_nsys].exts,   CFG_STR, "%s", sys->systems[i].exts);
 		g_nsys++;
@@ -398,9 +410,19 @@ void art_begin(const systems_cfg *sys, const char *roms_dir)
 	g_running = true;
 }
 
-/* Finish with this system and move to the next. */
-static int next_system(void)
+/* Finish with this system and move to the next, saying why.
+ *
+ * Every one of these paths used to be silent, and a run where all of them
+ * fired looked identical to a run with nothing to do: ten systems, zero
+ * found, zero missing, zero already. That is not a state a person can debug
+ * from, and it is the state the first device run produced. */
+static int next_system(const char *why)
 {
+	if (why) {
+		snprintf(g_st.now, sizeof g_st.now, "%s: %s",
+		         g_si < g_nsys ? g_sys[g_si].folder : "?", why);
+		fprintf(stderr, "art: %s\n", g_st.now);
+	}
 	g_si++;
 	g_st.systems_done++;
 	g_phase = P_SYSTEM;
@@ -421,21 +443,39 @@ int art_step(void)
 
 	switch (g_phase) {
 	case P_SYSTEM:
-		if (stat(dir, &st) != 0 || !S_ISDIR(st.st_mode)) return next_system();
+		if (stat(dir, &st) != 0 || !S_ISDIR(st.st_mode))
+			return next_system("no such folder");
 		remote = remote_for(g_sys[g_si].folder);
-		if (!remote) {
-			/* Loudly. systems.cfg gains entries over time, and a system
-			 * silently passed over looks exactly like one whose art is
-			 * already complete. */
-			snprintf(g_st.now, sizeof g_st.now, "%s is not in the table",
-			         g_sys[g_si].folder);
-			return next_system();
-		}
+		/* Loudly. systems.cfg gains entries over time, and a system silently
+		 * passed over looks exactly like one whose art is already complete. */
+		if (!remote) return next_system("not in the table");
 		read_roms(dir, g_sys[g_si].exts);
-		if (g_nroms == 0) return next_system();
+		if (g_nroms == 0) return next_system("no ROMs");
+
+		/* Count what is missing BEFORE fetching the index, and skip the
+		 * system entirely when nothing is.
+		 *
+		 * The skip-if-present test used to live per-ROM, after the index had
+		 * already been downloaded - so a second run over a complete library
+		 * still pulled nine multi-megabyte indexes to discover it had nothing
+		 * to do. The commit that added this feature claimed running it again
+		 * was cheap. It was not; this is what makes that true. */
+		{
+			int i, want = 0;
+
+			for (i = 0; i < g_nroms; i++) {
+				char have[ARTPATH_MAX];
+
+				if (snprintf(have, sizeof have, "%s/.media/%s.png",
+				             dir, g_roms[i]) >= (int)sizeof have) continue;
+				if (stat(have, &st) == 0 && st.st_size > 0) g_st.skipped++;
+				else want++;
+			}
+			if (want == 0) return next_system(NULL);
+		}
 
 		snprintf(g_st.now, sizeof g_st.now, "%s", g_sys[g_si].folder);
-		if (!start_index(remote)) return next_system();
+		if (!start_index(remote)) return next_system("could not start curl");
 		g_phase = P_INDEX_WAIT;
 		return 1;
 
@@ -443,21 +483,18 @@ int art_step(void)
 		int r = net_async_poll();
 
 		if (r == 0) return 1;                  /* still fetching */
-		if (r < 0 || !parse_index()) {
-			/* Distinguished on purpose: a network or TLS failure is not "this
-			 * game has no art", and reporting it as one is how a certificate
-			 * change gets mistaken for a library full of missing games. */
-			snprintf(g_st.now, sizeof g_st.now, "%s: index failed",
-			         g_sys[g_si].folder);
-			return next_system();
-		}
+		/* Distinguished on purpose: a network or TLS failure is not "this game
+		 * has no art", and reporting it as one is how a certificate change
+		 * gets mistaken for a library full of missing games. */
+		if (r < 0) return next_system("index fetch failed");
+		if (!parse_index()) return next_system("index unreadable or empty");
 		g_ri = 0;
 		g_phase = P_ROM;
 		return 1;
 	}
 
 	case P_ROM:
-		if (g_ri >= g_nroms) return next_system();
+		if (g_ri >= g_nroms) return next_system(NULL);
 
 		if (snprintf(media, sizeof media, "%s/.media", dir)
 		    >= (int)sizeof media ||
@@ -468,11 +505,9 @@ int art_step(void)
 			return 1;
 		}
 
-		/* Already there: no request at all. This is what makes running the
-		 * whole library again cost one index fetch per system and nothing
-		 * else, and a cancelled run free to restart. */
+		/* Already there: no request. Counted by the pre-pass above, which is
+		 * why this does not count it again. */
 		if (stat(dest, &st) == 0 && st.st_size > 0) {
-			g_st.skipped++;
 			g_ri++;
 			return 1;
 		}

@@ -2232,6 +2232,47 @@ static void xfer_screen(app *a)
  * Deliberately NOT automatic. It is a network request on someone's behalf,
  * and a launcher that quietly fetches two hundred images the first time a
  * card is inserted has made that decision for them. */
+/* The heading and rows, in one place so a shot cannot picture a screen that
+ * does not exist - the lesson from --hare, where the fixture claimed a byte
+ * count the code could not produce. */
+static void art_head(char *out, size_t n, const char *now)
+{
+	char fit[128];
+
+	/* Trimmed to fit. A ROM name is as long as somebody's dump of it -
+	 * "Legend of Zelda, The - A Link to the Past (USA)" and worse - and this
+	 * is a heading, which menu_draw centres rather than wraps, so a long one
+	 * ran off both sides of the panel. Three quarters of the screen leaves
+	 * the panel a margin it can keep. */
+	ui_fit_text(ui_font(UI_F_LABEL), now, fit, sizeof fit,
+	            TORTOS_SCREEN_W * 3 / 4);
+	snprintf(out, n, "Box Art\n%s", fit);
+}
+
+static int art_rows(menu_row *out, const char *where, const char *counts,
+                    bool working)
+{
+	out[0] = (menu_row){ "Systems", where,  false };
+	out[1] = (menu_row){ "Art",     counts, false };
+	out[2] = (menu_row){ working ? "B to stop" : "B to close", NULL, false };
+	return 3;
+}
+
+void art_preview(app *a, const char *now, const char *where,
+                 const char *counts, bool working)
+{
+	menu_row rows[3];
+	char head[192];
+	int n = art_rows(rows, where, counts, working);
+
+	art_head(head, sizeof head, now);
+	draw_shelf(a);
+	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+	SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
+	SDL_RenderFillRect(a->r, NULL);
+	menu_draw(a, head, rows, n, -1, 0, MENU_ACCENT);
+}
+
 static void art_screen(app *a)
 {
 	menu_row     rows[3];
@@ -2263,14 +2304,11 @@ static void art_screen(app *a)
 
 		snprintf(counts, sizeof counts, "%d found, %d missing, %d already",
 		         p.found, p.missing, p.skipped);
-		snprintf(where, sizeof where, "%d of %d systems",
-		         p.systems_done, p.systems);
-		snprintf(head, sizeof head, "Box Art\n%s",
-		         working ? (p.now[0] ? p.now : "starting") : "Finished");
+		snprintf(where, sizeof where, "%d of %d", p.systems_done, p.systems);
+		art_head(head, sizeof head,
+		         p.now[0] ? p.now : (working ? "starting" : "nothing to do"));
 
-		rows[0] = (menu_row){ "Systems", where,  false };
-		rows[1] = (menu_row){ "Art",     counts, false };
-		rows[2] = (menu_row){ working ? "B to stop" : "B to close", NULL, false };
+		art_rows(rows, where, counts, working);
 
 		plat_input_poll(&a->in);
 		if (a->in.quit_requested) { art_cancel(); a->running = false; return; }
@@ -3873,6 +3911,8 @@ static int shot_kb, shot_kb_layer;
 static const char *shot_notice;
 static const char *shot_notice_head = "Unlocked  -  5 points";
 static int shot_cheevos;
+static int shot_art;
+static const char *shot_art_now = "Legend of Zelda, The - A Link to the Past (USA)";
 static int shot_hare;
 static const char *shot_hare_addr = "192.168.1.42";
 static const char *shot_hare_who  = "1 connected";
@@ -3960,6 +4000,9 @@ static void take_shot(app *a)
 
 		menu_draw(a, shot_wait, &row, 1, -1, 0, MENU_ACCENT);
 	}
+	if (shot_art)
+		art_preview(a, shot_art_now, "4 of 10 systems",
+		            "37 found, 2 missing, 61 already", true);
 	if (shot_hare)
 		hare_preview(a, shot_hare_addr, "4071", shot_hare_who,
 		             "12 KB in / 41 MB out", shot_hare_head);
@@ -4067,6 +4110,10 @@ int main(int argc, char *argv[])
 		 * for the same reason --menu and --slots exist: it is dense, and
 		 * laying it out against a screenshot beats a round trip to a device. */
 		else if (!strcmp(argv[i], "--cheevos-screen")) shot_cheevos = 1;
+		else if (!strcmp(argv[i], "--art")) {
+			shot_art = 1;
+			if (i + 1 < argc && argv[i + 1][0] != '-') shot_art_now = argv[++i];
+		}
 		else if (!strcmp(argv[i], "--hare")) {
 			shot_hare = 1;
 			if (i + 1 < argc && argv[i + 1][0] != '-') shot_hare_addr = argv[++i];
