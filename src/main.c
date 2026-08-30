@@ -1709,7 +1709,14 @@ static int menu_build(app *a, screen_id screen, int sys,
 		out[SM_DISPLAY] = (menu_row){ "Display Mode",
 		                              DMODES[a->view[sys].dmode].label, true };
 		out[SM_BUTTONS] = (menu_row){ "Button Mapping", NULL,            false };
-		out[SM_BOXART]  = (menu_row){ "Box Art",        "not yet",       false };
+		{	/* Just this system. Needs the network like its counterpart in
+			 * the TortOS menu, and says so rather than opening a screen
+			 * that can only report the same thing. */
+			bool on = wifi_status(NULL, 0, NULL, 0) == WIFI_CONNECTED;
+
+			out[SM_BOXART] = (menu_row){ "Box Art",
+			                             on ? NULL : "needs Wi-Fi", on };
+		}
 		out[SM_RESCAN]  = (menu_row){ "Rescan Folder",  NULL,            false };
 		return SM_ROWS;
 	}
@@ -2273,7 +2280,13 @@ void art_preview(app *a, const char *now, const char *where,
 	menu_draw(a, head, rows, n, -1, 0, MENU_ACCENT);
 }
 
-static void art_screen(app *a)
+/* `only` names one system's folder, or NULL for the whole library.
+ *
+ * One system is worth having for the FIRST run on a card, where it is the
+ * difference between twenty images and a hundred and eighty. It is worth much
+ * less afterwards: since the direct-name pass landed, a whole-library re-run
+ * over a full card is nine directory sweeps and no network at all. */
+static void art_screen(app *a, const char *only)
 {
 	menu_row     rows[3];
 	art_progress p;
@@ -2293,7 +2306,25 @@ static void art_screen(app *a)
 		return;
 	}
 
-	art_begin(&a->sys, P_ROMS);
+	if (only) {
+		/* A one-entry library rather than a filter inside artscrape.c. The
+		 * scraper already takes the list it should work on; handing it a
+		 * shorter list is the same operation, and it keeps "which systems"
+		 * a question the caller answers. */
+		static systems_cfg one;
+		int i;
+
+		one.count = 0;
+		for (i = 0; i < a->sys.count; i++)
+			if (!strcmp(a->sys.systems[i].folder, only)) {
+				one.systems[0] = a->sys.systems[i];
+				one.count = 1;
+				break;
+			}
+		art_begin(&one, P_ROMS);
+	} else {
+		art_begin(&a->sys, P_ROMS);
+	}
 
 	while (!done && !want_quit && a->running) {
 		/* One step per frame. A step is one request STARTED or one poll of
@@ -2514,6 +2545,9 @@ static void tortos_menu(app *a)
 		/* Left and right cycle the value on a row that has one. Display mode
 		 * is the only such row so far; it is saved the moment it changes,
 		 * because there is no confirm step to hang the write off. */
+		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_GAMES &&
+		    sel == SM_BOXART)
+			art_screen(a, a->sys.systems[a->sys_cursor].folder);
 		if (a->screen == SCREEN_GAMES && sel == SM_DISPLAY) {
 			int d = in_repeat(&a->in, IN_RIGHT) ? 1
 			      : in_repeat(&a->in, IN_LEFT)  ? -1 : 0;
@@ -2582,7 +2616,7 @@ static void tortos_menu(app *a)
 		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
 		    sel == PM_XFER) xfer_screen(a);
 		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
-		    sel == PM_SCRAPE) art_screen(a);
+		    sel == PM_SCRAPE) art_screen(a, NULL);
 		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
 		    sel == PM_ACHIEVEMENTS) ra_signin_screen(a);
 		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
