@@ -148,3 +148,28 @@ from this repository, so it never needed a card copy.
 
 The wedge (two things presenting at once) still needs a power cycle - adb
 usually survives it, `adb reboot` sometimes does not.
+
+## Never SIGKILL the launcher
+
+`kill -9` on `tortos.elf` wedges the display until a power cycle.
+
+It renders through GL, and killing it mid-render leaves a stalled command
+buffer the PowerVR driver cannot reclaim:
+
+    CheckForStalledCCB (force): CCCB has not progressed for "3D-P...-tortos.elf"
+    Failed to free resource (_CleanupThreadPurgeConnectionData). Retry limit reached
+
+After that, every `fb_open` blocks in `D` state - uninterruptible, so no
+signal reaches it, including SIGKILL. Both the launcher and the emulator end
+up stuck and the only way out is power.
+
+Measured 2026-08-29, and caused by escalating: `killall -q tortos.elf`
+appeared not to work, so `kill -9` seemed reasonable. It was not, and the
+right response to killall not working is to find out why, not to hit harder.
+
+**Use `make adb-restart`** (SIGTERM) and give it a few seconds. If a process
+will not go, that is information about the process, not a reason for a bigger
+hammer.
+
+The same applies to `diatom` while it holds the display. SIGTERM, wait, and
+only consider SIGKILL once it has stopped presenting.
