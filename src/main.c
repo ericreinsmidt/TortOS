@@ -2280,6 +2280,94 @@ void art_preview(app *a, const char *now, const char *where,
 	menu_draw(a, head, rows, n, -1, 0, MENU_ACCENT);
 }
 
+/* What the info screen offers to do, beyond telling you things. */
+typedef enum { GI_ART, GI_FAV, GI_ROWS } gi_row;
+
+/* Everything worth saying about one game, gathered once.
+ *
+ * Gathered rather than watched: this screen is a still. It reads the card,
+ * the save directory and the achievement set when it opens, and again after
+ * an action changes one of them. Polling would mean a stat storm every frame
+ * for numbers that only move when the player does something. */
+typedef struct {
+	char  file[LIB_PATH];
+	char  size[32];
+	char  saves[32];
+	char  cheevos[64];
+	char  art[32];
+	bool  favorite;
+	bool  has_art;
+} game_info;
+
+static void gi_gather(app *a, int owner, const game_entry *g, game_info *gi)
+{
+	const system_cfg *s = &a->sys.systems[owner];
+	char p[LIB_PATH * 3];
+	struct stat st;
+	int i, slots = 0;
+
+	memset(gi, 0, sizeof *gi);
+	snprintf(gi->file, sizeof gi->file, "%s", g->file);
+
+	snprintf(p, sizeof p, "%s/%s/%s", P_ROMS, s->folder, g->file);
+	if (stat(p, &st) == 0) human_bytes(gi->size, sizeof gi->size,
+	                                  (unsigned long long)st.st_size);
+	else snprintf(gi->size, sizeof gi->size, "missing");
+
+	/* The autosave is not one of the numbered slots - it is where the game
+	 * resumes from - so it is counted apart rather than folded in. */
+	preview_path(a, owner, g, p, sizeof p);
+	for (i = 1; i <= GM_SLOTS; i++) {
+		slot_state_path(a, owner, g, i, p, sizeof p);
+		if (stat(p, &st) == 0 && st.st_size > 0) slots++;
+	}
+	{
+		bool resume = game_has_state(a, owner, (game_entry *)g);
+
+		if (slots && resume)
+			snprintf(gi->saves, sizeof gi->saves, "resume + %d", slots);
+		else if (slots)  snprintf(gi->saves, sizeof gi->saves, "%d", slots);
+		else if (resume) snprintf(gi->saves, sizeof gi->saves, "resume only");
+		else             snprintf(gi->saves, sizeof gi->saves, "none");
+	}
+
+	snprintf(p, sizeof p, "%s/%s/.media/%s.png", P_ROMS, s->folder, g->name);
+	gi->has_art = (stat(p, &st) == 0 && st.st_size > 0);
+	if (gi->has_art) human_bytes(gi->art, sizeof gi->art,
+	                             (unsigned long long)st.st_size);
+	else snprintf(gi->art, sizeof gi->art, "none");
+
+	/* Loading the set clobbers whatever set is loaded, which is nobody's
+	 * during shelf browsing - no game is running. */
+	chv_path(P_ROMS, s->folder, g->name, p, sizeof p);
+	if (chv_load(p))
+		snprintf(gi->cheevos, sizeof gi->cheevos, "%d/%d, %d/%d points",
+		         chv_earned(), chv_count(),
+		         chv_points_earned(), chv_points_total());
+	else
+		snprintf(gi->cheevos, sizeof gi->cheevos, "none");
+
+	gi->favorite = fav_is(s->tag, g->file);
+}
+
+#define GI_MAX 7          /* five facts, two actions */
+
+static int gi_rows(menu_row *out, const game_info *gi, bool net)
+{
+	int n = 0;
+
+	out[n++] = (menu_row){ "File",     gi->file,    false };
+	out[n++] = (menu_row){ "Size",     gi->size,    false };
+	out[n++] = (menu_row){ "Saves",    gi->saves,   false };
+	out[n++] = (menu_row){ "Cheevos",  gi->cheevos, false };
+	out[n++] = (menu_row){ "Box Art",  gi->art,     false };
+	/* The two live rows last, under the facts, because they act on them. */
+	out[n++] = (menu_row){ gi->has_art ? "Replace Box Art" : "Get Box Art",
+	                       net ? NULL : "needs Wi-Fi", net };
+	out[n++] = (menu_row){ "Favorite", gi->favorite ? "yes" : "no", true };
+	return n;
+}
+
 /* `only` names one system's folder, or NULL for the whole library.
  *
  * One system is worth having for the FIRST run on a card, where it is the
@@ -2382,6 +2470,139 @@ static void art_screen(app *a, const char *only)
 	free_all_textures(a);
 	plat_input_flush();
 	memset(&a->in, 0, sizeof a->in);
+}
+
+/* One game, and the two things you can do to it from here.
+ *
+ * X on the shelf, because Y is already favorite and the pair reads as a
+ * unit - look at this one, or mark it. Nothing here is reachable during a
+ * game: the in-game menu is about the session, this is about the file.
+ *
+ * A still, not a live view. Everything is read when the screen opens and
+ * again after an action changes something, rather than every frame - these
+ * are numbers that only move when the player moves them, and the alternative
+ * is a stat storm at 120 Hz for a panel nobody is interacting with. */
+static void game_info_screen(app *a)
+{
+	sysview   *v = &a->view[a->sys_cursor];
+	int        owner;
+	game_entry *g;
+	game_info  gi;
+	menu_row   rows[GI_MAX];
+	int        sel = 0, n;
+	bool       done = false;
+
+	if (v->list.count == 0) return;
+	owner = shelf_owner(a, a->sys_cursor, v->cursor);
+	g = &v->list.items[v->cursor];
+	gi_gather(a, owner, g, &gi);
+
+	plat_input_flush();
+	memset(&a->in, 0, sizeof a->in);
+
+	while (!done && !want_quit && a->running) {
+		bool net = wifi_status(NULL, 0, NULL, 0) == WIFI_CONNECTED;
+
+		n = gi_rows(rows, &gi, net);
+
+		plat_input_poll(&a->in);
+		if (a->in.quit_requested) { a->running = false; return; }
+		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); return; }
+		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU] ||
+		    a->in.pressed[IN_X]) done = true;
+
+		if (in_repeat(&a->in, IN_UP))   sel = (sel + n - 1) % n;
+		if (in_repeat(&a->in, IN_DOWN)) sel = (sel + 1) % n;
+
+		if (a->in.pressed[IN_ACCEPT] && rows[sel].live) {
+			if (!strcmp(rows[sel].label, "Favorite")) {
+				fav_toggle(a->sys.systems[owner].tag, g->file);
+				{	char fp[CFG_STR * 2];
+					fav_path(fp, sizeof fp);
+					fav_save(fp);
+				}
+				/* The Favorites shelf is built from this list, so it has to
+				 * be rebuilt before anything reads it again - including the
+				 * cursor this screen is standing on. Everything from before
+				 * this line may have moved: sys_cursor, the indices, and v
+				 * itself. */
+				{	char was[LIB_PATH];
+
+					snprintf(was, sizeof was, "%s", g->file);
+					refresh_favorites_shelf(a);
+					v = &a->view[a->sys_cursor];
+					if (v->list.count == 0) return;
+					owner = shelf_owner(a, a->sys_cursor, v->cursor);
+					g = &v->list.items[v->cursor];
+					/* Un-favoriting ON the Favorites shelf takes the game out
+					 * from under the cursor, and something else slides into
+					 * its place. Carrying on would leave this screen quietly
+					 * describing a different game than the one it opened on,
+					 * under the heading of the one it opened on. */
+					if (strcmp(was, g->file)) return;
+				}
+			} else {
+				/* Replace: delete, then run the ordinary one-system scrape.
+				 * It finds exactly one thing missing and fetches exactly one
+				 * image, so there is no separate single-game code path to
+				 * keep honest - "replace" is "remove, then fill in". */
+				char p[LIB_PATH * 3];
+
+				snprintf(p, sizeof p, "%s/%s/.media/%s.png",
+				         P_ROMS, a->sys.systems[owner].folder, g->name);
+				remove(p);
+				art_screen(a, a->sys.systems[owner].folder);
+			}
+			gi_gather(a, owner, g, &gi);
+			plat_input_flush();
+			memset(&a->in, 0, sizeof a->in);
+			continue;
+		}
+
+		if (in_repeat(&a->in, IN_VOLUP))    plat_volume_nudge(+1);
+		if (in_repeat(&a->in, IN_VOLDN))    plat_volume_nudge(-1);
+		if (in_repeat(&a->in, IN_BRIGHTUP)) plat_brightness_nudge(+1);
+		if (in_repeat(&a->in, IN_BRIGHTDN)) plat_brightness_nudge(-1);
+
+		tick_tint(a);
+		draw_shelf(a);
+		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
+		SDL_RenderFillRect(a->r, NULL);
+		menu_draw(a, g->title, rows, n, sel, 0,
+		          a->sys.systems[owner].accent);
+		plat_draw_osd(a->r);
+		SDL_RenderPresent(a->r);
+		SDL_Delay(8);
+	}
+
+	/* The card may now hold art it did not before. */
+	free_all_textures(a);
+	plat_input_flush();
+	memset(&a->in, 0, sizeof a->in);
+}
+
+/* One frame of it, from the real gatherer where possible: the fixture is the
+ * game actually under the cursor, so a shot is a picture of this library
+ * rather than of numbers somebody typed. */
+void info_preview(app *a, bool net)
+{
+	sysview   *v = &a->view[a->sys_cursor];
+	menu_row   rows[GI_MAX];
+	game_info  gi;
+	int        owner, n;
+
+	if (v->list.count == 0) return;
+	owner = shelf_owner(a, a->sys_cursor, v->cursor);
+	gi_gather(a, owner, &v->list.items[v->cursor], &gi);
+	n = gi_rows(rows, &gi, net);
+
+	draw_shelf(a);
+	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+	SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
+	SDL_RenderFillRect(a->r, NULL);
+	menu_draw(a, v->list.items[v->cursor].title, rows, n, 5, 0,
+	          a->sys.systems[owner].accent);
 }
 
 static void about_screen(app *a)
@@ -3657,6 +3878,9 @@ static void update_games(app *a)
 		evict_far(v, TEX_KEEP_FAR);
 		return;
 	}
+	/* X opens the game. Y marks it. The pair sits together because they are
+	 * the two things you do to a card without launching it. */
+	if (a->in.pressed[IN_X] && n > 0) { game_info_screen(a); return; }
 	/* Y favorites what is under the cursor. Written through immediately:
 	 * there is no confirm step to hang the save off, and the alternative is
 	 * losing the choice to a flat battery. */
@@ -3945,6 +4169,7 @@ static int shot_kb, shot_kb_layer;
 static const char *shot_notice;
 static const char *shot_notice_head = "Unlocked  -  5 points";
 static int shot_cheevos;
+static int shot_info;
 static int shot_art;
 static const char *shot_art_now = "Legend of Zelda, The - A Link to the Past (USA)";
 static int shot_hare;
@@ -4034,6 +4259,7 @@ static void take_shot(app *a)
 
 		menu_draw(a, shot_wait, &row, 1, -1, 0, MENU_ACCENT);
 	}
+	if (shot_info) info_preview(a, true);
 	if (shot_art)
 		art_preview(a, shot_art_now, "4 of 10 systems",
 		            "37 found, 2 missing, 61 already", true);
@@ -4144,6 +4370,7 @@ int main(int argc, char *argv[])
 		 * for the same reason --menu and --slots exist: it is dense, and
 		 * laying it out against a screenshot beats a round trip to a device. */
 		else if (!strcmp(argv[i], "--cheevos-screen")) shot_cheevos = 1;
+		else if (!strcmp(argv[i], "--info")) shot_info = 1;
 		else if (!strcmp(argv[i], "--art")) {
 			shot_art = 1;
 			if (i + 1 < argc && argv[i + 1][0] != '-') shot_art_now = argv[++i];
