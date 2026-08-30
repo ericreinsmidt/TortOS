@@ -8,7 +8,7 @@ SSH := sshpass -p 'tina' ssh -o StrictHostKeyChecking=no root@$(BRICK)
 
 .PHONY: all clean native toolchain vendor boot checkmark payload release install-card \
         adb adb-elf adb-res adb-vendor adb-restart adb-run adb-log \
-        check-cheevos check-idle check-rahash check-raset check-xfer \
+        check-cheevos check-httpd check-idle check-rahash check-raset check-xfer \
         deploy restart logs
 
 all: build/tortos.elf
@@ -48,6 +48,17 @@ build-native/cheevos-check: tools/cheevos-check.c src/cheevos.c src/cheevos.h \
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
 	      -o $@ tools/cheevos-check.c src/cheevos.c src/atomic.c
+
+# Hare's transport, driven by a real client over a real socket. An HTTP parser
+# is where "looks right" and "is right" part company: every browser sends the
+# well-formed case, and only the interesting failures send anything else.
+check-httpd: build-native/httpd-check
+	@./build-native/httpd-check
+
+build-native/httpd-check: tools/httpd-check.c src/httpd.c src/httpd.h src/xfer.h FORCE
+	@mkdir -p build-native
+	$(CC) -std=gnu11 -Wall -Wextra -Wno-unused-parameter -D_GNU_SOURCE -O1 -g \
+	      -o $@ tools/httpd-check.c src/httpd.c
 
 # Hare's path safety: can a browser on the LAN climb out of the three roots?
 # Every other check in here protects a feature; this one protects the device.
