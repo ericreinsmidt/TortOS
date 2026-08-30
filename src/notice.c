@@ -2,6 +2,7 @@
 /* See notice.h for why the launcher draws this and Diatom shows it. */
 #include <SDL.h>
 #include <SDL_ttf.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -148,17 +149,28 @@ bool notice_render(const char *heading, const char *body, const char *path)
 	px = calloc((size_t)w * (size_t)h, 4);
 	if (!px) return false;
 
-	/* A dark slab at 85%, corners knocked off. Not a rounded rectangle with
-	 * antialiased arcs - this sits over a moving picture for four seconds and
-	 * a diagonal reads as a corner from a metre away. */
-	corner = padx * 2 / 3;
+	/* A dark slab at 85%, rounded the way every menu panel in the launcher is
+	 * rounded. The first version chamfered the corners - one comparison per
+	 * pixel - and the comment justified it as reading the same from a metre
+	 * away. It does not read the same. It reads as a different piece of
+	 * software borrowing the screen for a moment. */
+	corner = padx;
 	for (y = 0; y < h; y++) {
 		for (x = 0; x < w; x++) {
 			int dx = x < corner ? corner - x : (x >= w - corner ? x - (w - corner - 1) : 0);
 			int dy = y < corner ? corner - y : (y >= h - corner ? y - (h - corner - 1) : 0);
+			unsigned a = 217;
 
-			if (dx + dy > corner) continue;          /* the clipped corner */
-			blend(px + ((size_t)y * w + x) * 4, 26, 22, 18, 217);
+			if (dx || dy) {
+				/* Coverage from the distance to the arc, so the curve is
+				 * antialiased rather than staircased. More than half a pixel
+				 * outside is nothing; more than half inside is solid. */
+				double d = sqrt((double)dx * dx + (double)dy * dy) - corner;
+
+				if (d > 0.5) continue;
+				if (d > -0.5) a = (unsigned)(a * (0.5 - d));
+			}
+			blend(px + ((size_t)y * w + x) * 4, 26, 22, 18, a);
 		}
 	}
 
