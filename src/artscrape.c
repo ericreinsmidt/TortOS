@@ -28,9 +28,22 @@
 #define ARTPATH_MAX (LIB_PATH + NAME_MAX_ * 2 + 32)
 #define ARTURL_MAX  (sizeof BASE + 384 + NAME_MAX_ * 3 + 32)
 
-/* An index runs to a few hundred entries of a hundred-odd bytes each; the
- * largest measured was Nintendo - SNES at about 250KB of HTML. */
-#define INDEX_MAX (512 * 1024)
+/* MEASURED, 2026-08-30, not guessed:
+ *
+ *     Nintendo - Nintendo Entertainment System   4.05 MB   13418 entries
+ *     Nintendo - Super Nintendo Entertainment    0.97 MB    3676 entries
+ *     Sega - Mega Drive - Genesis                0.62 MB    2355 entries
+ *
+ * The first version of this file said "a few hundred entries, the largest
+ * measured was SNES at about 250KB" and sized the buffer at 512KB. Nothing
+ * had been measured; the sentence was written as though it had. NES arrived
+ * eight times over that, was truncated to its first eighth, and the match
+ * rate fell from the tool's 97% to 72% - which looks exactly like libretro
+ * not having the art.
+ *
+ * Eight megabytes because the largest real index is four and the collection
+ * grows. Allocated only while the screen is open. */
+#define INDEX_MAX (8 * 1024 * 1024)
 #define ENTRIES_MAX 4096
 
 /* The folder in systems.cfg, and what libretro calls the same machine.
@@ -169,15 +182,17 @@ static void urldec(const char *in, char *out, size_t outn)
 
 /* ---- state -------------------------------------------------------------- */
 
-/* One system's index: the names as listed, plus each one normalised. Both are
- * kept because the match tries exact first and normalised second, and
- * normalising every candidate on every lookup would be quadratic over a
- * library. */
-static char  (*g_name)[NAME_MAX_];
-static char  (*g_norm)[NAME_MAX_];
-static int     g_nnames;
-
+/* The whole index, held as it arrived.
+ *
+ * Two parallel arrays of decoded and normalised names used to sit beside this.
+ * Once the real index sizes were known they would have been 13418 x 192 bytes
+ * each - five megabytes of copies of strings already in the buffer, and an
+ * entry cap that was the other half of the truncation bug. match() scans the
+ * HTML instead: one pass per ROM, normalising each candidate as it goes. That
+ * is 13418 short normalisations per ROM on the worst system, which is
+ * microseconds, and there is nothing left to overflow. */
 static char   *g_html;
+static int     g_nnames;      /* what the index held; for the message only */
 
 typedef struct { char folder[CFG_STR]; char exts[CFG_STR]; } sysrow;
 static sysrow  g_sys[CFG_MAX_SYSTEMS];
@@ -288,41 +303,66 @@ static bool parse_index(void)
 	remove(INDEX_TMP);
 	g_html[n] = '\0';
 
+	/* A full buffer means the index outgrew it and the tail is missing, which
+	 * shows up as games libretro "does not have". Refuse, rather than match
+	 * against a fraction of the catalogue and report the difference as
+	 * missing art. */
+	if (n >= INDEX_MAX - 1) return false;
+
 	for (p = g_html; (p = strstr(p, "href=\"")); ) {
-		const char *s = p + 6, *q = strchr(s, '"');
-		size_t len;
-		char raw[NAME_MAX_ * 2];
+		const char *q;
 
-		p = s;
+		p += 6;
+		q = strchr(p, '"');
 		if (!q) break;
-		len = (size_t)(q - s);
-		if (len < 5 || len >= sizeof raw) continue;
-		if (strncmp(q - 4, ".png", 4) != 0) continue;
-
-		snprintf(raw, sizeof raw, "%.*s", (int)(len - 4), s);   /* drop .png */
-		if (g_nnames >= ENTRIES_MAX) break;
-		urldec(raw, g_name[g_nnames], NAME_MAX_);
-		art_norm(g_name[g_nnames], g_norm[g_nnames], NAME_MAX_);
-		g_nnames++;
+		if (q - p >= 5 && !strncmp(q - 4, ".png", 4)) g_nnames++;
 	}
 	return g_nnames > 0;
 }
 
 /* Exact filename first, then normalised. In that order because an exact hit is
  * unambiguous and a normalised one can collide - two dumps of the same game
- * normalise alike, and the first is as good an answer as any. */
-static const char *match(const char *base)
+ * normalise alike, and the first is as good an answer as any.
+ *
+ * One pass over the index per ROM, decoding and normalising candidates as it
+ * goes. `out` takes the winning name exactly as libretro spells it, because
+ * that is what the download URL needs. */
+static bool match(const char *base, char *out, size_t outn)
 {
-	char nb[NAME_MAX_];
-	int i;
+	char nb[NAME_MAX_], cand[NAME_MAX_], cnorm[NAME_MAX_];
+	const char *p;
+	bool have_norm = false;
 
-	for (i = 0; i < g_nnames; i++)
-		if (!strcmp(g_name[i], base)) return g_name[i];
 	art_norm(base, nb, sizeof nb);
-	if (!nb[0]) return NULL;
-	for (i = 0; i < g_nnames; i++)
-		if (!strcmp(g_norm[i], nb)) return g_name[i];
-	return NULL;
+
+	for (p = g_html; (p = strstr(p, "href=\"")); ) {
+		const char *q;
+		size_t len;
+		char raw[NAME_MAX_ * 2];
+
+		p += 6;
+		q = strchr(p, '"');
+		if (!q) break;
+		len = (size_t)(q - p);
+		if (len < 5 || len >= sizeof raw) continue;
+		if (strncmp(q - 4, ".png", 4) != 0) continue;
+
+		snprintf(raw, sizeof raw, "%.*s", (int)(len - 4), p);   /* drop .png */
+		urldec(raw, cand, sizeof cand);
+
+		if (!strcmp(cand, base)) {                  /* exact: nothing beats it */
+			snprintf(out, outn, "%s", cand);
+			return true;
+		}
+		if (!have_norm && nb[0]) {
+			art_norm(cand, cnorm, sizeof cnorm);
+			if (!strcmp(cnorm, nb)) {
+				snprintf(out, outn, "%s", cand);
+				have_norm = true;               /* but keep looking for one */
+			}
+		}
+	}
+	return have_norm;
 }
 
 /* ---- driving ------------------------------------------------------------ */
@@ -331,8 +371,6 @@ void art_cancel(void)
 {
 	g_running = false;
 	free(g_html);  g_html = NULL;
-	free(g_name);  g_name = NULL;
-	free(g_norm);  g_norm = NULL;
 	g_nnames = 0;
 }
 
@@ -356,9 +394,7 @@ void art_begin(const systems_cfg *sys, const char *roms_dir)
 	g_st.systems = g_nsys;
 
 	g_html = malloc(INDEX_MAX);
-	g_name = malloc(sizeof *g_name * ENTRIES_MAX);
-	g_norm = malloc(sizeof *g_norm * ENTRIES_MAX);
-	if (!g_html || !g_name || !g_norm) { art_cancel(); return; }
+	if (!g_html) { art_cancel(); return; }
 	g_running = true;
 }
 
@@ -374,7 +410,8 @@ static int next_system(void)
 int art_step(void)
 {
 	char dir[ARTPATH_MAX], media[ARTPATH_MAX], dest[ARTPATH_MAX];
-	const char *remote, *hit;
+	const char *remote;
+	char        hitbuf[NAME_MAX_];
 	struct stat st;
 
 	if (!g_running) return -1;
@@ -439,8 +476,7 @@ int art_step(void)
 			g_ri++;
 			return 1;
 		}
-		hit = match(g_roms[g_ri]);
-		if (!hit) {
+		if (!match(g_roms[g_ri], hitbuf, sizeof hitbuf)) {
 			g_st.missing++;
 			snprintf(g_st.now, sizeof g_st.now, "no art for %s", g_roms[g_ri]);
 			g_ri++;
@@ -452,7 +488,7 @@ int art_step(void)
 			snprintf(g_st.now, sizeof g_st.now, "%s", g_roms[g_ri]);
 			mkdir(media, 0777);
 			urlenc(remote_for(g_sys[g_si].folder), er, sizeof er);
-			urlenc(hit, en, sizeof en);
+			urlenc(hitbuf, en, sizeof en);
 			snprintf(url, sizeof url, BASE "/%s/Named_Boxarts/%s.png", er, en);
 			snprintf(g_pending, sizeof g_pending, "%s", dest);
 			if (!net_get_async(url, g_pending, 60)) {
