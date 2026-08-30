@@ -16,6 +16,7 @@
 #include "library.h"
 #include "platform.h"
 #include "favorites.h"
+#include "notice.h"
 #include "rafetch.h"
 #include "ranet.h"
 #include "keyboard.h"
@@ -570,13 +571,38 @@ static void ra_creds_path(char *out, size_t n)
  * telling happens the next time this process has the screen. */
 static void on_cheevo_unlocked(int id)
 {
-	if (chv_note_unlock(id)) {
-		char p[CFG_STR * 2];
-		chv_store_path(p, sizeof p);
-		/* Written through immediately rather than at exit. A game ends by
-		 * power button as often as by menu, and an achievement lost to a flat
-		 * battery is one the player has to earn twice. */
-		chv_earned_save(p);
+	char p[CFG_STR * 2];
+	const cheevo *c = NULL;
+	int i;
+
+	if (!chv_note_unlock(id)) return;
+
+	chv_store_path(p, sizeof p);
+	/* Written through immediately rather than at exit. A game ends by power
+	 * button as often as by menu, and an achievement lost to a flat battery is
+	 * one the player has to earn twice. */
+	chv_earned_save(p);
+
+	/* And say so, on screen, now. This process owns no display while a game
+	 * runs, so it renders the line and Diatom composites it (its ADR-0027).
+	 * Rendering is safe here; presenting would not be. */
+	for (i = 0; i < chv_count(); i++)
+		if (chv_at(i)->id == id) { c = chv_at(i); break; }
+
+	{
+		char head[64];
+
+		/* Points on the context line, not the name: "First Blood!" is what
+		 * the player wants to read, and "1 point" is what it was worth. */
+		if (c && c->points > 0)
+			snprintf(head, sizeof head, "Unlocked  -  %d point%s",
+			         c->points, c->points == 1 ? "" : "s");
+		else
+			snprintf(head, sizeof head, "Unlocked");
+
+		snprintf(p, sizeof p, "%s/notice.dtov", P_USERDATA);
+		if (notice_render(head, c && c->title[0] ? c->title : "Unlocked", p))
+			plat_resident_line("OVERLAY\tpath=%s\tms=4000", p);
 	}
 }
 
@@ -2964,6 +2990,7 @@ static const char *shot_path;
 static int shot_screen = -1;
 static int shot_menu, shot_menu_sel;
 static int shot_kb, shot_kb_layer;
+static const char *shot_notice;
 static const char *shot_kb_text = "correct horse";
 static int shot_slots, shot_slot_sel;
 static int shot_jump;               /* letter-jumps to apply before drawing */
@@ -3026,6 +3053,40 @@ static void take_shot(app *a)
 	if (shot_slots) shot_draw_slots(a);
 	if (shot_kb) kb_preview(a->r, "Wi-Fi password", shot_kb_text,
 	                        shot_kb_layer, 1, 0, MENU_ACCENT);
+	/* The in-game notice is not drawn by this process - Diatom composites it
+	 * over the game - so it cannot be screenshotted like the rest. Rendered
+	 * to its wire format and read straight back, which is the same pixels
+	 * Diatom will show and therefore the thing worth looking at. */
+	if (shot_notice) {
+		char dt[512];
+		FILE *nf;
+
+		snprintf(dt, sizeof dt, "%s.dtov", shot_path);
+		if (notice_render("Unlocked  -  5 points", shot_notice, dt) &&
+		    (nf = fopen(dt, "rb"))) {
+			unsigned char hd[8];
+			if (fread(hd, 1, 8, nf) == 8 && !memcmp(hd, "DTOV", 4)) {
+				int nw = hd[4] | (hd[5] << 8), nh = hd[6] | (hd[7] << 8);
+				SDL_Surface *ns = SDL_CreateRGBSurfaceWithFormat(
+					0, nw, nh, 32, SDL_PIXELFORMAT_ARGB8888);
+				if (ns && fread(ns->pixels, 4, (size_t)nw * nh, nf)
+				          == (size_t)nw * nh) {
+					SDL_Rect at = { (TORTOS_SCREEN_W - nw) / 2,
+					                TORTOS_SCREEN_H - nh - TORTOS_SCREEN_H / 24,
+					                nw, nh };
+					SDL_Texture *nt = SDL_CreateTextureFromSurface(a->r, ns);
+					if (nt) {
+						SDL_SetTextureBlendMode(nt, SDL_BLENDMODE_BLEND);
+						SDL_RenderCopy(a->r, nt, NULL, &at);
+						SDL_DestroyTexture(nt);
+					}
+				}
+				if (ns) SDL_FreeSurface(ns);
+			}
+			fclose(nf);
+			remove(dt);
+		}
+	}
 	if (out) {
 		/* Read BEFORE presenting: the backbuffer is invalid afterwards. */
 		SDL_RenderReadPixels(a->r, NULL, SDL_PIXELFORMAT_RGBA32,
@@ -3076,6 +3137,9 @@ int main(int argc, char *argv[])
 		/* --keyboard [layer] [text] draws one frame of the text-entry panel,
 		 * for the same reason --menu and --slots exist: it is dense, and
 		 * laying it out against a screenshot beats a round trip to a device. */
+		else if (!strcmp(argv[i], "--notice") && i + 1 < argc) {
+			shot_notice = argv[++i];
+		}
 		else if (!strcmp(argv[i], "--keyboard")) {
 			shot_kb = 1;
 			if (i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '2')
