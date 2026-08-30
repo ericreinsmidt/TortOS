@@ -532,24 +532,7 @@ static float text_scale_load(float fallback)
 	if (!f) return fallback;
 	if (fscanf(f, "font_scale=%f", &v) != 1) v = 0.0f;
 	fclose(f);
-	if (v <= 0.0f) return fallback;
-
-	/* Snapped onto the ladder, because the ladder shrank. A device left on
-	 * the old 1.50 would otherwise come back at 1.50 - a size no longer
-	 * offered, which the menu would then label as the largest step while
-	 * rendering something bigger than it. ui_set_font_scale clamps too, but
-	 * into a range, and a value inside the range that is not a step is
-	 * exactly the case that lies. */
-	{	int i, best = 0;
-		float bd = 1e9f;
-
-		for (i = 0; i < TEXT_SCALE_COUNT; i++) {
-			float d = v > TEXT_SCALES[i] ? v - TEXT_SCALES[i]
-			                             : TEXT_SCALES[i] - v;
-			if (d < bd) { bd = d; best = i; }
-		}
-		return TEXT_SCALES[best];
-	}
+	return v > 0.0f ? v : fallback;
 }
 
 /* Whether the radio should come up at boot.
