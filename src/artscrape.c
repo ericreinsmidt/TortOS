@@ -203,9 +203,31 @@ static char    g_romdir[LIB_PATH];
  * waited for: these are called from a screen's frame loop, which is also
  * where the power button is read, so anything that blocks for a timeout is a
  * device that has stopped answering its own power button. */
-enum { P_SYSTEM, P_INDEX_WAIT, P_ROM, P_IMAGE_WAIT };
+/* Two passes over a system, and the order is the point.
+ *
+ *   P_TRY / P_TRY_WAIT     ask for <rom name>.png directly
+ *   P_INDEX / P_INDEX_WAIT fetch the catalogue, but only if something missed
+ *   P_FUZZY / P_FUZZY_WAIT match the leftovers against it
+ *
+ * The index used to come first, always. It is what makes fuzzy matching
+ * possible - you cannot normalise against a catalogue you have not got - and
+ * it is worth 97% against 83% for exact names alone. But 83% of the library
+ * needs no catalogue at all, and the NES index is four megabytes: adding one
+ * game to a shelf downloaded four megabytes to learn a name it could have
+ * simply asked for.
+ *
+ * So the direct request goes first and the catalogue is the fallback. A first
+ * run over an empty library costs the same as before plus a handful of 404s.
+ * Adding a few games - the ordinary case, and the one Over The Hare makes
+ * ordinary - usually costs no index at all. */
+enum { P_SYSTEM, P_TRY, P_TRY_WAIT, P_INDEX, P_INDEX_WAIT, P_FUZZY,
+       P_FUZZY_WAIT };
 static int  g_phase;
 static char g_pending[ARTPATH_MAX];       /* the image being fetched */
+
+/* ROMs still without art after the direct pass, as indices into g_roms. */
+static int  g_retry[ENTRIES_MAX];
+static int  g_nretry, g_qi;
 
 static int  g_si;               /* which system */
 static int  g_ri;               /* which ROM inside it */
@@ -381,6 +403,7 @@ void art_begin(const systems_cfg *sys, const char *roms_dir)
 	art_cancel();
 	memset(&g_st, 0, sizeof g_st);
 	g_si = g_ri = 0;
+	g_nretry = g_qi = 0;
 	g_phase = P_SYSTEM;
 	g_nsys = 0;
 	snprintf(g_romdir, sizeof g_romdir, "%s", roms_dir ? roms_dir : "");
@@ -408,6 +431,31 @@ void art_begin(const systems_cfg *sys, const char *roms_dir)
 	g_html = malloc(INDEX_MAX);
 	if (!g_html) { art_cancel(); return; }
 	g_running = true;
+}
+
+/* <dir>/.media and <dir>/.media/<stem>.png, or false if either would be cut
+ * short - a truncated path names a different file, which is worse than
+ * failing. */
+static bool art_paths(const char *dir, const char *stem,
+                      char *media, size_t mn, char *dest, size_t dn)
+{
+	if (snprintf(media, mn, "%s/.media", dir) >= (int)mn) return false;
+	if (snprintf(dest, dn, "%s/%s.png", media, stem) >= (int)dn) return false;
+	return true;
+}
+
+/* Ask for one image by the name libretro would file it under. Used by both
+ * passes: pass one guesses the card's own name, pass two passes the name the
+ * catalogue gave. */
+static bool start_image(const char *folder, const char *name, const char *dest)
+{
+	char url[ARTURL_MAX], er[384], en[NAME_MAX_ * 3 + 1];
+
+	urlenc(remote_for(folder), er, sizeof er);
+	urlenc(name, en, sizeof en);
+	snprintf(url, sizeof url, BASE "/%s/Named_Boxarts/%s.png", er, en);
+	snprintf(g_pending, sizeof g_pending, "%s", dest);
+	return net_get_async(url, g_pending, 60);
 }
 
 /* Finish with this system and move to the next, saying why.
@@ -452,14 +500,10 @@ int art_step(void)
 		read_roms(dir, g_sys[g_si].exts);
 		if (g_nroms == 0) return next_system("no ROMs");
 
-		/* Count what is missing BEFORE fetching the index, and skip the
-		 * system entirely when nothing is.
-		 *
-		 * The skip-if-present test used to live per-ROM, after the index had
-		 * already been downloaded - so a second run over a complete library
-		 * still pulled nine multi-megabyte indexes to discover it had nothing
-		 * to do. The commit that added this feature claimed running it again
-		 * was cheap. It was not; this is what makes that true. */
+		/* Count what is missing BEFORE any request, and skip the system when
+		 * nothing is. The skip-if-present test used to live per-ROM, after
+		 * the index had already downloaded, so a second run over a complete
+		 * library still pulled every index to learn it had nothing to do. */
 		{
 			int i, want = 0;
 
@@ -475,74 +519,110 @@ int art_step(void)
 		}
 
 		snprintf(g_st.now, sizeof g_st.now, "%s", g_sys[g_si].folder);
-		if (!start_index(remote)) return next_system("could not start curl");
+		g_ri = 0;
+		g_nretry = 0;
+		g_phase = P_TRY;
+		return 1;
+
+	/* ---- pass one: ask for the name the card already has ---------------- */
+	case P_TRY:
+		if (g_ri >= g_nroms) {
+			/* Nothing missed, so the catalogue is never fetched. */
+			if (g_nretry == 0) return next_system(NULL);
+			g_phase = P_INDEX;
+			return 1;
+		}
+		if (!art_paths(dir, g_roms[g_ri], media, sizeof media,
+		               dest, sizeof dest)) {
+			g_st.missing++;
+			g_ri++;
+			return 1;
+		}
+		if (stat(dest, &st) == 0 && st.st_size > 0) { g_ri++; return 1; }
+
+		snprintf(g_st.now, sizeof g_st.now, "%s", g_roms[g_ri]);
+		mkdir(media, 0777);
+		if (!start_image(g_sys[g_si].folder, g_roms[g_ri], dest)) {
+			g_retry[g_nretry++] = g_ri;
+			g_ri++;
+			return 1;
+		}
+		g_phase = P_TRY_WAIT;
+		return 1;
+
+	case P_TRY_WAIT: {
+		int r = net_async_poll();
+
+		if (r == 0) return 1;
+		/* A miss here is ordinary - it means libretro spells this game
+		 * differently, which is exactly what the catalogue is for. It is not
+		 * counted as missing until the fuzzy pass has also failed. */
+		if (r > 0) g_st.found++;
+		else       g_retry[g_nretry++] = g_ri;
+		g_ri++;
+		g_phase = P_TRY;
+		return 1;
+	}
+
+	/* ---- pass two: the catalogue, for what pass one could not name ------ */
+	case P_INDEX:
+		snprintf(g_st.now, sizeof g_st.now, "%s catalogue",
+		         g_sys[g_si].folder);
+		if (!start_index(remote_for(g_sys[g_si].folder)))
+			return next_system("could not start curl");
 		g_phase = P_INDEX_WAIT;
 		return 1;
 
 	case P_INDEX_WAIT: {
 		int r = net_async_poll();
 
-		if (r == 0) return 1;                  /* still fetching */
-		/* Distinguished on purpose: a network or TLS failure is not "this game
-		 * has no art", and reporting it as one is how a certificate change
-		 * gets mistaken for a library full of missing games. */
-		if (r < 0) return next_system("index fetch failed");
-		if (!parse_index()) return next_system("index unreadable or empty");
-		g_ri = 0;
-		g_phase = P_ROM;
+		if (r == 0) return 1;
+		/* Distinguished on purpose: a network or TLS failure is not "these
+		 * games have no art", and reporting it as one is how a certificate
+		 * change gets mistaken for a library full of missing games. */
+		if (r < 0) { g_st.missing += g_nretry; return next_system("index fetch failed"); }
+		if (!parse_index()) {
+			g_st.missing += g_nretry;
+			return next_system("index unreadable or empty");
+		}
+		g_qi = 0;
+		g_phase = P_FUZZY;
 		return 1;
 	}
 
-	case P_ROM:
-		if (g_ri >= g_nroms) return next_system(NULL);
-
-		if (snprintf(media, sizeof media, "%s/.media", dir)
-		    >= (int)sizeof media ||
-		    snprintf(dest, sizeof dest, "%s/%s.png", media, g_roms[g_ri])
-		    >= (int)sizeof dest) {
+	case P_FUZZY:
+		if (g_qi >= g_nretry) return next_system(NULL);
+		if (!art_paths(dir, g_roms[g_retry[g_qi]], media, sizeof media,
+		               dest, sizeof dest)) {
 			g_st.missing++;
-			g_ri++;
+			g_qi++;
 			return 1;
 		}
-
-		/* Already there: no request. Counted by the pre-pass above, which is
-		 * why this does not count it again. */
-		if (stat(dest, &st) == 0 && st.st_size > 0) {
-			g_ri++;
-			return 1;
-		}
-		if (!match(g_roms[g_ri], hitbuf, sizeof hitbuf)) {
+		if (!match(g_roms[g_retry[g_qi]], hitbuf, sizeof hitbuf)) {
 			g_st.missing++;
-			snprintf(g_st.now, sizeof g_st.now, "no art for %s", g_roms[g_ri]);
-			g_ri++;
+			snprintf(g_st.now, sizeof g_st.now, "no art for %s",
+			         g_roms[g_retry[g_qi]]);
+			g_qi++;
 			return 1;
 		}
-		{
-			char url[ARTURL_MAX], er[384], en[NAME_MAX_ * 3 + 1];
-
-			snprintf(g_st.now, sizeof g_st.now, "%s", g_roms[g_ri]);
-			mkdir(media, 0777);
-			urlenc(remote_for(g_sys[g_si].folder), er, sizeof er);
-			urlenc(hitbuf, en, sizeof en);
-			snprintf(url, sizeof url, BASE "/%s/Named_Boxarts/%s.png", er, en);
-			snprintf(g_pending, sizeof g_pending, "%s", dest);
-			if (!net_get_async(url, g_pending, 60)) {
-				g_st.missing++;
-				g_ri++;
-				return 1;
-			}
-			g_phase = P_IMAGE_WAIT;
+		snprintf(g_st.now, sizeof g_st.now, "%s", g_roms[g_retry[g_qi]]);
+		mkdir(media, 0777);
+		if (!start_image(g_sys[g_si].folder, hitbuf, dest)) {
+			g_st.missing++;
+			g_qi++;
+			return 1;
 		}
+		g_phase = P_FUZZY_WAIT;
 		return 1;
 
-	case P_IMAGE_WAIT: {
+	case P_FUZZY_WAIT: {
 		int r = net_async_poll();
 
 		if (r == 0) return 1;
 		if (r > 0) g_st.found++;
 		else       g_st.missing++;
-		g_ri++;
-		g_phase = P_ROM;
+		g_qi++;
+		g_phase = P_FUZZY;
 		return 1;
 	}
 	}

@@ -64,7 +64,12 @@ static bool write_get_config(const char *path, const char *url, int timeout_s)
 	f = fdopen(fd, "w");
 	if (!f) { close(fd); return false; }
 
-	fprintf(f, "silent\nshow-error\nfail\nlocation\n");
+	/* No show-error. A 404 is a normal answer to a GET here - box art asks
+	 * for the name the card uses and expects to be told no about one in six -
+	 * and curl printing "curl: (22)" for each put thirty-two of them in the
+	 * device log per run. The caller knows what it asked for and says so in
+	 * words; curl's exit code is enough for it to know. */
+	fprintf(f, "silent\nfail\nlocation\n");
 	fprintf(f, "max-time = %d\n", timeout_s);
 	if (g_ca[0]) { fprintf(f, "cacert = "); cfg_quote(f, g_ca); fputc('\n', f); }
 	fprintf(f, "user-agent = "); cfg_quote(f, "TortOS/" TORTOS_VERSION); fputc('\n', f);
