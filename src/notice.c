@@ -174,8 +174,15 @@ bool notice_render(const char *heading, const char *body, const char *path)
 		}
 	}
 
-	draw_text(px, w, h, fh, heading, padx, pady, DIM);
-	draw_text(px, w, h, fb, body, padx, pady + ui_font_line(UI_F_MENU), WHITE);
+	/* Both lines centred, not left-aligned. The slab is as wide as its wider
+	 * line, so the shorter one sat against the left edge with a gap after it -
+	 * which reads as text that failed to fill rather than as a caption. It is
+	 * also what menu_draw does with a heading, so the two agree. */
+	draw_text(px, w, h, fh, heading,
+	          (w - ui_text_width(fh, heading)) / 2, pady, DIM);
+	draw_text(px, w, h, fb, body,
+	          (w - ui_text_width(fb, body)) / 2,
+	          pady + ui_font_line(UI_F_MENU), WHITE);
 
 	f = fopen(path, "wb");
 	if (!f) { free(px); return false; }

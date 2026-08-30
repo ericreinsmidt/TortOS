@@ -3323,6 +3323,7 @@ static int shot_screen = -1;
 static int shot_menu, shot_menu_sel;
 static int shot_kb, shot_kb_layer;
 static const char *shot_notice;
+static const char *shot_notice_head = "Unlocked  -  5 points";
 static int shot_cheevos;
 static const char *shot_kb_text = "correct horse";
 static int shot_slots, shot_slot_sel;
@@ -3422,7 +3423,7 @@ static void take_shot(app *a)
 		FILE *nf;
 
 		snprintf(dt, sizeof dt, "%s.dtov", shot_path);
-		if (notice_render("Unlocked  -  5 points", shot_notice, dt) &&
+		if (notice_render(shot_notice_head, shot_notice, dt) &&
 		    (nf = fopen(dt, "rb"))) {
 			unsigned char hd[8];
 			if (fread(hd, 1, 8, nf) == 8 && !memcmp(hd, "DTOV", 4)) {
@@ -3500,6 +3501,7 @@ int main(int argc, char *argv[])
 		else if (!strcmp(argv[i], "--cheevos-screen")) shot_cheevos = 1;
 		else if (!strcmp(argv[i], "--notice") && i + 1 < argc) {
 			shot_notice = argv[++i];
+			if (i + 1 < argc && argv[i + 1][0] != '-') shot_notice_head = argv[++i];
 		}
 		else if (!strcmp(argv[i], "--keyboard")) {
 			shot_kb = 1;
