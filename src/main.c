@@ -1601,7 +1601,7 @@ static int menu_build(app *a, screen_id screen, int sys,
 	/* Not "Sleep". The device has no suspend and is not getting one - see the
 	 * backlog. This powers off, and resume-into-game brings you back where you
 	 * were, which is what sleep would have been for. */
-	out[PM_SLEEP]        = (menu_row){ "Auto Power Off",    "not yet", false };
+	out[PM_SLEEP]        = (menu_row){ "Auto Off",          "not yet", false };
 	out[PM_ABOUT]        = (menu_row){ "About TortOS",      NULL,      true  };
 	return PM_ROWS;
 }
