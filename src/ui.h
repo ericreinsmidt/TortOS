@@ -88,6 +88,30 @@ int ui_text_width(TTF_Font *f, const char *s);
 void ui_fit_text(TTF_Font *f, const char *src, char *dst, size_t dstn,
                  int maxw);
 
+/* Draw `s` left-aligned at (x,y), clipped to `w` pixels, sliding it back and
+ * forth when it does not fit.
+ *
+ * Truncation destroys information permanently; this only delays it. `phase` is
+ * milliseconds since the subject last changed - the caller owns that clock,
+ * because only the caller knows what "the subject" is (a shelf cursor moving,
+ * a menu selection changing).
+ *
+ * IT WAITS BEFORE IT MOVES, and that is the whole design. Started immediately
+ * it is motion competing with a coverflow already easing under the player's
+ * thumb - worse than a clipped title. Waiting means flicking through a shelf
+ * never triggers it and stopping on a game always does, which turns it from
+ * decoration into an answer to a question just asked by stopping.
+ *
+ * Ping-pong rather than a loop: a loop needs a gap and a wrap, and on a short
+ * string you cannot tell where the title ended and restarted. This rests at
+ * the beginning, so the idle state is always canonical.
+ *
+ * Costs nothing this launcher was not already paying. Every screen redraws
+ * every frame, and ui_text caches the rendered texture per (font, string,
+ * colour) - so sliding it is a moving destination rect, not a re-render. */
+void ui_text_marquee(SDL_Renderer *r, TTF_Font *f, const char *s,
+                     int x, int y, int w, unsigned phase, SDL_Color col);
+
 /* The panel border, in pixels. In the header because layout outside ui.c has
  * to know it: centring anything inside a panel means centring against the
  * INNER edge, since the border is a visible frame and the eye reads the space

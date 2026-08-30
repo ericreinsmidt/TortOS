@@ -1201,6 +1201,32 @@ static void draw_systems(app *a)
 	        s->accent);
 }
 
+/* Milliseconds since the focused game last changed.
+ *
+ * The marquee's clock, and it lives here rather than in ui.c because only this
+ * knows what "the subject" is. Moving the cursor - or changing shelves - is a
+ * new subject and starts the wait again, which is what keeps a scan quiet. */
+static int shot_phase = -1;        /* --phase, for the shot harness only */
+
+static unsigned title_phase(app *a)
+{
+	static int last_sys = -1, last_cur = -1;
+	static unsigned since;
+	unsigned now = plat_now_ms();
+	int cur = a->view[a->sys_cursor].cursor;
+
+	/* A still of a moving thing needs a chosen moment. Without this the only
+	 * way to look at a marquee is to film one. */
+	if (shot_phase >= 0) return (unsigned)shot_phase;
+
+	if (a->sys_cursor != last_sys || cur != last_cur) {
+		last_sys = a->sys_cursor;
+		last_cur = cur;
+		since = now;
+	}
+	return now - since;
+}
+
 static void draw_games(app *a)
 {
 	sysview *v = &a->view[a->sys_cursor];
@@ -1220,46 +1246,55 @@ static void draw_games(app *a)
 
 	if (v->list.count > 0) {
 		game_entry *g = &v->list.items[v->cursor];
-		/* Trimmed before it is measured, so the heart lands beside the text
-		 * that is actually drawn. A title wide enough to need this ran off
-		 * both edges of the screen - the last place with the panel problem,
-		 * and the only one menu_draw cannot fix because this is not a menu.
-		 * Room for the mark and its gap on the left, and the same again on
-		 * the right so a centred title stays centred. */
-		char tfit[192];
-		int lead = ui_font_line(UI_F_TITLE) / 3 * 3;
-		int tw, tx = TORTOS_SCREEN_W / 2;
-
-		ui_fit_text(ui_font(UI_F_TITLE), g->title, tfit, sizeof tfit,
-		            TORTOS_SCREEN_W - lead * 2);
-		tw = ui_text_width(ui_font(UI_F_TITLE), tfit);
+		/* A title that fits is centred, as before. One that does not slides,
+		 * because truncating it destroys the rest of the name permanently and
+		 * sliding it only delays it - see ui_text_marquee.
+		 *
+		 * THE HEART HAS A FIXED SEAT, far left, whether or not this game
+		 * has one. It used to be placed off the title's own width, which put
+		 * it somewhere new for every game and - once titles could slide -
+		 * would have moved it at the moment a title started sliding. A mark
+		 * that jumps when the thing beside it grows is not a mark, it is more
+		 * motion.
+		 *
+		 * Its width is reserved on BOTH sides, so the box stays centred on the
+		 * screen and a short title is centred exactly where it always was.
+		 * The cost is a narrower box, so a few more titles slide; sliding is
+		 * the thing that made a narrow box acceptable. */
+		TTF_Font *ft2 = ui_font(UI_F_TITLE);
+		int line = ui_font_line(UI_F_TITLE);
+		int margin = line / 2;
+		int hrad = line * 2 / 5;
+		int lead = margin + hrad * 2 + hrad;      /* edge, heart, its gap */
+		int boxx = lead;
+		int boxw = TORTOS_SCREEN_W - lead * 2;
+		int tw = ui_text_width(ft2, g->title);
+		int tx = TORTOS_SCREEN_W / 2;
+		bool slides = tw > boxw;
 		/* The one mark left on a card.
 		 *
 		 * There was a second, a dot on the right, for a game with an autosave
 		 * - A continues it rather than starting it. Removed 2026-08-30: it
 		 * only ever drew beside the CENTRED title, so it was never the
 		 * scan-the-shelf signal it looked like, and it said one bit with no
-		 * legend about the one game you could already ask about. X says
-		 * "resume + 3" now, which is the same fact with a number on it. */
+		 * legend about the one game you could already ask about directly. X
+		 * says "resume + 3" now, which is the same fact with a number on it. */
 		if (fav_is(gs->tag, g->file)) {
-			TTF_Font *ft = ui_font(UI_F_TITLE);
-			int line = ui_font_line(UI_F_TITLE);
-			/* Bigger than the star it replaced (line/4). A heart reads as
-			 * a heart only once its notch and point are visible, and at a
-			 * quarter of a line it was a blob. */
-			int rad = line / 3;
-			/* Centered on the title's INK, not its em box. The box reserves a
-			 * descender's depth that most titles never use, so a mark placed
-			 * at the box's middle sits visibly below the letters. Descent is
-			 * negative, so half of it lifts. The autosave dot opposite gets
-			 * the same correction, so the pair sits on one line. */
-			int dy = 40 + line / 2 + (ft ? TTF_FontDescent(ft) / 2 : 0);
+			/* Centred on the title's INK, not its em box. The box reserves a
+			 * descender's depth most titles never use, so a mark placed at
+			 * the box's middle sits visibly below the letters. Descent is
+			 * negative, so half of it lifts. */
+			int dy = 40 + line / 2 + (ft2 ? TTF_FontDescent(ft2) / 2 : 0);
 			SDL_Color c = { (Uint8)(gs->accent >> 16), (Uint8)(gs->accent >> 8),
 			                (Uint8)gs->accent, 255 };
-			draw_heart(a->r, (float)(tx - tw / 2 - rad * 2), (float)dy,
-			           (float)rad, c);
+
+			draw_heart(a->r, (float)(margin + hrad), (float)dy, (float)hrad, c);
 		}
-		ui_text(a->r, ui_font(UI_F_TITLE), tfit, tx, 40, 0, UI_TEXT);
+		if (slides)
+			ui_text_marquee(a->r, ft2, g->title, boxx, 40, boxw,
+			                title_phase(a), UI_TEXT);
+		else
+			ui_text(a->r, ft2, g->title, tx, 40, 0, UI_TEXT);
 		snprintf(count, sizeof count, "%d / %d", v->cursor + 1, v->list.count);
 		ui_text(a->r, ui_font(UI_F_META), count, TORTOS_SCREEN_W / 2, 690, 0,
 		        UI_TEXT_DIM);
@@ -4471,6 +4506,8 @@ int main(int argc, char *argv[])
 		 * laying it out against a screenshot beats a round trip to a device. */
 		else if (!strcmp(argv[i], "--cheevos-screen")) shot_cheevos = 1;
 		else if (!strcmp(argv[i], "--info")) shot_info = 1;
+		else if (!strcmp(argv[i], "--phase") && i + 1 < argc)
+			shot_phase = atoi(argv[++i]);
 		else if (!strcmp(argv[i], "--art")) {
 			shot_art = 1;
 			if (i + 1 < argc && argv[i + 1][0] != '-') shot_art_now = argv[++i];

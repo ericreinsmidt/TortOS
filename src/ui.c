@@ -181,6 +181,101 @@ int ui_text_width(TTF_Font *f, const char *s)
 	return w;
 }
 
+/* Tuned by eye, and the first is the one that matters - see ui.h.
+ *
+ * 70 px/s is slow enough to read at arm's length on a three-inch panel and
+ * fast enough that a 300px overrun is done in four seconds. The pause at the
+ * far end stops the reversal reading as jitter: without it the text arrives
+ * and instantly leaves, which looks like a glitch rather than an end. */
+#define MQ_FADE_PX     36          /* how far the edges dissolve */
+#define MQ_FADE_STEP    3
+#define MQ_HOLD_MS   1400          /* stillness before it starts */
+#define MQ_END_MS     900          /* stillness at the far end */
+#define MQ_SPEED_PXPS  70
+
+void ui_text_marquee(SDL_Renderer *r, TTF_Font *f, const char *s,
+                     int x, int y, int w, unsigned phase, SDL_Color col)
+{
+	int tw = ui_text_width(f, s);
+	int over, travel, off, i;
+	unsigned cycle, p;
+	SDL_Rect clip, was;
+	SDL_bool had;
+
+	if (!f || !s || w <= 0) return;
+	if (tw <= w) { ui_text(r, f, s, x, y, -1, col); return; }
+
+	over   = tw - w;
+	travel = over * 1000 / MQ_SPEED_PXPS;
+	if (travel < 1) travel = 1;
+	cycle  = (unsigned)(MQ_HOLD_MS + travel + MQ_END_MS + travel);
+	p      = phase % cycle;
+
+	if      (p < MQ_HOLD_MS)                    off = 0;
+	else if (p < (unsigned)(MQ_HOLD_MS + travel))
+		off = (int)((p - MQ_HOLD_MS) * (unsigned)over / (unsigned)travel);
+	else if (p < (unsigned)(MQ_HOLD_MS + travel + MQ_END_MS))
+		off = over;
+	else
+		off = over - (int)((p - MQ_HOLD_MS - travel - MQ_END_MS)
+		                   * (unsigned)over / (unsigned)travel);
+
+	/* Nested clips: the caller may already have one, and dropping it would
+	 * let this draw outside whatever panel it sits in. */
+	had = SDL_RenderIsClipEnabled(r);
+	if (had) SDL_RenderGetClipRect(r, &was);
+	clip.x = x; clip.y = y;
+	clip.w = w; clip.h = TTF_FontHeight(f);
+	SDL_RenderSetClipRect(r, &clip);
+
+	/* Faded at both edges, and faded in the TEXT rather than by laying a
+	 * gradient of the background over it. The background here is a coverflow
+	 * with a vignette, not a flat colour, so anything painted on top would
+	 * show as a band. Fading the glyphs works over whatever is behind them.
+	 *
+	 * Without it the text is chopped mid-stroke - and on the shelf the left
+	 * chop lands right beside the heart, where it reads as damage rather than
+	 * as more text.
+	 *
+	 * EACH SLICE IS DRAWN EXACTLY ONCE, at its own alpha, with the clip
+	 * deciding which part of the text lands. The first attempt drew the whole
+	 * string at full alpha and then re-drew the edges dimmer on top, which
+	 * cannot subtract - blending only adds - and used BLENDMODE_NONE to try to
+	 * force it, which replaces the destination wholesale and painted two solid
+	 * white blocks where the fades should have been. */
+	{
+		struct text_entry *e = text_get(r, f, s, col);
+		SDL_Rect dst;
+
+		if (!e) { SDL_RenderSetClipRect(r, had ? &was : NULL); return; }
+		dst.x = x - off; dst.y = y; dst.w = e->w; dst.h = e->h;
+
+		/* The middle, at full strength. */
+		clip.x = x + MQ_FADE_PX;
+		clip.w = w - MQ_FADE_PX * 2;
+		if (clip.w > 0) {
+			SDL_RenderSetClipRect(r, &clip);
+			SDL_SetTextureAlphaMod(e->tex, col.a);
+			SDL_RenderCopy(r, e->tex, NULL, &dst);
+		}
+
+		for (i = 0; i < MQ_FADE_PX; i += MQ_FADE_STEP) {
+			Uint8 a2 = (Uint8)(col.a * i / MQ_FADE_PX);
+
+			SDL_SetTextureAlphaMod(e->tex, a2);
+			clip.w = MQ_FADE_STEP;
+			clip.x = x + i;                       /* left, dark to bright */
+			SDL_RenderSetClipRect(r, &clip);
+			SDL_RenderCopy(r, e->tex, NULL, &dst);
+			clip.x = x + w - MQ_FADE_STEP - i;    /* right, mirrored */
+			SDL_RenderSetClipRect(r, &clip);
+			SDL_RenderCopy(r, e->tex, NULL, &dst);
+		}
+		SDL_SetTextureAlphaMod(e->tex, 255);
+	}
+	SDL_RenderSetClipRect(r, had ? &was : NULL);
+}
+
 void ui_fit_text(TTF_Font *f, const char *src, char *dst, size_t dstn,
                  int maxw)
 {
