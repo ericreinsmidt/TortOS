@@ -87,6 +87,27 @@ int ra_account_unlocks(long gameid, int *out, int max);
 void ra_sync_begin(long gameid);
 int  ra_sync_collect(int *out, int max);
 
+/* Finding and fetching a set WHILE the game runs, rather than in front of it.
+ *
+ * The first play of a game needs two requests - which game is this, and what
+ * are its achievements - and doing them before the launch put most of a second
+ * between pressing A and the game appearing. So the game starts with no set,
+ * these run behind it, and the launcher hands the set over with SETCHEEVOS
+ * once it lands. That message exists for exactly this: ADR-0026 calls it "the
+ * normal path whenever the set is still downloading when the player presses
+ * A", and then the first version blocked instead.
+ *
+ * The cost is that nothing is watched for the first second or two of the first
+ * ever play of a game. You are at a title screen; every launch after is
+ * instant from the cache.
+ *
+ * `rom_hash` is the caller's, because hashing is local work and does not
+ * belong in a state machine about network requests. Drive with ra_fetch_step:
+ * 0 still working, 1 the set is written, -1 idle or failed. */
+void ra_fetch_begin(const char *rom_hash, const char *set_path);
+int  ra_fetch_step(void);
+long ra_fetch_gameid(void);
+
 /* Tell RetroAchievements a game has started. Fire and forget: it drives
  * "currently playing" on the site and nothing here depends on it. */
 void ra_start_session(long gameid);

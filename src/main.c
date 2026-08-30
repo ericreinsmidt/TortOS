@@ -610,22 +610,6 @@ static void ra_merge_unlocks(const int *ids, int n)
 	}
 }
 
-/* The blocking form, and it is used in exactly one place: the first time a
- * game is played, where the set has to be downloaded anyway and the player is
- * already watching a panel. Paying for the unlocks there costs nothing extra,
- * and it means every launch afterwards starts with the account's answer
- * already in the store - which is what lets the launch path stop waiting. */
-static void ra_sync_now(app *a)
-{
-	int ids[CHV_MAX], n;
-
-	if (!ra_signed_in() || chv_game() <= 0 || !ra_online()) return;
-	wait_panel(a, "RetroAchievements", "Checking your progress...");
-	n = ra_account_unlocks(chv_game(), ids, CHV_MAX);
-	if (n < 0) return;               /* could not ask: not the same as none */
-	ra_merge_unlocks(ids, n);
-}
-
 /* And the one that runs on every other launch: started here, collected after
  * the game. See rafetch.h for the measurement that made this necessary. */
 static void ra_sync_collect_and_merge(void)
@@ -667,6 +651,53 @@ static void ra_flush_unlocks(const char *rom, const char *tag)
 		fprintf(stderr, "ra: submitted %d unlock%s, %d still queued\n",
 		        sent, sent == 1 ? "" : "s", chv_pending_count());
 	}
+}
+
+/* Where the launcher's own work happens during a game. Ten times a second,
+ * from inside the wait loop, and it must stay cheap: that loop is the power
+ * button's watchdog.
+ *
+ * Its one job is the first play of a game. The set is being found behind the
+ * game rather than in front of it, and when it lands the player is told the
+ * only way anyone can be told during a game - over Diatom's overlay. */
+static char g_pending_set[LIB_PATH * 2];
+static char g_pending_active[LIB_PATH * 2];
+
+static void on_game_tick(void)
+{
+	char msg[96];
+
+	int rc;
+
+	if (!g_pending_set[0]) return;
+
+	/* Once. Calling it twice advances the state machine twice, which is a
+	 * lookup answered and then thrown away. */
+	rc = ra_fetch_step();
+	if (rc == 0) return;                        /* still working */
+	if (rc < 0) { g_pending_set[0] = '\0'; return; }  /* RA has never seen it */
+
+	if (!chv_load(g_pending_set)) { g_pending_set[0] = '\0'; return; }
+	ra_sync_begin(chv_game());        /* the account's answer, collected at exit */
+
+	if (chv_write_active(g_pending_active)) {
+		plat_resident_line("SETCHEEVOS	path=%s	console=%d",
+		                   g_pending_active, chv_console());
+		snprintf(msg, sizeof msg, "%d to earn", chv_count());
+	} else {
+		snprintf(msg, sizeof msg, "all %d already earned", chv_count());
+	}
+
+	/* Rendering is safe here; presenting would not be. Same rule as an
+	 * unlock notice, and the same path. */
+	{
+		char p[CFG_STR * 2];
+
+		snprintf(p, sizeof p, "%s/notice.dtov", P_USERDATA);
+		if (notice_render(msg, chv_game_title(), p))
+			plat_resident_line("OVERLAY	path=%s	ms=3500", p);
+	}
+	g_pending_set[0] = '\0';
 }
 
 /* Called from inside plat_resident_wait, mid-game, when the launcher owns
@@ -2626,11 +2657,10 @@ static void launch(app *a)
 		 * is paid once per game rather than every time. Failing is ordinary -
 		 * offline, not signed in, or a game RetroAchievements has never seen -
 		 * and the launch carries on without. */
-		if (ra_signed_in() && access(set, R_OK) != 0 && ra_online()) {
-			wait_panel(a, "RetroAchievements", "Looking up this game...");
-			ra_ensure_set(rom, s->tag, set);
-			first_play = true;
-		}
+		/* Never played here, so there is no set to hand over. The game starts
+		 * anyway and the set is found behind it - see ra_fetch_begin. Nothing
+		 * in front of the launch. */
+		first_play = ra_signed_in() && access(set, R_OK) != 0 && ra_online();
 
 		if (chv_load(set)) {
 			/* Reconcile with the account BEFORE deciding what to watch.
@@ -2638,13 +2668,24 @@ static void launch(app *a)
 			 * happens to have seen, which is not the same question and does
 			 * not look different: measured 2026-08-29 as 3 of 40 for Contra
 			 * against the site's own 13. */
-			/* The account's answer, without the launch waiting for it. Only
-			 * the very first play of a game blocks, and that one is already
-			 * downloading a set behind a panel, so it costs nothing extra
-			 * and leaves every launch after it able to filter correctly from
-			 * the store alone. */
-			if (first_play) ra_sync_now(a);
-			else            ra_sync_begin(chv_game());
+			/* The account's answer, without the launch waiting for it. On a
+			 * first play there is nothing to ask about yet; that sync starts
+			 * once the set arrives. */
+			if (!first_play) ra_sync_begin(chv_game());
+
+			/* The first play of this game. Hashing is local work and happens
+			 * here, after RUN, so it overlaps the game's own startup rather
+			 * than delaying it; the two requests then run behind the game and
+			 * on_game_tick hands the set over when they land. */
+			if (first_play) {
+				char h[33];
+
+				if (ra_hash_rom(rom, s->tag, h)) {
+					chv_active_path(g_pending_active, sizeof g_pending_active);
+					snprintf(g_pending_set, sizeof g_pending_set, "%s", set);
+					ra_fetch_begin(h, set);
+				}
+			}
 
 			/* ra_start_session is deliberately NOT called here. It drives the
 			 * "currently playing" indicator on the website and nothing on the
@@ -3440,6 +3481,7 @@ int main(int argc, char *argv[])
 		chv_store_path(cp, sizeof cp);
 		chv_earned_load(cp);
 		plat_resident_on_unlock(on_cheevo_unlocked);
+		plat_resident_on_tick(on_game_tick);
 
 		/* Without this every HTTPS request fails verification, because the
 		 * device has no trust store of its own - res/ssl/README.md. */

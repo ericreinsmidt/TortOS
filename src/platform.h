@@ -100,6 +100,16 @@ int  plat_resident_wait(void);
  * buffered would have to be sized against a play session, and this has nothing
  * to size. NULL to stop. */
 void plat_resident_on_unlock(void (*fn)(int id));
+
+/* Called from inside plat_resident_wait roughly ten times a second, which is
+ * the rate its socket poll already runs at. For work the launcher wants to do
+ * WHILE a game is running and cannot do anywhere else, because this process is
+ * blocked here for the whole session.
+ *
+ * Must not block. This loop is also the power button's watchdog, and the one
+ * control that always has to work stops working for as long as anything here
+ * takes. NULL to stop. */
+void plat_resident_on_tick(void (*fn)(void));
 /* Diatom only: one protocol line (RESUME, STOP, SAVE\tpath=...), newline added. */
 bool plat_resident_line(const char *fmt, ...);
 /* Path from the most recent PREVIEW message, or "" - the menu's backdrop. */

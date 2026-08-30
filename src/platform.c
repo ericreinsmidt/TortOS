@@ -621,6 +621,10 @@ static void (*d_on_unlock)(int id);
 
 void plat_resident_on_unlock(void (*fn)(int id)) { d_on_unlock = fn; }
 
+static void (*d_on_tick)(void);
+
+void plat_resident_on_tick(void (*fn)(void)) { d_on_tick = fn; }
+
 bool plat_resident_send(const char *tag, const char *core, const char *rom,
                         const char *resume, const char *exit_state,
                         const char *preview,
@@ -834,6 +838,10 @@ static int diatom_wait(void)
 			}
 		}
 		if (dsock < 0) return RES_DEAD;            /* EOF mid-game */
+
+		/* The launcher's own slice of the game session. Bounded work only -
+		 * see plat_resident_on_tick. */
+		if (d_on_tick) d_on_tick();
 
 #ifdef __linux__
 		{

@@ -311,6 +311,100 @@ int ra_account_unlocks(long gameid, int *out, int max)
 	return n;
 }
 
+/* ---- finding a set while the game is already running -------------------- */
+
+enum { FQ_IDLE, FQ_GAMEID, FQ_PATCH, FQ_DONE, FQ_FAILED };
+
+static int  g_fq_state = FQ_IDLE;
+static long g_fq_game;
+static char g_fq_hash[33];
+static char g_fq_set[1024];
+static char g_fq_tmp[256];
+
+long ra_fetch_gameid(void) { return g_fq_game; }
+
+static void fq_stop(int state)
+{
+	if (g_fq_tmp[0]) { unlink(g_fq_tmp); g_fq_tmp[0] = '\0'; }
+	g_fq_state = state;
+}
+
+void ra_fetch_begin(const char *rom_hash, const char *set_path)
+{
+	ra_field f[2];
+
+	g_fq_state = FQ_IDLE;
+	g_fq_game = 0;
+	if (!rom_hash || !*rom_hash || !set_path || !*set_path) return;
+	if (!ra_signed_in() || !ra_online()) return;
+
+	snprintf(g_fq_hash, sizeof g_fq_hash, "%s", rom_hash);
+	snprintf(g_fq_set, sizeof g_fq_set, "%s", set_path);
+	snprintf(g_fq_tmp, sizeof g_fq_tmp, "/tmp/tortos-ra-fetch-%ld.json",
+	         (long)getpid());
+
+	f[0].k = "r"; f[0].v = "gameid";
+	f[1].k = "m"; f[1].v = g_fq_hash;
+	if (ra_post_async(f, 2, g_fq_tmp, 25)) g_fq_state = FQ_GAMEID;
+	else                                   fq_stop(FQ_FAILED);
+}
+
+int ra_fetch_step(void)
+{
+	char *body;
+	size_t len;
+	jsv root, v;
+	int rc;
+
+	if (g_fq_state == FQ_DONE)   { g_fq_state = FQ_IDLE; return 1; }
+	if (g_fq_state == FQ_IDLE || g_fq_state == FQ_FAILED) return -1;
+
+	rc = ra_async_poll();
+	if (rc == 0) return 0;                         /* still running */
+	if (rc < 0) { fq_stop(FQ_FAILED); return -1; }
+
+	body = read_whole(g_fq_tmp, &len);
+	if (!body) { fq_stop(FQ_FAILED); return -1; }
+	root = js_root(body, len);
+
+	if (g_fq_state == FQ_GAMEID) {
+		ra_field f[4];
+		static char g[24];       /* static: ra_post_async keeps the pointer */
+
+		if (!js_member(root, "GameID", &v)) { free(body); fq_stop(FQ_FAILED); return -1; }
+		g_fq_game = js_int(v);
+		free(body);
+		/* 0 is RetroAchievements saying it has never seen this ROM, which for
+		 * a fan translation is the permanent and correct answer. */
+		if (g_fq_game <= 0) { fq_stop(FQ_FAILED); return -1; }
+
+		snprintf(g, sizeof g, "%ld", g_fq_game);
+		f[0].k = "r"; f[0].v = "patch";
+		f[1].k = "g"; f[1].v = g;
+		f[2].k = "u"; f[2].v = g_user;
+		f[3].k = "t"; f[3].v = g_token;
+		if (!ra_post_async(f, 4, g_fq_tmp, 30)) { fq_stop(FQ_FAILED); return -1; }
+		g_fq_state = FQ_PATCH;
+		return 0;
+	}
+
+	/* FQ_PATCH */
+	{
+		char dir[1024];
+		char *slash;
+		bool ok;
+
+		snprintf(dir, sizeof dir, "%s", g_fq_set);
+		slash = strrchr(dir, '/');
+		if (slash) { *slash = '\0'; mkdir(dir, 0755); }
+
+		ok = ra_set_from_json(body, len, g_fq_game, g_fq_set);
+		free(body);
+		fq_stop(ok ? FQ_DONE : FQ_FAILED);
+		return ok ? 1 : -1;
+	}
+}
+
 static char g_sync_path[256];
 
 void ra_sync_begin(long gameid)
