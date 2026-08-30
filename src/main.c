@@ -95,6 +95,8 @@ typedef struct {
 	 * opens with the menu up. Cleared as it is used, so quitting to the
 	 * shelf and launching the same game again behaves normally. */
 	bool resume_menu;
+	int  auto_off;              /* seconds without input, 0 off */
+	unsigned idle_since_ms;     /* shelf-side idle clock */
 	SDL_Renderer *r;
 } app;
 
@@ -563,6 +565,55 @@ static void chv_store_path(char *out, size_t n)
 static void chv_active_path(char *out, size_t n)
 {
 	snprintf(out, n, "%s/cheevos-active.set", P_USERDATA);
+}
+
+/* Auto Off: how long without input before the device powers itself down.
+ *
+ * Seconds, 0 for off. Eric's ladder, and it is deliberately aggressive at the
+ * short end - 30s will fire while you read a dialogue box. That is a sound
+ * trade only because resume-into-game exists: powering off costs about two
+ * seconds and puts you back in the same game with the menu up. Without that
+ * it would be hostile. */
+static const int AUTO_OFF[] = { 0, 30, 60, 120, 300, 600 };
+#define AUTO_OFF_COUNT ((int)(sizeof AUTO_OFF / sizeof AUTO_OFF[0]))
+
+static void auto_off_path(char *out, size_t n)
+{
+	snprintf(out, n, "%s/autooff.cfg", P_USERDATA);
+}
+
+static int auto_off_load(void)
+{
+	char p[CFG_STR * 2];
+	FILE *f;
+	int v = -1;
+
+	auto_off_path(p, sizeof p);
+	f = fopen(p, "r");
+	if (!f) return 120;                       /* the default: two minutes */
+	if (fscanf(f, "seconds=%d", &v) != 1) v = -1;
+	fclose(f);
+	if (v < 0) return 120;
+	return v;
+}
+
+static void auto_off_save(int seconds)
+{
+	char p[CFG_STR * 2];
+	FILE *f;
+
+	auto_off_path(p, sizeof p);
+	f = atomic_open(p, 0644);
+	if (!f) return;
+	fprintf(f, "seconds=%d\n", seconds);
+	atomic_commit(f, p);
+}
+
+static void auto_off_label(int seconds, char *out, size_t n)
+{
+	if (seconds <= 0)      snprintf(out, n, "off");
+	else if (seconds < 60) snprintf(out, n, "%ds", seconds);
+	else                   snprintf(out, n, "%dm", seconds / 60);
 }
 
 /* The account. Per-device rather than shared, because it holds a session
@@ -1602,7 +1653,12 @@ static int menu_build(app *a, screen_id screen, int sys,
 	/* Not "Sleep". The device has no suspend and is not getting one - see the
 	 * backlog. This powers off, and resume-into-game brings you back where you
 	 * were, which is what sleep would have been for. */
-	out[PM_SLEEP]        = (menu_row){ "Auto Off",          "not yet", false };
+	{
+		static char lbl[16];
+
+		auto_off_label(a->auto_off, lbl, sizeof lbl);
+		out[PM_SLEEP]    = (menu_row){ "Auto Off",          lbl,       true  };
+	}
 	out[PM_ABOUT]        = (menu_row){ "About TortOS",      NULL,      true  };
 	return PM_ROWS;
 }
@@ -2038,6 +2094,22 @@ static void tortos_menu(app *a)
 		 * width is measured from font metrics, and any card generated for a
 		 * game with no box art has its title baked in at the old size. Both
 		 * are dropped here rather than left to look subtly wrong. */
+		if (a->screen == SCREEN_SYSTEMS && sel == PM_SLEEP) {
+			int d = in_repeat(&a->in, IN_RIGHT) ? 1
+			      : in_repeat(&a->in, IN_LEFT)  ? -1 : 0;
+			if (d) {
+				int k, at = 0;
+
+				for (k = 0; k < AUTO_OFF_COUNT; k++)
+					if (AUTO_OFF[k] == a->auto_off) { at = k; break; }
+				at += d;
+				if (at < 0) at = 0;
+				if (at >= AUTO_OFF_COUNT) at = AUTO_OFF_COUNT - 1;
+				a->auto_off = AUTO_OFF[at];
+				auto_off_save(a->auto_off);
+				a->idle_since_ms = plat_now_ms();
+			}
+		}
 		if (a->screen == SCREEN_SYSTEMS && sel == PM_TEXT) {
 			int d = in_repeat(&a->in, IN_RIGHT) ? 1
 			      : in_repeat(&a->in, IN_LEFT)  ? -1 : 0;
@@ -2755,6 +2827,18 @@ static void launch(app *a)
 			/* The account's answer, without the launch waiting for it. On a
 			 * first play there is nothing to ask about yet; that sync starts
 			 * once the set arrives. */
+			/* Auto Off, unless on the charger: the feature exists to stop a
+			 * game running unattended on battery, and plugged in there is no
+			 * battery reason and no cost to leaving it. */
+			{
+				bool charging = false;
+
+				plat_battery(NULL, &charging);
+				plat_resident_line("SETIDLE\tms=%d",
+				                   (a->auto_off > 0 && !charging)
+				                       ? a->auto_off * 1000 : 0);
+			}
+
 			if (!first_play) ra_sync_begin(chv_game());
 
 
@@ -3624,6 +3708,9 @@ int main(int argc, char *argv[])
 
 		/* Without this every HTTPS request fails verification, because the
 		 * device has no trust store of its own - res/ssl/README.md. */
+		a.auto_off = auto_off_load();
+		a.idle_since_ms = plat_now_ms();
+
 		snprintf(cp, sizeof cp, "%s/cacert.pem", P_ROOT);
 		ra_set_ca_path(cp);
 		ra_creds_path(cp, sizeof cp);
@@ -3767,6 +3854,28 @@ int main(int argc, char *argv[])
 		if (a.in.quit_requested || want_quit) break;
 
 		if (a.in.pressed[IN_POWER]) { power_off(&a); break; }
+
+		/* Auto Off on the shelf. Diatom watches this during a game, because
+		 * it owns the pad then; here the launcher can see input itself.
+		 *
+		 * Any press at all, not just the ones this screen acts on - somebody
+		 * mashing a button the shelf ignores is still somebody there. */
+		if (a.auto_off > 0) {
+			int b;
+			bool pressed = false, charging = false;
+
+			for (b = 0; b < IN_COUNT; b++)
+				if (a.in.pressed[b] || a.in.down[b]) { pressed = true; break; }
+			if (pressed) a.idle_since_ms = plat_now_ms();
+
+			plat_battery(NULL, &charging);
+			if (!charging &&
+			    plat_now_ms() - a.idle_since_ms >
+			        (unsigned)a.auto_off * 1000u) {
+				power_off(&a);
+				break;
+			}
+		}
 
 		if (in_repeat(&a.in, IN_VOLUP))    plat_volume_nudge(+1);
 		if (in_repeat(&a.in, IN_VOLDN))    plat_volume_nudge(-1);

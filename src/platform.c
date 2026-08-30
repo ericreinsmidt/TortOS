@@ -829,6 +829,16 @@ static int diatom_wait(void)
 			else if (strncmp(l, "LEVEL\t", 6) == 0) d_note_level(l);
 			else if (strncmp(l, "DISPLAY\t", 8) == 0) d_note_display(l);
 			else if (strncmp(l, "CHEEVO\t", 7) == 0) d_note_cheevo(l);
+			/* Nobody has pressed anything for as long as the player asked.
+			 * Handled exactly as a power press: STOP the game, and the
+			 * launcher's existing after-the-game check powers the device
+			 * down. No new path, and the autosave happens either way. */
+			else if (strncmp(l, "IDLE", 4) == 0 && !sent_stop) {
+				run_power_pressed = true;
+				sent_stop = 1;
+				stop_at = plat_now_ms();
+				dsend("STOP");
+			}
 			else if (strncmp(l, "EXIT", 4) == 0) { d_apply_levels(); return RES_EXIT; }
 			else if (strncmp(l, "ERROR", 5) == 0) {
 				fprintf(stderr, "diatom: %s\n", l);
