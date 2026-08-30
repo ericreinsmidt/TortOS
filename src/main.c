@@ -2379,9 +2379,25 @@ static void cheevos_screen(app *a, SDL_Texture *bg)
 		rows[i].value = vals[i];
 		rows[i].live  = c->earned || c->earned_now;
 	}
-	snprintf(heading, sizeof heading, "%s   %d/%d   %d/%d points",
-	         chv_game_title(), chv_earned(), n,
-	         chv_points_earned(), chv_points_total());
+	/* The counts first, and the title only if it fits.
+	 *
+	 * menu_draw sizes its panel to the widest ROW and clamps to the screen, so
+	 * a heading wider than that is centred into a clip - which took both ends
+	 * off "Hagane: The Final Conflict   0/36   0/415 points", losing the H and
+	 * the word "points". The numbers are what the screen is for and must never
+	 * be the part that goes; the game's name is the part you already know,
+	 * since you are inside it. */
+	{
+		TTF_Font *fh = ui_font(UI_F_LABEL);
+		int budget = TORTOS_SCREEN_W - menu_row_h() * 3 - 48;
+		char counts[64];
+
+		snprintf(counts, sizeof counts, "%d/%d   %d/%d points",
+		         chv_earned(), n, chv_points_earned(), chv_points_total());
+		snprintf(heading, sizeof heading, "%s   %s", chv_game_title(), counts);
+		if (ui_text_width(fh, heading) > budget)
+			snprintf(heading, sizeof heading, "%s", counts);
+	}
 
 	plat_input_flush();
 	memset(&a->in, 0, sizeof a->in);
