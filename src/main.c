@@ -2354,7 +2354,7 @@ static void gm_cycle_display(app *a, int d)
 static void gm_build(app *a, menu_row *out)
 {
 	static const char *label[GM_ROWS] = {
-		"Continue", "Save", "Load", "Display", "Achievements", "Reset", "Quit"
+		"Continue", "Save", "Load", "Display", "Cheevos", "Reset", "Quit"
 	};
 	/* Static because menu_row holds a pointer, not a copy, and the row has to
 	 * outlive this function. */
@@ -2410,7 +2410,7 @@ static void cheevos_screen(app *a, SDL_Texture *bg)
 	 * so it lost BOTH ends: the H and the word "points". Dropping the title
 	 * fixed the clipping and threw away something worth keeping. Eric's
 	 * suggestion, and it is better than either. */
-	snprintf(heading, sizeof heading, "%s\n%d of %d   %d of %d points",
+	snprintf(heading, sizeof heading, "%s\n%d/%d cheevos   %d/%d points",
 	         chv_game_title(), chv_earned(), n,
 	         chv_points_earned(), chv_points_total());
 
@@ -3413,7 +3413,7 @@ static void take_shot(app *a)
 			snprintf(vals[ci], sizeof vals[ci], "%d", sample[ci].p);
 			rows[ci] = (menu_row){ sample[ci].t, vals[ci], sample[ci].got };
 		}
-		snprintf(head, sizeof head, "Hagane: The Final Conflict\n%d of 36   %d of 415 points",
+		snprintf(head, sizeof head, "Hagane: The Final Conflict\n%d/36 cheevos   %d/415 points",
 		         2, 15);
 		menu_draw(a, head, rows, cn, 0, 0, a->tint);
 	}
