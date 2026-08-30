@@ -1312,7 +1312,14 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 	 * which is exactly what happened when it grew. `content_off` is the panel
 	 * top to the first row, so a panel with no heading just pads instead. */
 	int line_head   = ui_font_line(UI_F_LABEL);
-	int head_h      = heading ? line_head + pad : 0;
+	/* A heading may carry a second line, separated by a newline. Nothing else
+	 * passes one; the achievements screen does, because its heading is a game
+	 * title AND two counts, and on one line that was wider than the panel and
+	 * got both its ends clipped. Splitting keeps both rather than choosing. */
+	const char *head2 = heading ? strchr(heading, '\n') : NULL;
+	char head1[192];
+	int head_lines = head2 ? 2 : 1;
+	int head_h      = heading ? line_head * head_lines + pad : 0;
 	int content_off = heading ? head_h + pad / 2 : pad;
 	bool two_col = false;
 	int content_w = 0, i, k;
@@ -1331,8 +1338,22 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 		if (two_col && rows[i].value) w += gap + ui_text_width(fm, rows[i].value);
 		if (w > content_w) content_w = w;
 	}
+	if (head2) {
+		size_t n1 = (size_t)(head2 - heading);
+
+		if (n1 >= sizeof head1) n1 = sizeof head1 - 1;
+		memcpy(head1, heading, n1);
+		head1[n1] = '\0';
+		head2++;                                    /* past the newline */
+	} else if (heading) {
+		snprintf(head1, sizeof head1, "%s", heading);
+	}
+
 	if (heading) {
-		int w = ui_text_width(fh, heading);
+		int w = ui_text_width(fh, head1);
+		int w2 = head2 ? ui_text_width(fh, head2) : 0;
+
+		if (w2 > w) w = w2;
 		if (w > content_w) content_w = w;
 	}
 	if (fixed_w > 0) content_w = fixed_w;
@@ -1376,10 +1397,13 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 		 * the exception; the shift is by font metrics rather than by the string,
 		 * so nothing here changed with the name, it just got exactly true. */
 		int head_box = fh ? TTF_FontHeight(fh) : line_head;
-		int hy = panel.y + (head_h - head_box) / 2
+		/* Centre the BLOCK, not the first line. Centring one line in a band
+		 * sized for two put the second hard against the rule below it. */
+		int hy = panel.y + (head_h - head_box - (head_lines - 1) * line_head) / 2
 		         + (fh ? -TTF_FontDescent(fh) / 2 : 0);
 
-		ui_text(a->r, fh, heading, cx, hy, 0, UI_TEXT_SOFT);
+		ui_text(a->r, fh, head1, cx, hy, 0, UI_TEXT_SOFT);
+		if (head2) ui_text(a->r, fh, head2, cx, hy + line_head, 0, UI_TEXT_SOFT);
 		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 		SDL_SetRenderDrawColor(a->r, (Uint8)(accent >> 16),
 		                       (Uint8)(accent >> 8), (Uint8)accent, 70);
@@ -2379,25 +2403,16 @@ static void cheevos_screen(app *a, SDL_Texture *bg)
 		rows[i].value = vals[i];
 		rows[i].live  = c->earned || c->earned_now;
 	}
-	/* The counts first, and the title only if it fits.
+	/* Two lines: the game on one, the counts on the other.
 	 *
-	 * menu_draw sizes its panel to the widest ROW and clamps to the screen, so
-	 * a heading wider than that is centred into a clip - which took both ends
-	 * off "Hagane: The Final Conflict   0/36   0/415 points", losing the H and
-	 * the word "points". The numbers are what the screen is for and must never
-	 * be the part that goes; the game's name is the part you already know,
-	 * since you are inside it. */
-	{
-		TTF_Font *fh = ui_font(UI_F_LABEL);
-		int budget = TORTOS_SCREEN_W - menu_row_h() * 3 - 48;
-		char counts[64];
-
-		snprintf(counts, sizeof counts, "%d/%d   %d/%d points",
-		         chv_earned(), n, chv_points_earned(), chv_points_total());
-		snprintf(heading, sizeof heading, "%s   %s", chv_game_title(), counts);
-		if (ui_text_width(fh, heading) > budget)
-			snprintf(heading, sizeof heading, "%s", counts);
-	}
+	 * On one line this was "Hagane: The Final Conflict   0/36   0/415 points",
+	 * 1031 pixels against a 778 pixel panel - and menu_draw centres a heading,
+	 * so it lost BOTH ends: the H and the word "points". Dropping the title
+	 * fixed the clipping and threw away something worth keeping. Eric's
+	 * suggestion, and it is better than either. */
+	snprintf(heading, sizeof heading, "%s\n%d of %d   %d of %d points",
+	         chv_game_title(), chv_earned(), n,
+	         chv_points_earned(), chv_points_total());
 
 	plat_input_flush();
 	memset(&a->in, 0, sizeof a->in);
@@ -3299,6 +3314,7 @@ static int shot_screen = -1;
 static int shot_menu, shot_menu_sel;
 static int shot_kb, shot_kb_layer;
 static const char *shot_notice;
+static int shot_cheevos;
 static const char *shot_kb_text = "correct horse";
 static int shot_slots, shot_slot_sel;
 static int shot_jump;               /* letter-jumps to apply before drawing */
@@ -3365,6 +3381,33 @@ static void take_shot(app *a)
 	 * over the game - so it cannot be screenshotted like the rest. Rendered
 	 * to its wire format and read straight back, which is the same pixels
 	 * Diatom will show and therefore the thing worth looking at. */
+	/* The achievements list, with sample data. It is only reachable from the
+	 * in-game menu, so without this it can only be judged on a device with a
+	 * game running - and it took two rounds of that to notice its heading was
+	 * clipped at both ends. */
+	if (shot_cheevos) {
+		static const struct { const char *t; int p; bool got; } sample[] = {
+			{ "The Path to Disaster", 5, true },
+			{ "The Fortress of Doom", 5, false },
+			{ "Violated Heavens", 10, true },
+			{ "Cry of the Spirits", 10, false },
+			{ "Koma Faction's Fall", 25, false },
+			{ "Not So Disaster", 10, false },
+			{ "Storming The Fortress", 10, false },
+			{ "Blazing through the Skies", 10, false },
+		};
+		int cn = (int)(sizeof sample / sizeof sample[0]), ci;
+		menu_row rows[8];
+		char vals[8][16], head[192];
+
+		for (ci = 0; ci < cn; ci++) {
+			snprintf(vals[ci], sizeof vals[ci], "%d", sample[ci].p);
+			rows[ci] = (menu_row){ sample[ci].t, vals[ci], sample[ci].got };
+		}
+		snprintf(head, sizeof head, "Hagane: The Final Conflict\n%d of 36   %d of 415 points",
+		         2, 15);
+		menu_draw(a, head, rows, cn, 0, 0, a->tint);
+	}
 	if (shot_notice) {
 		char dt[512];
 		FILE *nf;
@@ -3445,6 +3488,7 @@ int main(int argc, char *argv[])
 		/* --keyboard [layer] [text] draws one frame of the text-entry panel,
 		 * for the same reason --menu and --slots exist: it is dense, and
 		 * laying it out against a screenshot beats a round trip to a device. */
+		else if (!strcmp(argv[i], "--cheevos-screen")) shot_cheevos = 1;
 		else if (!strcmp(argv[i], "--notice") && i + 1 < argc) {
 			shot_notice = argv[++i];
 		}
