@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "notice.h"
+#include "platform.h"
 #include "ui.h"
 
 #define NOTICE_MAX_W 1024        /* Diatom refuses anything wider */
@@ -60,6 +61,36 @@ static void draw_text(uint8_t *out, int ow, int oh, TTF_Font *f,
 	SDL_FreeSurface(t);
 }
 
+/* Cut a line down until it fits, with an ellipsis to say it was cut.
+ *
+ * Not optional. Diatom REFUSES an overlay wider than the panel rather than
+ * clipping it (its ADR-0027), which is the right call there and means a long
+ * name would silently show nothing at all. 144 of the achievement titles in
+ * the 180-ROM test library are over 40 characters and the longest is 64 -
+ * "From Johnny, Harris, Brooklyn Bob, and Reggie! Yeah Even Reggie!" - so
+ * this is the common case, not the edge.
+ *
+ * Bytes are stepped back one at a time and then walked off any UTF-8
+ * continuation, so a multi-byte character is never cut in half. */
+static void fit_text(TTF_Font *f, const char *src, char *dst, size_t dstn,
+                     int maxw)
+{
+	size_t n;
+
+	snprintf(dst, dstn, "%s", src ? src : "");
+	if (!f || ui_text_width(f, dst) <= maxw) return;
+
+	n = strlen(dst);
+	while (n > 0) {
+		n--;
+		while (n > 0 && ((unsigned char)dst[n] & 0xC0) == 0x80) n--;
+		if (n + 3 >= dstn) continue;
+		memcpy(dst + n, "...", 4);
+		if (ui_text_width(f, dst) <= maxw) return;
+		dst[n] = '\0';
+	}
+}
+
 bool notice_render(const char *heading, const char *body, const char *path)
 {
 	/* The NAME is the line worth reading, so it gets the larger face and the
@@ -69,7 +100,8 @@ bool notice_render(const char *heading, const char *body, const char *path)
 	 * obvious the moment it was rendered and looked at, and invisible while
 	 * it was only being reasoned about. UI_F_LABEL is 48 and UI_F_MENU 43. */
 	TTF_Font *fh = ui_font(UI_F_MENU), *fb = ui_font(UI_F_LABEL);
-	int pad, w, h, x, y, corner;
+	int padx, pady, w, h, x, y, corner, maxw;
+	char headfit[192], bodyfit[192];
 	uint8_t *px;
 	FILE *f;
 	unsigned char hdr[8];
@@ -79,12 +111,36 @@ bool notice_render(const char *heading, const char *body, const char *path)
 	if (!fb) return false;
 	if (!fh) fh = fb;
 
-	pad = ui_font_line(UI_F_MENU) / 2;
-	w = ui_text_width(fb, body ? body : "");
-	x = ui_text_width(fh, heading ? heading : "");
+	/* Tighter than square. A notice sits over someone's game for four
+	 * seconds, so it should be the words and little else - the first version
+	 * used one padding value everywhere and read as a slab with text in the
+	 * middle of it.
+	 *
+	 * The vertical is smaller than the horizontal because the two lines carry
+	 * their own leading already, and the body's descender space is subtracted
+	 * outright: TTF_FontDescent is negative, and without this the gap under
+	 * the last line is a descender deep even when nothing descends. The same
+	 * trick menu_draw uses to stop its rows riding high. */
+	padx = ui_font_line(UI_F_MENU) / 3;
+	pady = ui_font_line(UI_F_MENU) / 6;
+
+	/* A margin off the panel edge as well as off Diatom's hard limit: a
+	 * notice that runs the full width of the screen stops reading as a thing
+	 * laid over the game and starts reading as part of it. */
+	maxw = TORTOS_SCREEN_W * 5 / 6;
+	if (maxw > NOTICE_MAX_W) maxw = NOTICE_MAX_W;
+	maxw -= padx * 2;
+	fit_text(fb, body, bodyfit, sizeof bodyfit, maxw);
+	fit_text(fh, heading, headfit, sizeof headfit, maxw);
+	body = bodyfit;
+	heading = headfit;
+
+	w = ui_text_width(fb, body);
+	x = ui_text_width(fh, heading);
 	if (x > w) w = x;
-	w += pad * 2;
-	h = ui_font_line(UI_F_MENU) + ui_font_line(UI_F_LABEL) + pad * 2;
+	w += padx * 2;
+	h = ui_font_line(UI_F_MENU) + ui_font_line(UI_F_LABEL) + pady * 2
+	    + TTF_FontDescent(fb) / 3;
 	if (w > NOTICE_MAX_W) w = NOTICE_MAX_W;
 	if (h > NOTICE_MAX_H) h = NOTICE_MAX_H;
 	if (w <= 0 || h <= 0) return false;
@@ -95,7 +151,7 @@ bool notice_render(const char *heading, const char *body, const char *path)
 	/* A dark slab at 85%, corners knocked off. Not a rounded rectangle with
 	 * antialiased arcs - this sits over a moving picture for four seconds and
 	 * a diagonal reads as a corner from a metre away. */
-	corner = pad;
+	corner = padx * 2 / 3;
 	for (y = 0; y < h; y++) {
 		for (x = 0; x < w; x++) {
 			int dx = x < corner ? corner - x : (x >= w - corner ? x - (w - corner - 1) : 0);
@@ -106,8 +162,8 @@ bool notice_render(const char *heading, const char *body, const char *path)
 		}
 	}
 
-	draw_text(px, w, h, fh, heading, pad, pad - pad / 4, DIM);
-	draw_text(px, w, h, fb, body, pad, pad + ui_font_line(UI_F_MENU) - pad / 4, WHITE);
+	draw_text(px, w, h, fh, heading, padx, pady, DIM);
+	draw_text(px, w, h, fb, body, padx, pady + ui_font_line(UI_F_MENU), WHITE);
 
 	f = fopen(path, "wb");
 	if (!f) { free(px); return false; }
