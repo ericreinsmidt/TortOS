@@ -640,9 +640,14 @@ static void ra_flush_unlocks(const char *rom, const char *tag)
 	 * pending one becomes index 0. A failure stops the loop rather than
 	 * spinning on it - if one will not go, the rest will not either. */
 	while (chv_pending_at(0, &game, &id)) {
-		if (!ra_submit_unlock(id, game == chv_game() ? hash : NULL)) break;
+		int rc = ra_submit_unlock(id, game == chv_game() ? hash : NULL);
+
+		/* 0 is "the account already had it", which settles the row just as
+		 * surely as sending it. Only a real failure stops the loop - if one
+		 * will not go, the rest will not either. */
+		if (rc < 0) break;
 		chv_mark_synced(game, id);
-		sent++;
+		if (rc > 0) sent++;
 	}
 	if (sent) {
 		char p[CFG_STR * 2];
@@ -2617,6 +2622,7 @@ static void launch(app *a)
 	char st[LIB_PATH * 2], pv[LIB_PATH * 2];
 	char save[CFG_STR * 2], bios[CFG_STR * 2];
 	char active[LIB_PATH * 2] = "";
+	char set[LIB_PATH * 2];
 	int  console = 0;
 	bool first_play = false;
 	/* 18 fixed entries plus NULL, then two per core option. Sized off the
@@ -2647,8 +2653,6 @@ static void launch(app *a)
 	 * below carries on with console 0 and no set, which is what Diatom reads
 	 * as "this game has none". */
 	{
-		char set[LIB_PATH * 2];
-
 		chv_path(P_ROMS, s->folder, v->list.items[v->cursor].name,
 		         set, sizeof set);
 
@@ -2673,19 +2677,6 @@ static void launch(app *a)
 			 * once the set arrives. */
 			if (!first_play) ra_sync_begin(chv_game());
 
-			/* The first play of this game. Hashing is local work and happens
-			 * here, after RUN, so it overlaps the game's own startup rather
-			 * than delaying it; the two requests then run behind the game and
-			 * on_game_tick hands the set over when they land. */
-			if (first_play) {
-				char h[33];
-
-				if (ra_hash_rom(rom, s->tag, h)) {
-					chv_active_path(g_pending_active, sizeof g_pending_active);
-					snprintf(g_pending_set, sizeof g_pending_set, "%s", set);
-					ra_fetch_begin(h, set);
-				}
-			}
 
 			/* ra_start_session is deliberately NOT called here. It drives the
 			 * "currently playing" indicator on the website and nothing on the
@@ -2735,6 +2726,25 @@ static void launch(app *a)
 			 * whatever the previous one chose. Ordered on the same socket, so
 			 * it lands before the first frame. */
 			plat_resident_line("SETDISPLAY\tmode=%s", DMODES[v->dmode].name);
+
+			/* The first play of this game: nothing was cached, so there is a
+			 * set to go and find. Out here and not inside the chv_load branch
+			 * above, which is the mistake the first version made - that
+			 * branch is precisely the one a first play does not take.
+			 *
+			 * Hashing is local work and happens after RUN, so it overlaps the
+			 * game's own startup rather than delaying it. The two requests
+			 * then run behind the game and on_game_tick hands the set over
+			 * when they land. */
+			if (first_play) {
+				char h[33];
+
+				if (ra_hash_rom(rom, s->tag, h)) {
+					chv_active_path(g_pending_active, sizeof g_pending_active);
+					snprintf(g_pending_set, sizeof g_pending_set, "%s", set);
+					ra_fetch_begin(h, set);
+				}
+			}
 			/* Coming back from a shutdown: the game loads and the menu is
 			 * already up, so nothing is handed control of a game the player
 			 * may not have meant to resume. Ordered on the same socket, so it

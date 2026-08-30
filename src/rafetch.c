@@ -468,14 +468,14 @@ void ra_start_session(long gameid)
 	ra_post_buf(f, 4, body, sizeof body, 15);
 }
 
-bool ra_submit_unlock(int achievement_id, const char *rom_hash)
+int ra_submit_unlock(int achievement_id, const char *rom_hash)
 {
 	char body[1024], a[24], v[33], sig[128];
 	ra_field f[7];
 	jsv root, m;
 	int n = 0;
 
-	if (achievement_id <= 0 || !ra_signed_in() || !ra_online()) return false;
+	if (achievement_id <= 0 || !ra_signed_in() || !ra_online()) return -1;
 
 	snprintf(a, sizeof a, "%d", achievement_id);
 	/* rcheevos builds exactly this in rc_api_init_award_achievement_request,
@@ -493,10 +493,10 @@ bool ra_submit_unlock(int achievement_id, const char *rom_hash)
 	if (rom_hash && *rom_hash) { f[n].k = "m"; f[n++].v = rom_hash; }
 	f[n].k = "v"; f[n++].v = v;
 
-	if (ra_post_buf(f, n, body, sizeof body, 20) < 0) return false;
+	if (ra_post_buf(f, n, body, sizeof body, 20) < 0) return -1;
 
 	root = js_root(body, strlen(body));
-	if (js_member(root, "Success", &m) && js_is_true(m)) return true;
+	if (js_member(root, "Success", &m) && js_is_true(m)) return 1;
 
 	{
 		char msg[192] = "";
@@ -504,8 +504,16 @@ bool ra_submit_unlock(int achievement_id, const char *rom_hash)
 		if (js_member(root, "Error", &m)) js_str(m, msg, sizeof msg);
 		fprintf(stderr, "ra: %d refused: %s\n", achievement_id,
 		        msg[0] ? msg : "no reason given");
+
+		/* "already unlocked" is the account agreeing with us. Treating it as a
+		 * failure left the row pending forever AND stopped the queue behind
+		 * it, because the flush breaks on the first thing that will not send -
+		 * so one settled achievement blocked every later one. Seen on the
+		 * device with an unlock submitted by hand, which the store never
+		 * learned about. */
+		if (strstr(msg, "already has this achievement")) return 0;
 	}
-	return false;
+	return -1;
 }
 
 bool ra_ensure_set(const char *rom_path, const char *tag, const char *set_path)

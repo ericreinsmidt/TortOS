@@ -114,7 +114,12 @@ void ra_start_session(long gameid);
 
 /* Submit one unlock, softcore. Signed the way rcheevos signs it -
  * md5(achievement id + username + hardcore flag) - because the server checks
- * it. `rom_hash` is optional and is what real clients send. */
-bool ra_submit_unlock(int achievement_id, const char *rom_hash);
+ * it. `rom_hash` is optional and is what real clients send.
+ *
+ * 1 accepted, 0 the account already had it, -1 a real failure. The middle case
+ * is not an error and must not be treated as one: it is the account agreeing,
+ * and calling it a failure leaves the row owed forever and stops everything
+ * queued behind it. */
+int ra_submit_unlock(int achievement_id, const char *rom_hash);
 
 #endif
