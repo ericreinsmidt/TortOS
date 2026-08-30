@@ -155,6 +155,46 @@ static int req(const char *method, const char *path, const char *cookie,
 	return status;
 }
 
+/* Is this JSON, structurally?
+ *
+ * The check used to look for substrings - strstr(body, "\"roms\"") - and
+ * passed with flying colours over a reply that no parser would accept: a
+ * hand-counted string literal had swallowed the opening bracket, so the
+ * listing read "entries":{...},{...}] and the page died on it. A check that
+ * looks for words in a document it never parses is checking that the words
+ * are there, which is not the claim being made.
+ *
+ * Not a full parser: brackets and braces balanced, in order, ignoring
+ * anything inside a string. That is enough to catch every way a hand-built
+ * emitter goes wrong, which is by dropping or doubling a delimiter. */
+static bool json_ok(const char *s)
+{
+	int depth = 0;
+	bool instr = false;
+
+	if (!s || *s != '{') return false;
+	for (; *s; s++) {
+		if (instr) {
+			if (*s == '\\' && s[1]) s++;
+			else if (*s == '"') instr = false;
+			continue;
+		}
+		if (*s == '"') { instr = true; continue; }
+		if (*s == '{' || *s == '[') depth++;
+		else if (*s == '}' || *s == ']') { if (--depth < 0) return false; }
+	}
+	return depth == 0 && !instr;
+}
+
+/* An "entries" array, opened with a bracket rather than whatever else. */
+static bool has_array(const char *s, const char *key)
+{
+	char pat[64];
+
+	snprintf(pat, sizeof pat, "\"%s\":[", key);
+	return strstr(s, pat) != NULL;
+}
+
 static int get(const char *path, const char *cookie)
 {
 	return req("GET", path, cookie, NULL, 0, NULL, 0);
@@ -282,13 +322,31 @@ int main(void)
 	{
 		CHECK(req("GET", "/api/list", g_cookie, NULL, 0, body, sizeof body) == 200,
 		      "listing the roots failed");
+		CHECK(json_ok(body), "the roots listing is not valid JSON: %s", body);
+		CHECK(has_array(body, "entries"),
+		      "entries is not an array: %s", body);
 		CHECK(strstr(body, "\"roms\"") && strstr(body, "\"bios\"") &&
 		      strstr(body, "\"saves\""), "the roots listing is wrong: %s", body);
 
 		CHECK(req("GET", "/api/list?p=roms/NES", g_cookie, NULL, 0,
 		          body, sizeof body) == 200, "listing NES failed");
+		CHECK(json_ok(body), "the NES listing is not valid JSON: %s", body);
+		CHECK(has_array(body, "entries"), "entries is not an array: %s", body);
 		CHECK(strstr(body, "Contra.nes") != NULL,
 		      "the ROM is missing from the listing: %s", body);
+
+		/* A name with the characters JSON cares about, which is the other way
+		 * a hand-built emitter breaks: unescaped, the reply stops parsing. */
+		{
+			char p[512];
+			snprintf(p, sizeof p, "%s/NES/quote\"back\\slash.nes", g_roms);
+			mkfile(p, "X");
+			CHECK(req("GET", "/api/list?p=roms/NES", g_cookie, NULL, 0,
+			          body, sizeof body) == 200, "listing after odd name failed");
+			CHECK(json_ok(body),
+			      "a name with a quote or backslash broke the JSON: %s", body);
+			remove(p);
+		}
 
 		CHECK(req("GET", "/api/file?p=roms/NES/Contra.nes", g_cookie, NULL, 0,
 		          body, sizeof body) == 200, "download failed");

@@ -1,0 +1,279 @@
+/* Over The Hare, wearing the launcher's clothes.
+ *
+ * The palette is TortOS's own, taken from the source rather than from a
+ * screenshot: MENU_ACCENT is 0x3DD6FF, UI_TEXT is 237/237/242, a panel is
+ * 22/24/32. The typeface is the same menu.ttf the device draws with, served
+ * from the card - so the page reads as part of the thing it is talking to
+ * rather than as a web page that happens to be pointed at it.
+ *
+ * Built for a phone held in one hand, because that is what is going to be
+ * used. Rows are a thumb tall, actions are on the row rather than behind a
+ * hover, and nothing depends on a pointer existing.
+ */
+@font-face {
+	font-family: "TortOS";
+	src: url("/web/menu.ttf") format("truetype");
+	font-display: swap;
+}
+
+:root {
+	--accent: #3dd6ff;
+	--text: #ededf2;
+	--soft: #c6c9d6;
+	--dim: #9499ac;
+	--panel: #161820;
+	--panel-hi: #1e212b;
+	--ground: #0a0b0f;
+	--line: #262a36;
+	--bad: #ff6b5e;
+	--radius: 14px;
+}
+
+* { box-sizing: border-box; }
+
+/* The hidden attribute has to win.
+ *
+ * A UA stylesheet gives [hidden] display:none, and ANY author rule that sets
+ * display beats it - so .gate{display:grid} and .drop{display:grid} kept both
+ * on screen with the attribute set. The DOM said gate.hidden was true while
+ * the gate was plainly visible, which is the sort of disagreement you stare
+ * at for a while. */
+[hidden] { display: none !important; }
+
+html, body {
+	margin: 0;
+	background: var(--ground);
+	color: var(--text);
+	font-family: "TortOS", system-ui, -apple-system, sans-serif;
+	font-size: 17px;
+	line-height: 1.45;
+	-webkit-text-size-adjust: 100%;
+}
+
+/* ---- the gate --------------------------------------------------------- */
+
+.gate {
+	min-height: 100dvh;
+	/* Flex, not grid.
+	 *
+	 * With `display:grid; place-items:center` the item's containing block is a
+	 * grid area sized by the item's own max-content contribution - which
+	 * includes its max-width - so `width:100%` resolves to 420 and overflows a
+	 * 375px phone. Changing min(420px,100%) to width+max-width did not help,
+	 * because the circularity is in the grid area, not in the value. A flex
+	 * item's percentage resolves against the container's content box, which is
+	 * the viewport minus this padding, and 420 is then just a cap. */
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 24px;
+}
+
+.gate .panel {
+	/* width:100% with a max-width, NOT min(420px, 100%). Inside a grid with
+	 * place-items:center the item's containing block is a grid area sized by
+	 * the item's own content, so the percentage is circular and resolves to
+	 * the 420 - which overflowed a 375px phone and cut the button in half. */
+	width: 100%;
+	max-width: 420px;
+	background: var(--panel);
+	border: 1px solid var(--accent);
+	border-radius: var(--radius);
+	padding: 32px 28px;
+	text-align: center;
+	box-shadow: 0 0 60px rgba(61, 214, 255, .12);
+}
+
+.gate h1 { margin: 0 0 6px; font-size: 26px; font-weight: 500; letter-spacing: .3px; }
+.gate .sub { margin: 0 0 22px; color: var(--dim); font-size: 15px; }
+
+#pinform { display: flex; gap: 10px; }
+
+#pin {
+	flex: 1;
+	background: #0f1119;
+	border: 1px solid var(--line);
+	border-radius: 10px;
+	color: var(--text);
+	font: inherit;
+	font-size: 30px;
+	letter-spacing: .5em;
+	text-align: center;
+	/* The letter-spacing pushes the caret off-centre by half a space; this
+	 * puts the digits back over the middle of the box. */
+	text-indent: .5em;
+	padding: 10px 0;
+	min-width: 0;
+}
+#pin:focus { outline: none; border-color: var(--accent); }
+
+button, .ghost {
+	background: var(--panel-hi);
+	color: var(--text);
+	border: 1px solid var(--line);
+	border-radius: 10px;
+	font: inherit;
+	padding: 10px 16px;
+	cursor: pointer;
+	white-space: nowrap;
+}
+button:hover, .ghost:hover { border-color: var(--accent); }
+button:active, .ghost:active { background: #262a36; }
+
+#pinform button { border-color: var(--accent); color: var(--accent); }
+
+.msg { min-height: 1.4em; margin: 16px 0 0; color: var(--bad); font-size: 15px; }
+.msg.ok { color: var(--accent); }
+
+/* ---- the browser ------------------------------------------------------- */
+
+.app { padding: 0 0 96px; }
+
+header {
+	position: sticky;
+	top: 0;
+	z-index: 3;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 12px 16px;
+	padding-top: max(12px, env(safe-area-inset-top));
+	background: rgba(10, 11, 15, .94);
+	backdrop-filter: blur(8px);
+	border-bottom: 1px solid var(--line);
+}
+
+.crumbs { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 4px; align-items: baseline; }
+.crumbs button {
+	background: none; border: none; padding: 2px 4px;
+	color: var(--accent); font: inherit; font-size: 16px;
+}
+.crumbs .here { color: var(--text); padding: 2px 4px; }
+.crumbs .sep { color: var(--dim); }
+
+.tools { display: flex; gap: 8px; flex-shrink: 0; }
+.tools .ghost, .tools button { font-size: 15px; padding: 8px 12px; }
+
+.list { list-style: none; margin: 0; padding: 0; }
+
+.row {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 12px 16px;
+	border-bottom: 1px solid var(--line);
+	min-height: 56px;
+}
+.row .mark { width: 22px; text-align: center; color: var(--dim); flex-shrink: 0; }
+.row.dir .mark { color: var(--accent); }
+.row .name {
+	flex: 1;
+	min-width: 0;
+	overflow-wrap: anywhere;
+	background: none; border: none; padding: 0;
+	color: inherit; font: inherit; text-align: left;
+}
+.row.dir .name { color: var(--accent); cursor: pointer; }
+.row .size { color: var(--dim); font-size: 14px; flex-shrink: 0; }
+.row .acts { display: flex; gap: 6px; flex-shrink: 0; }
+.row .acts button, .row .acts a {
+	background: none;
+	border: 1px solid transparent;
+	border-radius: 8px;
+	color: var(--dim);
+	font: inherit;
+	font-size: 14px;
+	padding: 6px 8px;
+	text-decoration: none;
+	cursor: pointer;
+}
+.row .acts button:hover, .row .acts a:hover { color: var(--text); border-color: var(--line); }
+.row .acts .danger:hover { color: var(--bad); border-color: var(--bad); }
+
+.empty { color: var(--dim); text-align: center; padding: 48px 16px; }
+
+/* ---- dropping files ---------------------------------------------------- */
+
+.drop {
+	position: fixed;
+	inset: 0;
+	z-index: 5;
+	display: grid;
+	place-items: center;
+	background: rgba(10, 11, 15, .86);
+	border: 2px dashed var(--accent);
+	color: var(--accent);
+	font-size: 22px;
+	pointer-events: none;
+}
+
+/* ---- the transfer queue ------------------------------------------------ */
+
+.queue {
+	position: fixed;
+	left: 0; right: 0; bottom: 0;
+	z-index: 4;
+	background: var(--panel);
+	border-top: 1px solid var(--line);
+	padding: 8px 16px;
+	padding-bottom: max(8px, env(safe-area-inset-bottom));
+	max-height: 40dvh;
+	overflow-y: auto;
+}
+.queue ul { list-style: none; margin: 0; padding: 0; }
+.queue li { padding: 6px 0; font-size: 15px; }
+.queue .top { display: flex; gap: 10px; align-items: baseline; }
+.queue .top .n { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.queue .top .pct { color: var(--dim); font-size: 14px; }
+.queue .bar { height: 4px; background: var(--line); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+.queue .bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .15s linear; }
+.queue li.failed .top .pct { color: var(--bad); }
+.queue li.failed .bar span { background: var(--bad); }
+
+/* ---- toast ------------------------------------------------------------- */
+
+.toast {
+	position: fixed;
+	left: 50%;
+	bottom: 24px;
+	transform: translateX(-50%) translateY(20px);
+	background: var(--panel-hi);
+	border: 1px solid var(--line);
+	border-radius: 10px;
+	padding: 10px 18px;
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity .18s, transform .18s;
+	z-index: 9;
+	max-width: 90vw;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast.bad { border-color: var(--bad); color: var(--bad); }
+
+/* ---- narrow ------------------------------------------------------------
+ *
+ * A phone is the likely client, and a row that fits four things across 1280px
+ * fits none of them across 375. The name gets the first line to itself and the
+ * actions drop under it, which also makes them a thumb apart rather than
+ * three targets in a row. */
+@media (max-width: 560px) {
+	.row { flex-wrap: wrap; row-gap: 8px; padding: 12px 14px; }
+	.row .mark { order: 0; }
+	.row .name { order: 1; flex: 1 1 auto; }
+	/* An explicit line break between the name and everything under it. The
+	 * first attempt gave .name a basis of 100%, which put it on its own line
+	 * and pushed the mark onto a line above - four lines per row, and a
+	 * folder mark floating over nothing. A zero-height item at 100% basis
+	 * breaks the line exactly where it is wanted. */
+	.row::after { content: ""; order: 2; flex: 0 0 100%; height: 0; }
+	.row .size { order: 3; }
+	.row .acts { order: 4; margin-left: auto; gap: 4px; }
+	.row .acts button, .row .acts a { padding: 8px 12px; border-color: var(--line); }
+	header { flex-wrap: wrap; }
+	.crumbs { flex: 1 1 100%; }
+	.tools { margin-left: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.toast, .queue .bar span { transition: none; }
+}

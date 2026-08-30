@@ -551,6 +551,20 @@ static bool pump_write(conn *c, int *did)
 			size_t got;
 
 			if ((long)want > r->resp_f_left) want = (size_t)r->resp_f_left;
+			/* Clamped to the budget BEFORE reading, not after.
+			 *
+			 * The clamp below applies to `len`, which is fine for the header
+			 * and the in-memory body - those track how much has been sent and
+			 * resume from there. It is not fine for a file: the read has
+			 * already advanced the position and already charged resp_f_left,
+			 * so sending less than was read skips the difference silently.
+			 *
+			 * Measured: a 40 MB download came back 196 bytes short and
+			 * diverged at byte 261949, which is this budget minus a response
+			 * header. Every file over 256 KB was quietly corrupt. The check
+			 * did not catch it because its fixture was 200 KB - smaller than
+			 * the boundary the bug lives on. */
+			if (want > budget) want = budget;
 			got = fread(filebuf, 1, want, r->resp_f);
 			if (got == 0) return false;        /* the file shrank under us */
 			src = filebuf;

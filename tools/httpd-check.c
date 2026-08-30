@@ -402,7 +402,13 @@ int main(void)
 	fresh(tmpf);
 	{
 		int fd;
-		size_t i, n = 200000;      /* bigger than one send, so it takes turns */
+		/* Deliberately several times POLL_BUDGET, which is 256 KB.
+		 *
+		 * This was 200 KB, which is under it - so the download never crossed
+		 * a budget boundary and the check passed over a server that corrupted
+		 * every file bigger than 256 KB. A fixture smaller than the thing it
+		 * is meant to stress is not a fixture. */
+		size_t i, n = 900000;
 		char *big = malloc(n);
 
 		for (i = 0; i < n; i++) big[i] = (char)(i & 0xff);

@@ -31,3 +31,4 @@ sysroot/
 # Backups: the pre-rebrand boot assets, and pulled device saves. Local only -
 # 120MB+ of save states and a redundant copy of tracked art.
 /backups/
+res/web/menu.ttf

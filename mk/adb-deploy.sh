@@ -57,6 +57,13 @@ esac
 case $WHAT in res|all)
 	$A push "$ROOT/res/cards/."             "$P/cards/" > /dev/null
 	$A push "$ROOT/res/fonts/menu.ttf"      "$P/" > /dev/null
+	# Over The Hare's page, served off the card so it can be restyled without
+	# a rebuild. The font goes in twice rather than being kept in the repo
+	# twice: the launcher reads $P/menu.ttf and a browser asks for
+	# /web/menu.ttf, and one copy in git is worth two on a 117 GB card.
+	$A shell "mkdir -p $P/res/web" > /dev/null
+	$A push "$ROOT/res/web/."               "$P/res/web/" > /dev/null
+	$A push "$ROOT/res/fonts/menu.ttf"      "$P/res/web/menu.ttf" > /dev/null
 	$A push "$ROOT/res/boot/tortos-boot.mp4" "$P/" > /dev/null
 	# The bootloader splash and the pic2fb splash. launch.sh installs these
 	# ONCE, guarded by .bootlogo_applied / .splash_applied, so pushing them

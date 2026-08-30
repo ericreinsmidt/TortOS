@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Over The Hare</title>
+<link rel="stylesheet" href="/web/app.css">
+</head>
+<body>
+
+<!-- The PIN gate. Shown until /api/auth accepts, and the only thing a
+     browser can reach without a session. -->
+<section id="gate" class="gate">
+  <div class="panel">
+    <h1>Over The Hare</h1>
+    <p class="sub">Enter the PIN shown on the device</p>
+    <form id="pinform" autocomplete="off">
+      <input id="pin" inputmode="numeric" pattern="[0-9]*" maxlength="4"
+             aria-label="PIN" autocomplete="one-time-code">
+      <button type="submit">Open</button>
+    </form>
+    <p id="gatemsg" class="msg" role="status"></p>
+  </div>
+</section>
+
+<!-- Everything past the gate. -->
+<section id="app" class="app" hidden>
+  <header>
+    <nav id="crumbs" class="crumbs" aria-label="Location"></nav>
+    <div class="tools">
+      <button id="newfolder" class="ghost" title="New folder">New folder</button>
+      <label class="ghost" for="picker">Upload</label>
+      <input id="picker" type="file" multiple hidden>
+    </div>
+  </header>
+
+  <ul id="list" class="list"></ul>
+  <p id="empty" class="empty" hidden>Nothing here yet.</p>
+
+  <div id="drop" class="drop" hidden><span>Drop to upload here</span></div>
+
+  <footer id="queue" class="queue" hidden>
+    <ul id="queuelist"></ul>
+  </footer>
+</section>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script src="/web/app.js"></script>
+</body>
+</html>

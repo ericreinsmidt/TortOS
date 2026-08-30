@@ -133,6 +133,16 @@ static bool session_valid(const httpd_req *r)
 
 typedef struct { char *p; size_t used, cap; bool over; } jbuf;
 
+/* Literals go through this, so the LENGTH IS THE COMPILER'S PROBLEM.
+ *
+ * Every one of these was hand-counted first, and one of them was wrong:
+ * `{"path":"","entries":[` is 22 characters and was written as 21, which cut
+ * off the opening bracket and emitted `"entries":{`. The browser's parser said
+ * "Expected double-quoted property name at position 71", which is a true and
+ * completely unhelpful description of a missing bracket sixty characters
+ * earlier. Nothing in C requires a human to count a string literal. */
+#define JLIT(j, s) jput((j), (s), sizeof (s) - 1)
+
 static void jput(jbuf *j, const char *s, size_t n)
 {
 	if (j->over || j->used + n >= j->cap) { j->over = true; return; }
@@ -142,24 +152,24 @@ static void jput(jbuf *j, const char *s, size_t n)
 
 static void jstr(jbuf *j, const char *s)
 {
-	jput(j, "\"", 1);
+	JLIT(j, "\"");
 	for (; *s; s++) {
 		unsigned char c = (unsigned char)*s;
 
 		/* Only what JSON requires. Everything else, including the UTF-8 that
 		 * a filename on this card is, goes through untouched - re-encoding it
 		 * would be inventing an opinion about text that nothing here has. */
-		if (c == '"' || c == '\\') { jput(j, "\\", 1); jput(j, (char *)&c, 1); }
-		else if (c == '\n') jput(j, "\\n", 2);
-		else if (c == '\r') jput(j, "\\r", 2);
-		else if (c == '\t') jput(j, "\\t", 2);
+		if (c == '"' || c == '\\') { JLIT(j, "\\"); jput(j, (char *)&c, 1); }
+		else if (c == '\n') JLIT(j, "\\n");
+		else if (c == '\r') JLIT(j, "\\r");
+		else if (c == '\t') JLIT(j, "\\t");
 		else if (c < 0x20) {
 			char esc[7];
 			snprintf(esc, sizeof esc, "\\u%04x", c);
 			jput(j, esc, 6);
 		} else jput(j, (char *)&c, 1);
 	}
-	jput(j, "\"", 1);
+	JLIT(j, "\"");
 }
 
 static void jfmt(jbuf *j, const char *fmt, ...)
@@ -210,42 +220,58 @@ static const char *base_of(const char *p)
 
 static void route_list(httpd_req *r)
 {
-	char  req[XFER_PATH_MAX], abs[XFER_PATH_MAX];
+	/* Two forms of the same path, and the difference matters.
+	 *
+	 * `raw` is what the browser sent, still percent-encoded, and it is what
+	 * xfer_resolve must be given: that function decodes and validates in one
+	 * step precisely so nobody can do those in the wrong order.
+	 *
+	 * `req` is the decoded form, and it is what goes into the JSON. The API
+	 * speaks decoded paths in its bodies and encoded ones in its URLs, which
+	 * is the only combination that survives a round trip: echoing the encoded
+	 * form back put "roms%2FNES" in the breadcrumb and then encoded it again
+	 * on the next click. */
+	char  raw[XFER_PATH_MAX], req[XFER_PATH_MAX], abs[XFER_PATH_MAX];
 	jbuf  j;
 	DIR  *d;
 	struct dirent *e;
 	bool  first = true;
 
-	httpd_query(r, "p", req, sizeof req);
+	httpd_query(r, "p", raw, sizeof raw);
+	if (raw[0] && !xfer_decode(raw, req, sizeof req)) {
+		httpd_reply_status(r, 400, "that is not a path");
+		return;
+	}
+	if (!raw[0]) req[0] = '\0';
 
 	/* No path means the roots themselves, which are not a directory anywhere
 	 * on the card and so cannot be listed by reading one. */
-	if (!req[0]) {
+	if (!raw[0]) {
 		int i;
 
 		j.p = malloc(4096);
 		if (!j.p) { httpd_reply_status(r, 500, "out of memory"); return; }
 		j.used = 0; j.cap = 4096; j.over = false;
-		jput(&j, "{\"path\":\"\",\"entries\":[", 21);
+		JLIT(&j, "{\"path\":\"\",\"entries\":[");
 		for (i = 0; i < xfer_root_count(); i++) {
 			const xfer_root *rt = xfer_root_at(i);
 
-			if (!first) jput(&j, ",", 1);
+			if (!first) JLIT(&j, ",");
 			first = false;
-			jput(&j, "{\"name\":", 8);
+			JLIT(&j, "{\"name\":");
 			jstr(&j, rt->label);
-			jput(&j, ",\"path\":", 8);
+			JLIT(&j, ",\"path\":");
 			jstr(&j, rt->name);
-			jput(&j, ",\"dir\":true,\"size\":0}", 21);
+			JLIT(&j, ",\"dir\":true,\"size\":0}");
 		}
-		jput(&j, "]}", 2);
+		JLIT(&j, "]}");
 		if (j.over) httpd_reply_status(r, 500, "listing did not fit");
 		else httpd_reply(r, 200, "application/json", j.p, j.used, NULL);
 		free(j.p);
 		return;
 	}
 
-	if (!xfer_resolve(req, abs, sizeof abs)) {
+	if (!xfer_resolve(raw, abs, sizeof abs)) {
 		httpd_reply_status(r, 403, "not somewhere you can look");
 		return;
 	}
@@ -255,9 +281,9 @@ static void route_list(httpd_req *r)
 	j.p = malloc(JSON_MAX);
 	if (!j.p) { closedir(d); httpd_reply_status(r, 500, "out of memory"); return; }
 	j.used = 0; j.cap = JSON_MAX; j.over = false;
-	jput(&j, "{\"path\":", 8);
+	JLIT(&j, "{\"path\":");
 	jstr(&j, req);
-	jput(&j, ",\"entries\":[", 12);
+	JLIT(&j, ",\"entries\":[");
 
 	while ((e = readdir(d))) {
 		char full[XFER_PATH_MAX];
@@ -282,18 +308,18 @@ static void route_list(httpd_req *r)
 			if (snprintf(child, sizeof child, "%s/%s", req, e->d_name)
 			    >= (int)sizeof child)
 				continue;
-			if (!first) jput(&j, ",", 1);
+			if (!first) JLIT(&j, ",");
 			first = false;
-			jput(&j, "{\"name\":", 8);
+			JLIT(&j, "{\"name\":");
 			jstr(&j, e->d_name);
-			jput(&j, ",\"path\":", 8);
+			JLIT(&j, ",\"path\":");
 			jstr(&j, child);
 		}
 		jfmt(&j, ",\"dir\":%s,\"size\":%lld}",
 		     S_ISDIR(st.st_mode) ? "true" : "false", (long long)st.st_size);
 	}
 	closedir(d);
-	jput(&j, "]}", 2);
+	JLIT(&j, "]}");
 
 	if (j.over) httpd_reply_status(r, 500, "that folder has more in it than fits");
 	else httpd_reply(r, 200, "application/json", j.p, j.used, NULL);
