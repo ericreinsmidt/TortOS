@@ -1220,8 +1220,19 @@ static void draw_games(app *a)
 
 	if (v->list.count > 0) {
 		game_entry *g = &v->list.items[v->cursor];
-		int tw = ui_text_width(ui_font(UI_F_TITLE), g->title);
-		int tx = TORTOS_SCREEN_W / 2;
+		/* Trimmed before it is measured, so the heart lands beside the text
+		 * that is actually drawn. A title wide enough to need this ran off
+		 * both edges of the screen - the last place with the panel problem,
+		 * and the only one menu_draw cannot fix because this is not a menu.
+		 * Room for the mark and its gap on the left, and the same again on
+		 * the right so a centred title stays centred. */
+		char tfit[192];
+		int lead = ui_font_line(UI_F_TITLE) / 3 * 3;
+		int tw, tx = TORTOS_SCREEN_W / 2;
+
+		ui_fit_text(ui_font(UI_F_TITLE), g->title, tfit, sizeof tfit,
+		            TORTOS_SCREEN_W - lead * 2);
+		tw = ui_text_width(ui_font(UI_F_TITLE), tfit);
 		/* The one mark left on a card.
 		 *
 		 * There was a second, a dot on the right, for a game with an autosave
@@ -1248,12 +1259,16 @@ static void draw_games(app *a)
 			draw_heart(a->r, (float)(tx - tw / 2 - rad * 2), (float)dy,
 			           (float)rad, c);
 		}
-		ui_text(a->r, ui_font(UI_F_TITLE), g->title, tx, 40, 0, UI_TEXT);
+		ui_text(a->r, ui_font(UI_F_TITLE), tfit, tx, 40, 0, UI_TEXT);
 		snprintf(count, sizeof count, "%d / %d", v->cursor + 1, v->list.count);
 		ui_text(a->r, ui_font(UI_F_META), count, TORTOS_SCREEN_W / 2, 690, 0,
 		        UI_TEXT_DIM);
 	} else {
-		ui_text(a->r, ui_font(UI_F_TITLE), s->name, TORTOS_SCREEN_W / 2, 40, 0,
+		char nfit[192];
+
+		ui_fit_text(ui_font(UI_F_TITLE), s->name, nfit, sizeof nfit,
+		            TORTOS_SCREEN_W - 48);
+		ui_text(a->r, ui_font(UI_F_TITLE), nfit, TORTOS_SCREEN_W / 2, 40, 0,
 		        UI_TEXT);
 	}
 	ui_rail(a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, v->cursor, v->list.count,
@@ -1580,8 +1595,19 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 		hy = panel.y + UI_PANEL_BORDER
 		     + (head_h - UI_PANEL_BORDER - block) / 2 - (asc - cap);
 
-		ui_text(a->r, fh, head1, cx, hy, 0, UI_TEXT_SOFT);
-		if (head2) ui_text(a->r, fh, head2, cx, hy + line_head, 0, UI_TEXT_SOFT);
+		/* Same rule for the heading, and for the same reason: art_screen and
+		 * notice.c each fit their own before handing it over, which worked
+		 * and meant two callers had to remember. */
+		{
+			char h1[192], h2[192];
+
+			ui_fit_text(fh, head1, h1, sizeof h1, content_w);
+			ui_text(a->r, fh, h1, cx, hy, 0, UI_TEXT_SOFT);
+			if (head2) {
+				ui_fit_text(fh, head2, h2, sizeof h2, content_w);
+				ui_text(a->r, fh, h2, cx, hy + line_head, 0, UI_TEXT_SOFT);
+			}
+		}
 		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 		SDL_SetRenderDrawColor(a->r, (Uint8)(accent >> 16),
 		                       (Uint8)(accent >> 8), (Uint8)accent, 70);
@@ -1629,12 +1655,39 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 		                    (Uint8)accent, 255 }
 		     : UI_TEXT_DIM;
 
+		/* Trimmed to the panel, HERE, rather than by every caller.
+		 *
+		 * content_w is capped to the screen above, but nothing used to fit
+		 * the text to it - the label was drawn from the left edge and the
+		 * value right-aligned to the right, so a row wider than the cap drew
+		 * them straight through each other and out past the border. Seen on
+		 * the game info screen: "File" and "Alex Kidd in Miracle World
+		 * (World) (Sega Ages).zip" overlapping in the middle of the panel.
+		 *
+		 * Callers were each remembering to call ui_fit_text, or forgetting.
+		 * A rule about how text fits a panel belongs in the thing that draws
+		 * the panel, where a screen written next year gets it for free.
+		 *
+		 * The VALUE yields first: labels are short and fixed ("File", "Size"),
+		 * values are whatever the card happens to hold. */
 		if (two_col) {
-			ui_text(a->r, fm, rows[i].label, content_x, ty, -1, lc);
-			if (rows[i].value)
-				ui_text(a->r, fm, rows[i].value, content_x + content_w, ty, 1, vc);
+			char lbl[192], val[192];
+			int lw, room;
+
+			ui_fit_text(fm, rows[i].label, lbl, sizeof lbl, content_w);
+			lw = ui_text_width(fm, lbl);
+			ui_text(a->r, fm, lbl, content_x, ty, -1, lc);
+
+			room = content_w - lw - gap;
+			if (rows[i].value && room > 0) {
+				ui_fit_text(fm, rows[i].value, val, sizeof val, room);
+				ui_text(a->r, fm, val, content_x + content_w, ty, 1, vc);
+			}
 		} else {
-			ui_text(a->r, fm, rows[i].label, cx, ty, 0, lc);
+			char lbl[192];
+
+			ui_fit_text(fm, rows[i].label, lbl, sizeof lbl, content_w);
+			ui_text(a->r, fm, lbl, cx, ty, 0, lc);
 		}
 	}
 
