@@ -179,17 +179,20 @@ int main(void)
 	CHECK(chv_pending_count() == 1,
 	      "reload lost track of what is owed: %d", chv_pending_count());
 
-	/* A store written before the flag existed has two fields per row. Those
-	 * rows are pending, because nothing had ever been sent when they were
-	 * written - reading them as sent would lose them silently. */
-	{	FILE *old = fopen(g_store, "w");
+	/* A row that is not three fields is not a row. There is one writer and it
+	 * always writes all three, so anything else is damage rather than an
+	 * older format - and half a line read as a whole one would invent an
+	 * achievement nobody earned. */
+	{	FILE *bad = fopen(g_store, "w");
 
-		if (old) { fputs("1459\t24698\n1459\t24699\n", old); fclose(old); }
+		if (bad) { fputs("1459\t24698\n1459\n\n1459\t24700\ts\n", bad); fclose(bad); }
 		chv_clear();
 		chv_earned_load(g_store);
-		CHECK(chv_load(g_set), "the set did not reload over a legacy store");
-		CHECK(chv_pending_count() == 2,
-		      "a store with no state column should read as all owed, got %d",
+		CHECK(chv_load(g_set), "the set did not reload over a damaged store");
+		CHECK(chv_earned() == 1,
+		      "expected the one intact row, got %d", chv_earned());
+		CHECK(chv_pending_count() == 0,
+		      "the intact row was marked synced and owes nothing, got %d",
 		      chv_pending_count());
 	}
 

@@ -295,12 +295,11 @@ void chv_earned_load(const char *path)
 	if (!f) return;                    /* nobody has earned anything yet */
 	while (fgets(line, sizeof line, f) && g_nearned < CHV_EARNED_MAX) {
 		int game, id;
-		char st = 'p';
+		char st = 0;
 
-		/* The state is optional so a store written before it existed still
-		 * reads. Those rows become pending, which is what they are: nothing
-		 * had ever been sent when they were written. */
-		if (sscanf(line, "%d %d %c", &game, &id, &st) < 2) continue;
+		/* Three fields or the row is not one. chv_earned_save is the only
+		 * thing that writes this file and it always writes all three. */
+		if (sscanf(line, "%d %d %c", &game, &id, &st) != 3) continue;
 		if (game <= 0 || id <= 0) continue;
 		g_earned[g_nearned].game   = game;
 		g_earned[g_nearned].id     = id;
