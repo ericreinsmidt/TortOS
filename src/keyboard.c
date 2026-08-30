@@ -94,11 +94,23 @@ static void draw_hint(SDL_Renderer *r, int x, int y, const char *btn,
 {
 	TTF_Font *fm = ui_font(UI_F_META);
 	int bw = ui_text_width(fm, btn);
-	SDL_Rect chip = { x, y - 2, bw + 14, ui_font_line(UI_F_META) + 4 };
+	/* The chip was sized to the LINE SKIP and the glyph drawn from the em
+	 * box's top, so all of the unused descender depth landed below the text
+	 * and every button sat high in its own box. These labels are A, B, X, Y,
+	 * L/R, START, MENU - nothing in them descends at all, so the gap was pure
+	 * and visible.
+	 *
+	 * Height from the em box, and the ink centred in it the way menu_draw
+	 * centres its rows. Descent is negative, so half of it subtracted moves
+	 * the line down onto the middle of the chip. */
+	int fh = fm ? TTF_FontHeight(fm) : ui_font_line(UI_F_META);
+	int ink = fm ? -TTF_FontDescent(fm) / 2 : 0;
+	int padv = 3;
+	SDL_Rect chip = { x, y - padv, bw + 14, fh + padv * 2 };
 
 	ui_round_rect(r, &chip, 6, (SDL_Color){ 52, 56, 70, 255 });
-	ui_text(r, fm, btn, x + 7, y, -1, UI_TEXT_SOFT);
-	ui_text(r, fm, label, x + chip.w + 6, y, -1, UI_TEXT_DIM);
+	ui_text(r, fm, btn, x + 7, y + ink, -1, UI_TEXT_SOFT);
+	ui_text(r, fm, label, x + chip.w + 6, y + ink, -1, UI_TEXT_DIM);
 }
 
 static int hint_width(const char *btn, const char *label)

@@ -77,6 +77,13 @@ int ui_text(SDL_Renderer *r, TTF_Font *f, const char *s, int x, int y,
             int anchor, SDL_Color col);
 int ui_text_width(TTF_Font *f, const char *s);
 
+/* The panel border, in pixels. In the header because layout outside ui.c has
+ * to know it: centring anything inside a panel means centring against the
+ * INNER edge, since the border is a visible frame and the eye reads the space
+ * within it. Centring against the outer edge is arithmetically right and looks
+ * high by exactly this many pixels. */
+#define UI_PANEL_BORDER 12
+
 /* An additive radial glow, tinted, centered on rect and spilling past it.
  * This is what tells you which card has focus without drawing a frame
  * around anything. */

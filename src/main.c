@@ -1396,11 +1396,35 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 		 * This read "mostly do not" while the heading was "PlayOS", whose y was
 		 * the exception; the shift is by font metrics rather than by the string,
 		 * so nothing here changed with the name, it just got exactly true. */
-		int head_box = fh ? TTF_FontHeight(fh) : line_head;
-		/* Centre the BLOCK, not the first line. Centring one line in a band
-		 * sized for two put the second hard against the rule below it. */
-		int hy = panel.y + (head_h - head_box - (head_lines - 1) * line_head) / 2
-		         + (fh ? -TTF_FontDescent(fh) / 2 : 0);
+		/* Centre the INK between the panel's top and the rule, computed from
+		 * the font rather than nudged by a fraction of the descent.
+		 *
+		 * The heading is capitals and lowercase with nothing below the
+		 * baseline, so what should sit in the middle of that band is cap-top
+		 * to baseline - not the em box, which carries a descender's depth of
+		 * empty space at the bottom. Centring the box left "Wi-Fi" visibly
+		 * high on the scanning screen.
+		 *
+		 * cap comes from 'H': maxy is its height above the baseline. */
+		int asc = fh ? TTF_FontAscent(fh) : line_head;
+		int cap = asc;
+		int block, hy;
+
+		if (fh) {
+			int mnx, mxx, mny, mxy, adv;
+
+			if (TTF_GlyphMetrics(fh, 'H', &mnx, &mxx, &mny, &mxy, &adv) == 0)
+				cap = mxy;
+		}
+		/* cap-to-baseline for the first line, plus a whole line for a second */
+		block = cap + (head_lines - 1) * line_head;
+		/* From the panel's INNER edge, not panel.y. The border is a visible
+		 * frame and the eye reads the space inside it, so centring against
+		 * the outer edge is arithmetically right and looks high by exactly
+		 * the border's width - measured on the Wi-Fi panel as 18px above the
+		 * ink against 32 below, which is what Eric saw. */
+		hy = panel.y + UI_PANEL_BORDER
+		     + (head_h - UI_PANEL_BORDER - block) / 2 - (asc - cap);
 
 		ui_text(a->r, fh, head1, cx, hy, 0, UI_TEXT_SOFT);
 		if (head2) ui_text(a->r, fh, head2, cx, hy + line_head, 0, UI_TEXT_SOFT);
@@ -1465,17 +1489,24 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 	 * the padding: with a heading above, the padding is already spoken for by
 	 * the separator, and the indicator belongs to the list in any case. */
 	if (vis < n) {
-		const int dw = 8, dsz = 3, off = 8;
-		int x0 = cx - dw;
+		/* A triangle pointing the way the list continues, rather than three
+		 * dots that said "there is more" without saying which way. Drawn as
+		 * rows because there is no filled-triangle primitive and this needs
+		 * no texture. */
+		const int tw = row_h / 3, th = tw / 2, off = 8;
+
 		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 		SDL_SetRenderDrawColor(a->r, 138, 143, 163, 200);
-		for (k = 0; k < 3; k++) {
+		for (k = 0; k < th; k++) {
+			int up_w   = tw * (k + 1) / th;      /* apex at the top */
+			int down_w = tw * (th - k) / th;     /* apex at the bottom */
+
 			if (first > 0)
-				SDL_RenderFillRect(a->r, &(SDL_Rect){ x0 + k * dw,
-				                   content_y - off - dsz, dsz, dsz });
+				SDL_RenderFillRect(a->r, &(SDL_Rect){ cx - up_w / 2,
+				                   content_y - off - th + k, up_w, 1 });
 			if (first + vis < n)
-				SDL_RenderFillRect(a->r, &(SDL_Rect){ x0 + k * dw,
-				                   content_y + vis * row_h + off, dsz, dsz });
+				SDL_RenderFillRect(a->r, &(SDL_Rect){ cx - down_w / 2,
+				                   content_y + vis * row_h + off + k, down_w, 1 });
 		}
 	}
 }
@@ -1562,12 +1593,15 @@ static int menu_build(app *a, screen_id screen, int sys,
 		out[PM_WIFI]     = (menu_row){ "Wi-Fi",             b->b,      true  };
 	}
 	out[PM_BT]           = (menu_row){ "Bluetooth",         "not yet", false };
-	out[PM_ACHIEVEMENTS] = (menu_row){ "RetroAchievements",
+	out[PM_ACHIEVEMENTS] = (menu_row){ "Cheevos",
 	                                   ra_signed_in() ? ra_user() : "sign in",
 	                                   true };
-	out[PM_SCRAPE]       = (menu_row){ "Box art scraping",  "not yet", false };
+	out[PM_SCRAPE]       = (menu_row){ "Box Art",           "not yet", false };
 	out[PM_TEXT]         = (menu_row){ "Text size",         b->a,      true  };
-	out[PM_SLEEP]        = (menu_row){ "Sleep timer",       "not yet", false };
+	/* Not "Sleep". The device has no suspend and is not getting one - see the
+	 * backlog. This powers off, and resume-into-game brings you back where you
+	 * were, which is what sleep would have been for. */
+	out[PM_SLEEP]        = (menu_row){ "Auto power off",    "not yet", false };
 	out[PM_ABOUT]        = (menu_row){ "About TortOS",      NULL,      true  };
 	out[PM_POWER]        = (menu_row){ "Power off",         NULL,      true  };
 	return PM_ROWS;
@@ -3325,6 +3359,7 @@ static int shot_kb, shot_kb_layer;
 static const char *shot_notice;
 static const char *shot_notice_head = "Unlocked  -  5 points";
 static int shot_cheevos;
+static const char *shot_wait, *shot_wait_msg = "Scanning...";
 static const char *shot_kb_text = "correct horse";
 /* The title was hardcoded to "Wi-Fi password", so the one other thing that
  * uses this keyboard - signing in to RetroAchievements - could not be
@@ -3399,6 +3434,14 @@ static void take_shot(app *a)
 	 * in-game menu, so without this it can only be judged on a device with a
 	 * game running - and it took two rounds of that to notice its heading was
 	 * clipped at both ends. */
+	/* The one-line panel behind "Scanning...", "Connecting...", "Signing
+	 * in..." and "Looking up this game...". Five flows use it and none of them
+	 * could be rendered. */
+	if (shot_wait) {
+		menu_row row = { shot_wait_msg, NULL, false };
+
+		menu_draw(a, shot_wait, &row, 1, -1, 0, MENU_ACCENT);
+	}
 	if (shot_cheevos) {
 		static const struct { const char *t; int p; bool got; } sample[] = {
 			{ "The Path to Disaster", 5, true },
@@ -3503,6 +3546,10 @@ int main(int argc, char *argv[])
 		 * for the same reason --menu and --slots exist: it is dense, and
 		 * laying it out against a screenshot beats a round trip to a device. */
 		else if (!strcmp(argv[i], "--cheevos-screen")) shot_cheevos = 1;
+		else if (!strcmp(argv[i], "--wait") && i + 1 < argc) {
+			shot_wait = argv[++i];
+			if (i + 1 < argc && argv[i + 1][0] != '-') shot_wait_msg = argv[++i];
+		}
 		else if (!strcmp(argv[i], "--notice") && i + 1 < argc) {
 			shot_notice = argv[++i];
 			if (i + 1 < argc && argv[i + 1][0] != '-') shot_notice_head = argv[++i];

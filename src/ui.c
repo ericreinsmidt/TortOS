@@ -249,7 +249,6 @@ void ui_round_rect(SDL_Renderer *r, const SDL_Rect *q, int radius, SDL_Color col
  *
  * Twelve specifically, matching the save/load frame's `bw`, so the two pieces
  * of accent chrome a player sees are the same weight rather than nearly so. */
-#define UI_PANEL_BORDER 12
 
 void ui_panel(SDL_Renderer *r, const SDL_Rect *q, int radius, unsigned border)
 {
