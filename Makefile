@@ -8,7 +8,8 @@ SSH := sshpass -p 'tina' ssh -o StrictHostKeyChecking=no root@$(BRICK)
 
 .PHONY: all clean native toolchain vendor boot checkmark payload release install-card \
         adb adb-elf adb-res adb-vendor adb-restart adb-run adb-log \
-        check-cheevos check-idle check-rahash check-raset deploy restart logs
+        check-cheevos check-idle check-rahash check-raset check-xfer \
+        deploy restart logs
 
 all: build/tortos.elf
 
@@ -23,6 +24,19 @@ build/tortos.elf: $(wildcard src/*.c) $(wildcard src/*.h) tools/setbright.c mk/c
 	docker run --rm -v $(CURDIR):/work -w /work $(IMAGE) \
 		make -f mk/cross.mk SYSROOT=/work/sysroot VERSION=$(VERSION) build/tortos.elf build/setbright
 
+# The check binaries are rebuilt every time, deliberately.
+#
+# They take about a second each, and make's mtime comparison is second-granular
+# - so editing a source and re-running a check inside the same second silently
+# tests the PREVIOUS binary. That is not theoretical: it happened three times on
+# 2026-08-30 while checking whether a check actually catches the bug it claims
+# to, and each time a clean source read as a failing one. mk/cross.mk carries a
+# staleness warning for the same reason on the device side, where a rebuild is
+# too slow to just repeat.
+#
+# A check that quietly tests the wrong binary is worse than no check.
+FORCE:
+
 # The achievement half, checked on the host. It parses a file and filters a
 # list - no SDL, no device, no emulator - and every one of its claims fails
 # invisibly on hardware, which is the argument for checking it here.
@@ -30,10 +44,20 @@ check-cheevos: build-native/cheevos-check
 	@./build-native/cheevos-check
 
 build-native/cheevos-check: tools/cheevos-check.c src/cheevos.c src/cheevos.h \
-                            src/atomic.c src/atomic.h
+                            src/atomic.c src/atomic.h FORCE
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
 	      -o $@ tools/cheevos-check.c src/cheevos.c src/atomic.c
+
+# Hare's path safety: can a browser on the LAN climb out of the three roots?
+# Every other check in here protects a feature; this one protects the device.
+check-xfer: build-native/xfer-check
+	@./build-native/xfer-check
+
+build-native/xfer-check: tools/xfer-check.c src/xfer.c src/xfer.h FORCE
+	@mkdir -p build-native
+	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
+	      -o $@ tools/xfer-check.c src/xfer.c
 
 # Auto Off's clock. It has broken five times, once in this arithmetic and four
 # times in wiring; this covers the arithmetic, and `grep -n idle_due src/main.c`
@@ -41,7 +65,7 @@ build-native/cheevos-check: tools/cheevos-check.c src/cheevos.c src/cheevos.h \
 check-idle: build-native/idle-check
 	@./build-native/idle-check
 
-build-native/idle-check: tools/idle-check.c src/idle.c src/idle.h
+build-native/idle-check: tools/idle-check.c src/idle.c src/idle.h FORCE
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
 	      -o $@ tools/idle-check.c src/idle.c
@@ -52,7 +76,7 @@ build-native/idle-check: tools/idle-check.c src/idle.c src/idle.h
 check-rahash: build-native/rahash-check
 	@python3 tools/rahash-check.py
 
-build-native/rahash-check: tools/rahash-check.c src/rahash.c src/rahash.h
+build-native/rahash-check: tools/rahash-check.c src/rahash.c src/rahash.h FORCE
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
 	      -o $@ tools/rahash-check.c src/rahash.c
@@ -63,7 +87,7 @@ build-native/rahash-check: tools/rahash-check.c src/rahash.c src/rahash.h
 check-raset: build-native/raset-check
 	@python3 tools/raset-check.py
 
-build-native/raset-check: tools/raset-check.c src/rafetch.c src/rajson.c src/rahash.c src/ranet.c src/atomic.c
+build-native/raset-check: tools/raset-check.c src/rafetch.c src/rajson.c src/rahash.c src/ranet.c src/atomic.c FORCE
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g -DTORTOS_VERSION='"check"' \
 	      -o $@ tools/raset-check.c src/rafetch.c src/rajson.c src/rahash.c src/ranet.c src/atomic.c

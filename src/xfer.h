@@ -1,0 +1,59 @@
+/* SPDX-License-Identifier: 0BSD */
+#ifndef TORTOS_XFER_H
+#define TORTOS_XFER_H
+
+#include <stdbool.h>
+#include <stddef.h>
+
+/* Hare: what the browser is allowed to touch, and nothing else.
+ *
+ * The tortoise runs the system; the hare carries the files. This half is the
+ * boring half, and it is the half that matters: a file manager reachable from
+ * the network is owned through its paths, every time. So the roots live here,
+ * resolving lives here, and nothing outside this file is trusted to have got
+ * a path right.
+ *
+ * THE ORDER IS THE POINT. xfer_resolve percent-decodes and THEN validates,
+ * inside one function, because a caller who decodes first and checks second
+ * lets `%2e%2e%2f` through and a caller who checks first and decodes second
+ * does the same thing with extra steps. There is no way to call this in the
+ * wrong order because there is only one call.
+ *
+ * Validation is lexical - reject "..", match a root prefix - which is sound
+ * only because the card is vfat and has no symlinks to follow out of a root.
+ * Checked on the device 2026-08-30: `ln -s` fails with EPERM. If this ever
+ * lands on a filesystem that has them, this becomes realpath on the parent
+ * plus a prefix test, and that is not a small change - it is a different
+ * function with different failure modes for files that do not exist yet.
+ */
+
+#define XFER_PATH_MAX 1024
+#define XFER_NAME_MAX  255
+
+typedef struct {
+	char name[16];              /* what a URL calls it: "roms" */
+	char label[32];             /* what a person calls it: "ROMs" */
+	char path[XFER_PATH_MAX];   /* absolute, no trailing slash */
+} xfer_root;
+
+/* Paths in, rather than platform.h out, so this links into a check without
+ * dragging SDL behind it. */
+void xfer_init(const char *roms_dir, const char *card_dir);
+
+int              xfer_root_count(void);
+const xfer_root *xfer_root_at(int i);
+
+/* A URL path - "roms/NES/Contra%20(USA).zip" - to an absolute one on the
+ * card. False for anything that escapes a root, whatever shape the escape
+ * takes, and for anything that will not fit.
+ *
+ * Says nothing about whether the result exists: an upload target does not,
+ * and that is the caller's question, not this one's. */
+bool xfer_resolve(const char *url_path, char *out, size_t outn);
+
+/* One path component, for a rename's destination. No separators, no dot
+ * entries, nothing empty. Rejects what xfer_resolve would reject, minus the
+ * root lookup, because a rename names a sibling rather than a path. */
+bool xfer_name_ok(const char *name);
+
+#endif
