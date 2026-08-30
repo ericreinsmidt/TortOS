@@ -1002,34 +1002,52 @@ static void draw_hex(SDL_Renderer *r, float cx, float cy, float rad, SDL_Color c
  * `dim` is what makes its arrival visible: the blue is the one lit thing in
  * either mark - the same color as the boot line and the menu chrome - so
  * covering it is the light going out, and the shell closes dark. */
-/* A five-pointed star, as a fan over ten alternating points. Same primitive
- * as draw_hex: SDL has no polygon fill, and SDL_RenderGeometry is already
- * how the mark is drawn. The inner radius is 0.45 rather than the 0.382 a
- * true pentagram wants - at the size this is drawn, the geometric answer
- * reads as spindly. */
-static void draw_star(SDL_Renderer *r, float cx, float cy, float rad,
-                      SDL_Color col)
-{
-	SDL_Vertex v[11];
-	int idx[30], i;
+/* A heart, as a fan over the classic parametric curve:
+ *
+ *     x = 16 sin^3 t
+ *     y = 13 cos t - 5 cos 2t - 2 cos 3t - cos 4t
+ *
+ * Mirrors markdef.heart(), which is the definition - tools/genfavcard.py draws
+ * the same shape into res/cards/FAVORITES.png, and the two are meant to match.
+ * Change one, change both. Same standing arrangement as draw_shell and CELLS.
+ *
+ * Fanned from a point BELOW the centre rather than from the centre itself. The
+ * notch between the lobes is the one concave part of the shape, and a fan
+ * apex level with it produces slivers that cross the notch and fill it in.
+ * Dropping the apex puts every boundary point in view of it. Same primitive as
+ * draw_hex for the same reason: SDL has no polygon fill.
+ */
+#define HEART_N 48
 
-	v[0].position.x = cx; v[0].position.y = cy;
-	for (i = 0; i < 10; i++) {
-		float a = (float)(-M_PI / 2.0 + i * M_PI / 5.0);
-		float rr = (i & 1) ? rad * 0.45f : rad;
-		v[i + 1].position.x = cx + rr * cosf(a);
-		v[i + 1].position.y = cy + rr * sinf(a);
+static void draw_heart(SDL_Renderer *r, float cx, float cy, float rad,
+                       SDL_Color col)
+{
+	SDL_Vertex v[HEART_N + 1];
+	int idx[HEART_N * 3], i;
+
+	v[0].position.x = cx;
+	v[0].position.y = cy + rad * 0.25f;
+	for (i = 0; i < HEART_N; i++) {
+		float t = (float)(2.0 * M_PI * i / HEART_N);
+		float x = 16.0f * powf(sinf(t), 3.0f);
+		float y = 13.0f * cosf(t) - 5.0f * cosf(2 * t)
+		          - 2.0f * cosf(3 * t) - cosf(4 * t);
+
+		/* The curve spans 32 wide and 30 tall; halving the wider axis makes
+		 * `rad` a radius in the same sense the star's was. */
+		v[i + 1].position.x = cx + x * rad / 16.0f;
+		v[i + 1].position.y = cy - y * rad / 16.0f;
 	}
-	for (i = 0; i < 11; i++) {
+	for (i = 0; i <= HEART_N; i++) {
 		v[i].color = col;
 		v[i].tex_coord.x = v[i].tex_coord.y = 0;
 	}
-	for (i = 0; i < 10; i++) {
+	for (i = 0; i < HEART_N; i++) {
 		idx[i * 3 + 0] = 0;
 		idx[i * 3 + 1] = 1 + i;
-		idx[i * 3 + 2] = 1 + (i + 1) % 10;
+		idx[i * 3 + 2] = 1 + (i + 1) % HEART_N;
 	}
-	SDL_RenderGeometry(r, NULL, v, 11, idx, 30);
+	SDL_RenderGeometry(r, NULL, v, HEART_N + 1, idx, HEART_N * 3);
 }
 
 static void draw_shell(SDL_Renderer *r, float cx, float cy, float rad,
@@ -1236,7 +1254,10 @@ static void draw_games(app *a)
 		if (fav_is(gs->tag, g->file)) {
 			TTF_Font *ft = ui_font(UI_F_TITLE);
 			int line = ui_font_line(UI_F_TITLE);
-			int rad = line / 4;
+			/* Bigger than the star it replaced (line/4). A heart reads as
+			 * a heart only once its notch and point are visible, and at a
+			 * quarter of a line it was a blob. */
+			int rad = line / 3;
 			/* Centered on the title's INK, not its em box. The box reserves a
 			 * descender's depth that most titles never use, so a mark placed
 			 * at the box's middle sits visibly below the letters. Descent is
@@ -1245,8 +1266,8 @@ static void draw_games(app *a)
 			int dy = 40 + line / 2 + (ft ? TTF_FontDescent(ft) / 2 : 0);
 			SDL_Color c = { (Uint8)(gs->accent >> 16), (Uint8)(gs->accent >> 8),
 			                (Uint8)gs->accent, 255 };
-			draw_star(a->r, (float)(tx - tw / 2 - rad * 2), (float)dy,
-			          (float)rad, c);
+			draw_heart(a->r, (float)(tx - tw / 2 - rad * 2), (float)dy,
+			           (float)rad, c);
 		}
 		ui_text(a->r, ui_font(UI_F_TITLE), g->title, tx, 40, 0, UI_TEXT);
 		snprintf(count, sizeof count, "%d / %d", v->cursor + 1, v->list.count);

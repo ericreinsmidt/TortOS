@@ -61,5 +61,38 @@ CELLS = [
 HEAD = (2.0, 0.0, DKGREEN)    # one step beyond the right cell
 CENTER = CYAN
 
+# ---- the favorite mark ----------------------------------------------------
+#
+# A heart, as the classic parametric curve:
+#
+#     x = 16 sin^3 t
+#     y = 13 cos t - 5 cos 2t - 2 cos 3t - cos 4t
+#
+# Here rather than in either drawer because there are two: the shelf draws it
+# in C with SDL_RenderGeometry, and tools/genfavcard.py draws it into
+# res/cards/FAVORITES.png with PIL. The same argument as CELLS - a hand-kept
+# second copy is a second thing to get wrong, and these two are meant to be
+# the same shape.
+#
+# Returns points in a unit box centred on the origin, y DOWN (screen order),
+# scaled so the taller axis spans 1.0.
+
+def heart(n=64):
+    import math
+
+    pts = []
+    for i in range(n):
+        t = 2.0 * math.pi * i / n
+        x = 16.0 * math.sin(t) ** 3
+        y = (13.0 * math.cos(t) - 5.0 * math.cos(2 * t)
+             - 2.0 * math.cos(3 * t) - math.cos(4 * t))
+        pts.append((x, -y))                      # -y: screen coordinates
+    xs = [p[0] for p in pts]
+    ys = [p[1] for p in pts]
+    cx, cy = (min(xs) + max(xs)) / 2.0, (min(ys) + max(ys)) / 2.0
+    k = 1.0 / max(max(xs) - min(xs), max(ys) - min(ys))
+    return [((x - cx) * k, (y - cy) * k) for x, y in pts]
+
+
 def hexf(rgb):
     return "#%02X%02X%02X" % rgb

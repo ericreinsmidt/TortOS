@@ -11,8 +11,13 @@ it to drift.
 Matched to the set by measurement rather than by eye: 640x820, card stock
 (28,31,42), a 12px accent rule at y=587, the label under it in (239,239,244).
 Three marks, ascending, which is the composition Genesis and Game Gear already
-use - the set's rhythm is two or three flat shapes, and a single huge star
+use - the set's rhythm is two or three flat shapes, and a single huge heart
 would read as a different kind of card.
+
+The mark is markdef.heart(), the same curve src/main.c draws beside a favorited
+game's name. They were stars until 2026-08-30; a card and a shelf disagreeing
+about what "favorite" looks like is the kind of thing nobody notices and
+everybody feels.
 """
 import math
 import os
@@ -21,7 +26,7 @@ import sys
 from PIL import Image, ImageDraw, ImageFont
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from markdef import CYAN  # noqa: E402
+from markdef import CYAN, heart  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "res", "cards", "FAVORITES.png")
@@ -32,16 +37,14 @@ STOCK = (28, 31, 42)
 LABEL = (239, 239, 244)
 RULE_Y, RULE_H = 587, 12
 RADIUS = 28
-SS = 4                      # supersample, so the star points are not ragged
+SS = 4                      # supersample, so the curve is not ragged
 
 
-def star(d, cx, cy, r, col, points=5, inner=0.45):
-    pts = []
-    for i in range(points * 2):
-        a = -math.pi / 2 + i * math.pi / points
-        rr = r * (inner if i & 1 else 1.0)
-        pts.append((cx + rr * math.cos(a), cy + rr * math.sin(a)))
-    d.polygon(pts, fill=col)
+def mark(d, cx, cy, r, col):
+    """markdef.heart(), placed. The shelf draws the same curve in C - see
+    draw_heart in src/main.c. Stars until 2026-08-30."""
+    d.polygon([(cx + x * 2 * r, cy + y * 2 * r) for x, y in heart(96)],
+              fill=col)
 
 
 def main():
@@ -57,7 +60,7 @@ def main():
     # three circles. Centred on the panel above the rule, not on the card.
     cy = 300 * SS
     for cx, r in ((143, 44), (293, 64), (453, 88)):
-        star(d, cx * SS, cy, r * SS, CYAN + (255,))
+        mark(d, cx * SS, cy, r * SS, CYAN + (255,))
 
     im = im.resize((W, H), Image.LANCZOS)
     d = ImageDraw.Draw(im)
