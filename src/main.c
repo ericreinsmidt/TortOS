@@ -1550,13 +1550,13 @@ static int menu_build(app *a, screen_id screen, int sys,
 		*heading = s->name;
 		out[SM_GAMES]   = (menu_row){ "Games",          b->a,            false };
 		out[SM_CORE]    = (menu_row){ "Core",           b->b,            false };
-		out[SM_SORT]    = (menu_row){ "Sort by",        "Name",          false };
+		out[SM_SORT]    = (menu_row){ "Sort By",        "Name",          false };
 		out[SM_SHOW]    = (menu_row){ "Show",           "All games",     false };
-		out[SM_DISPLAY] = (menu_row){ "Display mode",
+		out[SM_DISPLAY] = (menu_row){ "Display Mode",
 		                              DMODES[a->view[sys].dmode].label, true };
-		out[SM_BUTTONS] = (menu_row){ "Button mapping", NULL,            false };
-		out[SM_BOXART]  = (menu_row){ "Box art",        "not yet",       false };
-		out[SM_RESCAN]  = (menu_row){ "Rescan folder",  NULL,            false };
+		out[SM_BUTTONS] = (menu_row){ "Button Mapping", NULL,            false };
+		out[SM_BOXART]  = (menu_row){ "Box Art",        "not yet",       false };
+		out[SM_RESCAN]  = (menu_row){ "Rescan Folder",  NULL,            false };
 		return SM_ROWS;
 	}
 
@@ -1597,13 +1597,13 @@ static int menu_build(app *a, screen_id screen, int sys,
 	                                   ra_signed_in() ? ra_user() : "sign in",
 	                                   true };
 	out[PM_SCRAPE]       = (menu_row){ "Box Art",           "not yet", false };
-	out[PM_TEXT]         = (menu_row){ "Text size",         b->a,      true  };
+	out[PM_TEXT]         = (menu_row){ "Text Size",         b->a,      true  };
 	/* Not "Sleep". The device has no suspend and is not getting one - see the
 	 * backlog. This powers off, and resume-into-game brings you back where you
 	 * were, which is what sleep would have been for. */
-	out[PM_SLEEP]        = (menu_row){ "Auto power off",    "not yet", false };
+	out[PM_SLEEP]        = (menu_row){ "Auto Power Off",    "not yet", false };
 	out[PM_ABOUT]        = (menu_row){ "About TortOS",      NULL,      true  };
-	out[PM_POWER]        = (menu_row){ "Power off",         NULL,      true  };
+	out[PM_POWER]        = (menu_row){ "Power Off",         NULL,      true  };
 	return PM_ROWS;
 }
 
