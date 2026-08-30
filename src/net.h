@@ -83,6 +83,14 @@ bool net_get_file(const char *url, const char *path, int timeout_s);
  * leave half a file where a later run would find it and skip the download. */
 bool net_get_async(const char *url, const char *path, int timeout_s);
 
+/* Give up on whatever is in flight: kill it, reap it, and free the slot.
+ *
+ * For a caller that stops caring - a screen the player closed mid-fetch. Not
+ * optional politeness: there is ONE slot, and a request abandoned without
+ * this holds it forever. Everything async then fails, permanently, and
+ * silently. */
+void net_async_abort(void);
+
 /* Whether there is any point trying: curl present and an address on a
  * non-loopback interface. Cheap, and it turns "achievements did not appear"
  * into something the menu can explain. */

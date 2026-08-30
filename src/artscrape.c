@@ -516,6 +516,9 @@ static bool match(const char *base, char *out, size_t outn)
 
 void art_cancel(void)
 {
+	/* Whatever was in flight is not wanted, and leaving it in flight holds
+	 * the one async slot the launcher has. */
+	net_async_abort();
 	g_running = false;
 	free(g_html);  g_html = NULL;
 	g_nnames = 0;

@@ -10,6 +10,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <signal.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -219,7 +220,8 @@ bool net_post_async(const net_field *f, int n, const char *path, int timeout_s)
 	const char *bin = curl_bin();
 	int fd;
 
-	if (g_async > 0 || !bin) return false;
+	if (g_async > 0 && net_async_poll() == 0) return false;
+	if (!bin) return false;
 
 	snprintf(g_async_cfg, sizeof g_async_cfg, "/tmp/tortos-ra-async-%ld.curl",
 	         (long)getpid());
@@ -252,12 +254,36 @@ bool net_post_async(const net_field *f, int n, const char *path, int timeout_s)
 static char g_async_dest[512];
 static char g_async_part[520];
 
+void net_async_abort(void)
+{
+	if (g_async > 0) {
+		kill(g_async, SIGKILL);
+		waitpid(g_async, NULL, 0);
+	}
+	g_async = -1;
+	if (g_async_cfg[0]) unlink(g_async_cfg);
+	if (g_async_part[0]) unlink(g_async_part);
+	g_async_dest[0] = '\0';
+	g_async_part[0] = '\0';
+}
+
 bool net_get_async(const char *url, const char *path, int timeout_s)
 {
 	const char *bin = curl_bin();
 	int fd;
 
-	if (g_async > 0 || !bin) return false;
+	/* A slot left set by a caller that walked away is cleared here rather
+	 * than refused forever.
+	 *
+	 * This deadlocked once, and silently: a screen closed mid-fetch left
+	 * g_async pointing at a pid nobody would ever wait for. Every later
+	 * request then returned false - so no WAIT phase was entered, so
+	 * net_async_poll was never called, so the slot was never cleared. Box art
+	 * reported "could not start curl" on every system for the rest of the
+	 * launcher's life, with curl sitting right there working. Only a restart
+	 * fixed it, which is the shape of a bug nobody reports accurately. */
+	if (g_async > 0 && net_async_poll() == 0) return false;   /* genuinely busy */
+	if (!bin) return false;
 
 	snprintf(g_async_cfg, sizeof g_async_cfg, "/tmp/tortos-get-async-%ld.curl",
 	         (long)getpid());
