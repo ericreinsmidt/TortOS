@@ -1672,7 +1672,7 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
  * to hold the shape of what TortOS grows into, and a row that is drawn but
  * does nothing states that more honestly than an empty menu does. */
 typedef enum {
-	PM_WIFI, PM_BT, PM_ACHIEVEMENTS, PM_SCRAPE,
+	PM_WIFI, PM_BT, PM_XFER, PM_ACHIEVEMENTS, PM_SCRAPE,
 	PM_TEXT, PM_SLEEP, PM_ABOUT, PM_ROWS
 } pm_row;
 
@@ -1745,6 +1745,18 @@ static int menu_build(app *a, screen_id screen, int sys,
 		out[PM_WIFI]     = (menu_row){ "Wi-Fi",             b->b,      true  };
 	}
 	out[PM_BT]           = (menu_row){ "Bluetooth",         "not yet", false };
+	/* Files onto and off the device over Wi-Fi: a small web server on the LAN
+	 * that a phone or a laptop opens. Named for OTA, which is what everyone
+	 * already calls this, and for the other half of the fable - the tortoise
+	 * runs the system, the hare carries the files.
+	 *
+	 * Directly under Wi-Fi because it is useless without it, and reads as an
+	 * answer to the row above rather than a separate idea. */
+	/* "not yet" until the screen behind it exists. It will read
+	 * WIFI_CONNECTED then - the feature is useless without a network - but a
+	 * row that looks ready and does nothing when pressed is worse than one
+	 * that says so. */
+	out[PM_XFER]         = (menu_row){ "Over The Hare",     "not yet", false };
 	out[PM_ACHIEVEMENTS] = (menu_row){ "Cheevos",
 	                                   ra_signed_in() ? ra_user() : "sign in",
 	                                   true };
