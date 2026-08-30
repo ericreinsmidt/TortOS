@@ -2360,7 +2360,33 @@ static void gi_gather(app *a, int owner, const game_entry *g, game_info *gi)
 	int i, slots = 0;
 
 	memset(gi, 0, sizeof *gi);
-	snprintf(gi->file, sizeof gi->file, "%s", g->file);
+
+	/* What the filename ADDS to the heading, not the filename.
+	 *
+	 * The panel already says "Alex Kidd in Miracle World" in large type. The
+	 * row below it used to say "Alex Kidd in Miracle World (World) (Sega
+	 * Ages).zip" - the same words again, plus the only part that was news.
+	 * Measured over this library, 59 of 180 filenames were too wide for the
+	 * row and 13 of 180 titles are long on their own: most of that overflow
+	 * was the row repeating what was already on screen.
+	 *
+	 * So show the tail. It answers the question someone opens this screen
+	 * with - which dump is this, and what is it in - and it is short enough
+	 * that nothing needs trimming.
+	 *
+	 * A game whose file does not begin with its title keeps the whole path:
+	 * a disc game's launch path is "<folder>/<disc>", where the prefix is a
+	 * directory rather than a repetition. */
+	{
+		size_t tn = strlen(g->title);
+		const char *tail = g->file;
+
+		if (tn && !strncmp(g->file, g->title, tn)) {
+			tail = g->file + tn;
+			while (*tail == ' ') tail++;
+		}
+		snprintf(gi->file, sizeof gi->file, "%s", tail);
+	}
 
 	snprintf(p, sizeof p, "%s/%s/%s", P_ROMS, s->folder, g->file);
 	if (stat(p, &st) == 0) human_bytes(gi->size, sizeof gi->size,
