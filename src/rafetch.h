@@ -71,6 +71,22 @@ bool ra_ensure_set(const char *rom_path, const char *tag, const char *set_path);
  * not one - measured 2026-08-29 as 3/40 against the site's 13/40. */
 int ra_account_unlocks(long gameid, int *out, int max);
 
+/* The same question, asked without waiting for the answer. Start it before the
+ * game, collect it after - by which time a request that takes 310-460ms has
+ * had a whole session to finish.
+ *
+ * The cost of not waiting is that THIS launch filters against what the store
+ * already knew, so a game whose set was cached before its unlocks were may
+ * re-announce something earned years ago, once. The cost of waiting was 320ms
+ * on the front of every launch, on a launcher whose whole point is that a warm
+ * one is 15ms. Measured on the device 2026-08-29; 150ms of it is the TLS
+ * handshake and no amount of caching removes that.
+ *
+ * ra_sync_collect returns how many ids landed, or -1 if there was nothing to
+ * collect or it failed. */
+void ra_sync_begin(long gameid);
+int  ra_sync_collect(int *out, int max);
+
 /* Tell RetroAchievements a game has started. Fire and forget: it drives
  * "currently playing" on the site and nothing here depends on it. */
 void ra_start_session(long gameid);

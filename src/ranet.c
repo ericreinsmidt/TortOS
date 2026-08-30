@@ -182,6 +182,59 @@ bool ra_post_file(const ra_field *f, int n, const char *path, int timeout_s)
 	return true;
 }
 
+/* ---- the same thing, without waiting ------------------------------------ */
+
+static pid_t g_async = -1;
+static char  g_async_cfg[160];
+
+bool ra_post_async(const ra_field *f, int n, const char *path, int timeout_s)
+{
+	const char *bin = curl_bin();
+	int fd;
+
+	if (g_async > 0 || !bin) return false;
+
+	snprintf(g_async_cfg, sizeof g_async_cfg, "/tmp/tortos-ra-async-%ld.curl",
+	         (long)getpid());
+	if (!write_config(g_async_cfg, f, n, timeout_s)) return false;
+
+	fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	if (fd < 0) { unlink(g_async_cfg); return false; }
+
+	g_async = fork();
+	if (g_async < 0) { close(fd); unlink(g_async_cfg); g_async = -1; return false; }
+	if (g_async == 0) {
+		char *argv[4];
+		int devnull = open("/dev/null", O_RDONLY);
+
+		if (devnull >= 0) { dup2(devnull, 0); close(devnull); }
+		dup2(fd, 1);
+		argv[0] = (char *)bin;
+		argv[1] = (char *)"-K";
+		argv[2] = g_async_cfg;
+		argv[3] = NULL;
+		execv(bin, argv);
+		_exit(127);
+	}
+	close(fd);
+	return true;
+}
+
+int ra_async_poll(void)
+{
+	int st;
+	pid_t r;
+
+	if (g_async <= 0) return -1;
+	r = waitpid(g_async, &st, WNOHANG);
+	if (r == 0) return 0;                      /* still going */
+
+	g_async = -1;
+	unlink(g_async_cfg);
+	if (r < 0) return -1;
+	return (WIFEXITED(st) && WEXITSTATUS(st) == 0) ? 1 : -1;
+}
+
 bool ra_online(void)
 {
 	struct ifaddrs *ifa, *p;

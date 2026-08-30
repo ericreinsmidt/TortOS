@@ -583,15 +583,11 @@ static void wait_panel(app *a, const char *heading, const char *msg);
  * owed, because it is the only record of anything earned offline. Neither is
  * discarded. Silent when offline or not signed in - that is the ordinary
  * case, and it leaves the device working from what it knows. */
-static void ra_sync_game(app *a, const char *rom, const char *tag)
+static void ra_merge_unlocks(const int *ids, int n)
 {
-	int ids[CHV_MAX], n, i, added = 0;
+	int i, added = 0;
 
-	if (!ra_signed_in() || chv_game() <= 0 || !ra_online()) return;
-
-	wait_panel(a, "RetroAchievements", "Checking your progress...");
-	n = ra_account_unlocks(chv_game(), ids, CHV_MAX);
-	if (n < 0) return;               /* could not ask: not the same as none */
+	if (n <= 0 || chv_game() <= 0) return;
 
 	/* Only ids the set actually has. The account carries entries the set does
 	 * not - RetroAchievements' "Unknown Emulator" notice is one, and it went
@@ -612,7 +608,31 @@ static void ra_sync_game(app *a, const char *rom, const char *tag)
 		chv_store_path(p, sizeof p);
 		chv_earned_save(p);
 	}
-	ra_start_session(chv_game());
+}
+
+/* The blocking form, and it is used in exactly one place: the first time a
+ * game is played, where the set has to be downloaded anyway and the player is
+ * already watching a panel. Paying for the unlocks there costs nothing extra,
+ * and it means every launch afterwards starts with the account's answer
+ * already in the store - which is what lets the launch path stop waiting. */
+static void ra_sync_now(app *a)
+{
+	int ids[CHV_MAX], n;
+
+	if (!ra_signed_in() || chv_game() <= 0 || !ra_online()) return;
+	wait_panel(a, "RetroAchievements", "Checking your progress...");
+	n = ra_account_unlocks(chv_game(), ids, CHV_MAX);
+	if (n < 0) return;               /* could not ask: not the same as none */
+	ra_merge_unlocks(ids, n);
+}
+
+/* And the one that runs on every other launch: started here, collected after
+ * the game. See rafetch.h for the measurement that made this necessary. */
+static void ra_sync_collect_and_merge(void)
+{
+	int ids[CHV_MAX], n = ra_sync_collect(ids, CHV_MAX);
+
+	if (n > 0) ra_merge_unlocks(ids, n);
 }
 
 /* Send what is owed. Called once the game is over and the launcher has the
@@ -2567,6 +2587,7 @@ static void launch(app *a)
 	char save[CFG_STR * 2], bios[CFG_STR * 2];
 	char active[LIB_PATH * 2] = "";
 	int  console = 0;
+	bool first_play = false;
 	/* 18 fixed entries plus NULL, then two per core option. Sized off the
 	 * loader's own cap so the two cannot drift apart: the previous 20 was
 	 * already 18 full, and a silent bound check would have dropped every
@@ -2608,6 +2629,7 @@ static void launch(app *a)
 		if (ra_signed_in() && access(set, R_OK) != 0 && ra_online()) {
 			wait_panel(a, "RetroAchievements", "Looking up this game...");
 			ra_ensure_set(rom, s->tag, set);
+			first_play = true;
 		}
 
 		if (chv_load(set)) {
@@ -2616,7 +2638,18 @@ static void launch(app *a)
 			 * happens to have seen, which is not the same question and does
 			 * not look different: measured 2026-08-29 as 3 of 40 for Contra
 			 * against the site's own 13. */
-			ra_sync_game(a, rom, s->tag);
+			/* The account's answer, without the launch waiting for it. Only
+			 * the very first play of a game blocks, and that one is already
+			 * downloading a set behind a panel, so it costs nothing extra
+			 * and leaves every launch after it able to filter correctly from
+			 * the store alone. */
+			if (first_play) ra_sync_now(a);
+			else            ra_sync_begin(chv_game());
+
+			/* ra_start_session is deliberately NOT called here. It drives the
+			 * "currently playing" indicator on the website and nothing on the
+			 * device, and it is another 320ms request - which is the exact
+			 * trade this whole path exists to refuse. */
 
 			chv_active_path(active, sizeof active);
 			if (chv_write_active(active)) {
@@ -2686,6 +2719,10 @@ static void launch(app *a)
 			 * is the power button's watchdog, and anything blocking inside it
 			 * would stop the device answering. Whatever was earned goes now;
 			 * whatever will not send stays queued. */
+			/* Collect first, so anything the account already had is settled
+			 * before deciding what is owed - otherwise the flush would
+			 * cheerfully submit a dozen duplicates. */
+			ra_sync_collect_and_merge();
 			ra_flush_unlocks(rom, s->tag);
 
 			/* RES_DEAD means it stopped answering -- it died, or the game

@@ -42,6 +42,19 @@ long ra_post_buf(const ra_field *f, int n, char *out, size_t outn, int timeout_s
  * where a whole one is expected. */
 bool ra_post_file(const ra_field *f, int n, const char *path, int timeout_s);
 
+/* The same request, started and left to run. Nothing waits for it.
+ *
+ * This exists because a launch was 15ms warm and a request to RetroAchievements
+ * is 310-460ms measured on the device, 150ms of which is the TLS handshake
+ * alone - so anything on the launch path that waits for the network has
+ * already lost. One in flight at a time, which is all this needs.
+ *
+ * ra_async_poll: 1 finished and the file is there, 0 still running, -1 nothing
+ * started or it failed. Reaping is the caller's job via poll; an unreaped
+ * child is a zombie until then. */
+bool ra_post_async(const ra_field *f, int n, const char *path, int timeout_s);
+int  ra_async_poll(void);
+
 /* Whether there is any point trying: curl present and an address on a
  * non-loopback interface. Cheap, and it turns "achievements did not appear"
  * into something the menu can explain. */

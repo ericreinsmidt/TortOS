@@ -311,6 +311,55 @@ int ra_account_unlocks(long gameid, int *out, int max)
 	return n;
 }
 
+static char g_sync_path[256];
+
+void ra_sync_begin(long gameid)
+{
+	static char g[24];              /* static: the fields outlive this call */
+	ra_field f[5];
+
+	g_sync_path[0] = '\0';
+	if (gameid <= 0 || !ra_signed_in() || !ra_online()) return;
+
+	snprintf(g, sizeof g, "%ld", gameid);
+	snprintf(g_sync_path, sizeof g_sync_path, "/tmp/tortos-ra-unlocks-%ld.json",
+	         (long)getpid());
+
+	f[0].k = "r"; f[0].v = "unlocks";
+	f[1].k = "u"; f[1].v = g_user;
+	f[2].k = "t"; f[2].v = g_token;
+	f[3].k = "g"; f[3].v = g;
+	f[4].k = "h"; f[4].v = "0";
+	if (!ra_post_async(f, 5, g_sync_path, 25)) g_sync_path[0] = '\0';
+}
+
+int ra_sync_collect(int *out, int max)
+{
+	char *body;
+	size_t len;
+	jsv root, arr, it, e;
+	int n = 0, rc;
+
+	if (!g_sync_path[0] || !out || max <= 0) return -1;
+
+	/* Blocks only if the child somehow has not finished a request started
+	 * before a whole game session. It has. */
+	do { rc = ra_async_poll(); } while (rc == 0 && (usleep(50000), 1));
+	if (rc != 1) { unlink(g_sync_path); g_sync_path[0] = '\0'; return -1; }
+
+	body = read_whole(g_sync_path, &len);
+	unlink(g_sync_path);
+	g_sync_path[0] = '\0';
+	if (!body) return -1;
+
+	root = js_root(body, len);
+	if (!js_member(root, "UserUnlocks", &arr)) { free(body); return -1; }
+	memset(&it, 0, sizeof it);
+	while (n < max && js_next(arr, &it, &e)) out[n++] = (int)js_int(e);
+	free(body);
+	return n;
+}
+
 void ra_start_session(long gameid)
 {
 	char body[1024], g[24];
