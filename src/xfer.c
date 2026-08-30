@@ -58,8 +58,11 @@ static int hexval(int c)
  * A malformed escape is refused rather than passed through as a literal '%'.
  * Passing it through is what most decoders do and it is how "%2%65" becomes
  * "%2e" becomes "." one layer later; refusing means there is exactly one
- * reading of any string that gets this far. */
-static bool decode(const char *in, char *out, size_t outn)
+ * reading of any string that gets this far.
+ *
+ * Public, so a rename's destination goes through the same decoder as a path
+ * rather than through a second one written to look like it. */
+bool xfer_decode(const char *in, char *out, size_t outn)
 {
 	size_t o = 0;
 
@@ -115,7 +118,7 @@ bool xfer_resolve(const char *url_path, char *out, size_t outn)
 	int i;
 
 	if (!url_path || !out || outn == 0) return false;
-	if (!decode(url_path, dec, sizeof dec)) return false;
+	if (!xfer_decode(url_path, dec, sizeof dec)) return false;
 
 	/* An absolute path is not a request for a root-relative one that happens
 	 * to start with a slash; it is a request for somewhere else. */

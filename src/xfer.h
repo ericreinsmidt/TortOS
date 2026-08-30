@@ -51,6 +51,16 @@ const xfer_root *xfer_root_at(int i);
  * and that is the caller's question, not this one's. */
 bool xfer_resolve(const char *url_path, char *out, size_t outn);
 
+/* Percent-decoding on its own, for values that are NOT paths: a rename's
+ * destination, a PIN. Same decoder xfer_resolve uses, exposed rather than
+ * copied, because a second decoder is a second set of rules about what "%2e"
+ * means and the whole point of this file is that there is one.
+ *
+ * False on a malformed escape, on a control byte, or on anything too long.
+ * Says nothing about whether the result is a usable name - that is
+ * xfer_name_ok, and a caller wanting a filename needs both. */
+bool xfer_decode(const char *in, char *out, size_t outn);
+
 /* One path component, for a rename's destination. No separators, no dot
  * entries, nothing empty. Rejects what xfer_resolve would reject, minus the
  * root lookup, because a rename names a sibling rather than a path. */

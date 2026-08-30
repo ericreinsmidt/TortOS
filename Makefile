@@ -8,7 +8,7 @@ SSH := sshpass -p 'tina' ssh -o StrictHostKeyChecking=no root@$(BRICK)
 
 .PHONY: all clean native toolchain vendor boot checkmark payload release install-card \
         adb adb-elf adb-res adb-vendor adb-restart adb-run adb-log \
-        check-cheevos check-httpd check-idle check-rahash check-raset check-xfer \
+        check-cheevos check-hare check-httpd check-idle check-rahash check-raset check-xfer \
         deploy restart logs
 
 all: build/tortos.elf
@@ -48,6 +48,18 @@ build-native/cheevos-check: tools/cheevos-check.c src/cheevos.c src/cheevos.h \
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
 	      -o $@ tools/cheevos-check.c src/cheevos.c src/atomic.c
+
+# Hare's routes: is anything reachable without the PIN? check-xfer proves a
+# path cannot climb out of a root; this proves the routes actually ask it, and
+# that they are behind the lock - separate claims, and the ones that regress
+# when an endpoint is added.
+check-hare: build-native/hare-check
+	@./build-native/hare-check
+
+build-native/hare-check: tools/hare-check.c src/hare.c src/httpd.c src/xfer.c FORCE
+	@mkdir -p build-native
+	$(CC) -std=gnu11 -Wall -Wextra -Wno-unused-parameter -D_GNU_SOURCE -O1 -g \
+	      -o $@ tools/hare-check.c src/hare.c src/httpd.c src/xfer.c
 
 # Hare's transport, driven by a real client over a real socket. An HTTP parser
 # is where "looks right" and "is right" part company: every browser sends the
