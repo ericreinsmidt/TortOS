@@ -276,6 +276,95 @@ bool ra_fetch_set(long gameid, const char *out_path)
 	return ok;
 }
 
+/* ---- the account -------------------------------------------------------- */
+
+int ra_account_unlocks(long gameid, int *out, int max)
+{
+	char *body;
+	char g[24];
+	ra_field f[5];
+	jsv root, arr, it, e;
+	int n = 0;
+
+	if (gameid <= 0 || !out || max <= 0) return -1;
+	if (!ra_signed_in() || !ra_online()) return -1;
+
+	/* Heap rather than a guess on the stack: 200 ids is a few KB and the
+	 * reply carries more than the ids. */
+	body = malloc(65536);
+	if (!body) return -1;
+
+	snprintf(g, sizeof g, "%ld", gameid);
+	f[0].k = "r"; f[0].v = "unlocks";
+	f[1].k = "u"; f[1].v = g_user;
+	f[2].k = "t"; f[2].v = g_token;
+	f[3].k = "g"; f[3].v = g;
+	f[4].k = "h"; f[4].v = "0";     /* softcore: TortOS enforces no hardcore */
+	if (ra_post_buf(f, 5, body, 65536, 20) < 0) { free(body); return -1; }
+
+	root = js_root(body, strlen(body));
+	if (!js_member(root, "UserUnlocks", &arr)) { free(body); return -1; }
+
+	memset(&it, 0, sizeof it);
+	while (n < max && js_next(arr, &it, &e)) out[n++] = (int)js_int(e);
+	free(body);
+	return n;
+}
+
+void ra_start_session(long gameid)
+{
+	char body[1024], g[24];
+	ra_field f[4];
+
+	if (gameid <= 0 || !ra_signed_in() || !ra_online()) return;
+	snprintf(g, sizeof g, "%ld", gameid);
+	f[0].k = "r"; f[0].v = "startsession";
+	f[1].k = "u"; f[1].v = g_user;
+	f[2].k = "t"; f[2].v = g_token;
+	f[3].k = "g"; f[3].v = g;
+	ra_post_buf(f, 4, body, sizeof body, 15);
+}
+
+bool ra_submit_unlock(int achievement_id, const char *rom_hash)
+{
+	char body[1024], a[24], v[33], sig[128];
+	ra_field f[7];
+	jsv root, m;
+	int n = 0;
+
+	if (achievement_id <= 0 || !ra_signed_in() || !ra_online()) return false;
+
+	snprintf(a, sizeof a, "%d", achievement_id);
+	/* rcheevos builds exactly this in rc_api_init_award_achievement_request,
+	 * and the server checks it. Written from that source rather than guessed:
+	 * a wrong signature is refused, and a refusal reads like a permissions
+	 * problem. */
+	snprintf(sig, sizeof sig, "%d%s0", achievement_id, g_user);
+	ra_md5_hex(sig, strlen(sig), v);
+
+	f[n].k = "r"; f[n++].v = "awardachievement";
+	f[n].k = "u"; f[n++].v = g_user;
+	f[n].k = "t"; f[n++].v = g_token;
+	f[n].k = "a"; f[n++].v = a;
+	f[n].k = "h"; f[n++].v = "0";
+	if (rom_hash && *rom_hash) { f[n].k = "m"; f[n++].v = rom_hash; }
+	f[n].k = "v"; f[n++].v = v;
+
+	if (ra_post_buf(f, n, body, sizeof body, 20) < 0) return false;
+
+	root = js_root(body, strlen(body));
+	if (js_member(root, "Success", &m) && js_is_true(m)) return true;
+
+	{
+		char msg[192] = "";
+
+		if (js_member(root, "Error", &m)) js_str(m, msg, sizeof msg);
+		fprintf(stderr, "ra: %d refused: %s\n", achievement_id,
+		        msg[0] ? msg : "no reason given");
+	}
+	return false;
+}
+
 bool ra_ensure_set(const char *rom_path, const char *tag, const char *set_path)
 {
 	struct stat st;

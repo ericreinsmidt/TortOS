@@ -54,4 +54,30 @@ bool ra_fetch_set(long gameid, const char *out_path);
  * RA does not know the game, or it has no achievements. */
 bool ra_ensure_set(const char *rom_path, const char *tag, const char *set_path);
 
+/* ---- the account ---------------------------------------------------------
+ *
+ * Every call here blocks for as long as its timeout. None of them may be made
+ * from inside the in-game wait loop, which is also the power button's
+ * watchdog: a request in there would make the device stop answering it. They
+ * belong on either side of a game, where the launcher owns the screen.
+ */
+
+/* What the account already holds for a game, softcore. Up to `max` ids into
+ * `out`; returns how many, or -1 if the question could not be asked - a
+ * different thing from "none", and one that must not be recorded as an answer.
+ *
+ * This is what makes a count mean something. Without it the launcher reports
+ * what THIS DEVICE has seen, which looks exactly like an account total and is
+ * not one - measured 2026-08-29 as 3/40 against the site's 13/40. */
+int ra_account_unlocks(long gameid, int *out, int max);
+
+/* Tell RetroAchievements a game has started. Fire and forget: it drives
+ * "currently playing" on the site and nothing here depends on it. */
+void ra_start_session(long gameid);
+
+/* Submit one unlock, softcore. Signed the way rcheevos signs it -
+ * md5(achievement id + username + hardcore flag) - because the server checks
+ * it. `rom_hash` is optional and is what real clients send. */
+bool ra_submit_unlock(int achievement_id, const char *rom_hash);
+
 #endif

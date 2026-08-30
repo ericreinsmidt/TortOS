@@ -3,6 +3,7 @@
 #define TORTOS_RAHASH_H
 
 #include <stdbool.h>
+#include <stddef.h>
 
 /* RetroAchievements identifies a game by an MD5 over the ROM - but not always
  * over the WHOLE ROM. Each console has its own rule about what to skip, and
@@ -23,5 +24,12 @@
  * `tag` is a systems.cfg tag - NES, SFC, MD, GB. False means the file could
  * not be read or the archive could not be opened. */
 bool ra_hash_rom(const char *path, const char *tag, char *out);
+
+/* Plain MD5 of a buffer, same 33-byte output. Exposed because submitting an
+ * unlock needs one too: RetroAchievements signs the request with
+ * md5(achievement id + username + hardcore flag) and checks it server-side.
+ * One implementation, two callers - a second MD5 in this repository would be
+ * a second thing to get subtly wrong. */
+void ra_md5_hex(const void *data, size_t len, char *out);
 
 #endif

@@ -141,6 +141,55 @@ int main(void)
 	CHECK(!chv_write_active(g_active),
 	      "an all-earned set should report nothing to watch");
 
+	/* ---- what is owed to the account ------------------------------------
+	 *
+	 * The store is the durable record and RetroAchievements is a peer to
+	 * reconcile with, so every row has to remember whether it has been sent.
+	 * Getting this wrong is silent in both directions: an unlock that is
+	 * never submitted, or one submitted every time the device boots. */
+	printf("  pending and synced:\n");
+	remove(g_store);
+	chv_earned_load(g_store);
+	CHECK(chv_load(g_set), "the set did not load for the pending checks");
+
+	CHECK(chv_note_earned(1459, 24698, true), "learning one from the account is news");
+	CHECK(chv_pending_count() == 0, "one already on the account owes nothing");
+
+	CHECK(chv_note_unlock(24699), "earning one here is news");
+	CHECK(chv_pending_count() == 1, "an unlock earned here is owed to the account");
+
+	{	int g = 0, i = 0;
+		CHECK(chv_pending_at(0, &g, &i) && g == 1459 && i == 24699,
+		      "the pending one is not the one that was earned: %d/%d", g, i);
+		chv_mark_synced(g, i);
+	}
+	CHECK(chv_pending_count() == 0, "marking it sent did not clear it");
+	CHECK(chv_earned() == 2, "marking it sent lost the achievement");
+
+	/* Across a restart, both the fact and the debt have to survive. */
+	CHECK(chv_note_unlock(24700), "a third is news");
+	CHECK(chv_earned_save(g_store), "the store did not write");
+	chv_clear();
+	chv_earned_load(g_store);
+	CHECK(chv_load(g_set), "the set did not reload");
+	CHECK(chv_earned() == 3, "reload lost an achievement: %d", chv_earned());
+	CHECK(chv_pending_count() == 1,
+	      "reload lost track of what is owed: %d", chv_pending_count());
+
+	/* A store written before the flag existed has two fields per row. Those
+	 * rows are pending, because nothing had ever been sent when they were
+	 * written - reading them as sent would lose them silently. */
+	{	FILE *old = fopen(g_store, "w");
+
+		if (old) { fputs("1459\t24698\n1459\t24699\n", old); fclose(old); }
+		chv_clear();
+		chv_earned_load(g_store);
+		CHECK(chv_load(g_set), "the set did not reload over a legacy store");
+		CHECK(chv_pending_count() == 2,
+		      "a store with no state column should read as all owed, got %d",
+		      chv_pending_count());
+	}
+
 	remove(g_set); remove(g_active); remove(g_store);
 	if (failures) { printf("\n%d check(s) failed\n", failures); return 1; }
 	printf("\nok: every check passed\n");

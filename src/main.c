@@ -18,6 +18,7 @@
 #include "favorites.h"
 #include "notice.h"
 #include "rafetch.h"
+#include "rahash.h"
 #include "ranet.h"
 #include "keyboard.h"
 #include "wifi.h"
@@ -564,6 +565,73 @@ static void chv_active_path(char *out, size_t n)
 static void ra_creds_path(char *out, size_t n)
 {
 	snprintf(out, n, "%s/ra.cfg", P_USERDATA);
+}
+
+/* Defined with the Wi-Fi screen it began in, and used here because signing in
+ * and syncing are the other two things that make the player wait. */
+static void wait_panel(app *a, const char *heading, const char *msg);
+
+/* Pull down what the account already holds for the loaded game, and mark
+ * those earned locally so they are not watched, not re-announced, and not
+ * submitted again.
+ *
+ * The account wins on what EXISTS; the local store wins on what is still
+ * owed, because it is the only record of anything earned offline. Neither is
+ * discarded. Silent when offline or not signed in - that is the ordinary
+ * case, and it leaves the device working from what it knows. */
+static void ra_sync_game(app *a, const char *rom, const char *tag)
+{
+	int ids[CHV_MAX], n, i, added = 0;
+
+	if (!ra_signed_in() || chv_game() <= 0 || !ra_online()) return;
+
+	wait_panel(a, "RetroAchievements", "Checking your progress...");
+	n = ra_account_unlocks(chv_game(), ids, CHV_MAX);
+	if (n < 0) return;               /* could not ask: not the same as none */
+
+	for (i = 0; i < n; i++)
+		if (chv_note_earned(chv_game(), ids[i], true)) added++;
+
+	if (added) {
+		char p[CFG_STR * 2];
+		chv_store_path(p, sizeof p);
+		chv_earned_save(p);
+	}
+	ra_start_session(chv_game());
+}
+
+/* Send what is owed. Called once the game is over and the launcher has the
+ * screen back - never from the wait loop.
+ *
+ * Anything that will not send stays pending and is tried again next time,
+ * which is the offline queueing RA's own requirements ask for and the right
+ * shape regardless: an unlock earned on a plane is still earned. */
+static void ra_flush_unlocks(const char *rom, const char *tag)
+{
+	char hash[33] = "";
+	int game, id, sent = 0;
+
+	if (!ra_signed_in() || chv_pending_count() == 0 || !ra_online()) return;
+
+	/* The hash is what a real client sends alongside an award, and it is the
+	 * one for the game just played - so only its own unlocks carry it. */
+	ra_hash_rom(rom, tag, hash);
+
+	/* Index 0 every time: a successful send marks the row synced, so the next
+	 * pending one becomes index 0. A failure stops the loop rather than
+	 * spinning on it - if one will not go, the rest will not either. */
+	while (chv_pending_at(0, &game, &id)) {
+		if (!ra_submit_unlock(id, game == chv_game() ? hash : NULL)) break;
+		chv_mark_synced(game, id);
+		sent++;
+	}
+	if (sent) {
+		char p[CFG_STR * 2];
+		chv_store_path(p, sizeof p);
+		chv_earned_save(p);
+		fprintf(stderr, "ra: submitted %d unlock%s, %d still queued\n",
+		        sent, sent == 1 ? "" : "s", chv_pending_count());
+	}
 }
 
 /* Called from inside plat_resident_wait, mid-game, when the launcher owns
@@ -2448,6 +2516,13 @@ static void launch(app *a)
 		}
 
 		if (chv_load(set)) {
+			/* Reconcile with the account BEFORE deciding what to watch.
+			 * Without this the launcher filters against what this device
+			 * happens to have seen, which is not the same question and does
+			 * not look different: measured 2026-08-29 as 3 of 40 for Contra
+			 * against the site's own 13. */
+			ra_sync_game(a, rom, s->tag);
+
 			chv_active_path(active, sizeof active);
 			if (chv_write_active(active)) {
 				console = chv_console();
@@ -2496,6 +2571,14 @@ static void launch(app *a)
 				break;
 			}
 			resident = (r == RES_EXIT);
+
+			/* The game is over and the display is ours again, which is the
+			 * first moment it is safe to make a request: the wait loop above
+			 * is the power button's watchdog, and anything blocking inside it
+			 * would stop the device answering. Whatever was earned goes now;
+			 * whatever will not send stays queued. */
+			ra_flush_unlocks(rom, s->tag);
+
 			/* RES_DEAD means it stopped answering -- it died, or the game
 			 * never started. Say so by falling through to the path that
 			 * runs it the slow way, rather than fading the shelf back up

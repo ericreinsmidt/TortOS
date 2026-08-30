@@ -17,7 +17,7 @@ static char   g_src[1024];         /* the file loaded, for chv_write_active */
  * games never meets the cap; at 12 bytes a row that is 48KB, which on a device
  * with a gigabyte is not worth a smarter structure. */
 #define CHV_EARNED_MAX 4096
-static struct { int game, id; } g_earned[CHV_EARNED_MAX];
+static struct { int game, id; bool synced; } g_earned[CHV_EARNED_MAX];
 static int  g_nearned;
 static bool g_earned_dirty;
 
@@ -195,6 +195,69 @@ bool chv_write_active(const char *path)
 	return true;
 }
 
+bool chv_note_earned(int game, int id, bool synced)
+{
+	int i;
+
+	if (game <= 0 || id <= 0) return false;
+	for (i = 0; i < g_nearned; i++) {
+		if (g_earned[i].game != game || g_earned[i].id != id) continue;
+		/* Already known. Learning it is on the account is still news to the
+		 * store, even though the achievement is not. */
+		if (synced && !g_earned[i].synced) {
+			g_earned[i].synced = true;
+			g_earned_dirty = true;
+		}
+		return false;
+	}
+	if (g_nearned >= CHV_EARNED_MAX) return false;
+	g_earned[g_nearned].game   = game;
+	g_earned[g_nearned].id     = id;
+	g_earned[g_nearned].synced = synced;
+	g_nearned++;
+	g_earned_dirty = true;
+
+	/* If it belongs to the game that is loaded, the list on screen should say
+	 * so without waiting for a reload. */
+	if (game == g_game)
+		for (i = 0; i < g_n; i++)
+			if (g_ach[i].id == id) { g_ach[i].earned = true; break; }
+	return true;
+}
+
+int chv_pending_count(void)
+{
+	int i, k = 0;
+	for (i = 0; i < g_nearned; i++) if (!g_earned[i].synced) k++;
+	return k;
+}
+
+bool chv_pending_at(int n, int *game, int *id)
+{
+	int i;
+
+	for (i = 0; i < g_nearned; i++) {
+		if (g_earned[i].synced) continue;
+		if (n-- > 0) continue;
+		*game = g_earned[i].game;
+		*id   = g_earned[i].id;
+		return true;
+	}
+	return false;
+}
+
+void chv_mark_synced(int game, int id)
+{
+	int i;
+
+	for (i = 0; i < g_nearned; i++)
+		if (g_earned[i].game == game && g_earned[i].id == id &&
+		    !g_earned[i].synced) {
+			g_earned[i].synced = true;
+			g_earned_dirty = true;
+		}
+}
+
 bool chv_note_unlock(int id)
 {
 	int i;
@@ -203,25 +266,17 @@ bool chv_note_unlock(int id)
 		if (g_ach[i].id != id) continue;
 		if (g_ach[i].earned || g_ach[i].earned_now) return false;
 		g_ach[i].earned_now = true;
-		if (g_nearned < CHV_EARNED_MAX) {
-			g_earned[g_nearned].game = g_game;
-			g_earned[g_nearned].id   = id;
-			g_nearned++;
-			g_earned_dirty = true;
-		}
+		/* Pending: the send happens where the launcher owns the screen, not
+		 * here. This runs inside the wait loop, which is also the power
+		 * button's watchdog, and a blocking request would make the device
+		 * stop answering it. */
+		chv_note_earned(g_game, id, false);
 		return true;
 	}
 	/* An id we do not have metadata for. It still happened, so it is still
 	 * recorded - a set refreshed mid-session is the obvious way to get here,
 	 * and losing the unlock would be worse than not being able to name it. */
-	if (g_game && !is_earned(g_game, id) && g_nearned < CHV_EARNED_MAX) {
-		g_earned[g_nearned].game = g_game;
-		g_earned[g_nearned].id   = id;
-		g_nearned++;
-		g_earned_dirty = true;
-		return true;
-	}
-	return false;
+	return g_game ? chv_note_earned(g_game, id, false) : false;
 }
 
 void chv_earned_load(const char *path)
@@ -235,10 +290,16 @@ void chv_earned_load(const char *path)
 	if (!f) return;                    /* nobody has earned anything yet */
 	while (fgets(line, sizeof line, f) && g_nearned < CHV_EARNED_MAX) {
 		int game, id;
-		if (sscanf(line, "%d %d", &game, &id) != 2) continue;
+		char st = 'p';
+
+		/* The state is optional so a store written before it existed still
+		 * reads. Those rows become pending, which is what they are: nothing
+		 * had ever been sent when they were written. */
+		if (sscanf(line, "%d %d %c", &game, &id, &st) < 2) continue;
 		if (game <= 0 || id <= 0) continue;
-		g_earned[g_nearned].game = game;
-		g_earned[g_nearned].id   = id;
+		g_earned[g_nearned].game   = game;
+		g_earned[g_nearned].id     = id;
+		g_earned[g_nearned].synced = (st == 's');
 		g_nearned++;
 	}
 	fclose(f);
@@ -256,7 +317,8 @@ bool chv_earned_save(const char *path)
 	 * way: it is two numbers a line and rewriting the lot means what is on
 	 * disk cannot drift out of step with what is in memory. */
 	for (i = 0; i < g_nearned; i++)
-		fprintf(f, "%d\t%d\n", g_earned[i].game, g_earned[i].id);
+		fprintf(f, "%d\t%d\t%c\n", g_earned[i].game, g_earned[i].id,
+		        g_earned[i].synced ? 's' : 'p');
 	fclose(f);
 	g_earned_dirty = false;
 	return true;

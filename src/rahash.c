@@ -287,6 +287,15 @@ static size_t ra_skip(const char *tag, const unsigned char *d, size_t n)
 	return 0;
 }
 
+void ra_md5_hex(const void *data, size_t len, char *out)
+{
+	md5_ctx m;
+
+	md5_init(&m);
+	md5_update(&m, data, len);
+	md5_hex(&m, out);
+}
+
 bool ra_hash_rom(const char *path, const char *tag, char *out)
 {
 	unsigned char *data = NULL;

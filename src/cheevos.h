@@ -69,8 +69,29 @@ bool chv_write_active(const char *path);
 bool chv_note_unlock(int id);
 
 /* The earned store: one flat file for the whole library, keyed by game id and
- * achievement id, the same way favorites are keyed by tag and file. */
+ * achievement id, the same way favorites are keyed by tag and file.
+ *
+ * Each row carries whether RetroAchievements has it yet. The store is the
+ * DURABLE record and the account is a peer to reconcile with, not the other
+ * way round: a device that is offline for a week still knows what was earned,
+ * and sends it when it can. That is what RA's own requirements call offline
+ * queueing, and it is the right shape regardless of them.
+ *
+ *     <game id>\t<achievement id>\t<s|p>
+ *
+ * A row with no third field is read as pending, which is true of every row
+ * written before this existed. */
 void chv_earned_load(const char *path);
 bool chv_earned_save(const char *path);
+
+/* Record something earned. `synced` is true when it came FROM the account, so
+ * it is already there and needs no sending. Returns true if this was new. */
+bool chv_note_earned(int game, int id, bool synced);
+
+/* What still needs sending. Iterating is by index into the store, so a caller
+ * can walk them and mark each as it succeeds. */
+int  chv_pending_count(void);
+bool chv_pending_at(int n, int *game, int *id);
+void chv_mark_synced(int game, int id);
 
 #endif
