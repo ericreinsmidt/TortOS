@@ -10,16 +10,21 @@ it to drift.
 
 Matched to the set by measurement rather than by eye: 640x820, card stock
 (28,31,42), a 12px accent rule at y=587, the label under it in (239,239,244).
-Three marks, ascending, which is the composition Genesis and Game Gear already
-use - the set's rhythm is two or three flat shapes, and a single huge heart
-would read as a different kind of card.
+One mark: a bookmark ribbon with markdef.heart() knocked out of it, in the
+same cyan as the rule. Three ascending stars before 2026-08-30, then three
+hearts for about an hour.
 
-The mark is markdef.heart(), the same curve src/main.c draws beside a favorited
-game's name. They were stars until 2026-08-30; a card and a shelf disagreeing
-about what "favorite" looks like is the kind of thing nobody notices and
-everybody feels.
+KNOCKED OUT RATHER THAN OUTLINED, and that is the whole reason it fits. The
+other nine cards are flat shapes - no strokes anywhere in the deck - and this
+is the only card that is not a console, so it has to join that set by
+construction rather than by luck. A stroked version was drawn and compared
+side by side; it also thins out badly at the 62% a side card is scaled to,
+where a solid silhouette does not.
+
+The heart is markdef.heart(), the same curve src/main.c draws beside a
+favorited game's name. A card and a shelf disagreeing about what "favorite"
+looks like is the kind of thing nobody notices and everybody feels.
 """
-import math
 import os
 import sys
 
@@ -40,11 +45,23 @@ RADIUS = 28
 SS = 4                      # supersample, so the curve is not ragged
 
 
-def mark(d, cx, cy, r, col):
-    """markdef.heart(), placed. The shelf draws the same curve in C - see
-    draw_heart in src/main.c. Stars until 2026-08-30."""
-    d.polygon([(cx + x * 2 * r, cy + y * 2 * r) for x, y in heart(96)],
-              fill=col)
+def bookmark(cx, cy, w, h, notch):
+    """A ribbon: square shoulders, two points at the bottom with a V between."""
+    x0, x1 = cx - w / 2.0, cx + w / 2.0
+    y0, y1 = cy - h / 2.0, cy + h / 2.0
+    return [(x0, y0), (x1, y0), (x1, y1), (cx, y1 - notch), (x0, y1)]
+
+
+def mark(d, cx, cy, ribbon, stock):
+    """The ribbon, then the heart punched through it back to the card stock.
+
+    The heart sits above the notch rather than centred in the ribbon: centred,
+    its point crowds the V and the two shapes argue about where the middle is.
+    """
+    d.polygon(bookmark(cx, cy, 232 * SS, 330 * SS, 68 * SS), fill=ribbon)
+    hr, hy = 78 * SS, cy - 28 * SS
+    d.polygon([(cx + x * 2 * hr, hy + y * 2 * hr) for x, y in heart(96)],
+              fill=stock)
 
 
 def main():
@@ -56,11 +73,8 @@ def main():
     d.rectangle([0, RULE_Y * SS, W * SS - 1, (RULE_Y + RULE_H) * SS - 1],
                 fill=CYAN + (255,))
 
-    # Ascending, left to right, on one baseline - the same read as Genesis's
-    # three circles. Centred on the panel above the rule, not on the card.
-    cy = 300 * SS
-    for cx, r in ((143, 44), (293, 64), (453, 88)):
-        mark(d, cx * SS, cy, r * SS, CYAN + (255,))
+    # Centred on the panel above the rule, not on the card.
+    mark(d, (W // 2) * SS, 300 * SS, CYAN + (255,), STOCK + (255,))
 
     im = im.resize((W, H), Image.LANCZOS)
     d = ImageDraw.Draw(im)

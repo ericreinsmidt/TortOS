@@ -1222,35 +1222,14 @@ static void draw_games(app *a)
 		game_entry *g = &v->list.items[v->cursor];
 		int tw = ui_text_width(ui_font(UI_F_TITLE), g->title);
 		int tx = TORTOS_SCREEN_W / 2;
-		/* A game with an autosave gets a dot in the system's color beside
-		 * its name: pressing A on it does not start it, it continues it.
-		 * Sized and centered off the title's own line, so it keeps sitting
-		 * with the text when the type scale moves. */
-		if (game_has_state(a, shelf_owner(a, a->sys_cursor, v->cursor), g)) {
-			TTF_Font *ft = ui_font(UI_F_TITLE);
-			int line = ui_font_line(UI_F_TITLE);
-			int rad = line / 8, dx = tx + tw / 2 + rad * 3;
-			/* Same ink-centering as the star opposite it. This sat on the em
-			 * box's middle, which is a descender's depth below the letters,
-			 * and next to a mark that was centered properly the two read as
-			 * misaligned rather than as a pair. */
-			int dy = 40 + line / 2 + (ft ? TTF_FontDescent(ft) / 2 : 0);
-			SDL_SetRenderDrawColor(a->r, (Uint8)(gs->accent >> 16),
-			                       (Uint8)(gs->accent >> 8), (Uint8)gs->accent, 255);
-			for (int k = -rad; k <= rad; k++) {
-				int w = (int)(sqrt((double)(rad * rad - k * k)) + 0.5);
-				SDL_RenderDrawLine(a->r, dx - w, dy + k, dx + w, dy + k);
-			}
-		}
-		/* On the left, opposite the autosave dot. The two say different things
-		 * - one is "you chose this", the other "this is where you left off" -
-		 * and a reader should not have to work out which mark is which by its
-		 * shape alone. They were the other way round until 2026-08-30.
+		/* The one mark left on a card.
 		 *
-		 * Each keeps its own offset, which is not the same number: the star's
-		 * radius is line/4 and the dot's line/8, and the offsets are two and
-		 * three radii. That lands both marks a quarter of a line clear of the
-		 * text, so mirroring them is a mirror and not a nudge. */
+		 * There was a second, a dot on the right, for a game with an autosave
+		 * - A continues it rather than starting it. Removed 2026-08-30: it
+		 * only ever drew beside the CENTRED title, so it was never the
+		 * scan-the-shelf signal it looked like, and it said one bit with no
+		 * legend about the one game you could already ask about. X says
+		 * "resume + 3" now, which is the same fact with a number on it. */
 		if (fav_is(gs->tag, g->file)) {
 			TTF_Font *ft = ui_font(UI_F_TITLE);
 			int line = ui_font_line(UI_F_TITLE);
