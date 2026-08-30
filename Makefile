@@ -8,7 +8,7 @@ SSH := sshpass -p 'tina' ssh -o StrictHostKeyChecking=no root@$(BRICK)
 
 .PHONY: all clean native toolchain vendor boot checkmark payload release install-card \
         adb adb-elf adb-res adb-vendor adb-restart adb-run adb-log \
-        check-cheevos check-rahash check-raset deploy restart logs
+        check-cheevos check-idle check-rahash check-raset deploy restart logs
 
 all: build/tortos.elf
 
@@ -34,6 +34,17 @@ build-native/cheevos-check: tools/cheevos-check.c src/cheevos.c src/cheevos.h \
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
 	      -o $@ tools/cheevos-check.c src/cheevos.c src/atomic.c
+
+# Auto Off's clock. It has broken five times, once in this arithmetic and four
+# times in wiring; this covers the arithmetic, and `grep -n idle_due src/main.c`
+# covers the wiring by listing every screen that honors it.
+check-idle: build-native/idle-check
+	@./build-native/idle-check
+
+build-native/idle-check: tools/idle-check.c src/idle.c src/idle.h
+	@mkdir -p build-native
+	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
+	      -o $@ tools/idle-check.c src/idle.c
 
 # The two hashers - one C for the device, one Python for the host tools - over
 # every ROM in the library. A wrong rule does not crash; it produces a hash RA

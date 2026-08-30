@@ -399,6 +399,7 @@ bool in_repeat(in_state *st, in_button b)
 static bool run_power_pressed;
 
 bool plat_run_power_pressed(void) { return run_power_pressed; }
+void plat_note_power_pressed(void) { run_power_pressed = true; }
 
 int plat_run(char *const argv[], const char *const envkv[], const char *workdir)
 {

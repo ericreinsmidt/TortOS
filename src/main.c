@@ -17,6 +17,7 @@
 #include "library.h"
 #include "platform.h"
 #include "favorites.h"
+#include "idle.h"
 #include "notice.h"
 #include "rafetch.h"
 #include "rahash.h"
@@ -96,7 +97,7 @@ typedef struct {
 	 * shelf and launching the same game again behaves normally. */
 	bool resume_menu;
 	int  auto_off;              /* seconds without input, 0 off */
-	unsigned idle_since_ms;     /* shelf-side idle clock */
+	idle_clock idle;            /* Auto Off's clock - src/idle.h */
 	SDL_Renderer *r;
 } app;
 
@@ -1091,6 +1092,38 @@ static bool on_charger(void)
 	return charging;
 }
 
+/* Has the player been away long enough to power the device off?
+ *
+ * The gathering half; the policy is idle_check, in src/idle.c, where a check
+ * can reach it. This part is the three things only the launcher knows: the
+ * setting, whether any button is down, and whether the charger is in.
+ *
+ * Every screen the launcher draws polls input in its own loop, and Auto Off
+ * lived in exactly one of them: the shelf. The other seven simply held the
+ * device on - both menus, Wi-Fi, About, Cheevos, the slot strip and the
+ * keyboard. A menu left open is not evidence that somebody is there, it is
+ * evidence somebody WAS; pausing because something else came up is the most
+ * ordinary way there is to walk away from a device still switched on.
+ *
+ * Called beside each loop's existing power-button check, because that is what
+ * the answer means. A device left alone does what the power button does -
+ * already the rule for Diatom's IDLE during a game. `grep -n idle_due` is the
+ * list of screens that honor it, and it should have no gaps. */
+static bool idle_due(app *a)
+{
+	int b;
+
+	a->idle.seconds = a->auto_off;
+	for (b = 0; b < IN_COUNT; b++)
+		if (a->in.pressed[b] || a->in.down[b]) break;
+
+	return idle_check(&a->idle, plat_now_ms(), b < IN_COUNT, on_charger());
+}
+
+/* The keyboard takes callbacks rather than an app - it is deliberately
+ * general, and knows nothing about shelves or power policy. */
+static bool idle_due_ctx(void *ctx) { return idle_due((app *)ctx); }
+
 /* The one piece of chrome: a small accent disc, top right, when the battery is
  * low. Drawn with horizontal spans -- SDL has no circle. */
 static void draw_low_battery_dot(SDL_Renderer *r)
@@ -1813,7 +1846,7 @@ static void wifi_screen(app *a)
 
 		plat_input_poll(&a->in);
 		if (a->in.quit_requested) { a->running = false; return; }
-		if (a->in.pressed[IN_POWER]) { power_off(a); return; }
+		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); return; }
 
 		if (in_repeat(&a->in, IN_UP))   sel = (sel + nrows - 1) % nrows;
 		if (in_repeat(&a->in, IN_DOWN)) sel = (sel + 1) % nrows;
@@ -1853,7 +1886,7 @@ static void wifi_screen(app *a)
 			if (nets[k].secured && !nets[k].known) {
 				kb_result kr = kb_prompt(a->r, &a->in, nets[k].ssid,
 				                         psk, (int)sizeof psk, MENU_ACCENT,
-				                         wifi_backdrop, a);
+				                         wifi_backdrop, idle_due_ctx, a);
 				if (kr == KB_POWER) { power_off(a); return; }
 				if (kr != KB_ACCEPT) continue;
 			}
@@ -1937,12 +1970,12 @@ static void ra_signin_screen(app *a)
 	}
 
 	kr = kb_prompt(a->r, &a->in, "RetroAchievements User", user,
-	               (int)sizeof user, MENU_ACCENT, wifi_backdrop, a);
+	               (int)sizeof user, MENU_ACCENT, wifi_backdrop, idle_due_ctx, a);
 	if (kr == KB_POWER) { power_off(a); return; }
 	if (kr != KB_ACCEPT || !user[0]) return;
 
 	kr = kb_prompt(a->r, &a->in, "Password", pass,
-	               (int)sizeof pass, MENU_ACCENT, wifi_backdrop, a);
+	               (int)sizeof pass, MENU_ACCENT, wifi_backdrop, idle_due_ctx, a);
 	if (kr == KB_POWER) { memset(pass, 0, sizeof pass); power_off(a); return; }
 	if (kr != KB_ACCEPT || !pass[0]) { memset(pass, 0, sizeof pass); return; }
 
@@ -2013,7 +2046,7 @@ static void about_screen(app *a)
 
 		plat_input_poll(&a->in);
 		if (a->in.quit_requested) { a->running = false; return; }
-		if (a->in.pressed[IN_POWER]) { power_off(a); return; }
+		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); return; }
 		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = true;
 
 		if (in_repeat(&a->in, IN_VOLUP))    plat_volume_nudge(+1);
@@ -2158,7 +2191,10 @@ static void tortos_menu(app *a)
 				if (at >= AUTO_OFF_COUNT) at = AUTO_OFF_COUNT - 1;
 				a->auto_off = AUTO_OFF[at];
 				auto_off_save(a->auto_off);
-				a->idle_since_ms = plat_now_ms();
+				/* From now, not from whenever the last countdown began:
+				 * choosing 30s should not inherit two minutes of an old
+				 * one already spent. */
+				a->idle.since_ms = plat_now_ms();
 			}
 		}
 		if (a->screen == SCREEN_SYSTEMS && sel == PM_TEXT) {
@@ -2190,7 +2226,7 @@ static void tortos_menu(app *a)
 		 * in-game menu. There was a Power Off row as well, directly above
 		 * Auto Power Off - a setting and an action a row apart with almost
 		 * the same name, duplicating a button the device already has. */
-		if (a->in.pressed[IN_POWER]) { power_off(a); return; }
+		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); return; }
 		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
 		    sel == PM_WIFI) wifi_screen(a);
 		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
@@ -2476,6 +2512,14 @@ static int slot_strip(app *a, SDL_Texture *bg, int saving)
 		}
 		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = -1;
 		if (a->in.pressed[IN_ACCEPT]) { chosen = sel == 0 ? 9 : sel; done = 1; }
+		/* This screen used to ignore the power button outright - the one
+		 * screen in the launcher that did. Stop the game and close with
+		 * nothing chosen; game_menu sees the flag and closes behind us. */
+		if (a->in.pressed[IN_POWER] || idle_due(a)) {
+			plat_note_power_pressed();
+			plat_resident_line("STOP");
+			done = -1;
+		}
 
 		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 255);
 		SDL_RenderClear(a->r);
@@ -2586,8 +2630,15 @@ static void cheevos_screen(app *a, SDL_Texture *bg)
 		    a->in.pressed[IN_ACCEPT])
 			done = 1;
 		/* Power still stops the game from in here. Not trapping it would
-		 * make this screen the one place in the launcher that ignores it. */
-		if (a->in.pressed[IN_POWER]) {
+		 * make this screen the one place in the launcher that ignores it.
+		 *
+		 * The note is what was missing: stopping the game is not the same as
+		 * powering off, and only the evdev watchdog inside plat_resident_wait
+		 * sets that flag - a loop which is not running while this screen is
+		 * up. So power here stopped the game and then went back to the shelf,
+		 * with the menu still drawn over it until something was pressed. */
+		if (a->in.pressed[IN_POWER] || idle_due(a)) {
+			plat_note_power_pressed();
 			plat_resident_line("STOP");
 			done = 1;
 		}
@@ -2721,10 +2772,16 @@ static void game_menu(app *a)
 			default: break;
 			}
 		}
-		if (a->in.pressed[IN_POWER]) {
+		if (a->in.pressed[IN_POWER] || idle_due(a)) {
+			plat_note_power_pressed();
 			plat_resident_line("STOP");
 			done = 1;
 		}
+		/* A nested screen may have been the one that took the press or ran
+		 * the clock out - the slot strip and the achievements list both stop
+		 * the game and close themselves, which left THIS loop drawing a menu
+		 * over a game that had already been told to stop. */
+		if (plat_run_power_pressed()) done = 1;
 
 		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 255);
 		SDL_RenderClear(a->r);
@@ -3066,13 +3123,9 @@ static void launch(app *a)
 
 	plat_input_flush();
 	memset(&a->in, 0, sizeof a->in);
-	/* The shelf's idle clock has been stopped for the whole session - the pad
-	 * was Diatom's and nothing here saw a press. Left running it would come
-	 * back expired by however long the game lasted and power the device off
-	 * the instant the shelf appeared, which is the charger defect above in a
-	 * different hat: a clock that kept counting through a stretch when nobody
-	 * was watching it. */
-	a->idle_since_ms = plat_now_ms();
+	/* The idle clock is not restarted here, though it has been stopped for
+	 * the whole session. idle_due notices the gap on its own, which is what
+	 * stops this from being a list of places to remember. */
 
 	/* This one exits without power_off(), so it darkens the lights itself. */
 	if (access(TORTOS_POWEROFF_FLAG, F_OK) == 0) {
@@ -3771,7 +3824,6 @@ int main(int argc, char *argv[])
 		/* Without this every HTTPS request fails verification, because the
 		 * device has no trust store of its own - res/ssl/README.md. */
 		a.auto_off = auto_off_load();
-		a.idle_since_ms = plat_now_ms();
 
 		snprintf(cp, sizeof cp, "%s/cacert.pem", P_ROOT);
 		ra_set_ca_path(cp);
@@ -3915,37 +3967,18 @@ int main(int argc, char *argv[])
 		plat_input_poll(&a.in);
 		if (a.in.quit_requested || want_quit) break;
 
-		if (a.in.pressed[IN_POWER]) { power_off(&a); break; }
-
-		/* Auto Off on the shelf. Diatom watches this during a game, because
-		 * it owns the pad then; here the launcher can see input itself.
+		/* Auto Off is the same line as the power button, on every screen
+		 * that draws. Diatom watches it during a game, because it owns the
+		 * pad then; everywhere else the launcher can see input itself.
 		 *
-		 * Any press at all, not just the ones this screen acts on - somebody
-		 * mashing a button the shelf ignores is still somebody there. */
-		if (a.auto_off > 0) {
-			int b;
-			bool pressed = false;
-
-			for (b = 0; b < IN_COUNT; b++)
-				if (a.in.pressed[b] || a.in.down[b]) { pressed = true; break; }
-
-			/* The charger HOLDS the clock. It used to gate only the shot,
-			 * which let the countdown run to zero while plugged in and sit
-			 * there expired - so unplugging powered the device off in the
-			 * same instant, however long it had been on the cable. Found on
-			 * the device 2026-08-30 at a 30s timeout.
-			 *
-			 * Counting the charger as activity is also what the setting
-			 * says: unplugging starts a whole fresh countdown, because until
-			 * that moment the timeout was not running at all. */
-			if (pressed || on_charger()) a.idle_since_ms = plat_now_ms();
-
-			if (plat_now_ms() - a.idle_since_ms >
-			    (unsigned)a.auto_off * 1000u) {
-				power_off(&a);
-				break;
-			}
-		}
+		 * The charger HOLDS the clock, inside idle_due. It used to gate only
+		 * the shot, which let the countdown run to zero while plugged in and
+		 * sit there expired - so unplugging powered the device off in the
+		 * same instant, however long it had been on the cable. Found on the
+		 * device 2026-08-30 at a 30s timeout. Counting the charger as
+		 * activity is also what the setting says: unplugging starts a whole
+		 * fresh countdown, because until then the timeout was not running. */
+		if (a.in.pressed[IN_POWER] || idle_due(&a)) { power_off(&a); break; }
 
 		if (in_repeat(&a.in, IN_VOLUP))    plat_volume_nudge(+1);
 		if (in_repeat(&a.in, IN_VOLDN))    plat_volume_nudge(-1);

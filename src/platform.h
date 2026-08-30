@@ -62,6 +62,12 @@ void plat_terminate(void);
  * envkv is a NULL-terminated array of "KEY=value" strings. */
 int  plat_run(char *const argv[], const char *const envkv[], const char *workdir);
 bool plat_run_power_pressed(void);
+/* Say that something equivalent to a power press has happened, for the paths
+ * the evdev watchdog cannot see: a screen the launcher is drawing over a
+ * paused game, where plat_resident_wait is not running and so nothing is
+ * reading the power key. Auto Off expiring in the in-game menu is exactly
+ * that. Cleared with the flag, at the start of the next game. */
+void plat_note_power_pressed(void);
 
 /* Start a child and forget it: it outlives this process and leaves no zombie
  * behind. This is how a resident emulator that has died gets started again. */

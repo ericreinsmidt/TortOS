@@ -31,6 +31,13 @@ typedef enum {
  * background. */
 typedef void (*kb_backdrop)(void *ctx);
 
+/* Asked every frame: has the device been left alone long enough to switch
+ * itself off? Returning true is reported as KB_POWER, because that is what it
+ * means and every caller already knows what to do with it. A callback rather
+ * than a timeout value, for the same reason as the backdrop: this module is
+ * general and holds no policy. May be NULL. */
+typedef bool (*kb_idle)(void *ctx);
+
 /* `buf` is both the seed and the result: pass an empty string for a fresh
  * entry, or existing text to edit. `cap` is the size of buf including the
  * terminator. `accent` is 0xRRGGBB for the panel edge and the cursor.
@@ -42,7 +49,7 @@ typedef void (*kb_backdrop)(void *ctx);
  * at the cost of the one thing the user needs to see. */
 kb_result kb_prompt(SDL_Renderer *r, in_state *in, const char *title,
                     char *buf, int cap, unsigned accent,
-                    kb_backdrop backdrop, void *ctx);
+                    kb_backdrop backdrop, kb_idle idle, void *ctx);
 
 /* One frame, no loop, for the --keyboard shot harness. The panel is dense
  * enough that laying it out against a screenshot beats laying it out against

@@ -247,7 +247,7 @@ void kb_preview(SDL_Renderer *r, const char *title, const char *text,
 
 kb_result kb_prompt(SDL_Renderer *r, in_state *in, const char *title,
                     char *buf, int cap, unsigned accent,
-                    kb_backdrop backdrop, void *ctx)
+                    kb_backdrop backdrop, kb_idle idle, void *ctx)
 {
 	kb_state k;
 	int cols;
@@ -261,7 +261,10 @@ kb_result kb_prompt(SDL_Renderer *r, in_state *in, const char *title,
 	for (;;) {
 		plat_input_poll(in);
 		if (in->quit_requested) return KB_CANCEL;
-		if (in->pressed[IN_POWER]) return KB_POWER;
+		/* Typing a password is the longest anyone stares at this device
+		 * without pressing anything, and it was the one screen where that
+		 * could go on forever. */
+		if (in->pressed[IN_POWER] || (idle && idle(ctx))) return KB_POWER;
 
 		cols = (k.row == ROW_SPACE) ? 1 : KB_COLS;
 
