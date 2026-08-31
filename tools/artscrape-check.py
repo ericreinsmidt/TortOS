@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Run both normalisers over the same names and insist they agree.
+"""Run both normalizers over the same names and insist they agree.
 
     make check-artscrape
 
 Names come from the real ROM library when one is reachable, and from a list of
 awkward cases either way. The awkward ones are not invented: they are the
-shapes that actually differ between libretro's catalogue and a card, which is
+shapes that actually differ between libretro's catalog and a card, which is
 the whole reason norm() exists.
 """
 import os
@@ -78,7 +78,7 @@ def main():
     print(f"\n  {len(names)} names from {where}, {bad} disagreement(s)")
     if bad:
         return 1
-    print("\nok: both normalisers agree on every name")
+    print("\nok: both normalizers agree on every name")
     return 0
 
 

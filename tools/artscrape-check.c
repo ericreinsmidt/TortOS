@@ -34,8 +34,8 @@ static int failures;
 
 /* Which of several candidates a game gets.
  *
- * 1703 of NES's 13418 entries normalise to a title some other entry also
- * normalises to - "contra" alone has eight - so the fuzzy pass is choosing,
+ * 1703 of NES's 13418 entries normalize to a title some other entry also
+ * normalizes to - "contra" alone has eight - so the fuzzy pass is choosing,
  * not finding. It used to take whichever sorted first, which is alphabetical,
  * which is a Japanese release as often as a US one. Nothing about the result
  * says which happened: you get box art, it is just the wrong box.
@@ -44,7 +44,7 @@ static int failures;
  */
 static void check_scoring(void)
 {
-	fprintf(stderr, "  picking between candidates that normalise alike:\n");
+	fprintf(stderr, "  picking between candidates that normalize alike:\n");
 
 	/* The plain case, and the one that was going wrong. */
 	BEATS("Contra (USA)", "Contra (USA)", "Contra (Japan)");
@@ -91,7 +91,7 @@ int main(int argc, char **argv)
 		fprintf(stderr, "  ok: every candidate was chosen correctly\n");
 		return 0;
 	}
-	/* One name per line in, one normalised form per line out. Deliberately
+	/* One name per line in, one normalized form per line out. Deliberately
 	 * dumb: the Python drives it, so this stays a pipe rather than growing
 	 * its own idea of where a library is. */
 	while (fgets(line, sizeof line, stdin)) {

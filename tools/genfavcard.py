@@ -55,7 +55,7 @@ def bookmark(cx, cy, w, h, notch):
 def mark(d, cx, cy, ribbon, stock):
     """The ribbon, then the heart punched through it back to the card stock.
 
-    The heart sits above the notch rather than centred in the ribbon: centred,
+    The heart sits above the notch rather than centered in the ribbon: centered,
     its point crowds the V and the two shapes argue about where the middle is.
     """
     d.polygon(bookmark(cx, cy, 232 * SS, 330 * SS, 68 * SS), fill=ribbon)
@@ -73,7 +73,7 @@ def main():
     d.rectangle([0, RULE_Y * SS, W * SS - 1, (RULE_Y + RULE_H) * SS - 1],
                 fill=CYAN + (255,))
 
-    # Centred on the panel above the rule, not on the card.
+    # Centered on the panel above the rule, not on the card.
     mark(d, (W // 2) * SS, 300 * SS, CYAN + (255,), STOCK + (255,))
 
     im = im.resize((W, H), Image.LANCZOS)

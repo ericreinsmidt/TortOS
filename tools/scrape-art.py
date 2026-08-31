@@ -16,7 +16,7 @@ difference is not small. Measured over 178 ROMs on 2026-08-29:
 
     exact filename only                       148/178   83%
     plus stripping (Translated) and friends   158/178   88%
-    fetch the index, match normalised titles  174/178   97%
+    fetch the index, match normalized titles  174/178   97%
 
 Guessing cannot find what it does not know to guess. Master System sat at 9/20
 under every variant scheme because libretro carries `Sonic The Hedgehog (USA,
@@ -78,7 +78,7 @@ def norm(s):
     """A title with every parenthesised tag removed, for comparison only.
 
     Region, language, revision and dump tags are exactly what differs between
-    two catalogues of the same game, and they are never what distinguishes two
+    two catalogs of the same game, and they are never what distinguishes two
     different games."""
     s = re.sub(r"\([^)]*\)", " ", s)
     s = re.sub(r"[^a-z0-9]+", " ", s.lower())

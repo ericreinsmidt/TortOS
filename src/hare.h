@@ -23,7 +23,7 @@
  *
  * The threat this defends against is someone else on the same Wi-Fi, which is
  * the realistic one for a handheld on a home or cafe network. It is not
- * defence against someone who can watch the traffic: this is plain HTTP, the
+ * defense against someone who can watch the traffic: this is plain HTTP, the
  * PIN crosses the network in the clear, and so does everything else. TLS on a
  * LAN address is a certificate nobody can issue and a warning everybody clicks
  * through, which buys less than it costs. The mitigation that actually applies

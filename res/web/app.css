@@ -125,7 +125,7 @@ html { background: var(--ground); }
 	font-size: 30px;
 	letter-spacing: .5em;
 	text-align: center;
-	/* The letter-spacing pushes the caret off-centre by half a space; this
+	/* The letter-spacing pushes the caret off-center by half a space; this
 	 * puts the digits back over the middle of the box. */
 	text-indent: .5em;
 	padding: 10px 0;

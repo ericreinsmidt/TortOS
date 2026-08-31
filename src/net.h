@@ -79,7 +79,7 @@ bool net_get_file(const char *url, const char *path, int timeout_s);
  * power button for a minute. One in flight at a time, like net_post_async.
  *
  * The file appears at `path` only when the poll says 1 - it is written
- * through a temporary, so a run that is cancelled or dies partway cannot
+ * through a temporary, so a run that is canceled or dies partway cannot
  * leave half a file where a later run would find it and skip the download. */
 bool net_get_async(const char *url, const char *path, int timeout_s);
 

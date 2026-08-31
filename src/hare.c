@@ -197,7 +197,7 @@ static const char *mime_for(const char *path)
 	if (!strcasecmp(dot, ".png"))  return "image/png";
 	/* The mark is an SVG, and X-Content-Type-Options: nosniff means a browser
 	 * will NOT guess when this table does not know an extension - it refuses
-	 * to render it at all. Which is the right behaviour and exactly why the
+	 * to render it at all. Which is the right behavior and exactly why the
 	 * header is set; it also means a missing row here is a broken image
 	 * rather than a slightly wrong one. */
 	if (!strcasecmp(dot, ".svg"))  return "image/svg+xml";

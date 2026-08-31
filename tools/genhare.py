@@ -4,7 +4,7 @@ Left to right: a hare's head, the speed lines the tortoise left behind, and
 the tortoise itself - up and ahead. The joke is the fable's ending rather than
 its premise, and it puts the three pieces in reading order.
 
-NOTHING HERE IS REDRAWN. The shell's cells, its head, its colours and the
+NOTHING HERE IS REDRAWN. The shell's cells, its head, its colors and the
 three speed lines are imported from markdef.py and genmark.py, which is where
 they were already defined and already exported to tortos_logo_ideas. The first
 version of this file hand-copied the cell table (and lost the tortoise's head
@@ -28,10 +28,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import genmark as G
 import markdef as M
 
-# The one colour this mark adds, and it is not a new one: markdef retired
+# The one color this mark adds, and it is not a new one: markdef retired
 # OFFWHT from the wordmark's "Tort" on 2026-08-28 for belonging to no part of
 # the mark. The hare is the part of this mark that is not a tortoise, so the
-# colour that belonged to nothing has something to be.
+# color that belonged to nothing has something to be.
 OFFWHT = (233, 236, 227)
 
 R = 10.0                       # hex radius here; genmark draws at G.R
@@ -59,7 +59,7 @@ def hexpts(cx, cy, r):
 
 
 def cells():
-    """(points, colour) for every hexagon: the hare, then the tortoise."""
+    """(points, color) for every hexagon: the hare, then the tortoise."""
     out = [(hexpts(i * DX, j * DY, R * 0.94), OFFWHT) for i, j in HEAD + EARS]
     for i, j, col in list(M.CELLS) + [M.HEAD]:
         out.append((hexpts((SX + i) * DX, (SY + j) * DY, R * 0.94), col))
@@ -82,12 +82,12 @@ def bars():
     raw = [(G.barpts(a, b, y), c) for (y, a, b, c) in G.RAW]
     xs = [p[0] for pts, _ in raw for p in pts]
     ys = [p[1] for pts, _ in raw for p in pts]
-    # genmark's group, in this file's units, centred on nothing yet.
+    # genmark's group, in this file's units, centered on nothing yet.
     w = (max(xs) - min(xs)) * SCALE
     h = (max(ys) - min(ys)) * SCALE
 
-    # (SX - 1), not SX: the shell's LEFT CELL is one step left of its centre,
-    # and measuring the gap from the centre put the bars a whole cell into it.
+    # (SX - 1), not SX: the shell's LEFT CELL is one step left of its center,
+    # and measuring the gap from the center put the bars a whole cell into it.
     right = (SX - 1) * DX - 0.95 * R - 0.9 * R
     left = 0.55 * R                           # clear of the hare's ear tip
     # Squeezed horizontally to fit the gap; the vertical keeps genmark's own
@@ -124,7 +124,7 @@ def svg(pad=2.0):
 # ---- the favicon ----------------------------------------------------------
 #
 # The tortoise with the head left off: six shell cells and the charge at the
-# centre, which is a compact near-circular shape that still reads at 16px.
+# center, which is a compact near-circular shape that still reads at 16px.
 # The full mark does not - the head puts two thirds of the ink on one side, so
 # scaled into a square favicon the shell shrinks to nothing.
 #
@@ -137,7 +137,7 @@ def icon_svg(pad=4.0):
     shapes.append((G.hexpts(0.0, 0.0, G.R * 0.95), M.CENTER))
     xs = [x for pts, _ in shapes for x, _ in pts]
     ys = [y for pts, _ in shapes for _, y in pts]
-    # Square, and centred on the ink rather than on the origin: a favicon is
+    # Square, and centered on the ink rather than on the origin: a favicon is
     # drawn into a square box whatever we say, so the box is chosen here where
     # the padding can stay even.
     cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2

@@ -230,7 +230,7 @@ void ui_text_marquee(SDL_Renderer *r, TTF_Font *f, const char *s,
 
 	/* Faded at both edges, and faded in the TEXT rather than by laying a
 	 * gradient of the background over it. The background here is a coverflow
-	 * with a vignette, not a flat colour, so anything painted on top would
+	 * with a vignette, not a flat color, so anything painted on top would
 	 * show as a band. Fading the glyphs works over whatever is behind them.
 	 *
 	 * Without it the text is chopped mid-stroke - and on the shelf the left

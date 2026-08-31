@@ -74,7 +74,7 @@ CENTER = CYAN
 # second copy is a second thing to get wrong, and these two are meant to be
 # the same shape.
 #
-# Returns points in a unit box centred on the origin, y DOWN (screen order),
+# Returns points in a unit box centered on the origin, y DOWN (screen order),
 # scaled so the taller axis spans 1.0.
 
 def heart(n=64):

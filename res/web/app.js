@@ -65,7 +65,7 @@ $('pinform').addEventListener('submit', async (e) => {
 
 /* Decimal, not 1024.
  *
- * These were 1024-based and labelled KB/MB/GB, which is the one combination
+ * These were 1024-based and labeled KB/MB/GB, which is the one combination
  * that is wrong on every platform: macOS has quoted decimal since 10.6, so a
  * 15,528,261-byte ROM read 15.53 MB in Finder and 14.8 MB here. The whole job
  * of this page is to agree with the machine at the other end about what is on

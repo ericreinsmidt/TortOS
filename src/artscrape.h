@@ -16,7 +16,7 @@
  *
  *     exact filename only                       148/178   83%
  *     plus stripping (Translated) and friends   158/178   88%
- *     fetch the index, match normalised titles  174/178   97%
+ *     fetch the index, match normalized titles  174/178   97%
  *
  * MATCHING IS AGAINST THE DIRECTORY INDEX, NOT BY GUESSING FILENAMES. Guessing
  * cannot find what it does not know to guess: Master System sat at 9 of 20
@@ -36,7 +36,7 @@
 
 /* One index fetch per system, then one download per game that has no art. Art
  * that is already there costs nothing: it is skipped without a request, which
- * is what makes running this again cheap and a cancelled run free to restart.
+ * is what makes running this again cheap and a canceled run free to restart.
  *
  * NOT driven from a frame loop. Each step blocks for up to its timeout, so the
  * caller must own the screen and must be somewhere the power button is still
@@ -88,7 +88,7 @@ void art_norm(const char *in, char *out, size_t outn);
  *
  * Exposed because it decides which of several identical-looking candidates a
  * game gets, and getting that wrong is silent: 1703 of the 13418 NES entries
- * normalise to a title some other entry also normalises to, so a US dump could
+ * normalize to a title some other entry also normalizes to, so a US dump could
  * be handed Japanese box art and nothing would say so. tools/artscrape-check.c
  * asserts the orderings that matter. */
 int art_tag_score(const char *want, const char *cand);

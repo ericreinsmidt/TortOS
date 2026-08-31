@@ -48,7 +48,7 @@
 
 /* The folder in systems.cfg, and what libretro calls the same machine.
  *
- * A table rather than a guess. The names are a catalogue's, not a pattern:
+ * A table rather than a guess. The names are a catalog's, not a pattern:
  * nothing derives "Sega - Mega Drive - Genesis" from "Genesis". A folder
  * missing from here is REPORTED, not skipped quietly - systems.cfg gains
  * entries over time, and a system silently passed over looks exactly like a
@@ -75,13 +75,13 @@ static const char *remote_for(const char *folder)
 	return NULL;
 }
 
-/* ---- the normalisation, which is the whole matching rule ---------------- */
+/* ---- the normalization, which is the whole matching rule ---------------- */
 
 /* A title with every parenthesised tag removed, lowercased, and reduced to
  * single spaces between alphanumerics.
  *
  * Region, language, revision and dump tags are exactly what differs between
- * two catalogues of the same game, and they are never what distinguishes two
+ * two catalogs of the same game, and they are never what distinguishes two
  * different games.
  *
  * This mirrors scrape-art.py's norm() EXACTLY, including where that is naive:
@@ -95,7 +95,7 @@ static const char *remote_for(const char *folder)
  * "(tag" is left alone entirely and becomes "tag".
  *
  * The first version of this function tracked nesting and dropped everything
- * after an unmatched bracket - better behaviour by any reading, and wrong.
+ * after an unmatched bracket - better behavior by any reading, and wrong.
  * The two sides have to reduce a title identically or a game that matched on
  * the host stops matching on the device, and the measured 97% is the Python's
  * number. tools/artscrape-check.c caught both on its first run. */
@@ -132,12 +132,12 @@ void art_norm(const char *in, char *out, size_t outn)
 	out[o] = '\0';
 }
 
-/* ---- choosing between candidates that normalise alike ------------------ */
+/* ---- choosing between candidates that normalize alike ------------------ */
 
 #define TAG_MAX   24
 #define TAGS_MAX  12
 
-/* Two catalogues spell the same region differently. No-Intro says USA and
+/* Two catalogs spell the same region differently. No-Intro says USA and
  * Europe; the TOSEC-style names libretro also carries say US and EU. Without
  * this, "Contra (1988-02)(Konami)(US)" shares nothing with "Contra (USA)" and
  * scores the same as the Japanese release. */
@@ -299,12 +299,12 @@ static void urldec(const char *in, char *out, size_t outn)
 
 /* The whole index, held as it arrived.
  *
- * Two parallel arrays of decoded and normalised names used to sit beside this.
+ * Two parallel arrays of decoded and normalized names used to sit beside this.
  * Once the real index sizes were known they would have been 13418 x 192 bytes
  * each - five megabytes of copies of strings already in the buffer, and an
  * entry cap that was the other half of the truncation bug. match() scans the
- * HTML instead: one pass per ROM, normalising each candidate as it goes. That
- * is 13418 short normalisations per ROM on the worst system, which is
+ * HTML instead: one pass per ROM, normalizing each candidate as it goes. That
+ * is 13418 short normalizations per ROM on the worst system, which is
  * microseconds, and there is nothing left to overflow. */
 static char   *g_html;
 static int     g_nnames;      /* what the index held; for the message only */
@@ -321,17 +321,17 @@ static char    g_romdir[LIB_PATH];
 /* Two passes over a system, and the order is the point.
  *
  *   P_TRY / P_TRY_WAIT     ask for <rom name>.png directly
- *   P_INDEX / P_INDEX_WAIT fetch the catalogue, but only if something missed
+ *   P_INDEX / P_INDEX_WAIT fetch the catalog, but only if something missed
  *   P_FUZZY / P_FUZZY_WAIT match the leftovers against it
  *
  * The index used to come first, always. It is what makes fuzzy matching
- * possible - you cannot normalise against a catalogue you have not got - and
+ * possible - you cannot normalize against a catalog you have not got - and
  * it is worth 97% against 83% for exact names alone. But 83% of the library
- * needs no catalogue at all, and the NES index is four megabytes: adding one
+ * needs no catalog at all, and the NES index is four megabytes: adding one
  * game to a shelf downloaded four megabytes to learn a name it could have
  * simply asked for.
  *
- * So the direct request goes first and the catalogue is the fallback. A first
+ * So the direct request goes first and the catalog is the fallback. A first
  * run over an empty library costs the same as before plus a handful of 404s.
  * Adding a few games - the ordinary case, and the one Over The Hare makes
  * ordinary - usually costs no index at all. */
@@ -442,7 +442,7 @@ static bool parse_index(void)
 
 	/* A full buffer means the index outgrew it and the tail is missing, which
 	 * shows up as games libretro "does not have". Refuse, rather than match
-	 * against a fraction of the catalogue and report the difference as
+	 * against a fraction of the catalog and report the difference as
 	 * missing art. */
 	if (n >= INDEX_MAX - 1) return false;
 
@@ -457,11 +457,11 @@ static bool parse_index(void)
 	return g_nnames > 0;
 }
 
-/* Exact filename first, then normalised. In that order because an exact hit is
- * unambiguous and a normalised one can collide - two dumps of the same game
- * normalise alike, and the first is as good an answer as any.
+/* Exact filename first, then normalized. In that order because an exact hit is
+ * unambiguous and a normalized one can collide - two dumps of the same game
+ * normalize alike, and the first is as good an answer as any.
  *
- * One pass over the index per ROM, decoding and normalising candidates as it
+ * One pass over the index per ROM, decoding and normalizing candidates as it
  * goes. `out` takes the winning name exactly as libretro spells it, because
  * that is what the download URL needs. */
 static bool match(const char *base, char *out, size_t outn)
@@ -495,7 +495,7 @@ static bool match(const char *base, char *out, size_t outn)
 		if (nb[0]) {
 			art_norm(cand, cnorm, sizeof cnorm);
 			if (!strcmp(cnorm, nb)) {
-				/* Several entries normalise alike - 1703 of NES's 13418 - and
+				/* Several entries normalize alike - 1703 of NES's 13418 - and
 				 * taking the first meant taking whichever sorted first, which
 				 * is a Japanese release as often as not. Score them on how
 				 * well their region and language tags overlap the card's. */
@@ -574,7 +574,7 @@ static bool art_paths(const char *dir, const char *stem,
 
 /* Ask for one image by the name libretro would file it under. Used by both
  * passes: pass one guesses the card's own name, pass two passes the name the
- * catalogue gave. */
+ * catalog gave. */
 static bool start_image(const char *folder, const char *name, const char *dest)
 {
 	char url[ARTURL_MAX], er[384], en[NAME_MAX_ * 3 + 1];
@@ -656,7 +656,7 @@ int art_step(void)
 	/* ---- pass one: ask for the name the card already has ---------------- */
 	case P_TRY:
 		if (g_ri >= g_nroms) {
-			/* Nothing missed, so the catalogue is never fetched. */
+			/* Nothing missed, so the catalog is never fetched. */
 			if (g_nretry == 0) return next_system(NULL);
 			g_phase = P_INDEX;
 			return 1;
@@ -684,7 +684,7 @@ int art_step(void)
 
 		if (r == 0) return 1;
 		/* A miss here is ordinary - it means libretro spells this game
-		 * differently, which is exactly what the catalogue is for. It is not
+		 * differently, which is exactly what the catalog is for. It is not
 		 * counted as missing until the fuzzy pass has also failed. */
 		if (r > 0) g_st.found++;
 		else       g_retry[g_nretry++] = g_ri;
@@ -693,9 +693,9 @@ int art_step(void)
 		return 1;
 	}
 
-	/* ---- pass two: the catalogue, for what pass one could not name ------ */
+	/* ---- pass two: the catalog, for what pass one could not name ------ */
 	case P_INDEX:
-		snprintf(g_st.now, sizeof g_st.now, "%s catalogue",
+		snprintf(g_st.now, sizeof g_st.now, "%s catalog",
 		         g_sys[g_si].folder);
 		if (!start_index(remote_for(g_sys[g_si].folder)))
 			return next_system("could not start curl");

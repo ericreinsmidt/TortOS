@@ -150,7 +150,7 @@ bool notice_render(const char *heading, const char *body, const char *path)
 		}
 	}
 
-	/* Both lines centred, not left-aligned. The slab is as wide as its wider
+	/* Both lines centered, not left-aligned. The slab is as wide as its wider
 	 * line, so the shorter one sat against the left edge with a gap after it -
 	 * which reads as text that failed to fill rather than as a caption. It is
 	 * also what menu_draw does with a heading, so the two agree. */

@@ -100,8 +100,8 @@ static void draw_hint(SDL_Renderer *r, int x, int y, const char *btn,
 	 * L/R, START, MENU - nothing in them descends at all, so the gap was pure
 	 * and visible.
 	 *
-	 * Height from the em box, and the ink centred in it the way menu_draw
-	 * centres its rows. Descent is negative, so half of it subtracted moves
+	 * Height from the em box, and the ink centered in it the way menu_draw
+	 * centers its rows. Descent is negative, so half of it subtracted moves
 	 * the line down onto the middle of the chip. */
 	int fh = fm ? TTF_FontHeight(fm) : ui_font_line(UI_F_META);
 	int ink = fm ? -TTF_FontDescent(fm) / 2 : 0;

@@ -158,7 +158,7 @@ static int req(const char *method, const char *path, const char *cookie,
 /* Is this JSON, structurally?
  *
  * The check used to look for substrings - strstr(body, "\"roms\"") - and
- * passed with flying colours over a reply that no parser would accept: a
+ * passed with flying colors over a reply that no parser would accept: a
  * hand-counted string literal had swallowed the opening bracket, so the
  * listing read "entries":{...},{...}] and the page died on it. A check that
  * looks for words in a document it never parses is checking that the words

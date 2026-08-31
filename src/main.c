@@ -1013,7 +1013,7 @@ static void draw_hex(SDL_Renderer *r, float cx, float cy, float rad, SDL_Color c
  * the same shape into res/cards/FAVORITES.png, and the two are meant to match.
  * Change one, change both. Same standing arrangement as draw_shell and CELLS.
  *
- * Fanned from a point BELOW the centre rather than from the centre itself. The
+ * Fanned from a point BELOW the center rather than from the center itself. The
  * notch between the lobes is the one concave part of the shape, and a fan
  * apex level with it produces slivers that cross the notch and fill it in.
  * Dropping the apex puts every boundary point in view of it. Same primitive as
@@ -1248,7 +1248,7 @@ static void draw_games(app *a)
 
 	if (v->list.count > 0) {
 		game_entry *g = &v->list.items[v->cursor];
-		/* A title that fits is centred, as before. One that does not slides,
+		/* A title that fits is centered, as before. One that does not slides,
 		 * because truncating it destroys the rest of the name permanently and
 		 * sliding it only delays it - see ui_text_marquee.
 		 *
@@ -1259,8 +1259,8 @@ static void draw_games(app *a)
 		 * that jumps when the thing beside it grows is not a mark, it is more
 		 * motion.
 		 *
-		 * Its width is reserved on BOTH sides, so the box stays centred on the
-		 * screen and a short title is centred exactly where it always was.
+		 * Its width is reserved on BOTH sides, so the box stays centered on the
+		 * screen and a short title is centered exactly where it always was.
 		 * The cost is a narrower box, so a few more titles slide; sliding is
 		 * the thing that made a narrow box acceptable. */
 		TTF_Font *ft2 = ui_font(UI_F_TITLE);
@@ -1285,12 +1285,12 @@ static void draw_games(app *a)
 		 *
 		 * There was a second, a dot on the right, for a game with an autosave
 		 * - A continues it rather than starting it. Removed 2026-08-30: it
-		 * only ever drew beside the CENTRED title, so it was never the
+		 * only ever drew beside the CENTERED title, so it was never the
 		 * scan-the-shelf signal it looked like, and it said one bit with no
 		 * legend about the one game you could already ask about directly. X
 		 * says "resume + 3" now, which is the same fact with a number on it. */
 		if (fav_is(gs->tag, g->file)) {
-			/* Centred on the title's INK, not its em box. The box reserves a
+			/* Centered on the title's INK, not its em box. The box reserves a
 			 * descender's depth most titles never use, so a mark placed at
 			 * the box's middle sits visibly below the letters. Descent is
 			 * negative, so half of it lifts. */
@@ -1610,13 +1610,13 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 		 * This read "mostly do not" while the heading was "PlayOS", whose y was
 		 * the exception; the shift is by font metrics rather than by the string,
 		 * so nothing here changed with the name, it just got exactly true. */
-		/* Centre the INK between the panel's top and the rule, computed from
+		/* Center the INK between the panel's top and the rule, computed from
 		 * the font rather than nudged by a fraction of the descent.
 		 *
 		 * The heading is capitals and lowercase with nothing below the
 		 * baseline, so what should sit in the middle of that band is cap-top
 		 * to baseline - not the em box, which carries a descender's depth of
-		 * empty space at the bottom. Centring the box left "Wi-Fi" visibly
+		 * empty space at the bottom. Centering the box left "Wi-Fi" visibly
 		 * high on the scanning screen.
 		 *
 		 * cap comes from 'H': maxy is its height above the baseline. */
@@ -1633,7 +1633,7 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 		/* cap-to-baseline for the first line, plus a whole line for a second */
 		block = cap + (head_lines - 1) * line_head;
 		/* From the panel's INNER edge, not panel.y. The border is a visible
-		 * frame and the eye reads the space inside it, so centring against
+		 * frame and the eye reads the space inside it, so centering against
 		 * the outer edge is arithmetically right and looks high by exactly
 		 * the border's width - measured on the Wi-Fi panel as 18px above the
 		 * ink against 32 below, which is what Eric saw. */
@@ -2188,7 +2188,7 @@ static void human_bytes(char *out, size_t n, unsigned long long b)
 /* The address and the PIN go in the HEADING, not in rows.
  *
  * They were four rows of equal weight, and rendered it was obvious that the
- * two things this screen exists to be read off were in the dimmest colour the
+ * two things this screen exists to be read off were in the dimmest color the
  * launcher has: menu_draw paints a value UI_TEXT_DIM unless its row is both
  * live and selected, and nothing on a status screen is either. The heading is
  * UI_F_LABEL at UI_TEXT_SOFT - larger and brighter - and takes two lines when
@@ -2380,7 +2380,7 @@ static void art_head(char *out, size_t n, const char *now)
 
 	/* Trimmed to fit. A ROM name is as long as somebody's dump of it -
 	 * "Legend of Zelda, The - A Link to the Past (USA)" and worse - and this
-	 * is a heading, which menu_draw centres rather than wraps, so a long one
+	 * is a heading, which menu_draw centers rather than wraps, so a long one
 	 * ran off both sides of the panel. Three quarters of the screen leaves
 	 * the panel a margin it can keep. */
 	ui_fit_text(ui_font(UI_F_LABEL), now, fit, sizeof fit,
@@ -2948,7 +2948,7 @@ static void tortos_menu(app *a)
 		 * because there is no confirm step to hang the write off. */
 		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_GAMES &&
 		    sel == SM_BOXART)
-			/* The system's own colour, not the menu's. This acts on the
+			/* The system's own color, not the menu's. This acts on the
 			 * shelf you are looking at, and menu_draw already follows that
 			 * rule everywhere else. */
 			art_screen(a, a->sys.systems[a->sys_cursor].folder, NULL,
@@ -3409,7 +3409,7 @@ static void cheevos_screen(app *a, SDL_Texture *bg)
 	/* Two lines: the game on one, the counts on the other.
 	 *
 	 * On one line this was "Hagane: The Final Conflict   0/36   0/415 points",
-	 * 1031 pixels against a 778 pixel panel - and menu_draw centres a heading,
+	 * 1031 pixels against a 778 pixel panel - and menu_draw centers a heading,
 	 * so it lost BOTH ends: the H and the word "points". Dropping the title
 	 * fixed the clipping and threw away something worth keeping. Eric's
 	 * suggestion, and it is better than either. */

@@ -108,14 +108,14 @@ void ui_fit_text(TTF_Font *f, const char *src, char *dst, size_t dstn,
  *
  * Costs nothing this launcher was not already paying. Every screen redraws
  * every frame, and ui_text caches the rendered texture per (font, string,
- * colour) - so sliding it is a moving destination rect, not a re-render. */
+ * color) - so sliding it is a moving destination rect, not a re-render. */
 void ui_text_marquee(SDL_Renderer *r, TTF_Font *f, const char *s,
                      int x, int y, int w, unsigned phase, SDL_Color col);
 
 /* The panel border, in pixels. In the header because layout outside ui.c has
- * to know it: centring anything inside a panel means centring against the
+ * to know it: centering anything inside a panel means centering against the
  * INNER edge, since the border is a visible frame and the eye reads the space
- * within it. Centring against the outer edge is arithmetically right and looks
+ * within it. Centering against the outer edge is arithmetically right and looks
  * high by exactly this many pixels. */
 #define UI_PANEL_BORDER 12
 
