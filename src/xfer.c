@@ -122,9 +122,19 @@ bool xfer_name_ok(const char *name)
 	 * report success and produce a file the next listing cannot find by the
 	 * name it was given. */
 	if (name[n - 1] == ' ' || name[n - 1] == '.') return false;
-	for (; *name; name++)
+	for (; *name; name++) {
 		if ((unsigned char)*name < 0x20 || (unsigned char)*name == 0x7f)
 			return false;
+		/* The rest of what vfat will not store. The trailing-dot rule above
+		 * was already here for this reason and stopped one character short of
+		 * the actual set: a colon or a question mark reached open() and came
+		 * back EINVAL, which the upload route reported as 507 "could not write
+		 * that to the card" - a message that says the card is full about a
+		 * file the card would never have taken under that name. Names like
+		 * "Game: Subtitle.zip" are ordinary enough to arrive on the first
+		 * real transfer. */
+		if (strchr("\\:*?\"<>|", *name)) return false;
+	}
 	return true;
 }
 

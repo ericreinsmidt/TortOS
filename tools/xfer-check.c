@@ -185,6 +185,29 @@ int main(void)
 	CHECK(!xfer_name_ok("trailing "), "a trailing space was allowed");
 	CHECK(!xfer_name_ok("trailing."), "a trailing dot was allowed");
 
+	/* The rest of what vfat will not store. These reached open() and came back
+	 * EINVAL, which the upload route then reported as 507 "could not write
+	 * that to the card" - a full-disk message about a legal-looking name. The
+	 * colon is the one that turns up on a real card: plenty of dumps are
+	 * named "Game: Subtitle". */
+	printf("  and the characters vfat will not store:\n");
+	CHECK(!xfer_name_ok("Game: Subtitle.zip"), "a colon was allowed");
+	CHECK(!xfer_name_ok("what?.zip"),          "a question mark was allowed");
+	CHECK(!xfer_name_ok("star*.zip"),          "an asterisk was allowed");
+	CHECK(!xfer_name_ok("pipe|x.zip"),         "a pipe was allowed");
+	CHECK(!xfer_name_ok("a<b.zip"),            "a less-than was allowed");
+	CHECK(!xfer_name_ok("a>b.zip"),            "a greater-than was allowed");
+	CHECK(!xfer_name_ok("say\"hi\".zip"),      "a double quote was allowed");
+	CHECK(!xfer_name_ok("back\\slash.zip"),    "a backslash was allowed");
+	/* Still legal, and the reason the check is a set and not "punctuation":
+	 * these turn up in real ROM names constantly. */
+	CHECK(xfer_name_ok("Pokemon - Emerald (USA, Europe).zip"),
+	      "an ordinary ROM name was refused");
+	CHECK(xfer_name_ok("Marvel vs. Capcom [!].zip"),
+	      "brackets and dots were refused");
+	CHECK(xfer_name_ok("apostrophe's & ampersand.zip"),
+	      "an apostrophe or ampersand was refused");
+
 	if (failures) { printf("\n%d check(s) failed\n", failures); return 1; }
 	printf("\nok: every check passed\n");
 	return 0;

@@ -518,6 +518,37 @@ int main(void)
 		      httpd_conn_count());
 	}
 
+	/* The half-written file, and why it is not merely untidy: a part-file is
+	 * filtered out of listings, so its folder reads as empty while rmdir keeps
+	 * answering "that folder is not empty" and nothing in the interface names
+	 * the thing in the way. Dropping a lid mid-transfer is the ordinary way to
+	 * get one. */
+	printf("  an upload that dies halfway leaves no part-file:\n");
+	remove(tmpsink);
+	{
+		int fd = cl_connect();
+		char req[256], sent[1500];
+		struct stat st;
+		size_t i;
+
+		for (i = 0; i < sizeof sent; i++) sent[i] = (char)('a' + i % 26);
+		snprintf(req, sizeof req,
+		         "PUT /put HTTP/1.1\r\nHost: x\r\nContent-Length: 100000\r\n\r\n");
+		cl_write(fd, req, strlen(req));
+		cl_write(fd, sent, sizeof sent);
+		/* Give the server thread time to open the sink and write what came,
+		 * with the connection still up. */
+		usleep(150000);
+		/* Without this the rest is vacuous: a check that the file is gone
+		 * passes just as well when it was never created. */
+		CHECK(stat(tmpsink, &st) == 0,
+		      "the part-file was never created, so the next check proves nothing");
+		close(fd);
+		settle();
+		CHECK(stat(tmpsink, &st) != 0,
+		      "a part-file survived a client that hung up mid-upload");
+	}
+
 	shutdown_server();
 	CHECK(!httpd_running(), "the server is still listening after stop");
 	remove(tmpf);

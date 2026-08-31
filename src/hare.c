@@ -473,6 +473,15 @@ static void on_request(httpd_req *r, bool done, void *ctx)
 		if (!done) {
 			char part[XFER_PATH_MAX];
 
+			/* Before room_for, because a name the card cannot store is not a
+			 * space problem and must not be reported as one. xfer_resolve
+			 * checks where a path goes, not whether its last component is a
+			 * legal filename here - that is this call. */
+			if (!xfer_name_ok(base_of(abs))) {
+				httpd_want_body(r, HTTPD_BODY_NONE, NULL);
+				httpd_reply_status(r, 400, "that is not a usable name");
+				return;
+			}
 			if (!room_for(abs, httpd_content_len(r))) {
 				httpd_want_body(r, HTTPD_BODY_NONE, NULL);
 				httpd_reply_status(r, 507, "not enough room on the card");
@@ -593,6 +602,10 @@ static void on_request(httpd_req *r, bool done, void *ctx)
 		httpd_query(r, "p", req, sizeof req);
 		if (!xfer_resolve(req, abs, sizeof abs)) {
 			httpd_reply_status(r, 403, "not somewhere you can write");
+			return;
+		}
+		if (!xfer_name_ok(base_of(abs))) {
+			httpd_reply_status(r, 400, "that is not a usable name");
 			return;
 		}
 		if (mkdir(abs, 0777) != 0) {

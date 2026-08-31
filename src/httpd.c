@@ -294,7 +294,20 @@ void httpd_reply_file(httpd_req *r, const char *path, const char *content_type,
 
 static void req_reset(httpd_req *r)
 {
-	if (r->sink_f)   fclose(r->sink_f);
+	if (r->sink_f) {
+		fclose(r->sink_f);
+		/* And take the part-file with it.
+		 *
+		 * A transfer that dies halfway - a closed lid, a dropped connection,
+		 * the idle timeout - used to leave "name.part" on the card forever.
+		 * It is filtered out of listings, so the folder reads as empty while
+		 * rmdir keeps answering "that folder is not empty", and there is no
+		 * name in the interface for the thing standing in the way. The route
+		 * renames the part-file into place on success, so by the time a
+		 * completed request gets here this path is already gone and the
+		 * remove is a no-op. */
+		remove(r->sink);
+	}
 	if (r->resp_f)   fclose(r->resp_f);
 	free(r->mem);
 	free(r->resp_body);
@@ -303,10 +316,18 @@ static void req_reset(httpd_req *r)
 
 static void conn_close(conn *c)
 {
+	/* Release what the request owns BEFORE the slot reads as free.
+	 *
+	 * These were the other way round, so `fd = -1` published an idle slot
+	 * while req_reset had yet to unlink the part-file - and anything watching
+	 * the connection count to decide a transfer was over could see the slot
+	 * free and the half-file still on the card. It is a small window and it
+	 * lost about one race in eight. "This connection is finished" should not
+	 * become true before it is. */
 	if (c->fd >= 0) close(c->fd);
+	req_reset(&c->r);
 	c->fd = -1;
 	c->st = C_FREE;
-	req_reset(&c->r);
 }
 
 /* Split the header block in place into NUL-separated lines, and pull out what
