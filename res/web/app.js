@@ -63,12 +63,23 @@ $('pinform').addEventListener('submit', async (e) => {
 
 /* ---- listing ----------------------------------------------------------- */
 
+/* Decimal, not 1024.
+ *
+ * These were 1024-based and labelled KB/MB/GB, which is the one combination
+ * that is wrong on every platform: macOS has quoted decimal since 10.6, so a
+ * 15,528,261-byte ROM read 15.53 MB in Finder and 14.8 MB here. The whole job
+ * of this page is to agree with the machine at the other end about what is on
+ * the card, and a size that disagrees with the file manager beside it reads as
+ * a failed copy. Relabelling to KiB would have been true and no help. */
 function human(n) {
-	if (n < 1024) return n + ' B';
+	if (n < 1000) return n + ' B';
 	const u = ['KB', 'MB', 'GB'];
 	let i = -1;
-	do { n /= 1024; i++; } while (n >= 1024 && i < u.length - 1);
-	return (n < 10 ? n.toFixed(1) : Math.round(n)) + ' ' + u[i];
+	do { n /= 1000; i++; } while (n >= 1000 && i < u.length - 1);
+	/* A decimal for MB and GB, whole numbers for KB. Rounding 15,528,261 to
+	 * "16 MB" put the units right and still disagreed with the file manager
+	 * next to it by half a megabyte, which was the original complaint. */
+	return (i === 0 ? Math.round(n) : n.toFixed(1)) + ' ' + u[i];
 }
 
 function crumbs() {

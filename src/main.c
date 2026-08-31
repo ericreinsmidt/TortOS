@@ -2158,14 +2158,19 @@ static void ra_signin_screen(app *a)
  * only ever print kilobytes - a picture of a screen that did not exist, which
  * is the exact failure the shared row builder was meant to stop. Sharing the
  * layout is not enough if the fixture claims the content can be something it
- * cannot. */
+ * cannot.
+ *
+ * Decimal, matching human() in res/web/app.js. These two describe the same
+ * bytes to the same person a foot apart, so they have to divide by the same
+ * thing, and decimal is what every file manager but Windows Explorer shows -
+ * 1024 under a KB/MB label is the one combination that is wrong everywhere. */
 static void human_bytes(char *out, size_t n, unsigned long long b)
 {
-	if (b < 1024ull)              snprintf(out, n, "%llu B", b);
-	else if (b < 1024ull * 1024)  snprintf(out, n, "%llu KB", b / 1024);
-	else if (b < 1024ull * 1024 * 1024)
-		snprintf(out, n, "%.1f MB", (double)b / (1024 * 1024));
-	else snprintf(out, n, "%.1f GB", (double)b / (1024ull * 1024 * 1024));
+	if (b < 1000ull)              snprintf(out, n, "%llu B", b);
+	else if (b < 1000ull * 1000)  snprintf(out, n, "%llu KB", b / 1000);
+	else if (b < 1000ull * 1000 * 1000)
+		snprintf(out, n, "%.1f MB", (double)b / (1000 * 1000));
+	else snprintf(out, n, "%.1f GB", (double)b / (1000ull * 1000 * 1000));
 }
 
 /* The address and the PIN go in the HEADING, not in rows.
