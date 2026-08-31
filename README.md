@@ -187,6 +187,17 @@ Rescan Folder is what makes a ROM that arrived after boot appear without a
 restart. Over The Hare already does it for you on the way out of the transfer
 screen; this is the same thing by hand, for a card written some other way.
 
+**In a NES game, X and Y are turbo A and turbo B** - hold one down and it
+presses the button repeatedly for you instead of you mashing it. It applies to
+the whole NES shelf rather than to one game.
+
+FCEUmm supplies the turbo and labels those two buttons itself; TortOS only
+switches it on, with one line in `coreopts.cfg` below, so deleting that line
+puts X and Y back to doing nothing in a game. The repeat rate is the core's own
+default. No other console here has it: of the five cores only FCEUmm and the PC
+Engine offer turbo at all, and the PC Engine's works differently - a hotkey that
+toggles turbo for its own I and II buttons rather than two dedicated ones.
+
 Volume and brightness draw the same thin line across the top of the screen in
 the launcher, in a game, and in the in-game menu. One firmware, one piece of
 feedback - tinted by which of the two it is, warm for brightness and cyan for
@@ -364,7 +375,7 @@ that was never real.
 
 ## Configuration
 
-Two files, and they are the whole settings screen.
+Three files, and they are the whole settings screen.
 
 `TortOS/tortos.cfg`:
 
@@ -404,6 +415,30 @@ sys|display name|Roms/ folder|core|tag|card art|accent|extensions
 
 The tag is three characters at most: `struct Core` declares `tag[8]` and a
 longer one is silently truncated.
+
+`TortOS/coreopts.cfg` - opinions handed to the core before a game loads:
+
+```
+mgba_sgb_borders=OFF        # no [SECTION] above it, so: every system
+
+[NES]
+fceumm_turbo_enable=Player 1   # X and Y become turbo A and turbo B
+
+[GB]
+mgba_gb_model=Game Boy         # not Super Game Boy, whatever the cartridge says
+```
+
+A `[TAG]` section applies to that system alone, keyed on the same tag
+`systems.cfg` uses, and overrides a global of the same name. A core that does
+not declare a key ignores it, so a key meant for one core is harmless
+everywhere else. These are sent **before** the game loads, because a core reads
+its `(Restart)` options during load and one set afterwards does nothing until
+the next launch. The file carries the reasoning for every entry in it.
+
+One trap it documents and worth repeating: **a resume state beats these.** A
+save state carries the machine it was made on, so changing an option that
+selects hardware will not appear to work on a game you have already played.
+Test on a game that has never been launched, or delete its `.auto.state`.
 
 ---
 
