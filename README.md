@@ -303,13 +303,19 @@ over the same real data and require them to agree, because the failure they
 guard against is silent - a wrong hash looks exactly like a game
 RetroAchievements does not know.
 
-**Submitting unlocks back to your account is not implemented**, and is blocked
-on registering this client with RetroAchievements rather than on code. Until
-then RA injects a `Warning: Unknown Emulator` entry into every set it serves,
-which is dropped rather than shown as a fake achievement that unlocks itself
-five seconds into every game.
+**Unlocks go back to your account.** They are sent once the game is over and
+the launcher has the screen back, never from inside the frame loop, and what
+will not send stays queued and is tried again next time - an achievement
+earned on a plane is still earned. On the next launch the account is read back
+and merged, so anything already held is not offered again: the account wins on
+what exists, the local store wins on what is still owed, and neither is thrown
+away.
 
----
+RA still serves a `Warning: Unknown Emulator` entry with every set, because
+this client is not registered with them. It is dropped rather than shown - it
+is not an achievement, and recording it would put a row in the store that can
+never be displayed and might later be submitted as a duplicate of something
+that was never real.
 
 ---
 
