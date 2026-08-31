@@ -1783,7 +1783,7 @@ typedef enum {
  * so these are hooks waiting to be wired, not wishes. */
 typedef enum {
 	SM_GAMES, SM_CORE, SM_SORT, SM_SHOW,
-	SM_DISPLAY, SM_BUTTONS, SM_BOXART, SM_RESCAN, SM_ROWS
+	SM_DISPLAY, /* SM_BUTTONS, */ SM_BOXART, SM_RESCAN, SM_ROWS
 } sm_row;
 
 #define MENU_MAX_ROWS 12
@@ -1806,7 +1806,12 @@ static int menu_build(app *a, screen_id screen, int sys,
 		out[SM_SHOW]    = (menu_row){ "Show",           "All games",     false };
 		out[SM_DISPLAY] = (menu_row){ "Display Mode",
 		                              DMODES[a->view[sys].dmode].label, true };
-		out[SM_BUTTONS] = (menu_row){ "Button Mapping", NULL,            false };
+		/* Button Mapping is out until there is something behind it. Diatom
+		 * supplies core button labels, so the hook is real - but a dead row
+		 * in a menu of live ones is a promise the launcher is not keeping,
+		 * and it has sat there unwired longer than it was ever going to be
+		 * worth. Put the enum entry back with it when it is built. */
+		/* out[SM_BUTTONS] = (menu_row){ "Button Mapping", NULL,     false }; */
 		{	/* Just this system. Needs the network like its counterpart in
 			 * the TortOS menu, and says so rather than opening a screen
 			 * that can only report the same thing. */
@@ -1815,7 +1820,12 @@ static int menu_build(app *a, screen_id screen, int sys,
 			out[SM_BOXART] = (menu_row){ "Box Art",
 			                             on ? NULL : "needs Wi-Fi", on };
 		}
-		out[SM_RESCAN]  = (menu_row){ "Rescan Folder",  NULL,            false };
+		/* Live now that there is something behind it. It rescans the whole card
+	 * rather than this one folder - the work is three directory reads and the
+	 * shared parts (hiding a system that emptied, rebuilding Favorites) have
+	 * to run anyway - but the folder you are standing in is the one you came
+	 * here to refresh, so the name still describes what you asked for. */
+	out[SM_RESCAN]  = (menu_row){ "Rescan Folder",  NULL,            true  };
 		return SM_ROWS;
 	}
 
@@ -2943,6 +2953,16 @@ static void tortos_menu(app *a)
 			 * rule everywhere else. */
 			art_screen(a, a->sys.systems[a->sys_cursor].folder, NULL,
 			           a->sys.systems[a->sys_cursor].accent);
+		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_GAMES &&
+		    sel == SM_RESCAN) {
+			wait_panel(a, a->sys.systems[a->sys_cursor].name, "Scanning...");
+			rescan_all(a);
+			/* Close, rather than redraw this menu over a shelf that may have
+			 * just lost the system it was built for: `rows` was filled at the
+			 * top of this frame and `sel` counts rows for the screen we were
+			 * on. Acting and closing is also what pressing it means. */
+			done = 1;
+		}
 		if (a->screen == SCREEN_GAMES && sel == SM_DISPLAY) {
 			int d = in_repeat(&a->in, IN_RIGHT) ? 1
 			      : in_repeat(&a->in, IN_LEFT)  ? -1 : 0;
@@ -4378,6 +4398,15 @@ static void rescan_all(app *a)
 	memset(a->sys_w, 0, sizeof a->sys_w);
 	memset(a->sys_h, 0, sizeof a->sys_h);
 
+	/* menu_shelf_width measures every row of every system's menu once and
+	 * caches it. The set of systems is exactly what it measured across, so a
+	 * rescan invalidates it - and the case that shows is a card that booted
+	 * empty: with no systems there are no game-menu rows to measure, the
+	 * panel is sized for the TortOS menu alone, and the first system to
+	 * arrive gets "Integer tall" cut off inside a frame measured before it
+	 * existed. */
+	a->menu_w = 0;
+
 	snprintf(path, sizeof path, "%s/systems.cfg", P_ROOT);
 	if (!cfg_load_systems(path, &a->sys)) {
 		/* The card was readable a moment ago, so this is a card that has gone
@@ -4395,8 +4424,24 @@ static void rescan_all(app *a)
 	a->sys_cursor = 0;
 	for (i = 0; i < a->sys.count; i++)
 		if (strcmp(a->sys.systems[i].tag, tag) == 0) { a->sys_cursor = i; break; }
-	a->screen = SCREEN_SYSTEMS;
-	if (a->sys.count) a->tint = a->sys.systems[a->sys_cursor].accent;
+
+	/* Whether the caller can stay where it was.
+	 *
+	 * Rescanning from inside a system's game list should leave you in that
+	 * list looking at the new games, so the screen is not forced here. But the
+	 * shelf being stood on can have emptied and gone - deleting the last ROM
+	 * for a system over the network is the ordinary way - and then there is no
+	 * list to stay in. Same rule refresh_favorites_shelf follows when the last
+	 * favorite goes. */
+	if (i >= a->sys.count || !a->sys.count) a->screen = SCREEN_SYSTEMS;
+
+	if (a->sys.count) {
+		a->tint = a->sys.systems[a->sys_cursor].accent;
+		/* The rebuilt view starts at zero and its coverflow has to agree, or
+		 * the shelf animates from wherever the old one happened to be. */
+		a->view[a->sys_cursor].cursor = 0;
+		cf_reset(&a->view[a->sys_cursor].cf, 0);
+	}
 	cf_reset(&a->cf_sys, a->sys_cursor);
 }
 
