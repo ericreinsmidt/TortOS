@@ -142,9 +142,35 @@ matters to you - a card is the one part of this that gets reformatted.
 | **Y** | favorite it - Favorites is a shelf of its own |
 | **Volume rocker** | volume, everywhere, including in game |
 | **F1 / F2** | brightness, everywhere, including in game |
-| **MENU** (on the shelf) | the TortOS menu - settings that are about the firmware |
+| **MENU** (on the systems row) | the TortOS menu - settings that are about the firmware |
+| **MENU** (inside a system) | that system's menu, below |
 | **MENU** (in game) | the in-game menu: Continue, Save, Load, Options, Reset, Quit |
 | **POWER** | ends the game if one is running, otherwise powers off |
+
+MENU means three different menus depending on where you are, and each one is
+about the thing you are looking at: the firmware on the systems row, one
+console inside it, the running game in a game.
+
+The system menu opens on a shelf of games and applies to that system alone:
+
+| | |
+|---|---|
+| **Games** | how many the shelf found |
+| **Core** | which libretro core runs them |
+| **Sort By**, **Show** | stated, not yet settings - `Name` and `All games` |
+| **Display Mode** | left/right cycles it; saved the moment it changes |
+| **Box Art** | fetch what this system is missing, and nothing else |
+| **Rescan Folder** | read the card again, for ROMs that arrived since boot |
+
+Display Mode is per-system, because a Game Boy and a Genesis do not want the
+same answer. Set here it applies from the next launch; the same row in the
+in-game menu changes the running game as you press it, which is the one to use
+when you want to see the difference rather than guess at it. Either way it is
+written the moment it changes - there is no confirm step to hang the save off.
+
+Rescan Folder is what makes a ROM that arrived after boot appear without a
+restart. Over The Hare already does it for you on the way out of the transfer
+screen; this is the same thing by hand, for a card written some other way.
 
 Volume and brightness draw the same thin line across the top of the screen in
 the launcher, in a game, and in the in-game menu. One firmware, one piece of
