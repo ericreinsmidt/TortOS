@@ -42,6 +42,7 @@ static int      g_ntoken;
 static int      g_tries;
 static unsigned g_locked_until;
 static int      g_uploads;
+static bool     g_roms_changed;   /* something the shelf would show has moved */
 static char     g_last[128];
 static unsigned long g_in, g_out;
 
@@ -216,6 +217,32 @@ static void note(const char *fmt, ...)
 	vsnprintf(g_last, sizeof g_last, fmt, ap);
 	va_end(ap);
 }
+
+/* Did that write land somewhere the shelf reads?
+ *
+ * Only the ROM root counts. A save state, a BIOS image or a renamed folder
+ * under Saves changes nothing the launcher displays, and making those trigger
+ * a rescan would mean pulling a hundred games off the card to react to a file
+ * nobody is looking at. Prefix match on the resolved absolute path, so it is
+ * asking about where the bytes actually went rather than what the URL said.
+ */
+static void note_write(const char *abs)
+{
+	int i;
+
+	for (i = 0; i < xfer_root_count(); i++) {
+		const xfer_root *rt = xfer_root_at(i);
+		size_t n;
+
+		if (strcmp(rt->name, "roms") != 0) continue;
+		n = strlen(rt->path);
+		if (!strncmp(abs, rt->path, n) && (abs[n] == '/' || abs[n] == '\0'))
+			g_roms_changed = true;
+		return;
+	}
+}
+
+bool hare_roms_changed(void) { return g_roms_changed; }
 
 /* The name a listing shows for a path, or "" for a root. */
 static const char *base_of(const char *p)
@@ -521,6 +548,7 @@ static void on_request(httpd_req *r, bool done, void *ctx)
 				note("failed: %s", base_of(abs));
 				return;
 			}
+			note_write(abs);
 			note("received %s", base_of(abs));
 			httpd_reply(r, 200, "text/plain", "ok", 2, NULL);
 		}
@@ -562,6 +590,8 @@ static void on_request(httpd_req *r, bool done, void *ctx)
 			httpd_reply_status(r, 500, strerror(errno));
 			return;
 		}
+		note_write(dst);
+		note_write(abs);   /* it left one name and arrived at another */
 		note("renamed %s", base_of(dst));
 		httpd_reply(r, 200, "text/plain", "ok", 2, NULL);
 		return;
@@ -590,6 +620,7 @@ static void on_request(httpd_req *r, bool done, void *ctx)
 			httpd_reply_status(r, 500, strerror(errno));
 			return;
 		}
+		note_write(abs);
 		note("deleted %s", base_of(abs));
 		httpd_reply(r, 200, "text/plain", "ok", 2, NULL);
 		return;
@@ -665,6 +696,7 @@ bool hare_start(const char *roms_dir, const char *card_dir,
 	g_tries = 0;
 	g_locked_until = 0;
 	g_uploads = 0;
+	g_roms_changed = false;
 	g_in = g_out = 0;
 	g_last[0] = '\0';
 

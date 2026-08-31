@@ -58,4 +58,10 @@ typedef struct {
 
 void hare_status(hare_stats *out);
 
+/* Whether anything under the ROM root was written, renamed or deleted since
+ * the screen opened. The shelf is scanned once at startup and nothing watches
+ * the card, so a ROM arriving over the network is invisible until something
+ * rescans - which is what the screen uses this to decide on the way out. */
+bool hare_roms_changed(void);
+
 #endif

@@ -106,6 +106,8 @@ typedef struct {
 /* Defined down with the shelf building it belongs to, declared here because
  * the input loop calls it the moment a favorite changes. */
 static void refresh_favorites_shelf(app *a);
+/* Same reason: Over The Hare is a screen up here and the scan is down there. */
+static void rescan_all(app *a);
 
 static volatile sig_atomic_t want_quit;
 static void on_sigterm(int sig) { (void)sig; want_quit = 1; plat_terminate(); }
@@ -2323,7 +2325,26 @@ static void xfer_screen(app *a)
 		 * transfer moves POLL_BUDGET per pass. */
 		SDL_Delay(4);
 	}
-	hare_stop();
+
+	/* Asked before hare_stop, which is what the screen owning the server
+	 * means: after it, there is nobody left to ask. */
+	{
+		bool changed = hare_roms_changed();
+
+		hare_stop();
+		/* The point of the whole feature is getting ROMs onto the card, and
+		 * the shelf is scanned once at startup - so without this the file
+		 * lands, the screen says it landed, and the game is not there. The
+		 * only way to see it was to restart the launcher.
+		 *
+		 * On the way out rather than as each upload finishes: a transfer of
+		 * twenty games would otherwise rescan twenty times, and every one of
+		 * them would stall the loop that is still receiving. */
+		if (changed) {
+			wait_panel(a, "Over The Hare", "Scanning...");
+			rescan_all(a);
+		}
+	}
 	plat_input_flush();
 	memset(&a->in, 0, sizeof a->in);
 }
@@ -4310,6 +4331,73 @@ static void scan_all(app *a)
 	}
 	hide_empty_systems(a);
 	build_favorites_shelf(a);
+}
+
+/* Read the card again and rebuild every shelf, for when something outside the
+ * launcher has changed what is on it - which today means Over The Hare.
+ *
+ * Drop and rebuild rather than patch, on the same reasoning drop_favorites
+ * gives: the cases are "a game appeared", "a game went", "a system that was
+ * empty now has games", "a system emptied", and "the shelf you are standing on
+ * is one of those". Patching five cases correctly is harder than doing the
+ * whole thing again, and the whole thing is three directory reads.
+ *
+ * The config is re-read because hide_empty_systems does not hide, it COMPACTS:
+ * a system with no games is removed from systems[] and its entry overwritten.
+ * Uploading the first ROM for a system is precisely what this feature is for,
+ * so without the reload that system could never come back. */
+static void rescan_all(app *a)
+{
+	char tag[sizeof a->sys.systems[0].tag];
+	char path[CFG_STR * 2];
+	int i;
+
+	/* Indices move when a system appears or empties, so the tag is the only
+	 * handle on "where the player was" that survives the rebuild. */
+	snprintf(tag, sizeof tag, "%s", a->sys.systems[a->sys_cursor].tag);
+
+	/* First, and on its own: its list and owner map are this file's
+	 * allocations rather than lib_scan's, and its textures are its own. */
+	drop_favorites_shelf(a);
+
+	free_all_textures(a);
+	for (i = 0; i < a->sys.count; i++) {
+		free(a->view[i].tex); free(a->view[i].tw); free(a->view[i].th);
+		lib_free(&a->view[i].list);
+		memset(&a->view[i], 0, sizeof a->view[i]);
+	}
+	/* Every slot, not the first sys.count of them.
+	 *
+	 * hide_empty_systems moves systems[] and view[] and leaves sys_tex where
+	 * it is - harmless at startup because they are all NULL then, and the
+	 * comment in build_favorites_shelf already says so. Running the scan a
+	 * second time is the moment that stops being true, and the failure is a
+	 * system wearing the next one's card. Clearing the whole array puts it
+	 * back to the state the omission is safe in. */
+	memset(a->sys_tex, 0, sizeof a->sys_tex);
+	memset(a->sys_w, 0, sizeof a->sys_w);
+	memset(a->sys_h, 0, sizeof a->sys_h);
+
+	snprintf(path, sizeof path, "%s/systems.cfg", P_ROOT);
+	if (!cfg_load_systems(path, &a->sys)) {
+		/* The card was readable a moment ago, so this is a card that has gone
+		 * away underneath us. An empty shelf is the honest picture. */
+		fprintf(stderr, "rescan: no usable %s\n", path);
+		a->sys.count = 0;
+		a->sys_cursor = 0;
+		a->screen = SCREEN_SYSTEMS;
+		return;
+	}
+
+	scan_all(a);
+	display_load(a);     /* indexes by tag, so it is safe to run again */
+
+	a->sys_cursor = 0;
+	for (i = 0; i < a->sys.count; i++)
+		if (strcmp(a->sys.systems[i].tag, tag) == 0) { a->sys_cursor = i; break; }
+	a->screen = SCREEN_SYSTEMS;
+	if (a->sys.count) a->tint = a->sys.systems[a->sys_cursor].accent;
+	cf_reset(&a->cf_sys, a->sys_cursor);
 }
 
 /* --shot <file.png> [--screen games|systems] draws one frame, writes it out
