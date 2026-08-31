@@ -1,7 +1,7 @@
 <p align="center">
-  <img src="res/readme/turtle.png" alt="" height="84">
-  &nbsp;&nbsp;&nbsp;&nbsp;
   <img src="res/readme/wordmark.png" alt="TortOS" height="72">
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="res/readme/turtle.png" alt="" height="84">
 </p>
 
 A custom firmware for the **TrimUI Brick / Brick Hammer** that plays nine 8-
