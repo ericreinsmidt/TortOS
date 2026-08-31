@@ -80,8 +80,23 @@ Roms/SNES/                    .sfc .smc .zip
 Roms/Game Boy Color/          .gbc .cgb .zip
 Roms/Game Boy Advance/        .gba .agb .zip
 Roms/<system>/.media/<name>.png     box art, optional
-Bios/GBA/                     optional GBA BIOS
 ```
+
+BIOS files go **loose in `Bios/`**, not in a folder per system - that directory
+is handed to the core as its system directory, and a core asks for a filename
+inside it:
+
+```
+Bios/syscard3.pce             TurboGrafx-16 CD games (.chd, .cue, .m3u ...)
+```
+
+That one is required: a PC Engine CD will not start without it, and TortOS says
+so by name rather than letting the core refuse the disc. HuCards on the same
+shelf need nothing and are unaffected.
+
+Nothing else on the shelf needs a BIOS. mGBA has a built-in one, so Game Boy
+Advance runs without the real thing; if you want the original it is
+`Bios/gba_bios.bin`, and the difference is the boot animation.
 
 The shelf is `systems.cfg`, so that list is the shipped one rather than a fixed
 one: a line removed from the config takes its shelf with it, and a system whose

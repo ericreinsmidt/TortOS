@@ -3713,6 +3713,34 @@ static void launch(app *a)
 	snprintf(save, sizeof save, "%s/Saves", P_CARD);
 	snprintf(bios, sizeof bios, "%s/Bios", P_CARD);
 
+	/* A disc that needs firmware, before anything tries to run it.
+	 *
+	 * Diatom checks this too (its ADR-0017) and answers bios_missing, but that
+	 * answer has never been reachable: it acts on a `firmware=` key the
+	 * launcher has never sent. So the core was asked to load a CD with no
+	 * System Card, refused it the way it refuses a corrupt ROM, and the shelf
+	 * came back with nothing said - which is a long way from "needs
+	 * Bios/syscard3.pce".
+	 *
+	 * Disc images only. A HuCard needs no System Card, and refusing every
+	 * cartridge on the shelf because a CD would have needed one is a worse
+	 * failure than the one being fixed. */
+	if (s->disc_bios[0] && lib_is_disc(v->list.items[v->cursor].file)) {
+		char fw[CFG_STR * 3];
+
+		snprintf(fw, sizeof fw, "%s/%s", bios, s->disc_bios);
+		if (access(fw, R_OK) != 0) {
+			char msg[CFG_STR + 32];
+
+			snprintf(msg, sizeof msg, "needs Bios/%s", s->disc_bios);
+			wait_panel(a, v->list.items[v->cursor].title, msg);
+			SDL_Delay(2200);
+			plat_input_flush();
+			memset(&a->in, 0, sizeof a->in);
+			return;
+		}
+	}
+
 	/* The autosave story, by path rather than by convention: the state and the
 	 * preview live beside each other, the launch hands both over, and a game
 	 * always comes up where it was left. */

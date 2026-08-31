@@ -33,6 +33,9 @@ typedef struct {
 
 /* Scan Roms/<folder> for files whose extension appears in exts (a comma or
  * space separated list, without dots; empty means take everything). */
+/* Whether a filename is a disc image rather than a cartridge. */
+bool lib_is_disc(const char *name);
+
 bool lib_scan(const char *roms_root, const char *folder, const char *exts,
               game_list *out);
 void lib_free(game_list *l);

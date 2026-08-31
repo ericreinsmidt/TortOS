@@ -41,6 +41,20 @@ static bool ext_allowed(const char *ext, const char *list)
 	return false;
 }
 
+/* Is this filename a disc image? The shelf needs to know because a disc may
+ * need firmware a cartridge on the same shelf does not - see disc_bios in
+ * config.h. Same table the disc-folder ranking uses, so the two cannot drift. */
+bool lib_is_disc(const char *name)
+{
+	const char *ext = ext_of(name);
+	int i;
+
+	if (!ext) return false;
+	for (i = 0; DISC_EXTS[i]; i++)
+		if (strcasecmp(ext, DISC_EXTS[i]) == 0) return true;
+	return false;
+}
+
 static int disc_rank(const char *name)
 {
 	const char *ext = ext_of(name);

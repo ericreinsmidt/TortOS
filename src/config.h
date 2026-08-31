@@ -20,6 +20,11 @@ typedef struct {
 	char exts[CFG_STR];   /* which extensions in that folder are games; empty
 	                       * means everything, which also means save files and
 	                       * stray text files show up as games */
+	/* Firmware a DISC image needs, resolved against Bios/. Empty for a system
+	 * that needs none. Per-system and disc-only rather than per-system alone,
+	 * because a PC Engine HuCard runs with no System Card and a CD does not -
+	 * declaring it for the whole shelf would refuse the cartridges too. */
+	char disc_bios[CFG_STR];
 } system_cfg;
 
 typedef struct {

@@ -41,8 +41,8 @@ bool cfg_load_systems(const char *path, systems_cfg *out)
 	while (fgets(line, sizeof line, f) && out->count < CFG_MAX_SYSTEMS) {
 		strip(line);
 		if (!line[0] || line[0] == '#') continue;
-		char *fld[8] = { 0 };
-		int n = split(line, fld, 8);
+		char *fld[9] = { 0 };
+		int n = split(line, fld, 9);
 		if (n < 5 || strcmp(fld[0], "sys") != 0) continue;
 		system_cfg *s = &out->systems[out->count];
 		snprintf(s->name, CFG_STR, "%s", fld[1]);
@@ -53,6 +53,7 @@ bool cfg_load_systems(const char *path, systems_cfg *out)
 		s->accent = 0x3DD6FF;
 		if (n > 6 && fld[6][0]) s->accent = (unsigned)strtoul(fld[6], NULL, 16);
 		if (n > 7) snprintf(s->exts, CFG_STR, "%s", fld[7]);
+		if (n > 8) snprintf(s->disc_bios, CFG_STR, "%s", fld[8]);
 		if (!s->name[0] || !s->folder[0] || !s->core[0] || !s->tag[0]) continue;
 		out->count++;
 	}
