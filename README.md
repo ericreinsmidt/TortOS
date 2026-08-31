@@ -1,15 +1,90 @@
-# TortOS
+<p align="center">
+  <img src="res/readme/turtle.png" alt="" height="84">
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="res/readme/wordmark.png" alt="TortOS" height="72">
+</p>
 
 A custom firmware for the **TrimUI Brick / Brick Hammer** (tg5040) that plays
-nine 8- and 16-bit consoles, and does nothing else.
+nine 8- and 16-bit consoles.
 
-No store, no scraper, no achievements, no music player, no settings screen. No
-WiFi and no Bluetooth - both radios are shut down at boot and never come back.
-What is on screen is a row of cards, the name of the thing under the cursor,
-and a rail saying where you are in the list.
+No store and no music player. What is on screen is a row of cards, the name of
+the thing under the cursor, and a rail saying where you are in the list. Behind
+that there is RetroAchievements, box art the device fetches itself, and a small
+web server for moving files on and off over Wi-Fi - each one row in one menu,
+and none of it in the way of starting a game.
 
 The design metric is **speed**. Every decision in here was made by measuring
 first.
+
+---
+
+## Install
+
+1. `make toolchain` and `mk/fetch-sysroot.sh` once (the latter needs the device
+   on adb), then `make vendor` to pull the cores.
+2. Build Diatom in its own repository (`tools/brick-make.sh` there), or point
+   `DIATOM_ELF` at a built binary.
+3. `make && make payload`
+4. Copy the **contents** of `out/sd/` to the root of a FAT32 SD card
+   (`make install-card CARD=/Volumes/YOURCARD` does it and ejects properly).
+5. Put the card in a stock Brick and power on. The first boot installs the
+   `runtrimui.sh` hook; every boot after that comes straight up in TortOS.
+
+Then put ROMs in:
+
+```
+Roms/NES/                     .nes .fds .unf .unif .zip
+Roms/Master System/           .sms .zip
+Roms/Genesis/                 .md .gen .bin .smd .zip
+Roms/Game Boy/                .gb .dmg .zip
+Roms/TurboGrafx-16/           .pce .sgx .cue .ccd .chd .toc .m3u .zip
+Roms/Game Gear/               .gg .zip
+Roms/SNES/                    .sfc .smc .zip
+Roms/Game Boy Color/          .gbc .cgb .zip
+Roms/Game Boy Advance/        .gba .agb .zip
+Roms/<system>/.media/<name>.png     box art, optional
+Bios/GBA/                     optional GBA BIOS
+```
+
+The shelf is `systems.cfg`, so that list is the shipped one rather than a fixed
+one: a line removed from the config takes its shelf with it, and a system whose
+folder is empty is hidden until there is something in it.
+
+A folder inside a system folder that contains a disc image counts as one game,
+launching the image inside it - that is how a multi-disc PC Engine CD set stays
+a single entry.
+
+### Undoing it
+
+TortOS replaces the boot splash and the loading splash on first boot, and backs
+both up beside itself (`bootlogo.stock.bmp`, `splash.stock.png`) along with the
+stock init script (`/etc/init.d/runtrimui.tortos-bak`). Removing the card is
+enough to boot stock again; `/usr/trimui/bin/runtrimui-original.sh` is the
+original hook.
+
+---
+
+## Controls
+
+| | |
+|---|---|
+| **Left / Right** | move along the row |
+| **Up / Down** | jump to the previous / next initial (games) |
+| **L1 / R1** | jump a screenful (games) |
+| **A** | open a system, or start a game |
+| **B** | back to the systems row |
+| **X** | game info for the card under the cursor |
+| **Y** | favorite it - Favorites is a shelf of its own |
+| **Volume rocker** | volume, everywhere, including in game |
+| **F1 / F2** | brightness, everywhere, including in game |
+| **MENU** (on the shelf) | the TortOS menu - settings that are about the firmware |
+| **MENU** (in game) | the in-game menu: Continue, Save, Load, Options, Reset, Quit |
+| **POWER** | ends the game if one is running, otherwise powers off |
+
+Volume and brightness draw the same thin line across the top of the screen in
+the launcher, in a game, and in the in-game menu. One firmware, one piece of
+feedback - tinted by which of the two it is, warm for brightness and cyan for
+volume, so the line says what it is without a glyph or a number on it.
 
 ---
 
@@ -97,7 +172,8 @@ carries a wash of that color that eases as you move between systems.
 
 Card art comes from, in order:
 
-1. box art you put in `Roms/<system>/.media/<name>.png`;
+1. box art in `Roms/<system>/.media/<name>.png`, whether you put it there or
+   the Box Art row fetched it;
 2. **the autosave preview** - the frame you were looking at when you stopped,
    which for a game in progress is a better card than any box;
 3. a generated slab: the system's color, the title, and the title's first
@@ -170,71 +246,7 @@ five seconds into every game.
 
 ---
 
-## Controls
-
-| | |
-|---|---|
-| **Left / Right** | move along the row |
-| **Up / Down** | jump to the previous / next initial (games) |
-| **L1 / R1** | jump a screenful (games) |
-| **A** | open a system, or start a game |
-| **B** | back to the systems row |
-| **Volume rocker** | volume, everywhere, including in game |
-| **F1 / F2** | brightness, everywhere, including in game |
-| **MENU** (on the shelf) | the TortOS menu - settings that are about the firmware |
-| **MENU** (in game) | the in-game menu: Continue, Save, Load, Options, Reset, Quit |
-| **POWER** | ends the game if one is running, otherwise powers off |
-
-Volume and brightness draw the same thin line across the top of the screen in
-the launcher, in a game, and in the in-game menu. One firmware, one piece of
-feedback - tinted by which of the two it is, warm for brightness and cyan for
-volume, so the line says what it is without a glyph or a number on it.
-
 ---
-
-## Install
-
-1. `make toolchain` and `mk/fetch-sysroot.sh` once (the latter needs the device
-   on adb), then `make vendor` to pull the cores.
-2. Build Diatom in its own repository (`tools/brick-make.sh` there), or point
-   `DIATOM_ELF` at a built binary.
-3. `make && make payload`
-4. Copy the **contents** of `out/sd/` to the root of a FAT32 SD card
-   (`make install-card CARD=/Volumes/YOURCARD` does it and ejects properly).
-5. Put the card in a stock Brick and power on. The first boot installs the
-   `runtrimui.sh` hook; every boot after that comes straight up in TortOS.
-
-Then put ROMs in:
-
-```
-Roms/NES/                     .nes .fds .unf .unif .zip
-Roms/Master System/           .sms .zip
-Roms/Genesis/                 .md .gen .bin .smd .zip
-Roms/Game Boy/                .gb .dmg .zip
-Roms/TurboGrafx-16/           .pce .sgx .cue .ccd .chd .toc .m3u .zip
-Roms/Game Gear/               .gg .zip
-Roms/SNES/                    .sfc .smc .zip
-Roms/Game Boy Color/          .gbc .cgb .zip
-Roms/Game Boy Advance/        .gba .agb .zip
-Roms/<system>/.media/<name>.png     box art, optional
-Bios/GBA/                     optional GBA BIOS
-```
-
-The shelf is `systems.cfg`, so that list is the shipped one rather than a fixed
-one: a system with no ROMs in its folder still gets a card, and a line removed
-from the config takes its shelf with it.
-
-A folder inside a system folder that contains a disc image counts as one game,
-launching the image inside it - that is how a multi-disc PC Engine CD set stays
-a single entry.
-
-### Undoing it
-
-TortOS replaces the boot splash and the loading splash on first boot, and backs
-both up beside itself (`bootlogo.stock.bmp`, `splash.stock.png`) along with the
-stock init script (`/etc/init.d/runtrimui.tortos-bak`). Removing the card is
-enough to boot stock again; `/usr/trimui/bin/runtrimui-original.sh` is the
-original hook.
 
 ---
 
@@ -343,7 +355,8 @@ src/            the launcher (0BSD)
 mk/             cross build, payload, deployment
 tools/          the boot-animation and card generators, setbright, the
                 achievement fetcher and its check
-res/            the boot animation, the system cards, the font
+res/            the boot animation, the system cards, the font, Over The
+                Hare's page, and the two marks this README shows
 config/         systems.cfg and tortos.cfg as shipped
 sd/             the boot hook and launch.sh as they land on the card
 sysroot/        fetched: the device's own SDL2, for linking (mk/fetch-sysroot.sh)

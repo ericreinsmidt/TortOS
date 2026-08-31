@@ -156,6 +156,16 @@ def main():
                 im.save(os.path.join(OUT, n), dpi=(72 * scale, 72 * scale))
         print("  tortos-%s  @1x @2x @3x master, transparent + on-dark" % kind)
 
+    # The two the README shows, written into the repository rather than left
+    # here: tortos_logo_ideas/ is ignored, so a front page pointing at it would
+    # be broken for everyone who clones. Transparent, because GitHub renders
+    # the page on either a light or a dark ground depending on the reader.
+    rd = os.path.join(ROOT, "res", "readme")
+    os.makedirs(rd, exist_ok=True)
+    for kind, name in (("mark", "turtle.png"), ("lockup", "wordmark.png")):
+        png(kind, 2, False).save(os.path.join(rd, name), dpi=(144, 144))
+    print("  res/readme/turtle.png + wordmark.png")
+
 
 if __name__ == "__main__":
     main()
