@@ -23,17 +23,18 @@ first.
 You need the Brick, an SD card, and nothing else. No soldering and no
 unlocking.
 
-**Format the card FAT32 or exFAT**, with a Master Boot Record partition scheme.
-Both work - the kernel has `vfat` and `exfat`, and a 118 GB card of each has
-been booted and played from. Take whichever your computer offers: at the size
-of card anyone actually uses that is usually exFAT, and there is no reason to
-fight it.
+**Format the card exFAT**, with a Master Boot Record partition scheme.
 
 | | |
 |---|---|
-| **macOS** | Disk Utility, `View -> Show All Devices` so you get the whole card rather than just its volume, then `Erase`: **ExFAT** or **MS-DOS (FAT)**, scheme **Master Boot Record**. |
-| **Linux** | `mkfs.exfat` or `mkfs.vfat -F 32` on an MBR-partitioned card. |
-| **Windows** | Either, from the built-in formatter. It stops offering FAT32 above 32 GB, which is another reason exFAT is the easier answer on a big card. |
+| **macOS** | Disk Utility, `View -> Show All Devices` so you get the whole card rather than just its volume, then `Erase`: format **ExFAT**, scheme **Master Boot Record**. |
+| **Linux** | `mkfs.exfat` on an MBR-partitioned card. |
+| **Windows** | Right-click the card, `Format`, **exFAT**. |
+
+FAT32 works too if that is what the card already is - the kernel has both, and
+118 GB of each has been booted and played from - but exFAT is what every
+formatter offers at the size of card anyone actually uses, so it is the one
+worth naming.
 
 Copying from macOS leaves `._name` metadata files beside everything. They are
 harmless - the launcher skips every name beginning with a dot, so they never
