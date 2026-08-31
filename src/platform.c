@@ -1046,7 +1046,7 @@ struct pl_ctl_elem_value {
  * 34 is 1.6x room noise, so the last few positions were all sitting in the
  * noise and were indistinguishable from each other. 26 is 5.2x: quiet, and
  * unmistakably present. That is the floor, ~1.5 dB a press across the 21
- * positions. Detail and method in VOLUME-CURVE.md.
+ * positions.
  *
  * This is the SPEAKER floor. The headphone amp is a separate control
  * ("Headphone Volume", 0-7 at 6 dB) which apply_volume pins to zero, so it is

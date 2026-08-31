@@ -16,8 +16,18 @@ __pycache__/
 # macOS
 .DS_Store
 ._*
+
+# Internal notes. None of it is needed to build, install or contribute, and
+# none of it is written for anyone outside this working copy: CLAUDE.md and
+# BACKLOG.md are the working agreement and the running list, DEVICE-LOOP.md is
+# the accumulated sharp edges of developing against a live Brick, and
+# VOLUME-CURVE.md is one afternoon's measurements behind a constant that now
+# carries its own numbers in the comment above it. Nothing tracked may
+# reference any of them.
 CLAUDE.md
 BACKLOG.md
+DEVICE-LOOP.md
+VOLUME-CURVE.md
 
 sysroot/
 
@@ -31,4 +41,7 @@ sysroot/
 # Backups: the pre-rebrand boot assets, and pulled device saves. Local only -
 # 120MB+ of save states and a redundant copy of tracked art.
 /backups/
-res/web/menu.ttf
+
+# Copied in from res/fonts at deploy and payload time so the browser can ask
+# for /web/menu.ttf - one copy in the repo, two on the card.
+/res/web/menu.ttf

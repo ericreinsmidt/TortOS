@@ -15,7 +15,7 @@ DIATOM_ELF=${DIATOM_ELF:-$ROOT/../diatom/build/brick/diatom}
 [ -f "$ROOT/vendor/cores/fceumm_libretro.so" ] || { echo "run mk/fetch-vendor.sh first"; exit 1; }
 
 rm -rf "$OUT"
-mkdir -p "$P/cards" "$P/cores" \
+mkdir -p "$P/cards" "$P/cores" "$P/res/web" \
          "$OUT/.tmp_update" "$OUT/trimui/app" \
          "$OUT/Roms" "$OUT/Bios" "$OUT/Saves"
 
@@ -26,6 +26,15 @@ cp "$ROOT/config/systems.cfg" "$ROOT/config/tortos.cfg" \
    "$ROOT/config/coreopts.cfg" "$P/"
 cp "$ROOT/res/cards/"*.png "$P/cards/"
 cp "$ROOT/res/fonts/menu.ttf" "$P/"       # the UI face, and the in-game menu's
+# Over The Hare's page. The launcher serves these off the card at P_WEB, so a
+# payload without them is a card whose transfer screen starts a server and then
+# answers its own page with a 404. adb-deploy.sh has always pushed them and
+# this did not, which is a difference that only shows on a built card - the
+# reason to build one before calling it a release. The font goes in twice
+# rather than being kept in the repo twice: the launcher reads $P/menu.ttf and
+# a browser asks for /web/menu.ttf.
+cp "$ROOT/res/web/"* "$P/res/web/"
+cp "$ROOT/res/fonts/menu.ttf" "$P/res/web/menu.ttf"
 cp "$ROOT/res/boot/tortos-boot.mp4" "$P/"
 cp "$ROOT/res/boot/bootlogo.bmp" "$P/"    # u-boot splash, applied on first boot
 cp "$ROOT/res/boot/splash.png" "$P/"      # the pic2fb loading splash, likewise
