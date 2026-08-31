@@ -1800,6 +1800,33 @@ typedef struct { char a[24], b[CFG_STR]; } menu_bufs;
 
 /* Build whichever menu the current screen calls for. Returns the row count, so
  * the input loop never needs to know which of the two it is driving. */
+/* One answer per two seconds, for every row that needs it.
+ *
+ * wifi_status forks wpa_cli, and this launcher is a 119 MB process - forking it
+ * copies page tables and costs about thirty milliseconds, not the seven a small
+ * process pays. menu_build runs every frame, and the TortOS menu asked three
+ * times: once cached for the Wi-Fi row, then twice more, uncached, for Over The
+ * Hare and Box Art. Measured on the device that was 12 fps with the menu open,
+ * against a loop that delays 8 ms - two thirds of every frame spent forking.
+ *
+ * The cache existed and said why; the two rows below it defeated it. So the
+ * cache moves out here where it covers all of them, and nothing calls
+ * wifi_status directly from a per-frame path again. */
+static wifi_state menu_wifi(char *ssid, int cap)
+{
+	static unsigned   next;
+	static wifi_state st = WIFI_OFF;
+	static char       name[WIFI_SSID_MAX];
+	unsigned now = plat_now_ms();
+
+	if (next == 0 || now >= next) {
+		st = wifi_status(name, sizeof name, NULL, 0);
+		next = now + 2000;
+	}
+	if (ssid && cap) snprintf(ssid, (size_t)cap, "%s", name);
+	return st;
+}
+
 static int menu_build(app *a, screen_id screen, int sys,
                       menu_row *out, menu_bufs *b, const char **heading)
 {
@@ -1824,7 +1851,7 @@ static int menu_build(app *a, screen_id screen, int sys,
 		{	/* Just this system. Needs the network like its counterpart in
 			 * the TortOS menu, and says so rather than opening a screen
 			 * that can only report the same thing. */
-			bool on = wifi_status(NULL, 0, NULL, 0) == WIFI_CONNECTED;
+			bool on = menu_wifi(NULL, 0) == WIFI_CONNECTED;
 
 			out[SM_BOXART] = (menu_row){ "Box Art",
 			                             on ? NULL : "needs Wi-Fi", on };
@@ -1853,21 +1880,13 @@ static int menu_build(app *a, screen_id screen, int sys,
 		 * The network's name, not its address. A settings row should say what
 		 * the setting IS; the address is a fact about the machine and lives on
 		 * the About page with the other ones. */
-		static unsigned next_check;
-		static char cached[CFG_STR];
-		unsigned now = plat_now_ms();
+		char ss[WIFI_SSID_MAX];
+		wifi_state ws = menu_wifi(ss, sizeof ss);
 
-		if (next_check == 0 || now >= next_check) {
-			char ss[WIFI_SSID_MAX], ip[64];
-			wifi_state ws = wifi_status(ss, sizeof ss, ip, sizeof ip);
-			next_check = now + 2000;
-			(void)ip;
-			if (ws == WIFI_CONNECTED && ss[0]) snprintf(cached, sizeof cached, "%s", ss);
-			else snprintf(cached, sizeof cached, "%s",
-			              ws == WIFI_CONNECTING ? "connecting" :
-			              ws == WIFI_IDLE       ? "not connected" : "off");
-		}
-		snprintf(b->b, sizeof b->b, "%s", cached);
+		if (ws == WIFI_CONNECTED && ss[0]) snprintf(b->b, sizeof b->b, "%s", ss);
+		else snprintf(b->b, sizeof b->b, "%s",
+		              ws == WIFI_CONNECTING ? "connecting" :
+		              ws == WIFI_IDLE       ? "not connected" : "off");
 		out[PM_WIFI]     = (menu_row){ "Wi-Fi",             b->b,      true  };
 	}
 	out[PM_BT]           = (menu_row){ "Bluetooth",         "not yet", false };
@@ -1878,7 +1897,7 @@ static int menu_build(app *a, screen_id screen, int sys,
 	 *
 	 * Directly under Wi-Fi because it is useless without it, and reads as an
 	 * answer to the row above rather than a separate idea. */
-	{	bool on = wifi_status(NULL, 0, NULL, 0) == WIFI_CONNECTED;
+	{	bool on = menu_wifi(NULL, 0) == WIFI_CONNECTED;
 
 		/* Useless without a network, and saying so is more use than a row
 		 * that opens a screen showing no address. */
@@ -1888,7 +1907,7 @@ static int menu_build(app *a, screen_id screen, int sys,
 	out[PM_ACHIEVEMENTS] = (menu_row){ "Cheevos",
 	                                   ra_signed_in() ? ra_user() : "sign in",
 	                                   true };
-	{	bool on = wifi_status(NULL, 0, NULL, 0) == WIFI_CONNECTED;
+	{	bool on = menu_wifi(NULL, 0) == WIFI_CONNECTED;
 
 		out[PM_SCRAPE]   = (menu_row){ "Box Art",
 		                               on ? NULL : "needs Wi-Fi", on };
