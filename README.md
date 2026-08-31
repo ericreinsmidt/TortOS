@@ -4,14 +4,14 @@
   <img src="res/readme/wordmark.png" alt="TortOS" height="72">
 </p>
 
-A custom firmware for the **TrimUI Brick / Brick Hammer** (tg5040) that plays
-nine 8- and 16-bit consoles.
+A custom firmware for the **TrimUI Brick / Brick Hammer** that plays nine 8-
+and 16-bit consoles.
 
-No store and no music player. What is on screen is a row of cards, the name of
-the thing under the cursor, and a rail saying where you are in the list. Behind
-that there is RetroAchievements, box art the device fetches itself, and a small
-web server for moving files on and off over Wi-Fi - each one row in one menu,
-and none of it in the way of starting a game.
+What is on screen is a row of cards, the name of the thing under the cursor,
+and a rail saying where you are in the list. Behind that there is
+RetroAchievements, box art the device fetches itself, and a small web server
+for moving files on and off over Wi-Fi - each one row in one menu, and none of
+it in the way of starting a game.
 
 The design metric is **speed**. Every decision in here was made by measuring
 first.
@@ -20,15 +20,34 @@ first.
 
 ## Install
 
-1. `make toolchain` and `mk/fetch-sysroot.sh` once (the latter needs the device
-   on adb), then `make vendor` to pull the cores.
-2. Build Diatom in its own repository (`tools/brick-make.sh` there), or point
-   `DIATOM_ELF` at a built binary.
-3. `make && make payload`
-4. Copy the **contents** of `out/sd/` to the root of a FAT32 SD card
-   (`make install-card CARD=/Volumes/YOURCARD` does it and ejects properly).
-5. Put the card in a stock Brick and power on. The first boot installs the
-   `runtrimui.sh` hook; every boot after that comes straight up in TortOS.
+You need the Brick, a FAT32 SD card, and nothing else. No soldering and no
+unlocking.
+
+1. Download **`TortOS-v1.0.zip`** from
+   [Releases](https://github.com/ericreinsmidt/TortOS/releases/latest).
+2. Unzip it and copy everything inside it to the **root** of the card - six
+   items: `TortOS/`, `.tmp_update/`, `trimui/`, `Roms/`, `Bios/` and `Saves/`.
+   Not the zip, and not a folder containing them.
+3. Eject the card properly, put it in the Brick, and power on.
+
+The first boot is the one that installs: the stock firmware runs the card's
+installer, which sets `/usr/trimui/bin/runtrimui.sh` aside as
+`runtrimui-original.sh`, puts its own there, replaces the two splash images
+and then comes up in TortOS like every boot after it.
+
+That one script is the only thing TortOS changes on the device, and all it
+does is look for the card - no card, or a card without TortOS on it, and it
+hands straight back to the original. **Taking the card out is enough to get
+the stock system back**; [Undoing it](#undoing-it) has the rest.
+
+> **`.tmp_update` starts with a dot**, so Finder and most file managers hide
+> it and a drag of "everything" leaves it behind. A card missing it gets
+> through the installer and then powers straight off looking for the half that
+> is not there, and boots stock from then on. In Finder, `Cmd-Shift-.` shows
+> hidden files; from a terminal, `cp -R` the unzipped contents and it comes
+> along on its own.
+
+Building it yourself instead is [further down](#building).
 
 Then put ROMs in:
 
