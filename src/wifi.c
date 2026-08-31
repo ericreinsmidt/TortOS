@@ -27,6 +27,7 @@
 
 #ifdef __linux__
 
+#include <fcntl.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -259,6 +260,42 @@ int wifi_scan(wifi_net *out, int max)
 	return n;
 }
 
+/* Ask for a lease. The vendor's own invocation, from /etc/wifi/udhcpc_wlan0.
+ *
+ * Lifted out of wifi_connect because associating is not the only way to end up
+ * associated: wpa_supplicant rejoins a saved network by itself the moment it
+ * starts, and nothing was fetching an address for that.
+ *
+ * Fire and forget, NOT run(). run() waits, and this can take `-t 5 -T 7` -
+ * thirty-five seconds - before -b gives up and backgrounds itself. wifi_status
+ * is polled from the menu, so waiting there would stall the shelf for half a
+ * minute on a network that is simply slow to answer. Double-forked so the
+ * child is reparented to init and there is no zombie to reap, because nothing
+ * here is going to come back and wait for it. */
+static bool g_dhcp_asked;   /* a lease has been requested for this join */
+
+static void dhcp_start(void)
+{
+	pid_t pid = fork();
+
+	if (pid < 0) return;
+	if (pid == 0) {
+		if (fork() == 0) {
+			char *argv[] = { (char *)"/sbin/udhcpc", (char *)"-i", (char *)WLAN,
+			                 (char *)"-S", (char *)"-t", (char *)"5",
+			                 (char *)"-T", (char *)"7", (char *)"-b",
+			                 (char *)"-q", NULL };
+			int null = open("/dev/null", O_RDWR);
+
+			if (null >= 0) { dup2(null, 1); dup2(null, 2); }
+			execv(argv[0], argv);
+			_exit(127);
+		}
+		_exit(0);
+	}
+	waitpid(pid, NULL, 0);          /* the middle one, which exits at once */
+}
+
 wifi_state wifi_status(char *ssid, int ssid_cap, char *ip, int ip_cap)
 {
 	char out[2048], state[64];
@@ -272,7 +309,32 @@ wifi_state wifi_status(char *ssid, int ssid_cap, char *ip, int ip_cap)
 	if (ssid && ssid_cap) kv(out, "ssid", ssid, ssid_cap);
 	if (ip && ip_cap) kv(out, "ip_address", ip, ip_cap);
 
-	if (!strcmp(state, "COMPLETED"))  return WIFI_CONNECTED;
+	/* COMPLETED is associated, which is not the same as usable.
+	 *
+	 * wpa_supplicant rejoins a saved network on its own at startup, so the
+	 * state reaches COMPLETED with no lease, no route and no udhcpc ever
+	 * having run - and reporting that as CONNECTED put the SSID in the menu
+	 * and lit up every row that needs the network. Over The Hare then opened
+	 * and said "Wi-Fi went away", which is the one thing that had not
+	 * happened. An association with no address is still connecting.
+	 *
+	 * And it will stay that way unless something asks: the only udhcpc call
+	 * used to be inside wifi_connect, the path taken by choosing an SSID by
+	 * hand. Asking here is what makes an auto-rejoin finish by itself. */
+	if (!strcmp(state, "COMPLETED")) {
+		char addr[64];
+
+		if (kv(out, "ip_address", addr, sizeof addr) && addr[0]) {
+			g_dhcp_asked = false;  /* armed again for the next association */
+			return WIFI_CONNECTED;
+		}
+		/* Once per association, not once per poll: this is called from
+		 * menu_build, and a udhcpc per frame would be a fork bomb wearing a
+		 * status query's clothes. */
+		if (!g_dhcp_asked) { g_dhcp_asked = true; dhcp_start(); }
+		return WIFI_CONNECTING;
+	}
+	g_dhcp_asked = false;              /* not associated: arm for the next one */
 	if (!strcmp(state, "SCANNING") || !strcmp(state, "DISCONNECTED") ||
 	    !strcmp(state, "INACTIVE"))   return WIFI_IDLE;
 	return WIFI_CONNECTING;
@@ -366,13 +428,7 @@ bool wifi_connect(const char *ssid, const char *psk)
 	 * would fill the config with passwords that never worked. */
 	wpa(out, sizeof out, "save_config", NULL, NULL, NULL);
 
-	{	/* the vendor's own invocation, from /etc/wifi/udhcpc_wlan0 */
-		char *argv[] = { (char *)"/sbin/udhcpc", (char *)"-i", (char *)WLAN,
-		                 (char *)"-S", (char *)"-t", (char *)"5",
-		                 (char *)"-T", (char *)"7", (char *)"-b",
-		                 (char *)"-q", NULL };
-		run(argv, NULL, 0);
-	}
+	dhcp_start();
 	return true;
 
 fail:
