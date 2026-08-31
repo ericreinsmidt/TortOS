@@ -1048,11 +1048,17 @@ struct pl_ctl_elem_value {
  * unmistakably present. That is the floor, ~1.5 dB a press across the 21
  * positions.
  *
- * This is the SPEAKER floor. The headphone amp is a separate control
- * ("Headphone Volume", 0-7 at 6 dB) which apply_volume pins to zero, so it is
- * not calibrated and headphones will be near-silent until it is. */
+ * Every rms number above was captured with HP_CTL sitting at 3, which
+ * mixer_defaults() below explains was 18 dB of attenuation nobody knew was in
+ * the path. Restoring it did not invalidate the floor: 26 was picked to keep
+ * the bottom of the scale off the room noise, and every reading moved up
+ * together, so the shape held. Eric ran the full slider on 2026-08-31 and
+ * called the range right. The derivation is wrong, the number is not, and
+ * re-sweeping would only move a value the player already likes. */
 #define GAIN_RAW_USABLE 26
 #define SPEAKER_CTL  "HpSpeaker Switch"   /* the only true mute on this codec */
+#define HP_CTL       "Headphone Volume"   /* 0-7, 6 dB a step, INVERTED */
+#define SWAP_CTL     "DAC Swap"           /* 1 crosses left and right */
 #define VOL_MAX      PLAT_VOL_MAX         /* 21 positions, 0..20 - Diatom's scale */
 
 #define DISP_LCD_SET_BRIGHTNESS 0x102
@@ -1109,13 +1115,54 @@ static void levels_save(void)
 	atomic_commit(f, levels_file);
 }
 
+/* Write a control and complain if it does not land. Discarding this return is
+ * what cost the project 18 dB for its whole life; see mixer_defaults(). */
+static void ctl_set(const char *name, long val)
+{
+	if (ctl_io(name, &val, 1) < 0)
+		fprintf(stderr, "settings: mixer rejected '%s' = %ld\n", name, val);
+}
+
+/* Codec-wide state that the volume keys do not own, set once at init.
+ *
+ * HP_CTL is 0-7 at 6 dB a step and is INVERTED, exactly like GAIN_CTL above:
+ * 0 is loudest, 7 is near silence. The driver's TLV claims the opposite
+ * (dBscale-min=-42 dB, step +6 dB) and is wrong in the same way it is wrong
+ * about GAIN_CTL, so the metadata cannot be trusted on this codec at all.
+ *
+ * Despite its name it is not the jack. SPEAKER_CTL drives the speaker off the
+ * headphone stage, so this control gates everything the device plays. Diatom's
+ * port carried a comment insisting that raising it rerouted output to the jack
+ * and muted the speakers - what actually happens is that raising it attenuates
+ * the speaker, which sounds identical and is not the same thing. Settled by
+ * ear on 2026-08-31: at 7 the speaker is barely audible, at 0 it is loud.
+ *
+ * This write already existed, in apply_volume, spelled "Headphone" - a control
+ * this codec does not have. PL_CTL_ELEM_WRITE matches names exactly, the
+ * return was thrown away, and so every sound the device ever made came out
+ * 18 dB down while the source read as though it were setting this to zero.
+ *
+ * SWAP_CTL at 1 crosses the channels. The stock hook clears it
+ * (runtrimui-original.sh: `tinymix set 1 0`) and so does NextUI; we never did,
+ * so left and right have been backwards the entire time. It is an enumerated
+ * control rather than an integer, but the value union overlaps and we only
+ * ever write item 0, so the integer path reaches it.
+ *
+ * Headphones are the one case still uncalibrated: nothing here has been tested
+ * with a plug in the jack, and 0 is the loud end for that path too. */
+static void mixer_defaults(void)
+{
+	if (mixer_fd < 0) return;
+	ctl_set(HP_CTL, 0);
+	ctl_set(SWAP_CTL, 0);
+}
+
 static void apply_volume(int v)
 {
 	long raw = ((long)(VOL_MAX - v) * GAIN_RAW_USABLE + VOL_MAX / 2) / VOL_MAX;
 	long on;
 
 	cur_vol = v;
-	ctl_io("Headphone", &(long){ 0 }, 1);        /* never the jack */
 	ctl_io(GAIN_CTL, &raw, 1);
 	/* Zero has to cut the path, not merely attenuate it. */
 	on = (v > 0);
@@ -1141,6 +1188,7 @@ void plat_settings_init(int cfg_volume_pct, int cfg_brightness)
 	disp_fd  = open("/dev/disp", O_RDWR);
 	if (mixer_fd < 0) fprintf(stderr, "settings: no /dev/snd/controlC0\n");
 	if (disp_fd  < 0) fprintf(stderr, "settings: no /dev/disp\n");
+	mixer_defaults();
 
 	/* The player's last choice, and it wins: a level the player set with the
 	 * rocker survives a restart, which is the whole reason every nudge writes
