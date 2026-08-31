@@ -154,6 +154,67 @@ const char *plat_coreopt(const char *tag, int i)
 	coreopt_nth(tag, i, &kv);
 	return kv;
 }
+
+/* ---- turbo, read once from turbo.cfg ------------------------------------- */
+/* One canonical map per system tag, handed to Diatom after RUN. Its ADR-0028
+ * makes a pulse a property of a BINDING, so `x:a~3,y:b~3` is the whole feature:
+ * X becomes a turbo A and Y a turbo B, three frames pressed and three released.
+ *
+ * Per system because it is only safe where those two buttons are SPARE. Seven of
+ * the nine consoles here have two face buttons; a Genesis 6-button pad and a
+ * SNES pad use X and Y for real, and turbo would take them away.
+ *
+ * A file rather than a table in the binary because the rate is exactly the sort
+ * of thing a player wants to change, and because a remap screen would one day
+ * write this same field over the same protocol. */
+#define TURBO_MAX 16
+static struct { char tag[8]; char map[96]; } turbos[TURBO_MAX];
+static int nturbos = -1;                     /* -1 = not read yet */
+
+static void turbos_load(void)
+{
+	char path[512], line[192];
+	FILE *f;
+
+	nturbos = 0;
+	snprintf(path, sizeof path, "%s/turbo.cfg", P_ROOT);
+	if (!(f = fopen(path, "r"))) return;
+	while (nturbos < TURBO_MAX && fgets(line, sizeof line, f)) {
+		char *p = line, *end, *eq;
+
+		while (*p == ' ' || *p == '\t') p++;
+		end = p + strcspn(p, "\r\n");
+		*end = '\0';
+		while (end > p && (end[-1] == ' ' || end[-1] == '\t')) *--end = '\0';
+		if (*p == '#' || !*p) continue;
+		if (!(eq = strchr(p, '='))) continue;
+		*eq = '\0';
+		/* Refused, not stored short. Half a map is a map nobody wrote, and
+		 * Diatom rejects a bad one whole - after the game is already up, where
+		 * the refusal is invisible. */
+		if (strlen(p) >= sizeof turbos[0].tag ||
+		    strlen(eq + 1) >= sizeof turbos[0].map) {
+			fprintf(stderr, "turbo.cfg: line too long, ignoring: %.32s...\n", p);
+			continue;
+		}
+		snprintf(turbos[nturbos].tag, sizeof turbos[0].tag, "%s", p);
+		snprintf(turbos[nturbos].map, sizeof turbos[0].map, "%s", eq + 1);
+		nturbos++;
+	}
+	fclose(f);
+}
+
+/* The map for this system, or NULL for one that wants none. */
+const char *plat_turbo_map(const char *tag)
+{
+	int i;
+
+	if (nturbos < 0) turbos_load();
+	if (!tag) return NULL;
+	for (i = 0; i < nturbos; i++)
+		if (!strcmp(turbos[i].tag, tag)) return turbos[i].map;
+	return NULL;
+}
 const char *P_FONT = "/mnt/SDCARD/TortOS/menu.ttf";
 
 void paths_init(void)
@@ -678,6 +739,23 @@ bool plat_resident_send(const char *tag, const char *core, const char *rom,
 		           preview ? preview : "",
 		           console, cheevos ? cheevos : ""))
 			return false;
+
+		/* AFTER RUN, never before: RUN resets the map to identity (Diatom's
+		 * ADR-0020, so a table sent for one game cannot silently govern the
+		 * next), and a map sent first would be discarded by the very launch it
+		 * was meant for. The race is benign - no input reaches a core before
+		 * RUNNING, which Diatom emits once the load completes.
+		 *
+		 * Logged either way. A map that does nothing looks identical to one
+		 * that was never sent, one that was refused, and a test rig that could
+		 * not press the button - which cost an hour on 2026-08-31. Diatom logs
+		 * the receiving half for the same reason. */
+		{
+			const char *tm = plat_turbo_map(tag);
+			fprintf(stderr, "turbo: %s %s\n", tag ? tag : "?",
+			        tm && *tm ? tm : "(none)");
+			if (tm && *tm) dsend("SETMAP\tmap=%s", tm);
+		}
 
 		/* The launcher owns levels while it draws (Diatom's ADR-0020), and
 		 * it is done drawing the moment the game is up - so the last thing

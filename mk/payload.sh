@@ -23,7 +23,7 @@ cp "$ROOT/build/tortos.elf" "$P/"
 cp "$ROOT/build/setbright" "$P/"          # brightness before the boot animation
 cp "$ROOT/sd/tortos/launch.sh" "$P/"
 cp "$ROOT/config/systems.cfg" "$ROOT/config/tortos.cfg" \
-   "$ROOT/config/coreopts.cfg" "$P/"
+   "$ROOT/config/coreopts.cfg" "$ROOT/config/turbo.cfg" "$P/"
 cp "$ROOT/res/cards/"*.png "$P/cards/"
 cp "$ROOT/res/fonts/menu.ttf" "$P/"       # the UI face, and the in-game menu's
 # Over The Hare's page. The launcher serves these off the card at P_WEB, so a

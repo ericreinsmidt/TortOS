@@ -187,16 +187,19 @@ Rescan Folder is what makes a ROM that arrived after boot appear without a
 restart. Over The Hare already does it for you on the way out of the transfer
 screen; this is the same thing by hand, for a card written some other way.
 
-**In a NES game, X and Y are turbo A and turbo B** - hold one down and it
-presses the button repeatedly for you instead of you mashing it. It applies to
-the whole NES shelf rather than to one game.
+**In a game, X and Y are turbo A and turbo B** - hold one down and it presses
+the button repeatedly for you instead of you mashing it. It applies to a whole
+system rather than to one game.
 
-FCEUmm supplies the turbo and labels those two buttons itself; TortOS only
-switches it on, with one line in `coreopts.cfg` below, so deleting that line
-puts X and Y back to doing nothing in a game. The repeat rate is the core's own
-default. No other console here has it: of the five cores only FCEUmm and the PC
-Engine offer turbo at all, and the PC Engine's works differently - a hotkey that
-toggles turbo for its own I and II buttons rather than two dedicated ones.
+Six of the nine have it: **NES, Master System, Game Boy, Game Boy Color, Game
+Boy Advance and Game Gear**. Those consoles had two face buttons, so X and Y are
+spare and turbo can have them. Genesis and SNES are left out because their pads
+use X and Y for real buttons, and the PC Engine because its core has a turbo of
+its own that works differently. Which systems get it, and how fast, is
+`turbo.cfg` below.
+
+Diatom does the pulsing, not the emulator core, which is why it works the same
+on all six rather than only on the one core that happens to implement turbo.
 
 Volume and brightness draw the same thin line across the top of the screen in
 the launcher, in a game, and in the in-game menu. One firmware, one piece of
@@ -375,7 +378,7 @@ that was never real.
 
 ## Configuration
 
-Three files, and they are the whole settings screen.
+Four files, and they are the whole settings screen.
 
 `TortOS/tortos.cfg`:
 
@@ -439,6 +442,22 @@ One trap it documents and worth repeating: **a resume state beats these.** A
 save state carries the machine it was made on, so changing an option that
 selects hardware will not appear to work on a game you have already played.
 Test on a game that has never been launched, or delete its `.auto.state`.
+
+`TortOS/turbo.cfg` - which systems get turbo, and how fast:
+
+```
+NES=x:a~3,y:b~3
+GB=x:a~3,y:b~3
+```
+
+One line per system tag. `x:a~3` reads *X acts as A, pressed three frames and
+released three*, so about ten presses a second at 60 Hz. Lower is faster. A
+system with no line here plays with X and Y doing nothing, which is what they
+did everywhere before this existed.
+
+TortOS hands this to Diatom just after a game loads and Diatom does the rest, so
+the rate is the same whatever core is running. Delete a line to turn a system
+back into a plain pad.
 
 ---
 

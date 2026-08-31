@@ -46,6 +46,7 @@ case $WHAT in elf|all)
 	$A push "$ROOT/config/systems.cfg"      "$P/" > /dev/null
 	$A push "$ROOT/config/tortos.cfg"       "$P/" > /dev/null
 	$A push "$ROOT/config/coreopts.cfg"     "$P/" > /dev/null
+	$A push "$ROOT/config/turbo.cfg"        "$P/" > /dev/null
 	$A push "$ROOT/sd/tortos/launch.sh"     "$P/" > /dev/null
 	$A push "$ROOT/sd/.tmp_update/updater"   /mnt/SDCARD/.tmp_update/ > /dev/null
 	$A push "$ROOT/sd/.tmp_update/tg3040.sh" /mnt/SDCARD/.tmp_update/ > /dev/null
