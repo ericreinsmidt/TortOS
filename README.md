@@ -23,16 +23,22 @@ first.
 You need the Brick, an SD card, and nothing else. No soldering and no
 unlocking.
 
-**Format the card FAT32**, with a Master Boot Record partition scheme. Size is
-not a problem - the card this was developed on is 118 GB of FAT32 - but most
-tools will steer you to exFAT at that size, and exFAT is not what the device
-mounts.
+**Format the card FAT32 or exFAT**, with a Master Boot Record partition scheme.
+Both work - the kernel has `vfat` and `exfat`, and a 118 GB card of each has
+been booted and played from. Take whichever your computer offers: at the size
+of card anyone actually uses that is usually exFAT, and there is no reason to
+fight it.
 
 | | |
 |---|---|
-| **macOS** | Disk Utility, `View -> Show All Devices` so you get the whole card and not just its volume, then `Erase`: format **MS-DOS (FAT)**, scheme **Master Boot Record**. |
-| **Linux** | `sudo mkfs.vfat -F 32 /dev/sdX1` on an MBR-partitioned card. |
-| **Windows** | The built-in formatter stops offering FAT32 above 32 GB; use a third-party formatter for a larger card. |
+| **macOS** | Disk Utility, `View -> Show All Devices` so you get the whole card rather than just its volume, then `Erase`: **ExFAT** or **MS-DOS (FAT)**, scheme **Master Boot Record**. |
+| **Linux** | `mkfs.exfat` or `mkfs.vfat -F 32` on an MBR-partitioned card. |
+| **Windows** | Either, from the built-in formatter. It stops offering FAT32 above 32 GB, which is another reason exFAT is the easier answer on a big card. |
+
+Copying from macOS leaves `._name` metadata files beside everything. They are
+harmless - the launcher skips every name beginning with a dot, so they never
+show up as games - and `dot_clean /Volumes/YOURCARD` removes them if they
+bother you.
 
 1. Download **`TortOS-v1.0.zip`** from
    [Releases](https://github.com/ericreinsmidt/TortOS/releases/latest).
@@ -91,6 +97,34 @@ both up beside itself (`bootlogo.stock.bmp`, `splash.stock.png`) along with the
 stock init script (`/etc/init.d/runtrimui.tortos-bak`). Removing the card is
 enough to boot stock again; `/usr/trimui/bin/runtrimui-original.sh` is the
 original hook.
+
+What removing the card does **not** undo is anything written to the device
+itself. The stock root filesystem is read-only and everything writable is an
+overlay on the internal eMMC, so what TortOS puts there stays there:
+
+```
+/usr/trimui/bin/runtrimui.sh            the hook
+/usr/trimui/bin/runtrimui-original.sh   the stock hook, moved aside
+/usr/trimui/bin/setbright               brightness before the animation,
+/usr/trimui/bin/tortos-bootbright.sh    re-copied by launch.sh every boot
+/etc/init.d/runtrimui                   patched to call the line above
+/etc/init.d/runtrimui.tortos-bak        the version before that patch
+/etc/splash.png                         the pic2fb loading splash
+/mnt/boot/bootlogo.bmp                  the u-boot splash, on mmcblk0p1
+```
+
+Eight files, none of them a driver and none of them replacing anything the
+system needs to run. TortOS is a launcher that boots on the stock firmware
+rather than a firmware of its own - which is also why **the Wi-Fi networks and
+their passwords survive** a reformatted card. They live in
+`/etc/wifi/wpa_supplicant.conf`, written by the stock `wpa_supplicant` that
+TortOS drives rather than replaces, on the eMMC and never on the card. Forget
+them from the Wi-Fi screen before the device goes to anyone else.
+
+The two splashes are the awkward pair: they are replaced on the device, and the
+originals are saved **to the card** as `bootlogo.stock.bmp` and
+`splash.stock.png`. Keep a copy of those somewhere else if the stock boot logo
+matters to you - a card is the one part of this that gets reformatted.
 
 ---
 

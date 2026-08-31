@@ -75,21 +75,41 @@ leds_off
 if [ -f "$TORTOS_DIR/bootlogo.bmp" ] && [ ! -f "$TORTOS_DIR/.bootlogo_applied" ]; then
 	mkdir -p /mnt/boot
 	if mount -t vfat /dev/mmcblk0p1 /mnt/boot 2> /dev/null; then
-		if [ -f /mnt/boot/bootlogo.bmp ] && [ ! -f "$TORTOS_DIR/bootlogo.stock.bmp" ]; then
-			cp /mnt/boot/bootlogo.bmp "$TORTOS_DIR/bootlogo.stock.bmp"
+		# Ask the image on the boot partition what it is, rather than asking a
+		# marker on the card.
+		#
+		# The marker is the card's, the image is the device's, and a new card
+		# means a missing marker over an already-applied image. Reinstalling on
+		# a freshly formatted card then "backed up the stock logo" - which by
+		# then was OUR logo - straight over the real one, and the genuine stock
+		# image was gone for good on a device that had been reinstalled once.
+		# Found by doing exactly that, 2026-08-30.
+		if cmp -s /mnt/boot/bootlogo.bmp "$TORTOS_DIR/bootlogo.bmp"; then
+			touch "$TORTOS_DIR/.bootlogo_applied"      # already ours
+		else
+			if [ -f /mnt/boot/bootlogo.bmp ] && [ ! -f "$TORTOS_DIR/bootlogo.stock.bmp" ]; then
+				cp /mnt/boot/bootlogo.bmp "$TORTOS_DIR/bootlogo.stock.bmp"
+			fi
+			cp "$TORTOS_DIR/bootlogo.bmp" /mnt/boot/bootlogo.bmp && sync
+			touch "$TORTOS_DIR/.bootlogo_applied"
 		fi
-		cp "$TORTOS_DIR/bootlogo.bmp" /mnt/boot/bootlogo.bmp && sync
-		umount /mnt/boot && touch "$TORTOS_DIR/.bootlogo_applied"
+		umount /mnt/boot
 	fi
 fi
 
 # One-time: the stock "loading" splash that pic2fb blits from /etc/splash.png.
 # Same black frame, same reason.
 if [ -f "$TORTOS_DIR/splash.png" ] && [ ! -f "$TORTOS_DIR/.splash_applied" ]; then
-	if [ -f /etc/splash.png ] && [ ! -f "$TORTOS_DIR/splash.stock.png" ]; then
-		cp /etc/splash.png "$TORTOS_DIR/splash.stock.png"
+	# Same trap as the bootlogo above, same answer: compare, do not assume.
+	if cmp -s /etc/splash.png "$TORTOS_DIR/splash.png"; then
+		touch "$TORTOS_DIR/.splash_applied"           # already ours
+	else
+		if [ -f /etc/splash.png ] && [ ! -f "$TORTOS_DIR/splash.stock.png" ]; then
+			cp /etc/splash.png "$TORTOS_DIR/splash.stock.png"
+		fi
+		cp "$TORTOS_DIR/splash.png" /etc/splash.png && sync
+		touch "$TORTOS_DIR/.splash_applied"
 	fi
-	cp "$TORTOS_DIR/splash.png" /etc/splash.png && sync && touch "$TORTOS_DIR/.splash_applied"
 fi
 
 # One-time: pic2fb blits that splash at the hardware default brightness, which
