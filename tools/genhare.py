@@ -119,7 +119,47 @@ def svg(pad=2.0):
     return "".join(o)
 
 
+
+
+# ---- the favicon ----------------------------------------------------------
+#
+# The tortoise with the head left off: six shell cells and the charge at the
+# centre, which is a compact near-circular shape that still reads at 16px.
+# The full mark does not - the head puts two thirds of the ink on one side, so
+# scaled into a square favicon the shell shrinks to nothing.
+#
+# Imported from markdef/genmark like everything else here. CELLS without HEAD
+# is the whole difference; no cell is redrawn.
+
+def icon_svg(pad=4.0):
+    cells = [(i * G._dxh, j * G._dyh, c) for (i, j, c) in M.CELLS]
+    shapes = [(G.hexpts(x, y, G.R * 0.95), c) for x, y, c in cells]
+    shapes.append((G.hexpts(0.0, 0.0, G.R * 0.95), M.CENTER))
+    xs = [x for pts, _ in shapes for x, _ in pts]
+    ys = [y for pts, _ in shapes for _, y in pts]
+    # Square, and centred on the ink rather than on the origin: a favicon is
+    # drawn into a square box whatever we say, so the box is chosen here where
+    # the padding can stay even.
+    cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+    half = max(max(xs) - min(xs), max(ys) - min(ys)) / 2 + pad
+    o = ['<svg viewBox="%.1f %.1f %.1f %.1f" xmlns="http://www.w3.org/2000/svg" '
+         'role="img" aria-label="TortOS">'
+         % (cx - half, cy - half, half * 2, half * 2)]
+    for pts, col in shapes:
+        o.append('<polygon points="%s" fill="#%02X%02X%02X"/>'
+                 % (" ".join("%.2f,%.2f" % p for p in pts), *col))
+    o.append('</svg>')
+    return "".join(o)
+
+
 if __name__ == "__main__":
-    out = sys.argv[1] if len(sys.argv) > 1 else "res/web/mark.svg"
-    open(out, "w").write(svg())
-    print("wrote", out)
+    out = sys.argv[1] if len(sys.argv) > 1 else "res/web"
+    for name, doc in (("mark.svg", svg()), ("icon.svg", icon_svg())):
+        open(os.path.join(out, name), "w").write(doc)
+        print("wrote", os.path.join(out, name))
+    # The page's watermark: the plain tortoise, written through genmark's OWN
+    # writer so it is the same document as tortos_logo_ideas/exports rather
+    # than a copy of it that can drift.
+    G.OUT = out
+    G.svg("turtle.svg", G.MARK, G.mark_svg(), False)
+    print("wrote", os.path.join(out, "turtle.svg"))

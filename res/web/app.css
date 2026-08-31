@@ -27,6 +27,10 @@
 	--line: #262a36;
 	--bad: #ff6b5e;
 	--radius: 14px;
+	/* The reading column. A file listing is a name on the left and its size
+	 * and buttons on the right, so full-bleed on a desktop put half a metre of
+	 * nothing between the two halves of every row. */
+	--wrap: 880px;
 }
 
 * { box-sizing: border-box; }
@@ -42,13 +46,23 @@
 
 html, body {
 	margin: 0;
-	background: var(--ground);
 	color: var(--text);
 	font-family: "TortOS", system-ui, -apple-system, sans-serif;
 	font-size: 17px;
 	line-height: 1.45;
 	-webkit-text-size-adjust: 100%;
 }
+
+/* The ground goes on html ALONE.
+ *
+ * It was on `html, body` and that hid the watermark below. When html has no
+ * background, body's is propagated to the canvas and painted underneath
+ * everything; when html has one, body stops propagating and paints its own
+ * background as an ordinary block box - which comes AFTER negative-z-index
+ * layers in the painting order, so body's ground covered .app::before. The
+ * mark showed only in the strip below body's box on a short listing, which
+ * looked like a positioning bug and was a painting-order one. */
+html { background: var(--ground); }
 
 /* ---- the gate --------------------------------------------------------- */
 
@@ -141,6 +155,31 @@ button:active, .ghost:active { background: #262a36; }
 
 .app { padding: 0 0 96px; }
 
+/* The mark, sunk into the page behind the listing.
+ *
+ * tortos-mark.svg straight out of tortos_logo_ideas/exports - the same file
+ * genmark.py writes, not a second copy of the shell drawn to fit here. Fixed
+ * rather than scrolling, because a watermark that slides up past the rows
+ * reads as a picture somebody uploaded.
+ *
+ * z-index:-1 puts it under the rows but still over the canvas: .app is not
+ * positioned and sets no z-index, so it never becomes a stacking context and
+ * never traps this behind itself. */
+.app::before {
+	content: '';
+	position: fixed;
+	inset: 0;
+	z-index: -1;
+	pointer-events: none;
+	background: url(/web/turtle.svg) no-repeat center;
+	/* Capped on height as well as width - at the column's 880 the mark is 640
+	 * tall and a laptop window cut the shell off top and bottom, which reads
+	 * as a broken image rather than a quiet one. 1.375 is the mark's own
+	 * 286x208 aspect. */
+	background-size: min(var(--wrap), 86vw, calc(62vh * 1.375)) auto;
+	opacity: .09;
+}
+
 header {
 	position: sticky;
 	top: 0;
@@ -148,7 +187,13 @@ header {
 	display: flex;
 	align-items: center;
 	gap: 12px;
-	padding: 12px 16px;
+	/* Inset to the column rather than max-width'd to it, so the bar's
+	 * background and bottom border still reach both edges of the window while
+	 * the crumbs line up with the rows underneath. The percentage resolves
+	 * against this element's containing block, which is why this only works on
+	 * the two elements that span the viewport - do not lift it into a variable
+	 * and reuse it on a row. */
+	padding: 12px max(16px, calc((100% - var(--wrap)) / 2));
 	padding-top: max(12px, env(safe-area-inset-top));
 	background: rgba(10, 11, 15, .94);
 	backdrop-filter: blur(8px);
@@ -166,7 +211,7 @@ header {
 .tools { display: flex; gap: 8px; flex-shrink: 0; }
 .tools .ghost, .tools button { font-size: 15px; padding: 8px 12px; }
 
-.list { list-style: none; margin: 0; padding: 0; }
+.list { list-style: none; margin: 0 auto; padding: 0; max-width: var(--wrap); }
 
 .row {
 	display: flex;
@@ -202,7 +247,8 @@ header {
 .row .acts button:hover, .row .acts a:hover { color: var(--text); border-color: var(--line); }
 .row .acts .danger:hover { color: var(--bad); border-color: var(--bad); }
 
-.empty { color: var(--dim); text-align: center; padding: 48px 16px; }
+.empty { color: var(--dim); text-align: center; padding: 48px 16px;
+         margin: 0 auto; max-width: var(--wrap); }
 
 /* ---- dropping files ---------------------------------------------------- */
 
@@ -227,7 +273,8 @@ header {
 	z-index: 4;
 	background: var(--panel);
 	border-top: 1px solid var(--line);
-	padding: 8px 16px;
+	/* Same inset as the header, and for the same reason. */
+	padding: 8px max(16px, calc((100% - var(--wrap)) / 2));
 	padding-bottom: max(8px, env(safe-area-inset-bottom));
 	max-height: 40dvh;
 	overflow-y: auto;
