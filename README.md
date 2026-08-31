@@ -20,8 +20,19 @@ first.
 
 ## Install
 
-You need the Brick, a FAT32 SD card, and nothing else. No soldering and no
+You need the Brick, an SD card, and nothing else. No soldering and no
 unlocking.
+
+**Format the card FAT32**, with a Master Boot Record partition scheme. Size is
+not a problem - the card this was developed on is 118 GB of FAT32 - but most
+tools will steer you to exFAT at that size, and exFAT is not what the device
+mounts.
+
+| | |
+|---|---|
+| **macOS** | Disk Utility, `View -> Show All Devices` so you get the whole card and not just its volume, then `Erase`: format **MS-DOS (FAT)**, scheme **Master Boot Record**. |
+| **Linux** | `sudo mkfs.vfat -F 32 /dev/sdX1` on an MBR-partitioned card. |
+| **Windows** | The built-in formatter stops offering FAT32 above 32 GB; use a third-party formatter for a larger card. |
 
 1. Download **`TortOS-v1.0.zip`** from
    [Releases](https://github.com/ericreinsmidt/TortOS/releases/latest).
