@@ -545,7 +545,16 @@ void art_begin(const systems_cfg *sys, const char *roms_dir)
 		 * Favorites shelf to this list - games drawn from every system, with
 		 * no folder of its own - and counting it made the screen say "10 of
 		 * 10" for a nine-system library, with one of the ten always skipped.
-		 * A shelf that is not a folder has no art to fetch. */
+		 * A shelf that is not a folder has no art to fetch.
+		 *
+		 * The empty name is tested FIRST, and on its own. Asking whether the
+		 * folder exists looks like it covers this and does not: Favorites has
+		 * folder "", so the path built below is the ROM root with a trailing
+		 * slash, which exists and is a directory - so the check passed it
+		 * through and the count went back to ten the moment anyone favorited
+		 * a game. A shelf with no folder is not a shelf with a folder that
+		 * happens to be missing. */
+		if (!sys->systems[i].folder[0]) continue;
 		if (snprintf(dir, sizeof dir, "%s/%s", g_romdir,
 		             sys->systems[i].folder) >= (int)sizeof dir) continue;
 		if (stat(dir, &st) != 0 || !S_ISDIR(st.st_mode)) continue;
