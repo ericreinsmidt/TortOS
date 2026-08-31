@@ -51,7 +51,10 @@ typedef struct {
 	SDL_Texture **tex;
 	int *tw, *th;
 	int cursor;
-	int dmode;              /* index into DMODES: how this system is scaled */
+	/* Index into DMODES. Zero-initialised like the rest of this struct, so
+	 * whatever sits at index 0 is what an untouched card plays at - see the
+	 * note on DMODES itself. */
+	int dmode;
 	coverflow cf;
 	/* NULL on a real shelf, where every game belongs to the system whose
 	 * shelf it is. Favorites is a shelf of games drawn from many systems, so
@@ -68,13 +71,19 @@ typedef struct {
  * The names are Diatom's protocol strings and have to match its own table in
  * src/scale.c exactly - it answers an unknown one with ERROR code=bad_display
  * and changes nothing. The labels are ours, and are what the menu shows. */
+/* STRETCH IS FIRST, AND FIRST IS THE DEFAULT. A sysview is zero-initialised
+ * and no display.cfg ships, so index 0 is what every system plays at on a card
+ * nobody has configured. Filling the panel is the right default on a handheld
+ * whose screen is the whole device: the alternative spends a fifth of a
+ * 1024x768 panel on black bars for the Game Boys before anyone has been given
+ * a reason to choose. The rest keep their order. */
 static const struct { const char *name, *label; } DMODES[] = {
+	{ "stretch",          "Stretch"      },
 	{ "aspect",           "Aspect"       },
 	{ "integer",          "Integer"      },
 	{ "integer-vertical", "Integer tall" },
 	{ "overscale",        "Overscale"    },
 	{ "fill",             "Fill"         },
-	{ "stretch",          "Stretch"      },
 	{ "native",           "Native 1:1"   },
 };
 #define DMODE_COUNT ((int)(sizeof DMODES / sizeof DMODES[0]))
@@ -3057,7 +3066,7 @@ static const char *child_env[24];
 static void build_child_env(void)
 {
 	static const char *fixed[] = {
-		"PLATFORM=tg5040", "DEVICE=brick",
+		"PLATFORM=tg3040", "DEVICE=brick",
 		"SDCARD_PATH=/mnt/SDCARD",
 		"BIOS_PATH=/mnt/SDCARD/Bios",
 		"CHEATS_PATH=/mnt/SDCARD/Cheats",

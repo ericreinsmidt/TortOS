@@ -1,5 +1,5 @@
 #!/bin/sh
-# TortOS boot entry. Called from .tmp_update/tg5040.sh; never returns.
+# TortOS boot entry. Called from .tmp_update/tg3040.sh; never returns.
 #
 # The order of things in here is the boot time. The animation runs in the
 # background and everything else -- the launcher's whole startup and the
@@ -9,7 +9,7 @@
 TORTOS_DIR=/mnt/SDCARD/TortOS
 SDCARD=/mnt/SDCARD
 
-export PLATFORM=tg5040
+export PLATFORM=tg3040
 export DEVICE=brick
 export SDCARD_PATH=$SDCARD
 export BIOS_PATH=$SDCARD/Bios
@@ -18,7 +18,7 @@ export SAVES_PATH=$SDCARD/Saves
 export CHEATS_PATH=$SDCARD/Cheats
 export SYSTEM_PATH=$TORTOS_DIR
 export CORES_PATH=$TORTOS_DIR/cores
-export USERDATA_PATH=$SDCARD/.userdata/tg5040
+export USERDATA_PATH=$SDCARD/.userdata/tg3040
 export SHARED_USERDATA_PATH=$SDCARD/.userdata/shared
 export LOGS_PATH=$USERDATA_PATH/logs
 export HOME=$USERDATA_PATH

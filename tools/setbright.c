@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: 0BSD
  *
- * Set the LCD backlight on the TrimUI Brick (tg5040) straight through the
+ * Set the LCD backlight on the TrimUI Brick (tg3040) straight through the
  * display-engine ioctl, so the boot animation is at the configured brightness
  * from its first frame rather than the hardware default. launch.sh runs this
  * before anything is drawn, because the launcher that would normally apply

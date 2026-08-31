@@ -2,9 +2,18 @@
 # TortOS SD-boot entry. The stock runtrimui.sh runs this when it is present on
 # the card.
 
+# The Brick and the Brick Hammer are both TG3040, and the model is in cpuinfo's
+# `hwserial` line - TG3040003C1D47AE on the device this was written against.
+# Nothing else in cpuinfo names the machine: /proc/device-tree/model says
+# sun50iw10 and board.json says allwinner,a133, which are the SoC and tell you
+# nothing about which handheld it is in.
+#
+# TG5040 used to be accepted here as well. That is the Smart Pro, a different
+# machine TortOS has never run on, and letting it through meant booting on
+# hardware nobody had tried instead of leaving it on the firmware that works.
 INFO=$(cat /proc/cpuinfo 2> /dev/null)
 case $INFO in
-*TG5040*|*TG3040*) ;;
+*TG3040*) ;;
 *)
 	# Not a Brick / Brick Hammer: fall back to stock rather than half-booting.
 	if [ -f /usr/trimui/bin/runtrimui-original.sh ]; then
@@ -14,7 +23,7 @@ case $INFO in
 	;;
 esac
 
-/mnt/SDCARD/.tmp_update/tg5040.sh
+/mnt/SDCARD/.tmp_update/tg3040.sh
 
 # The launch loop only returns for a power-off; make sure it sticks. This also
 # means killing launch.sh by hand powers the device off -- do not do that while

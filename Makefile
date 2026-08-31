@@ -197,7 +197,7 @@ adb-run:
 	  ./tortos.elf 2>&1' | head -60
 
 adb-log:
-	adb shell 'tail -60 /mnt/SDCARD/.userdata/tg5040/logs/tortos.log 2>/dev/null'
+	adb shell 'tail -60 /mnt/SDCARD/.userdata/tg3040/logs/tortos.log 2>/dev/null'
 
 # --- Push to a running device over SSH. BRICK=<ip> to override.
 deploy: all
@@ -209,7 +209,7 @@ restart:
 	$(SSH) 'killall -q tortos.elf; exit 0'
 
 logs:
-	$(SSH) 'tail -60 /mnt/SDCARD/.userdata/tg5040/logs/tortos.log 2>/dev/null'
+	$(SSH) 'tail -60 /mnt/SDCARD/.userdata/tg3040/logs/tortos.log 2>/dev/null'
 
 clean:
 	rm -rf build build-native out

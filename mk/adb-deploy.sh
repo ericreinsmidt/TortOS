@@ -37,8 +37,7 @@ case "$($A shell 'mount | grep -q " /mnt/SDCARD " && echo MOUNTED')" in
 esac
 
 $A shell "mkdir -p $P/cards $P/cores $P/lib $P/bin /mnt/SDCARD/.tmp_update \
-          /mnt/SDCARD/.userdata/shared /mnt/SDCARD/.system/res \
-          /mnt/SDCARD/.system/tg5040/shaders" > /dev/null
+          /mnt/SDCARD/.userdata/shared /mnt/SDCARD/.system/res" > /dev/null
 
 case $WHAT in elf|all)
 	[ -f "$ROOT/build/tortos.elf" ] || { echo "run make first"; exit 1; }
@@ -49,9 +48,9 @@ case $WHAT in elf|all)
 	$A push "$ROOT/config/coreopts.cfg"     "$P/" > /dev/null
 	$A push "$ROOT/sd/tortos/launch.sh"     "$P/" > /dev/null
 	$A push "$ROOT/sd/.tmp_update/updater"   /mnt/SDCARD/.tmp_update/ > /dev/null
-	$A push "$ROOT/sd/.tmp_update/tg5040.sh" /mnt/SDCARD/.tmp_update/ > /dev/null
+	$A push "$ROOT/sd/.tmp_update/tg3040.sh" /mnt/SDCARD/.tmp_update/ > /dev/null
 	$A shell "chmod +x $P/tortos.elf $P/setbright $P/launch.sh \
-	          /mnt/SDCARD/.tmp_update/updater /mnt/SDCARD/.tmp_update/tg5040.sh"
+	          /mnt/SDCARD/.tmp_update/updater /mnt/SDCARD/.tmp_update/tg3040.sh"
 	echo "  + launcher"
 esac
 case $WHAT in res|all)

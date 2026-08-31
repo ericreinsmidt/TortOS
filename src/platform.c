@@ -67,7 +67,7 @@ static int dbg_input;
 const char *P_ROOT = "/mnt/SDCARD/TortOS";
 const char *P_CARD = "/mnt/SDCARD";
 const char *P_ROMS = "/mnt/SDCARD/Roms";
-const char *P_USERDATA = "/mnt/SDCARD/.userdata/tg5040";
+const char *P_USERDATA = "/mnt/SDCARD/.userdata/tg3040";
 const char *P_SHARED = "/mnt/SDCARD/.userdata/shared";
 /* Over The Hare's page. On the card rather than in the binary so it can be
  * restyled with a text editor and a reload, which is the whole argument for

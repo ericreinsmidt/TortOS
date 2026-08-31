@@ -1,4 +1,4 @@
-# Cross-toolchain for the TrimUI Brick (tg5040 platform).
+# Cross-toolchain for the TrimUI Brick (tg3040).
 #
 # Nothing in here comes from NextUI, MinUI, LoveRetro or TrimUI's SDK. A stock
 # Debian cross-compiler is the whole toolchain; the platform's SDL2 libraries

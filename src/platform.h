@@ -20,7 +20,7 @@
 extern const char *P_ROOT;     /* /mnt/SDCARD/TortOS      */
 extern const char *P_CARD;     /* /mnt/SDCARD             */
 extern const char *P_ROMS;     /* /mnt/SDCARD/Roms        */
-extern const char *P_USERDATA; /* /mnt/SDCARD/.userdata/tg5040 */
+extern const char *P_USERDATA; /* /mnt/SDCARD/.userdata/tg3040 */
 extern const char *P_SHARED;   /* /mnt/SDCARD/.userdata/shared */
 extern const char *P_WEB;      /* /mnt/SDCARD/TortOS/res/web - Hare's page */
 extern const char *P_FONT;     /* the UI typeface          */

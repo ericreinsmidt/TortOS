@@ -64,10 +64,10 @@ if [ -n "$missing" ]; then
 	exit 1
 fi
 
-cp "$ROOT/sd/.tmp_update/updater" "$ROOT/sd/.tmp_update/tg5040.sh" "$OUT/.tmp_update/"
+cp "$ROOT/sd/.tmp_update/updater" "$ROOT/sd/.tmp_update/tg3040.sh" "$OUT/.tmp_update/"
 cp "$ROOT/sd/trimui/app/MainUI" "$ROOT/sd/trimui/app/runtrimui.sh" "$OUT/trimui/app/"
 
-chmod +x "$OUT/.tmp_update/updater" "$OUT/.tmp_update/tg5040.sh" \
+chmod +x "$OUT/.tmp_update/updater" "$OUT/.tmp_update/tg3040.sh" \
          "$OUT/trimui/app/MainUI" "$OUT/trimui/app/runtrimui.sh" \
          "$P/launch.sh" "$P/tortos.elf" "$P/diatom" "$P/setbright"
 
