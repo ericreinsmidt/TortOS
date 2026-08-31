@@ -21,7 +21,7 @@ static const float font_mul[UI_F_COUNT] = {
 	[UI_F_MENU]  = 1.34f,   /* 43 */
 	[UI_F_LABEL] = 1.50f,   /* 48 */
 	[UI_F_META]  = 1.00f,   /* 32 */
-	[UI_F_CARD]  = 1.38f,   /* 44, in card pixels */
+	[UI_F_CARD]  = 1.94f,   /* 62, in card pixels - the title IS the card */
 };
 
 static TTF_Font *fonts[UI_F_COUNT];
@@ -427,20 +427,24 @@ static void round_corners(SDL_Surface *s, int radius)
 	}
 }
 
-static void blit_line(SDL_Surface *dst, TTF_Font *f, const char *line, int *y)
+static void blit_line(SDL_Surface *dst, TTF_Font *f, const char *line, int *y,
+                      int x)
 {
 	SDL_Surface *t = TTF_RenderUTF8_Blended(f, line, UI_TEXT);
 	if (!t) return;
-	SDL_BlitSurface(t, NULL, dst, &(SDL_Rect){ (dst->w - t->w) / 2, *y, 0, 0 });
+	SDL_BlitSurface(t, NULL, dst,
+	                &(SDL_Rect){ x < 0 ? (dst->w - t->w) / 2 : x, *y, 0, 0 });
 	*y += t->h + 4;
 	SDL_FreeSurface(t);
 }
 
-/* Break a title across lines that fit the card and draw them centered. The
- * line is built by appending in place and undoing the append when it no
- * longer fits, so there is no second buffer that could truncate the first. */
-static void draw_wrapped(SDL_Surface *dst, TTF_Font *f, const char *title,
-                         int box_w, int top_y)
+/* Break a title across lines that fit the card. `x` is where each line starts,
+ * or -1 to centre them. The line is built by appending in place and undoing the
+ * append when it no longer fits, so there is no second buffer that could
+ * truncate the first. Returns the y below the last line, which is where a rule
+ * under the title goes. */
+static int draw_wrapped(SDL_Surface *dst, TTF_Font *f, const char *title,
+                        int box_w, int top_y, int x)
 {
 	char line[256];
 	char word[96];
@@ -463,7 +467,7 @@ static void draw_wrapped(SDL_Surface *dst, TTF_Font *f, const char *title,
 		keep = len;
 		if (len + (len ? 1 : 0) + n + 1 > sizeof line) {
 			/* the line cannot hold another word at all */
-			if (len) { blit_line(dst, f, line, &y); lines++; }
+			if (len) { blit_line(dst, f, line, &y, x); lines++; }
 			snprintf(line, sizeof line, "%s", word);
 			len = n;
 			continue;
@@ -476,19 +480,25 @@ static void draw_wrapped(SDL_Surface *dst, TTF_Font *f, const char *title,
 		TTF_SizeUTF8(f, line, &w, NULL);
 		if (w > box_w && keep) {
 			line[keep] = '\0';                /* undo the append */
-			blit_line(dst, f, line, &y);
+			blit_line(dst, f, line, &y, x);
 			lines++;
 			snprintf(line, sizeof line, "%s", word);
 			len = n;
 		}
 	}
-	if (line[0] && lines < 4) blit_line(dst, f, line, &y);
+	if (line[0] && lines < 4) blit_line(dst, f, line, &y, x);
+	return y;
 }
 
-/* The first letter of the title, enormous and barely there. It gives a card
- * with no art a silhouette of its own, so a row of generated cards is still
- * telling you something as it slides past rather than being a row of identical
- * slabs. */
+/* The first letter of the title, enormous and barely there, running off the
+ * bottom-right corner.
+ *
+ * It used to sit centred and upright at a third of the way down, which made it
+ * the largest thing on the card - and on an alphabetised shelf it is the least
+ * distinguishing: Castlevania, Contra and Crystalis sit next to each other and
+ * were three identical Cs with the titles that tell them apart set small
+ * underneath. Bled off the corner it is what it always was, a texture in the
+ * system's colour, and the title can have the space. */
 static void draw_watermark(SDL_Surface *dst, const char *title, unsigned rgb)
 {
 	char ch[2] = { 0, 0 };
@@ -501,15 +511,17 @@ static void draw_watermark(SDL_Surface *dst, const char *title, unsigned rgb)
 	if ((unsigned char)ch[0] > 127) return;   /* one glyph, and an ASCII one */
 
 	if (!f_mark && font_path_kept[0])
-		f_mark = TTF_OpenFont(font_path_kept, 340);
+		f_mark = TTF_OpenFont(font_path_kept, 560);
 	if (!f_mark) return;
 
 	t = TTF_RenderUTF8_Blended(f_mark, ch, (SDL_Color){
-		(Uint8)(rgb >> 16), (Uint8)(rgb >> 8), (Uint8)rgb, 46 });
+		(Uint8)(rgb >> 16), (Uint8)(rgb >> 8), (Uint8)rgb, 55 });
 	if (!t) return;
 	SDL_SetSurfaceBlendMode(t, SDL_BLENDMODE_BLEND);
+	/* Deliberately past both edges: what is wanted is the shoulder of the
+	 * letter, not the letter. */
 	SDL_BlitSurface(t, NULL, dst, &(SDL_Rect){
-		(dst->w - t->w) / 2, (int)(CARD_H * 0.30f) - t->h / 2, 0, 0 });
+		dst->w - (int)(t->w * 0.62f), CARD_H - (int)(t->h * 0.80f), 0, 0 });
 	SDL_FreeSurface(t);
 }
 
@@ -539,12 +551,22 @@ SDL_Texture *ui_make_card(SDL_Renderer *r, const char *title, unsigned rgb,
 	SDL_FillRect(s, &(SDL_Rect){ 0, 0, CARD_W, 6 },
 	             SDL_MapRGBA(s->format, (Uint8)(rgb >> 16), (Uint8)(rgb >> 8),
 	                         (Uint8)rgb, 255));
-	SDL_FillRect(s, &(SDL_Rect){ 52, (int)(CARD_H * 0.615f), CARD_W - 104, 2 },
-	             SDL_MapRGBA(s->format, (Uint8)(rgb >> 16), (Uint8)(rgb >> 8),
-	                         (Uint8)rgb, 170));
 
-	if (fonts[UI_F_CARD])
-		draw_wrapped(s, fonts[UI_F_CARD], title, CARD_W - 76, (int)(CARD_H * 0.655f));
+	/* The title at the top and hard left, because that is the edge the eye
+	 * runs down when the row is moving. A rule under it rather than across
+	 * the card: it is the end of the name, not a divider between halves. */
+	if (fonts[UI_F_CARD]) {
+		/* Not at the top edge. Started at 76 it left the bottom half of the
+		 * card empty for the one-line titles that are most of a shelf, and the
+		 * bleed does not fill it - the face darkens toward the foot and takes
+		 * the letter's tail with it. Four lines still fit below this. */
+		int y = draw_wrapped(s, fonts[UI_F_CARD], title, CARD_W - 96,
+		                     (int)(CARD_H * 0.38f), 48);
+
+		SDL_FillRect(s, &(SDL_Rect){ 48, y + 12, 90, 3 },
+		             SDL_MapRGBA(s->format, (Uint8)(rgb >> 16),
+		                         (Uint8)(rgb >> 8), (Uint8)rgb, 220));
+	}
 
 	round_corners(s, CARD_RADIUS);
 	t = SDL_CreateTextureFromSurface(r, s);
