@@ -45,3 +45,6 @@ sysroot/
 # Copied in from res/fonts at deploy and payload time so the browser can ask
 # for /web/menu.ttf - one copy in the repo, two on the card.
 /res/web/menu.ttf
+
+# A scratch harness for the box art scraper, not part of the build.
+/tools/art-try.c
