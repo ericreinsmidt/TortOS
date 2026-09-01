@@ -159,7 +159,7 @@ matters to you - a card is the one part of this that gets reformatted.
 | **F1 / F2** | brightness, everywhere, including in game |
 | **MENU** (on the systems row) | the TortOS menu - settings that are about the firmware |
 | **MENU** (inside a system) | that system's menu, below |
-| **MENU** (in game) | the in-game menu: Continue, Save, Load, Options, Reset, Quit |
+| **MENU** (in game) | the in-game menu: Continue, Save, Load, Display, Cheevos, Reset, Quit |
 | **POWER** | ends the game if one is running, otherwise powers off |
 
 MENU means three different menus depending on where you are, and each one is
@@ -191,12 +191,11 @@ screen; this is the same thing by hand, for a card written some other way.
 the button repeatedly for you instead of you mashing it. It applies to a whole
 system rather than to one game.
 
-Six of the nine have it: **NES, Master System, Game Boy, Game Boy Color, Game
-Boy Advance and Game Gear**. Those consoles had two face buttons, so X and Y are
-spare and turbo can have them. Genesis and SNES are left out because their pads
-use X and Y for real buttons, and the PC Engine because its core has a turbo of
-its own that works differently. Which systems get it, and how fast, is
-`turbo.cfg` below.
+Seven of the nine have it: **NES, Master System, TurboGrafx-16, Game Boy, Game
+Boy Color, Game Boy Advance and Game Gear**. Those consoles had two face buttons,
+so X and Y are spare and turbo can have them. Genesis and SNES are left out
+because their pads use X and Y for real buttons. Which systems get it, and how
+fast, is `turbo.cfg` below.
 
 Diatom does the pulsing, not the emulator core, which is why it works the same
 on all six rather than only on the one core that happens to implement turbo.
@@ -241,7 +240,11 @@ configured anywhere.
 
 The in-game menu is the launcher's own: MENU makes Diatom hand the display
 over with a preview of the paused frame, and Continue, Save, Load, Reset and
-Quit act through one protocol line each. Volume and brightness set in a game
+Quit act through one protocol line each. **Display** cycles the running game's
+mode as you press it, which is the one to use when you want to see the
+difference rather than guess at it, and **Cheevos** shows how much of this
+game's set you have earned, or reads `none` and stays unselectable when there
+is no set. Volume and brightness set in a game
 come back to the launcher's settings when the game ends, because the two
 sides share one levels channel instead of overwriting each other.
 
