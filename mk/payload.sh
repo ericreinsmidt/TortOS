@@ -77,9 +77,14 @@ awk -F'|' '$1=="sys"{gsub(/^[ \t]+|[ \t]+$/,"",$3); print $3}' "$ROOT/config/sys
 while IFS= read -r folder; do
 	mkdir -p "$OUT/Roms/$folder/.media"
 done
-# Only mgba can use a BIOS, and only optionally; the other two never do, so
-# there is no reason to litter the card with empty Bios folders.
-mkdir -p "$OUT/Bios/GBA"
+# Bios/ is created above and stays FLAT. It is handed to the core as its system
+# directory and a core asks for a filename inside it - mgba wants gba_bios.bin,
+# mednafen wants syscard3.pce - so a folder per system is a place a BIOS goes to
+# be ignored. This line used to read `mkdir -p "$OUT/Bios/GBA"`, directly under a
+# comment saying not to litter the card with empty Bios folders, and it shipped
+# in v1.0: an empty GBA/ that contradicted the README two directories away.
+# Nothing errors when a BIOS lands in it. mgba falls back to its built-in one and
+# the only symptom is the boot animation you were trying to enable not appearing.
 
 du -sh "$OUT"
 echo "payload ready: $OUT"
