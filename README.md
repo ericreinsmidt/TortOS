@@ -38,8 +38,7 @@ Every number in this file was measured on the device.
 
 ## Install
 
-You need the Brick, an SD card, and nothing else. No soldering and no
-unlocking.
+You need the Brick, an SD card, and nothing else.
 
 **Format the card exFAT**, with a Master Boot Record partition scheme.
 
@@ -49,10 +48,9 @@ unlocking.
 | **Linux** | `mkfs.exfat` on an MBR-partitioned card. |
 | **Windows** | Right-click the card, `Format`, **exFAT**. |
 
-FAT32 works too if that is what the card already is - the kernel has both, and
-118 GB of each has been booted and played from - but exFAT is what every
-formatter offers at the size of card anyone actually uses, so it is the one
-worth naming.
+FAT32 works too if that is what the card already is - the kernel has both - but
+exFAT is what every formatter offers at the size of card anyone actually uses,
+so it is the one worth naming.
 
 Copying from macOS leaves `._name` metadata files beside everything. They are
 harmless - the launcher skips every name beginning with a dot, so they never
