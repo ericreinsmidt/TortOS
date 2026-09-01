@@ -4,7 +4,7 @@
   <img src="res/readme/turtle.png" alt="" height="84">
 </p>
 
-A custom firmware for the **TrimUI Brick / Brick Hammer** that plays ten 8-
+A custom firmware for the **TrimUI Brick / Brick Hammer** that plays eleven 8-
 and 16-bit consoles.
 
 What is on screen is a row of cards, the name of the thing under the cursor,
@@ -78,6 +78,7 @@ Roms/TurboGrafx-16/           .pce .sgx .cue .ccd .chd .toc .m3u .zip
 Roms/Game Gear/               .gg .zip
 Roms/SNES/                    .sfc .smc .zip
 Roms/Game Boy Color/          .gbc .cgb .zip
+Roms/NGP/                     .ngp .ngc .ngpc .npc .zip
 Roms/NGPC/                    .ngp .ngc .ngpc .npc .zip
 Roms/Game Boy Advance/        .gba .agb .zip
 Roms/<system>/.media/<name>.png     box art, optional
@@ -192,8 +193,9 @@ screen; this is the same thing by hand, for a card written some other way.
 the button repeatedly for you instead of you mashing it. It applies to a whole
 system rather than to one game.
 
-Eight of the ten have it: **NES, Master System, TurboGrafx-16, Game Boy, Game
-Boy Color, Game Boy Advance, Game Gear and Neo Geo Pocket Color**. Those consoles had two face buttons,
+Nine of the eleven have it: **NES, Master System, TurboGrafx-16, Game Boy, Game
+Boy Color, Game Boy Advance, Game Gear, Neo Geo Pocket and Neo Geo Pocket
+Color**. Those consoles had two face buttons,
 so X and Y are spare and turbo can have them. Genesis and SNES are left out
 because their pads use X and Y for real buttons. Which systems get it, and how
 fast, is `turbo.cfg` below.
@@ -319,9 +321,11 @@ Pressing A on it does not start it, it continues it.
 - **Manual save and load**, eight slots, from the in-game menu (`MENU`).
   Silent - the device shows no in-game chrome.
 
-Saves and states are keyed on the system's **tag** (`NES`, `PCE`, `GBA`), which
-is stated outright in `systems.cfg` rather than guessed from punctuation in a
-filename, so renaming a ROM folder cannot orphan a save.
+States are keyed on the system's **`Roms/` folder**, and battery `.srm` files
+sit flat in `Saves/` named after the ROM. The **tag** in `systems.cfg` keys
+something else: the per-system display mode and the favorites list. This
+paragraph claimed for a while that saves and states hung off the tag; they do
+not, checked in the code on 2026-09-01.
 
 Cartridge battery saves are separate from all of that: a game with a battery
 gets a `.srm` beside the state. **Neo Geo Pocket Color is the exception** - its

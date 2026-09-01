@@ -1609,7 +1609,7 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 	 * this was (61,214,255), and comments in both files called them the same
 	 * color without either having been checked against the other. Unified on
 	 * this cyan on 2026-08-28, that being the direction that stays clear of the
-	 * ten system accents; the mark's old blue sat close to Genesis. */
+	 * eleven system accents; the mark's old blue sat close to Genesis. */
 	ui_glow(a->r, &panel, accent, 60, 1.5f);
 	ui_panel(a->r, &panel, MENU_RADIUS, accent);
 
@@ -1680,7 +1680,7 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 			 * frames the panel; using it again for the cursor made the two
 			 * compete, and on a dark red system the plate read as a stain on
 			 * the row rather than a highlight under it. White is neutral
-			 * against all ten accents.
+			 * against all eleven accents.
 			 *
 			 * A flat plate, with no radial glow under it. The glow was
 			 * brightest at the row's midpoint and fell off toward both ends,

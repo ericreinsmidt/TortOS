@@ -68,6 +68,7 @@ static const struct { const char *folder, *remote; } MAP[] = {
 	 * The remote is the Color repo specifically - "SNK - Neo Geo Pocket"
 	 * 404s on thumbnails.libretro.com, checked rather than assumed. */
 	{ "NGPC",             "SNK - Neo Geo Pocket Color" },
+	{ "NGP",              "SNK - Neo Geo Pocket" },
 };
 #define MAP_N ((int)(sizeof MAP / sizeof MAP[0]))
 
