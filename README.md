@@ -78,8 +78,8 @@ Roms/TurboGrafx-16/           .pce .sgx .cue .ccd .chd .toc .m3u .zip
 Roms/Game Gear/               .gg .zip
 Roms/SNES/                    .sfc .smc .zip
 Roms/Game Boy Color/          .gbc .cgb .zip
-Roms/NGP/                     .ngp .ngc .ngpc .npc .zip
-Roms/NGPC/                    .ngp .ngc .ngpc .npc .zip
+Roms/Neo Geo Pocket/          .ngp .ngc .ngpc .npc .zip
+Roms/Neo Geo Pocket Color/    .ngp .ngc .ngpc .npc .zip
 Roms/Game Boy Advance/        .gba .agb .zip
 Roms/<system>/.media/<name>.png     box art, optional
 ```
