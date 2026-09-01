@@ -13,8 +13,26 @@ RetroAchievements, box art the device fetches itself, and a small web server
 for moving files on and off over Wi-Fi - each one row in one menu, and none of
 it in the way of starting a game.
 
-The design metric is **speed**. Every decision in here was made by measuring
-first.
+The design metric is **speed**, and one decision carries most of it: **TortOS
+never starts a process to run a game.**
+
+A cold start costs about 1100 ms on this hardware and almost none of it is the
+game - it is SDL, an EGL context, audio and settings. So the emulator comes up
+once during the boot animation and stays up for the whole session, and a game
+arrives as a single line on a socket.
+
+| | |
+|---|---|
+| Starting a game | **~15 ms** |
+| Switching to a different console | **~15 ms** |
+| Every core held in memory at once | **15 MB** of 975 |
+
+The middle row is the one nothing else here does. Each core is mapped the first
+time a game needs it and is never unloaded, so going from a Game Boy game to a
+SNES game costs exactly what starting another Game Boy game costs. Nothing is
+preloaded, and there is no core list to configure anywhere.
+
+Every number in this file was measured on the device.
 
 ---
 
@@ -235,11 +253,11 @@ and the card preview live, and reads back what actually happened: `RUNNING`,
 `EXIT reason=`, or an `ERROR code=` it can show.
 
 A warm launch - the process up, the core already mapped - is **~15 ms** to
-`RUNNING`. Cores are mapped the first time a game needs one and kept for the
-life of the process (`RTLD_LOCAL`, so libraries exporting the same twenty
-`retro_*` symbols cannot see each other), which makes switching systems cost
-what launching another game on the same system costs, with no core list
-configured anywhere.
+`RUNNING`. A core is mapped the first time a game needs it and never unloaded:
+six mapped plus one running measured **15.0 MB** against the device's 975, which
+is what makes holding all of them affordable rather than reckless. They are
+opened `RTLD_LOCAL`, so libraries exporting the same twenty `retro_*` symbols
+cannot see each other.
 
 The in-game menu is the launcher's own: MENU makes Diatom hand the display
 over with a preview of the paused frame, and Continue, Save, Load, Reset and
