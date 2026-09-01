@@ -1126,14 +1126,33 @@ struct pl_ctl_elem_value {
  * unmistakably present. That is the floor, ~1.5 dB a press across the 21
  * positions.
  *
- * Every rms number above was captured with HP_CTL sitting at 3, which
- * mixer_defaults() below explains was 18 dB of attenuation nobody knew was in
- * the path. Restoring it did not invalidate the floor: 26 was picked to keep
- * the bottom of the scale off the room noise, and every reading moved up
- * together, so the shape held. Eric ran the full slider on 2026-08-31 and
- * called the range right. The derivation is wrong, the number is not, and
- * re-sweeping would only move a value the player already likes. */
-#define GAIN_RAW_USABLE 26
+ * Those rms numbers were captured with HP_CTL already at 0 - the sweep script
+ * sets it before measuring - so they describe the chain as it behaves now, and
+ * the 18 dB that mixer_defaults() restored was never inside them. A note here
+ * briefly claimed the opposite. That was inferred rather than read off the
+ * script which produced the table, and the script was on disk the whole time.
+ * The 18 dB gap was between the SWEEP and gameplay, not inside the sweep, which
+ * is exactly why the table looked sane while the device sounded quiet.
+ *
+ * What is weak here is the instrument, not the conditions. Those readings came
+ * from a microphone across the room, where raw 26 is 5.2x the room and raw 34
+ * is indistinguishable from it. A handheld at arm's length is a different
+ * question: what reads as silence over there is plainly audible in your hands.
+ * That is why the bottom of the scale was still reported as too loud once the
+ * chain was fixed, and why the floor below is now set by ear rather than by
+ * that table.
+ *
+ * 39, chosen on the device on 2026-08-31 with a game playing, stepping the
+ * register down until Eric called it: raw 37 is barely audible and is where he
+ * wanted position 1. 39 is the constant that puts position 1 on 37 in this
+ * ladder AND in Diatom's, which round differently; 26 put it on 25. Position 20
+ * still lands on raw 0, so nothing about maximum changes.
+ *
+ * It costs resolution. Twenty positions across 39 is about 2.3 dB a press
+ * rather than 1.5, bought with a range of 45 dB rather than 30. That is the
+ * trade worth making: 30 dB down is not quiet in a room that is quiet, which
+ * a microphone across the room could not tell us and an ear could. */
+#define GAIN_RAW_USABLE 39
 #define SPEAKER_CTL  "HpSpeaker Switch"   /* the only true mute on this codec */
 #define HP_CTL       "Headphone Volume"   /* 0-7, 6 dB a step, INVERTED */
 #define SWAP_CTL     "DAC Swap"           /* 1 crosses left and right */
