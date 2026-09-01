@@ -53,6 +53,7 @@ fetch_core snes9x2010        3933890f520abb9dbb0e5276460785b20ce54d25f552b369caf
 fetch_core mgba              abde7a0764f08fa0cc2c7d3d9a29b9d1245a9f3b7df0e7a594b74df642ee53c6
 fetch_core genesis_plus_gx   3673a22b906509461e23a5a118b1d1bec15cbda105f260cbcbc08a16b2124e48
 fetch_core mednafen_pce_fast aca90a14b18108c86398da2267ef40d5145eaddbc1c1b310614d745b258552b1
+fetch_core mednafen_ngp      a2015668f9a9403b8bf6941b550fae2c618f37b79173e8ba27c95b95f96bdd99
 
 echo "vendor/cores ready:"
 ls "$VENDOR/cores"

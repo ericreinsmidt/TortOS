@@ -40,6 +40,7 @@ The SDL2 libraries TortOS links against are the device's own, in
 | `mgba_libretro.so` | Game Boy, Game Boy Color, Game Boy Advance | MPL-2.0 |
 | `snes9x2010_libretro.so` | SNES | **Non-commercial** |
 | `genesis_plus_gx_libretro.so` | Genesis, Master System, Game Gear | **Non-commercial** |
+| `mednafen_ngp_libretro.so` | Neo Geo Pocket / Color | GPL-2.0 (Beetle NeoPop, Mednafen-derived) |
 
 **The last two carry a non-commercial restriction.** They are not open source
 under either the OSI or FSF definition and they restrict commercial

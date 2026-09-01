@@ -161,7 +161,7 @@ const char *plat_coreopt(const char *tag, int i)
  * X becomes a turbo A and Y a turbo B, three frames pressed and three released.
  *
  * Per system because it is only safe where those two buttons are SPARE. Seven of
- * the nine consoles here have two face buttons; a Genesis 6-button pad and a
+ * the ten consoles here have two face buttons; a Genesis 6-button pad and a
  * SNES pad use X and Y for real, and turbo would take them away.
  *
  * A file rather than a table in the binary because the rate is exactly the sort
