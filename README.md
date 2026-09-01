@@ -78,7 +78,7 @@ Roms/TurboGrafx-16/           .pce .sgx .cue .ccd .chd .toc .m3u .zip
 Roms/Game Gear/               .gg .zip
 Roms/SNES/                    .sfc .smc .zip
 Roms/Game Boy Color/          .gbc .cgb .zip
-Roms/Neo Geo Pocket Color/    .ngp .ngc .ngpc .npc .zip
+Roms/NGPC/                    .ngp .ngc .ngpc .npc .zip
 Roms/Game Boy Advance/        .gba .agb .zip
 Roms/<system>/.media/<name>.png     box art, optional
 ```
@@ -322,6 +322,14 @@ Pressing A on it does not start it, it continues it.
 Saves and states are keyed on the system's **tag** (`NES`, `PCE`, `GBA`), which
 is stated outright in `systems.cfg` rather than guessed from punctuation in a
 filename, so renaming a ROM folder cannot orphan a save.
+
+Cartridge battery saves are separate from all of that: a game with a battery
+gets a `.srm` beside the state. **Neo Geo Pocket Color is the exception** - its
+core reports no save memory at all, measured as zero bytes on two carts that do
+save, so nothing writes a `.srm` and no battery file exists to copy off the card.
+Progress there lives entirely in the autosave state, which is written on every
+exit like every other system, so in normal play nothing is lost. It only matters
+if you load an older slot, which rewinds the cartridge's own save with it.
 
 ---
 

@@ -63,6 +63,11 @@ static const struct { const char *folder, *remote; } MAP[] = {
 	{ "Master System",    "Sega - Master System - Mark III" },
 	{ "Game Gear",        "Sega - Game Gear" },
 	{ "TurboGrafx-16",    "NEC - PC Engine - TurboGrafx 16" },
+	/* Keyed on the FOLDER, which for this one is not the shelf label:
+	 * systems.cfg says display "Neo Geo Pocket Color", folder "NGPC".
+	 * The remote is the Color repo specifically - "SNK - Neo Geo Pocket"
+	 * 404s on thumbnails.libretro.com, checked rather than assumed. */
+	{ "NGPC",             "SNK - Neo Geo Pocket Color" },
 };
 #define MAP_N ((int)(sizeof MAP / sizeof MAP[0]))
 
