@@ -75,7 +75,7 @@ def systems_from_cfg(path):
 
 
 def norm(s):
-    """A title with every parenthesised tag removed, for comparison only.
+    """A title with every parenthesized tag removed, for comparison only.
 
     Region, language, revision and dump tags are exactly what differs between
     two catalogs of the same game, and they are never what distinguishes two

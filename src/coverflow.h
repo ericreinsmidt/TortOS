@@ -44,7 +44,7 @@ typedef struct {
 	bool active;    /* animation in flight */
 	int last_cursor;
 	bool primed;
-	/* Which way the row last travelled, -1 or +1. Only a two-item ring needs
+	/* Which way the row last traveled, -1 or +1. Only a two-item ring needs
 	 * it: there, both representatives of the other card sit exactly one step
 	 * away, so which side it rests on is a genuine tie and the direction of
 	 * travel is the only thing that can settle it sensibly. */

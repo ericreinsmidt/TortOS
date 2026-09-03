@@ -63,7 +63,7 @@ static const struct { const char *folder, *remote; } MAP[] = {
 	{ "Master System",    "Sega - Master System - Mark III" },
 	{ "Game Gear",        "Sega - Game Gear" },
 	{ "TurboGrafx-16",    "NEC - PC Engine - TurboGrafx 16" },
-	/* Two machines, two catalogues. The mono Pocket's art is NOT in the Color
+	/* Two machines, two catalogs. The mono Pocket's art is NOT in the Color
 	 * repo - checked, it 404s - which is the whole reason they are separate
 	 * shelves rather than one mixed one. */
 	{ "Neo Geo Pocket",       "SNK - Neo Geo Pocket" },
@@ -82,7 +82,7 @@ static const char *remote_for(const char *folder)
 
 /* ---- the normalization, which is the whole matching rule ---------------- */
 
-/* A title with every parenthesised tag removed, lowercased, and reduced to
+/* A title with every parenthesized tag removed, lowercased, and reduced to
  * single spaces between alphanumerics.
  *
  * Region, language, revision and dump tags are exactly what differs between
@@ -160,7 +160,7 @@ static const char *TAG_BAD[] = {
 	"beta", "proto", "prototype", "sample", "demo", "alpha", "hack", "unl",
 };
 
-/* Every parenthesised group in `s`, split on commas, lowercased. "Sonic (USA,
+/* Every parenthesized group in `s`, split on commas, lowercased. "Sonic (USA,
  * Europe, Brazil) (En)" gives usa, europe, brazil, en. */
 static int name_tags(const char *s, char out[][TAG_MAX], int max)
 {
@@ -217,7 +217,7 @@ int art_tag_score(const char *want, const char *cand)
 	 * a prototype of the right release still shows the right box while a
 	 * different region shows a different one.
 	 *
-	 * The first version penalised a bad-dump tag by 8, enough to drop
+	 * The first version penalized a bad-dump tag by 8, enough to drop
 	 * "Blaster Master (USA) (Beta)" below "Blaster Master (Japan) (Virtual
 	 * Console)" - a Japanese box for a US card, chosen deliberately. The
 	 * check caught it on its first run. A dump tag breaks ties inside a

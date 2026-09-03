@@ -127,7 +127,7 @@ bool notice_render(const char *heading, const char *body, const char *path)
 
 	/* A dark slab at 85%, rounded the way every menu panel in the launcher is
 	 * rounded. The first version chamfered the corners - one comparison per
-	 * pixel - and the comment justified it as reading the same from a metre
+	 * pixel - and the comment justified it as reading the same from a meter
 	 * away. It does not read the same. It reads as a different piece of
 	 * software borrowing the screen for a moment. */
 	corner = padx;

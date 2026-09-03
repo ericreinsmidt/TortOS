@@ -439,7 +439,7 @@ static void blit_line(SDL_Surface *dst, TTF_Font *f, const char *line, int *y,
 }
 
 /* Break a title across lines that fit the card. `x` is where each line starts,
- * or -1 to centre them. The line is built by appending in place and undoing the
+ * or -1 to center them. The line is built by appending in place and undoing the
  * append when it no longer fits, so there is no second buffer that could
  * truncate the first. Returns the y below the last line, which is where a rule
  * under the title goes. */
@@ -493,12 +493,12 @@ static int draw_wrapped(SDL_Surface *dst, TTF_Font *f, const char *title,
 /* The first letter of the title, enormous and barely there, running off the
  * bottom-right corner.
  *
- * It used to sit centred and upright at a third of the way down, which made it
- * the largest thing on the card - and on an alphabetised shelf it is the least
+ * It used to sit centered and upright at a third of the way down, which made it
+ * the largest thing on the card - and on an alphabetized shelf it is the least
  * distinguishing: Castlevania, Contra and Crystalis sit next to each other and
  * were three identical Cs with the titles that tell them apart set small
  * underneath. Bled off the corner it is what it always was, a texture in the
- * system's colour, and the title can have the space. */
+ * system's color, and the title can have the space. */
 static void draw_watermark(SDL_Surface *dst, const char *title, unsigned rgb)
 {
 	char ch[2] = { 0, 0 };

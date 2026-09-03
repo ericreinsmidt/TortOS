@@ -96,7 +96,7 @@ static int game_cmp(const void *pa, const void *pb)
 }
 
 /* The display title: `name` up to the first bracketed group that follows a
- * space. ROM sets carry their cataloguing in the filename - "(USA)", "(Rev 1)",
+ * space. ROM sets carry their cataloging in the filename - "(USA)", "(Rev 1)",
  * "(En,Fr,De)", "[!]", "[T+Eng]" - and a shelf is not a catalog, so the card
  * shows the game and the file keeps the provenance.
  *

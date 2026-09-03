@@ -30,7 +30,7 @@ until the launcher presents. It is on screen longer than any other frame in the
 file and is the one worth getting right.
 
 Everything is drawn at 3x and downsampled with LANCZOS: the shell is all
-diagonal hexagon edges and PIL's polygon rasteriser has no antialiasing of its
+diagonal hexagon edges and PIL's polygon rasterizer has no antialiasing of its
 own.
 """
 

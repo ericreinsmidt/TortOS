@@ -51,7 +51,7 @@ typedef struct {
 	SDL_Texture **tex;
 	int *tw, *th;
 	int cursor;
-	/* Index into DMODES. Zero-initialised like the rest of this struct, so
+	/* Index into DMODES. Zero-initialized like the rest of this struct, so
 	 * whatever sits at index 0 is what an untouched card plays at - see the
 	 * note on DMODES itself. */
 	int dmode;
@@ -71,7 +71,7 @@ typedef struct {
  * The names are Diatom's protocol strings and have to match its own table in
  * src/scale.c exactly - it answers an unknown one with ERROR code=bad_display
  * and changes nothing. The labels are ours, and are what the menu shows. */
-/* STRETCH IS FIRST, AND FIRST IS THE DEFAULT. A sysview is zero-initialised
+/* STRETCH IS FIRST, AND FIRST IS THE DEFAULT. A sysview is zero-initialized
  * and no display.cfg ships, so index 0 is what every system plays at on a card
  * nobody has configured. Filling the panel is the right default on a handheld
  * whose screen is the whole device: the alternative spends a fifth of a
@@ -979,7 +979,7 @@ static void restore_place(app *a)
 
 /* One cell of the shell: a filled hexagon as a six-triangle fan, because
  * SDL_RenderGeometry is the only primitive here that antialiases nothing and
- * therefore looks identical to the boot animation's rasteriser. */
+ * therefore looks identical to the boot animation's rasterizer. */
 static void draw_hex(SDL_Renderer *r, float cx, float cy, float rad, SDL_Color col)
 {
 	SDL_Vertex v[7];
@@ -3147,7 +3147,7 @@ static void draw_paused_frame(app *a, SDL_Texture *bg)
 
 /* Copy the paused frame's preview beside a manual save, so the slot strip can
  * show what is inside each slot. The pause preview IS the frame the save
- * serialises - Diatom wrote it on the way into the menu - so a straight copy
+ * serializes - Diatom wrote it on the way into the menu - so a straight copy
  * is the truthful thumbnail, no protocol round trip needed. */
 static void copy_file(const char *from, const char *to)
 {

@@ -955,7 +955,7 @@ static int diatom_wait(void)
 #endif
 		/* A termination arriving mid-game. Without this the loop waits for a
 		 * game that nobody is going to end, and the process cannot be
-		 * signalled out of it - which is how `killall tortos.elf` came to do
+		 * signaled out of it - which is how `killall tortos.elf` came to do
 		 * nothing at all while a game was up. STOP, then the existing
 		 * escalation below applies if the core will not honor it. */
 		if (g_terminating && !sent_stop) {

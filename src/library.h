@@ -13,7 +13,7 @@ typedef struct {
 	                       * so it stays exactly as the file is named. */
 	char title[LIB_NAME]; /* what the shelf shows: `name` with the trailing
 	                       * region and dump tags cut off, so a card says
-	                       * "Chrono Trigger" rather than the cataloguing that
+	                       * "Chrono Trigger" rather than the cataloging that
 	                       * follows it. */
 	char file[LIB_PATH];  /* launch path relative to Roms/<folder>: a filename,
 	                       * or "<folder>/<disc>" for a disc-folder game */

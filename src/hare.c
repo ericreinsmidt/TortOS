@@ -101,7 +101,7 @@ static bool make_token(char *out)
 
 /* Length-independent compare, so the time this takes says nothing about how
  * much of the secret was right. Four digits and a lockout make that close to
- * theatre, but it is four lines and the token it also guards is not four
+ * theater, but it is four lines and the token it also guards is not four
  * digits. */
 static bool secret_eq(const char *a, const char *b, size_t n)
 {
