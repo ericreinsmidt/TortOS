@@ -1150,6 +1150,16 @@ struct pl_ctl_elem_value {
  * chain was fixed, and why the floor below is now set by ear rather than by
  * that table.
  *
+ * That session had ONE WORKING SPEAKER, which nobody knew at the time. The
+ * quiet channel turned out on 2026-09-02 to be a loose connection on the PCB;
+ * it was resoldered and both now play evenly. So 39 was originally judged
+ * against roughly half this device's output.
+ *
+ * It stood anyway. Re-heard on the repaired hardware the same day - the quiet
+ * end, the balance and the general sound - and called right, so the constant
+ * now has two independent confirmations rather than one lucky derivation. Do
+ * not weaken it back to a guess on the strength of the history above.
+ *
  * 39, chosen on the device on 2026-08-31 with a game playing, stepping the
  * register down until Eric called it: raw 37 is barely audible and is where he
  * wanted position 1. 39 is the constant that puts position 1 on 37 in this
