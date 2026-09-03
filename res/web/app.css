@@ -28,9 +28,13 @@
 	--bad: #ff6b5e;
 	--radius: 14px;
 	/* The reading column. A file listing is a name on the left and its size
-	 * and buttons on the right, so full-bleed on a desktop put half a metre of
+	 * and buttons on the right, so full-bleed on a desktop put half a meter of
 	 * nothing between the two halves of every row. */
 	--wrap: 880px;
+	/* The header's resting height: an 84px logo with 16px above and below. A
+	 * floor, not a fixed height - the crumbs and tools wrap on a phone and the
+	 * bar grows past this. Change .logo.small and change this with it. */
+	--header-h: 116px;
 }
 
 * { box-sizing: border-box; }
@@ -108,7 +112,13 @@ html { background: var(--ground); }
  * pixels with its triangle floating in the middle. Two different things had
  * the same name and CSS has one namespace. */
 .logo { display: block; margin: 0 auto 14px; height: 80px; width: auto; }
-.logo.small { margin: 0 4px 0 0; height: 40px; flex-shrink: 0; }
+/* The tortoise and hare is the only picture in the app and it was shrunk to fit
+ * a bar that had no reason to be that thin. At 40 you could not tell the two
+ * animals apart; at 84 the motion lines read and so does which one is ahead.
+ * Not larger: the bar is 117px at this size, and every pixel of it is taken
+ * from the list before a single row appears. --header-h is sized from this,
+ * 84 plus 16 of padding top and bottom - move them together. */
+.logo.small { margin: 0 4px 0 0; height: 84px; flex-shrink: 0; }
 
 .gate h1 { margin: 0 0 6px; font-size: 26px; font-weight: 500; letter-spacing: .3px; }
 .gate .sub { margin: 0 0 22px; color: var(--dim); font-size: 15px; }
@@ -186,15 +196,21 @@ header {
 	z-index: 3;
 	display: flex;
 	align-items: center;
-	gap: 12px;
+	gap: 14px;
+	/* A floor, not a fixed height: the crumbs wrap on a narrow window and the
+	 * bar has to grow with them. The drop banner clears this same variable, so
+	 * the two cannot drift apart the way they did when the banner was placed
+	 * 12px from the top and landed on the breadcrumbs. */
+	min-height: var(--header-h);
+	box-sizing: border-box;
 	/* Inset to the column rather than max-width'd to it, so the bar's
 	 * background and bottom border still reach both edges of the window while
 	 * the crumbs line up with the rows underneath. The percentage resolves
 	 * against this element's containing block, which is why this only works on
 	 * the two elements that span the viewport - do not lift it into a variable
 	 * and reuse it on a row. */
-	padding: 12px max(16px, calc((100% - var(--wrap)) / 2));
-	padding-top: max(12px, env(safe-area-inset-top));
+	padding: 16px max(16px, calc((100% - var(--wrap)) / 2));
+	padding-top: max(16px, env(safe-area-inset-top));
 	background: rgba(10, 11, 15, .94);
 	backdrop-filter: blur(8px);
 	border-bottom: 1px solid var(--line);
@@ -223,6 +239,17 @@ header {
 }
 .row .mark { width: 22px; text-align: center; color: var(--dim); flex-shrink: 0; }
 .row.dir .mark { color: var(--accent); }
+
+/* A folder row lit because files are being dragged over it and it will take
+ * them. Drag and drop is self-revealing: the row that accepts a drop lights up
+ * and one that will not stays flat, so which folders take files is learned by
+ * hovering, before letting go, rather than from a rule nobody read. An inset
+ * shadow rather than a border, so the row does not shift a pixel as it lights
+ * and the list stays still under the pointer. */
+.row.drops.over {
+	background: var(--panel-hi);
+	box-shadow: inset 0 0 0 2px var(--accent);
+}
 .row .name {
 	flex: 1;
 	min-width: 0;
@@ -252,17 +279,84 @@ header {
 
 /* ---- dropping files ---------------------------------------------------- */
 
+/* Just a frame around the window, saying the page will take a drop. It holds no
+ * text and dims nothing: the words are in the header and the target is the row
+ * that lights up, so the list stays completely readable underneath.
+ *
+ * It used to be an 86% scrim with the label centered on it. That was right when
+ * the page was the only drop target. Once folder rows became targets the scrim
+ * hid the one thing being aimed at, and moving the label below the header just
+ * put it on the first row instead - measured, 109px against a row starting at
+ * 93px. There is no free space over the list, which is why the words moved into
+ * the bar. */
 .drop {
 	position: fixed;
 	inset: 0;
 	z-index: 5;
-	display: grid;
-	place-items: center;
-	background: rgba(10, 11, 15, .86);
-	border: 2px dashed var(--accent);
-	color: var(--accent);
-	font-size: 22px;
+	background: none;
+	border: 3px dashed var(--accent);
 	pointer-events: none;
+}
+
+/* A standing hint that the page takes files, not a banner summoned by the drag.
+ *
+ * Hidden by default and shown only where dropping is possible at all. Files
+ * cannot be dragged into a browser on a touch device, so on a phone this would
+ * be permanent furniture advertising something that cannot be done, in the one
+ * place with no room to spare. `hover` and `pointer` describe the input rather
+ * than the screen, which is the actual condition - a narrow window on a laptop
+ * still has a mouse. */
+.dropmsg {
+	display: none;
+	flex: 0 1 auto;
+	min-width: 0;
+	margin: 0;
+	padding: 7px 15px;
+	border: 1px dashed var(--line);
+	border-radius: 999px;
+	background: none;
+	color: var(--dim);
+	font-size: 15px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	transition: background-color .12s, color .12s, border-color .12s;
+}
+@media (hover: hover) and (pointer: fine) {
+	.dropmsg { display: block; }
+}
+/* Dragging changes the emphasis, not the words. Filled, so it registers in
+ * peripheral vision while the eye is down on the rows choosing a target. */
+.dropmsg.armed {
+	background: var(--accent);
+	border-color: var(--accent);
+	color: var(--ground);
+	font-weight: 600;
+}
+@media (prefers-reduced-motion: reduce) {
+	.dropmsg { transition: none; }
+}
+/* A phone is not a laptop and the bar cannot cost the same there.
+ *
+ * 84px of tortoise is right on a wide window and absurd on a narrow one: the
+ * mark is 157px across, and measured at 375 the header came out 207px, a
+ * quarter of the screen gone before the first row. 56 keeps it under a
+ * seventh.
+ *
+ * The hint is display:none on touch, so on an actual phone these radius and
+ * wrapping rules never apply. They are for the narrow DESKTOP window, which
+ * has a mouse and therefore still shows it: 999px is a stadium only while the
+ * box is one line high, and if the text ever wraps the radius clamps to half
+ * the height and the pill becomes an ellipse with the lines poking out of it.
+ * Cheap insurance against a longer string later. */
+@media (max-width: 620px) {
+	:root { --header-h: 88px; }
+	.logo.small { height: 56px; }
+	.dropmsg {
+		white-space: normal;
+		text-overflow: clip;
+		border-radius: 14px;
+	}
 }
 
 /* ---- the transfer queue ------------------------------------------------ */
@@ -283,6 +377,9 @@ header {
 .queue li { padding: 6px 0; font-size: 15px; }
 .queue .top { display: flex; gap: 10px; align-items: baseline; }
 .queue .top .n { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+/* The folder a queued file is bound for, drawn only when that is not the
+ * folder on screen. Dim, because it is reassurance rather than news. */
+.queue .top .n .dest { color: var(--accent); font-size: 14px; white-space: nowrap; }
 .queue .top .pct { color: var(--dim); font-size: 14px; }
 .queue .bar { height: 4px; background: var(--line); border-radius: 2px; margin-top: 6px; overflow: hidden; }
 .queue .bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .15s linear; }

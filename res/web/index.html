@@ -32,8 +32,18 @@
 <!-- Everything past the gate. -->
 <section id="app" class="app" hidden>
   <header>
-    <img class="logo small" src="/web/mark.svg" alt="Over The Hare" width="54" height="36">
+    <!-- The real drawn size, so the bar does not jump on a cold load before the
+         stylesheet arrives. The mark's viewBox is 210.8 x 112.8, so 84 tall is
+         157 wide. -->
+    <img class="logo small" src="/web/mark.svg" alt="Over The Hare" width="157" height="84">
     <nav id="crumbs" class="crumbs" aria-label="Location"></nav>
+    <!-- A standing hint that files can be dropped, lit while one is over the
+         window. Beside the crumbs rather than replacing them: with the pointer
+         anywhere but a folder row, the crumbs are the only thing saying where a
+         drop would land. It lives in the bar rather than floating over the page
+         because the list begins the pixel below the header, so anything hovering
+         there covers the first entry. Filled by refreshDropHint(). -->
+    <p id="dropmsg" class="dropmsg" role="status"></p>
     <div class="tools">
       <button id="newfolder" class="ghost" title="New folder">New folder</button>
       <label class="ghost" for="picker">Upload</label>
@@ -44,7 +54,8 @@
   <ul id="list" class="list"></ul>
   <p id="empty" class="empty" hidden>Nothing here yet.</p>
 
-  <div id="drop" class="drop" hidden><span>Drop to upload here</span></div>
+  <!-- The frame only. The words live in the header, where they cover nothing. -->
+  <div id="drop" class="drop" hidden></div>
 
   <footer id="queue" class="queue" hidden>
     <ul id="queuelist"></ul>
