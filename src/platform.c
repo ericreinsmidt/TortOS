@@ -410,6 +410,14 @@ void plat_input_poll(in_state *st)
 {
 	memset(st->pressed, 0, sizeof st->pressed);
 	if (g_terminating) st->quit_requested = true;
+	/* The jack, checked here because this is the one thing every screen does
+	 * once a frame - and, more to the point, the one thing the launcher stops
+	 * doing while a game runs, since it is blocked in plat_resident_wait. That
+	 * is exactly the ownership boundary the level needs: whoever is pumping
+	 * input owns the volume, so the launcher must not re-apply a level over
+	 * Diatom's while Diatom holds it. Diatom polls the same switch on its own
+	 * side for the same reason. */
+	plat_audio_jack_poll();
 	SDL_Event e;
 	while (SDL_PollEvent(&e)) {
 		switch (e.type) {
@@ -1153,6 +1161,34 @@ struct pl_ctl_elem_value {
  * trade worth making: 30 dB down is not quiet in a room that is quiet, which
  * a microphone across the room could not tell us and an ear could. */
 #define GAIN_RAW_USABLE 39
+
+/* Headphones need a different window, not the same one moved.
+ *
+ * Set by ear on 2026-09-02 with a game playing and a plug in the jack, the same
+ * method that produced 39. The ceiling first: above raw 8 it is uncomfortable,
+ * so 8 is where position 20 belongs. Then the floor, stepping down - 37, 45,
+ * 49, 53 and 57 were each still too loud to be a minimum, and 61 was called
+ * right.
+ *
+ * So the jack spends 53 register steps where the speaker spends 39, and an
+ * offset cannot express that. An offset from the measured ceiling would have
+ * put position 1 on 47, which was rejected on the way past. That is physically
+ * unsurprising: headphones are far more efficient than this speaker, so the
+ * same twenty presses have to cover more ground.
+ *
+ * The cost is resolution. 53 steps across 20 positions is about 3.1 dB a press
+ * against the speaker's 2.3. Giving the jack its own number of positions would
+ * fix that and is not worth it - 21 positions are shared verbatim with Diatom
+ * and launch.sh so a level crossing the socket needs no conversion, and that
+ * property is worth more than 0.8 dB of granularity.
+ *
+ * Both pairs are tied to one game's mix, exactly as 39 was. A quieter game sits
+ * under this floor. Consistent with what was already here, not worse. */
+#define SPK_RAW_TOP     0
+#define SPK_RAW_BOTTOM  GAIN_RAW_USABLE
+#define HP_RAW_TOP      8
+#define HP_RAW_BOTTOM   61
+
 #define SPEAKER_CTL  "HpSpeaker Switch"   /* the only true mute on this codec */
 #define HP_CTL       "Headphone Volume"   /* 0-7, 6 dB a step, INVERTED */
 #define SWAP_CTL     "DAC Swap"           /* 1 crosses left and right */
@@ -1245,8 +1281,11 @@ static void ctl_set(const char *name, long val)
  * control rather than an integer, but the value union overlaps and we only
  * ever write item 0, so the integer path reaches it.
  *
- * Headphones are the one case still uncalibrated: nothing here has been tested
- * with a plug in the jack, and 0 is the loud end for that path too. */
+ * HP_CTL stays at 0 for both outputs. The jack was calibrated on 2026-09-02 and
+ * the answer was not this control: 9.3 dB was wanted at the ceiling and this
+ * steps in sixes, and it attenuates the speaker as well, so it cannot be moved
+ * for the jack alone. The headphone case is handled by its own window on
+ * GAIN_CTL instead - see HP_RAW_TOP. */
 static void mixer_defaults(void)
 {
 	if (mixer_fd < 0) return;
@@ -1254,16 +1293,84 @@ static void mixer_defaults(void)
 	ctl_set(SWAP_CTL, 0);
 }
 
+/* Is there a plug in the headphone jack?
+ *
+ * SW_HEADPHONE_INSERT on the codec's own input node. This device exposes the
+ * state nowhere else: there is no ALSA jack kcontrol among its seventeen
+ * controls and nothing under /sys for it, so the only way to ask is EVIOCGSW,
+ * which is why this opens an input device rather than reading a file.
+ *
+ * Found by capability rather than by number. It is /dev/input/event2 today, but
+ * that is an enumeration order and not a promise, and the cost of being wrong
+ * is a volume ladder silently calibrated for the wrong output. */
+#define BITS_PER_LONG   (8 * (int)sizeof(long))
+#define SW_NLONGS       ((SW_MAX + BITS_PER_LONG) / BITS_PER_LONG)
+#define BIT_IS_SET(a,b) (((a)[(b) / BITS_PER_LONG] >> ((b) % BITS_PER_LONG)) & 1UL)
+
+static int jack_fd = -1;
+
+static void jack_open(void)
+{
+	unsigned long bits[SW_NLONGS];
+	char path[32];
+	int i, fd;
+
+	for (i = 0; i < 32; i++) {
+		snprintf(path, sizeof path, "/dev/input/event%d", i);
+		if ((fd = open(path, O_RDONLY | O_NONBLOCK)) < 0) continue;
+		memset(bits, 0, sizeof bits);
+		if (ioctl(fd, EVIOCGBIT(EV_SW, sizeof bits), bits) >= 0 &&
+		    BIT_IS_SET(bits, SW_HEADPHONE_INSERT)) {
+			jack_fd = fd;
+			return;
+		}
+		close(fd);
+	}
+	fprintf(stderr, "settings: no headphone jack input node; "
+	                "volume will use the speaker ladder\n");
+}
+
+static int jack_present(void)
+{
+	unsigned long bits[SW_NLONGS];
+
+	if (jack_fd < 0) return 0;
+	memset(bits, 0, sizeof bits);
+	if (ioctl(jack_fd, EVIOCGSW(sizeof bits), bits) < 0) return 0;
+	return BIT_IS_SET(bits, SW_HEADPHONE_INSERT) ? 1 : 0;
+}
+
+static int jack_was = -1;         /* last state acted on; -1 = never asked */
+
 static void apply_volume(int v)
 {
-	long raw = ((long)(VOL_MAX - v) * GAIN_RAW_USABLE + VOL_MAX / 2) / VOL_MAX;
+	int hp = jack_present();
+	long top = hp ? HP_RAW_TOP : SPK_RAW_TOP;
+	long bot = hp ? HP_RAW_BOTTOM : SPK_RAW_BOTTOM;
+	long raw = top + ((long)(VOL_MAX - v) * (bot - top) + VOL_MAX / 2) / VOL_MAX;
 	long on;
 
+	jack_was = hp;
 	cur_vol = v;
 	ctl_io(GAIN_CTL, &raw, 1);
 	/* Zero has to cut the path, not merely attenuate it. */
 	on = (v > 0);
 	ctl_io(SPEAKER_CTL, &on, 1);
+}
+
+/* Re-apply if the plug went in or came out since the last time.
+ *
+ * Without this a level only moves to the right ladder at the next volume press,
+ * so plugging in mid-game leaves the old register in place - which is precisely
+ * the moment the difference is 9 dB and being worn on your head. Cheap enough
+ * to call from a periodic path: one ioctl on an already-open fd, and it writes
+ * nothing unless the state actually changed. */
+void plat_audio_jack_poll(void)
+{
+	int hp = jack_present();
+
+	if (hp == jack_was || cur_vol < 0) return;
+	apply_volume(cur_vol);
 }
 
 static void apply_brightness(int b)
@@ -1286,6 +1393,7 @@ void plat_settings_init(int cfg_volume_pct, int cfg_brightness)
 	if (mixer_fd < 0) fprintf(stderr, "settings: no /dev/snd/controlC0\n");
 	if (disp_fd  < 0) fprintf(stderr, "settings: no /dev/disp\n");
 	mixer_defaults();
+	jack_open();
 
 	/* The player's last choice, and it wins: a level the player set with the
 	 * rocker survives a restart, which is the whole reason every nudge writes
@@ -1341,6 +1449,8 @@ static int clampi(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v
 static void levels_save(void) { }
 static void apply_volume(int v) { cur_vol = v; }
 static void apply_brightness(int b) { cur_bright = b; }
+/* No jack on the host, so nothing can be plugged into it. */
+void plat_audio_jack_poll(void) { }
 
 /* No levels.cfg to read on the host, so the config defaults are all there is.
  * Taken anyway rather than ignored: a shelf rendered by --shot should show the

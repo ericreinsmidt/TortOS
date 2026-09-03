@@ -170,6 +170,12 @@ void plat_volume_nudge(int delta);
 void plat_brightness_nudge(int delta);
 void plat_volume_set_pct(int pct);
 void plat_brightness_set(int level);
+/* Headphones and the speaker want different volume ladders - the jack covers
+ * 61 dB where the speaker covers 45 - so the level has to be re-applied when a
+ * plug goes in or comes out, not merely at the next volume press. Call from a
+ * periodic path; it is one ioctl and writes nothing unless the state changed.
+ * A no-op on the host. */
+void plat_audio_jack_poll(void);
 /* kind: 1 = brightness, 2 = volume */
 void plat_osd_show(int kind, int val, int max);
 void plat_draw_osd(SDL_Renderer *r);
