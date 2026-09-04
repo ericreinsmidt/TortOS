@@ -26,7 +26,9 @@
 #include "net.h"
 #include "keyboard.h"
 #include "wifi.h"
+#include "menu.h"
 #include "ui.h"
+#include "wifi_menu.h"
 
 #include <SDL.h>
 #include <SDL_image.h>
@@ -1493,33 +1495,7 @@ static void power_off(app *a)
  * cannot drift apart. The slab is sized to its own widest row with the same
  * padding on every side, rather than to a number picked once and left behind
  * by the next label someone adds. */
-/* Row kinds, the rules a screen must follow, and the reason there is no menu
- * loop yet: docs/menus.md. Read it before adding a screen or a row kind. */
-typedef struct {
-	const char *label;
-	const char *value;  /* the right column, or NULL for a row that is only a label */
-	bool live;          /* false: a placeholder, drawn quiet and doing nothing */
-} menu_row;
-
-/* A row that is only a rule, for separating a list from a footer that is not
- * part of it - a key legend, a count, a note. Drawn with the same bar the
- * heading uses, so the two cannot drift apart; that is the reason this lives
- * in menu_draw rather than being a line each screen paints for itself.
- *
- * It is not live, so any screen that already steps over dead rows skips it for
- * free. A screen that does NOT step over dead rows will let the cursor land on
- * a rule, which is a good reason to fix that screen. */
-#define MENU_RULE ((menu_row){ NULL, NULL, false })
-
-/* A note under the rule: a key legend, a count, a caption. Centered, because it
- * describes the list rather than being an item in it - left-aligned it read as
- * one more row you had failed to be able to select.
- *
- * Marked by a sentinel in `value` rather than a new struct field, so every
- * existing { label, value, live } initialiser in this file stays valid. */
-#define MENU_NOTE_MARK ((const char *)1)
-#define MENU_NOTE(s)   ((menu_row){ (s), MENU_NOTE_MARK, false })
-#define ROW_IS_NOTE(r) ((r).value == MENU_NOTE_MARK)
+/* menu_row and the row kinds: src/menu.h; the rules: docs/menus.md. */
 
 #define MENU_RADIUS 20
 /* The system's one accent: this menu, the volume OSD, and the mark's center
@@ -2033,16 +2009,6 @@ static void wait_panel(app *a, const char *heading, const char *msg)
 	SDL_RenderPresent(a->r);
 }
 
-/* Signal as a word. dBm is the honest number and it is also jargon; the list
- * is sorted strongest first anyway, so the word only has to separate "this
- * will work" from "this will not". */
-static const char *wifi_strength(int dbm)
-{
-	if (dbm >= -60) return "strong";
-	if (dbm >= -72) return "good";
-	return "weak";
-}
-
 /* A yes/no panel, drawn like wait_panel but answerable.
  *
  * Defaults to "no": the selection starts on the safe row, so a stray press of
@@ -2188,113 +2154,6 @@ static void wifi_backdrop(void *ctx)
 	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 	SDL_SetRenderDrawColor(a->r, 0, 0, 0, 150);
 	SDL_RenderFillRect(a->r, NULL);
-}
-
-/* The Wi-Fi screen's state, declared rather than scattered through a loop's
- * locals. Deliberately holds no `app` and no renderer: wifi_build() has to be
- * callable offline, which is the requirement ADR-0001 rests on. */
-typedef struct {
-	wifi_net nets[WIFI_MAX_NETS];
-	char     vals[WIFI_MAX_NETS][32];
-	int      n;
-	bool     on;
-	bool     scanning;   /* a scan is running; the list is provisional */
-	bool     scanned;    /* a scan has finished at least once this visit */
-} wifi_ui;
-
-/* The right-hand column for every row, rebuilt whenever the list changes.
- *
- * "connected" outranks "saved": after a successful connect the list was redrawn
- * saying only that the network was known, which is what it said before the
- * connect too, so the screen gave no sign anything had happened. */
-static void wifi_label(wifi_ui *w)
-{
-	char cur[WIFI_SSID_MAX];
-	int i;
-
-	if (wifi_status(cur, sizeof cur, NULL, 0) != WIFI_CONNECTED) cur[0] = '\0';
-	for (i = 0; i < w->n; i++) {
-		const char *state = (cur[0] && !strcmp(cur, w->nets[i].ssid))
-		                    ? " - connected"
-		                    : w->nets[i].known ? " - saved"
-		                    : w->nets[i].secured ? "" : " - open";
-
-		/* A saved network listed before the scan has no signal reading, and
-		 * printing "weak" for one that has simply not been heard from yet
-		 * would be a measurement we do not have. */
-		if (!w->scanned && w->nets[i].known)
-			snprintf(w->vals[i], sizeof w->vals[i], "saved");
-		else
-			snprintf(w->vals[i], sizeof w->vals[i], "%s%s",
-			         wifi_strength(w->nets[i].signal), state);
-	}
-}
-
-/* Start a scan and show what we already know while it runs.
- *
- * Entering this screen used to stand still behind a "Scanning..." panel for up
- * to nine seconds, because a scan settles slowly on purpose. The saved networks
- * need no scan at all - the supplicant is holding them - so they go up
- * immediately and the scan fills in around them. */
-static void wifi_begin_scan(wifi_ui *w)
-{
-	w->scanned = false;
-	w->n = wifi_known(w->nets, WIFI_MAX_NETS);
-	wifi_label(w);
-	w->scanning = wifi_scan_start();
-}
-
-static int wifi_build(void *ctx, menu_row *rows, int max)
-{
-	wifi_ui *w = ctx;
-	int nrows = 0, i;
-	bool any_saved = false;
-
-	/* The scan is driven from here because this is the function that already
-	 * runs every frame. wifi_scan_poll() does nothing until its next second is
-	 * due, so calling it per frame costs a comparison. When results land the
-	 * provisional list of saved networks is replaced by what the radio heard.
-	 *
-	 * This is still the only place rows are built, and it still touches no
-	 * renderer - ADR-0001's requirement holds. */
-	if (w->scanning && wifi_scan_poll() == 1) {
-		int got = wifi_scan_take(w->nets, WIFI_MAX_NETS);
-
-		w->scanning = false;
-		w->scanned = true;
-		if (got >= 0) w->n = got;
-		wifi_label(w);
-	}
-
-	/* The switch is row 0, so the state of the radio is the first thing read
-	 * and the first thing reachable. */
-	rows[nrows++] = (menu_row){ "Wi-Fi", w->on ? "on" : "off", true };
-	for (i = 0; i < w->n && nrows < max - 2; i++)
-		rows[nrows++] = (menu_row){ w->nets[i].ssid, w->vals[i], true };
-
-	/* These are footers, not list items - they say something about the list
-	 * rather than offering anything - so they sit under a rule like the key
-	 * legend does. */
-	if (!w->on) {
-		rows[nrows++] = MENU_RULE;
-		rows[nrows++] = MENU_NOTE("Turn Wi-Fi on to scan");
-		return nrows;
-	}
-	if (w->n == 0 && !w->scanning) {
-		rows[nrows++] = MENU_RULE;
-		rows[nrows++] = MENU_NOTE("No networks found");
-		return nrows;
-	}
-	for (i = 0; i < w->n; i++)
-		if (w->nets[i].known) { any_saved = true; break; }
-	rows[nrows++] = MENU_RULE;
-	/* What is happening, then what you can do. The footer is the honest place
-	 * for progress: it is already outside the list, and swapping its text
-	 * means the screen never has to put a modal in front of you. */
-	rows[nrows++] = w->scanning
-	              ? MENU_NOTE("Scanning...")
-	              : MENU_NOTE(any_saved ? "Y: rescan   X: forget" : "Y: rescan");
-	return nrows;
 }
 
 static menu_result wifi_key(app *a, void *ctx, in_button key, int sel)

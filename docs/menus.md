@@ -35,9 +35,19 @@ it. Left-aligned it reads as one more row you have failed to be able to select.
 
 **Step over dead rows.** `live == false` means "does nothing". Navigation that
 walks every row lets the cursor rest on one, and then A does nothing and the
-screen looks broken. Use the `do { } while (!rows[sel].live)` form - see
-`wifi_screen`. This was wrong everywhere until 2026-09-04 and is only fixed in
-the Wi-Fi screen; **the others have not been audited.**
+screen looks broken. Screens on `menu_run` get this for free.
+
+Audited 2026-09-04, and this file previously overstated it. Most `menu_draw`
+callers pass `sel = -1`: they are panels with no cursor, and the bug cannot
+reach them. Only four screens move a cursor over a row list - `game_info_screen`,
+`tortos_menu`, `cheevos_screen` and `game_menu` - and they still walk every row
+with `(sel + 1) % n`. They are only actually wrong where they have a dead row to
+land on, which is not all of them.
+
+Do not write the walk by hand in a new screen. Use `menu_run`, where the step is
+`menu_step_sel` - a **bounded** walk, not a `do/while`. A menu can legitimately
+have no live rows at all ("No networks found" under a rule is exactly that) and
+the unbounded form spins forever on one.
 
 **Say which buttons do anything.** If a screen binds a key that is not A or B,
 it needs a note saying so. `Y` rescanned the Wi-Fi list from the day that screen
@@ -70,17 +80,22 @@ bug waiting whatever the symptom turns out to be.
 
 **If you add a row kind, change both.**
 
-## Known gap: there is no menu loop
+## The runner, and what is still on the old shape
 
-Every screen writes the same skeleton by hand - poll input, check quit, check
-power and idle, check back, move the cursor, act on accept, draw, delay. That is
-five or six copies, and it is why the rules above are conventions a screen can
-forget rather than behavior it gets for free.
+`menu_run` owns the loop: polling, quit, power, idle, back, the cursor and the
+frame. A screen supplies `build` and `on_key` and cannot forget any of it. See
+[ADR-0001](decisions/0001-screens-declare-menus.md).
 
-The fix is a loop helper: screens hand over rows and a handler and get the
-skeleton, including cursor-skipping and the power and idle checks. That would
-make the first rule in this document impossible to break instead of documented.
-It is a refactor across every screen and has not been done.
+`build` must be callable with no renderer and no device. That is a requirement
+rather than a nicety: it is what lets `make check` ask what a menu contains, and
+ADR-0001 says the decision has failed if it stops being true. The Wi-Fi screen's
+pure half lives in `src/wifi_menu.c` for exactly this reason, and
+`tools/menu-check.c` links it without SDL.
 
-Until it is, this file is the substitute, and it is a weaker one - a convention
-enforced by reading is not enforced.
+**Migrated:** the Wi-Fi screen.
+
+**Not yet:** `game_info_screen`, `tortos_menu`, `cheevos_screen`, `game_menu`.
+Each still writes its own loop and its own cursor walk. Migrate one at a time,
+with a check for its rows written first - the check is what makes a
+behavior-preserving refactor verifiable by something other than looking at a
+handheld.

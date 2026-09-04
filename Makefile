@@ -8,8 +8,24 @@ SSH := sshpass -p 'tina' ssh -o StrictHostKeyChecking=no root@$(BRICK)
 
 .PHONY: all clean native toolchain vendor boot checkmark payload release install-card \
         adb adb-elf adb-res adb-vendor adb-restart adb-run adb-log \
-        check-cheevos check-hare check-httpd check-idle check-rahash check-raset check-xfer \
+        check check-cheevos check-hare check-httpd check-idle check-rahash \
+        check-raset check-xfer check-menus check-artscrape \
         deploy restart logs
+
+# Everything offline, in one command. There was no umbrella target: every check
+# had to be remembered by name, which is a suite in the same sense that a list
+# of good intentions is a plan. A check nobody runs is a check that does not
+# exist, and check-menus was about to join eight others in that state.
+CHECKS = check-cheevos check-hare check-httpd check-idle check-rahash \
+         check-raset check-xfer check-menus check-artscrape
+
+check:
+	@fail=0; for c in $(CHECKS); do \
+		printf '\n=== %s ===\n' "$$c"; \
+		$(MAKE) --no-print-directory "$$c" || fail=1; \
+	done; \
+	if [ $$fail -ne 0 ]; then printf '\nsome checks FAILED\n' >&2; exit 1; fi; \
+	printf '\nok: every check passed\n'
 
 all: build/tortos.elf
 
@@ -98,6 +114,23 @@ build-native/httpd-check: tools/httpd-check.c src/httpd.c src/httpd.h src/xfer.h
 # Every other check in here protects a feature; this one protects the device.
 check-xfer: build-native/xfer-check
 	@./build-native/xfer-check
+
+# What a menu contains, for a given state. The point of ADR-0001: a screen's
+# build function takes state and produces rows with no renderer and no device,
+# so this is answerable here instead of by looking at a handheld. Every menu
+# defect this screen has had was some form of "nobody noticed the list was
+# wrong", and every one of them needed a device to see.
+#
+# It links src/wifi_menu.c and src/wifi.c and NOT SDL. If it ever needs SDL to
+# link, ADR-0001 has failed - reopen it rather than adding the flag.
+check-menus: build-native/menu-check
+	@./build-native/menu-check
+
+build-native/menu-check: tools/menu-check.c src/wifi_menu.c src/wifi.c \
+                        src/wifi_menu.h src/menu.h FORCE
+	@mkdir -p build-native
+	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
+	      -o $@ tools/menu-check.c src/wifi_menu.c src/wifi.c
 
 build-native/xfer-check: tools/xfer-check.c src/xfer.c src/xfer.h FORCE
 	@mkdir -p build-native
