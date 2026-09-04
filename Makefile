@@ -23,6 +23,28 @@ build/tortos.elf: $(wildcard src/*.c) $(wildcard src/*.h) tools/setbright.c mk/c
 		echo "no sysroot; run: mk/fetch-sysroot.sh (needs the device)" >&2; exit 1; }
 	docker run --rm -v $(CURDIR):/work -w /work $(IMAGE) \
 		make -f mk/cross.mk SYSROOT=/work/sysroot VERSION=$(VERSION) build/tortos.elf build/setbright
+	@# Refuse to be quiet about an output older than its own source.
+	@#
+	@# Docker on macOS can show the container a stale mtime for a file the host
+	@# just wrote, so make inside the container decides a target is current when
+	@# it is not. Nothing fails: the build reports success, the push reports
+	@# success, and the device runs the PREVIOUS binary. It happened on
+	@# 2026-09-04 - a string change to src/main.c produced a byte-identical elf
+	@# and was deployed and "verified" before anyone noticed the elf was older
+	@# than the file it was built from.
+	@#
+	@# Diatom's tools/brick-make.sh has carried this check since 2026-08-25,
+	@# where the same thing cost an hour twice. A comment here used to claim
+	@# mk/cross.mk carried one too. It did not.
+	@for src in $(wildcard src/*.c) $(wildcard src/*.h) mk/cross.mk; do \
+		if [ "$$src" -nt build/tortos.elf ]; then \
+			echo "STALE: build/tortos.elf is older than $$src" >&2; \
+			echo "  the container did not rebuild. rm build/tortos.elf and try again." >&2; \
+			exit 1; \
+		fi; \
+	done
+	@[ tools/setbright.c -nt build/setbright ] && { \
+		echo "STALE: build/setbright is older than tools/setbright.c" >&2; exit 1; } || true
 
 # The check binaries are rebuilt every time, deliberately.
 #
@@ -30,8 +52,8 @@ build/tortos.elf: $(wildcard src/*.c) $(wildcard src/*.h) tools/setbright.c mk/c
 # - so editing a source and re-running a check inside the same second silently
 # tests the PREVIOUS binary. That is not theoretical: it happened three times on
 # 2026-08-30 while checking whether a check actually catches the bug it claims
-# to, and each time a clean source read as a failing one. mk/cross.mk carries a
-# staleness warning for the same reason on the device side, where a rebuild is
+# to, and each time a clean source read as a failing one. The device build above
+# now carries a staleness check for the same reason, where a rebuild is
 # too slow to just repeat.
 #
 # A check that quietly tests the wrong binary is worse than no check.
@@ -178,26 +200,37 @@ adb-res:
 adb-vendor:
 	./mk/adb-deploy.sh vendor
 
+# Every target below picks the TrimUI out of whatever else is plugged in, the
+# same way mk/adb-deploy.sh does. A bare `adb shell` fails with "more than one
+# device" the moment anything else is attached - and adb re-connects remembered
+# network devices BY ITSELF, so this breaks without anyone plugging anything in.
+# It failed exactly that way on 2026-09-04 with a stale 192.168.1.247:5555 entry
+# reappearing between one command and the next, and the failure looks like the
+# restart simply not happening.
+ADBSEL = adb -s $$(adb devices | awk '/\tdevice$$/{print $$1}' | while read s; do \
+	if adb -s "$$s" shell 'grep -qi TG.040 /proc/cpuinfo && echo yes' 2>/dev/null \
+	   | grep -q yes; then echo "$$s"; break; fi; done)
+
 # Kill the launcher so launch.sh's restart loop picks up a freshly pushed
 # build. NEVER kill launch.sh itself: the boot hook's failsafe powers the
 # device off when the launch loop exits.
 adb-restart:
-	adb shell 'killall -q tortos.elf; exit 0'
+	$(ADBSEL) shell 'killall -q tortos.elf; exit 0'
 
 # Restart the resident emulator too -- needed after pushing a new diatom.
 adb-restart-all:
-	adb shell 'killall -q diatom; killall -q tortos.elf; exit 0'
+	$(ADBSEL) shell 'killall -q diatom; killall -q tortos.elf; exit 0'
 
 # Run the launcher by hand with its output on your terminal: the fastest way
 # to tell "the scan is wrong" from "the display is wrong".
 adb-run:
-	adb shell 'killall -q tortos.elf; cd /mnt/SDCARD/TortOS && \
+	$(ADBSEL) shell 'killall -q tortos.elf; cd /mnt/SDCARD/TortOS && \
 	  ROMS_PATH=/mnt/SDCARD/Roms \
 	  LD_LIBRARY_PATH=/mnt/SDCARD/TortOS/lib:/usr/trimui/lib \
 	  ./tortos.elf 2>&1' | head -60
 
 adb-log:
-	adb shell 'tail -60 /mnt/SDCARD/.userdata/tg3040/logs/tortos.log 2>/dev/null'
+	$(ADBSEL) shell 'tail -60 /mnt/SDCARD/.userdata/tg3040/logs/tortos.log 2>/dev/null'
 
 # --- Push to a running device over SSH. BRICK=<ip> to override.
 deploy: all
