@@ -1499,6 +1499,26 @@ typedef struct {
 	bool live;          /* false: a placeholder, drawn quiet and doing nothing */
 } menu_row;
 
+/* A row that is only a rule, for separating a list from a footer that is not
+ * part of it - a key legend, a count, a note. Drawn with the same bar the
+ * heading uses, so the two cannot drift apart; that is the reason this lives
+ * in menu_draw rather than being a line each screen paints for itself.
+ *
+ * It is not live, so any screen that already steps over dead rows skips it for
+ * free. A screen that does NOT step over dead rows will let the cursor land on
+ * a rule, which is a good reason to fix that screen. */
+#define MENU_RULE ((menu_row){ NULL, NULL, false })
+
+/* A note under the rule: a key legend, a count, a caption. Centered, because it
+ * describes the list rather than being an item in it - left-aligned it read as
+ * one more row you had failed to be able to select.
+ *
+ * Marked by a sentinel in `value` rather than a new struct field, so every
+ * existing { label, value, live } initialiser in this file stays valid. */
+#define MENU_NOTE_MARK ((const char *)1)
+#define MENU_NOTE(s)   ((menu_row){ (s), MENU_NOTE_MARK, false })
+#define ROW_IS_NOTE(r) ((r).value == MENU_NOTE_MARK)
+
 #define MENU_RADIUS 20
 /* The system's one accent: this menu, the volume OSD, and the mark's center
  * cell in both animations. Hand-kept equal to markdef.CYAN and UI_CYAN_*. */
@@ -1521,6 +1541,11 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 	TTF_Font *fm = ui_font(UI_F_MENU), *fh = ui_font(UI_F_LABEL);
 	int row_h = menu_row_h();
 	int pad = row_h * 3 / 4;
+	/* A rule is 2px of bar plus the gap the heading's rule gets below it, so
+	 * the footer sits off the list by the same amount the first row sits off
+	 * the heading. Giving it a whole row_h left it swimming. */
+	int rule_h = pad / 2 + 2;
+#define ROW_H(r) ((r).label ? row_h : rule_h)
 	int gap = row_h;                 /* between the label and value columns */
 	int text_h = fm ? TTF_FontHeight(fm) : row_h;
 	/* Center the ink, not the em box. The box reserves a descender's depth
@@ -1545,7 +1570,7 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 	int head_h      = heading ? line_head * head_lines + pad : 0;
 	int content_off = heading ? head_h + pad / 2 : pad;
 	bool two_col = false;
-	int content_w = 0, i, k;
+	int content_w = 0, i, k, rows_h = 0;
 	SDL_Rect panel;
 	int cx, content_x, content_y;
 	/* The list can outgrow the screen from either end - the type scale turns
@@ -1555,10 +1580,15 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 	const int margin = 24;
 	int vis = n, first = 0;
 
-	for (i = 0; i < n; i++) if (rows[i].value) two_col = true;
+	for (i = 0; i < n; i++)
+		if (rows[i].value && !ROW_IS_NOTE(rows[i])) two_col = true;
 	for (i = 0; i < n; i++) {
-		int w = ui_text_width(fm, rows[i].label);
-		if (two_col && rows[i].value) w += gap + ui_text_width(fm, rows[i].value);
+		int w;
+
+		if (!rows[i].label) continue;          /* a rule measures nothing */
+		w = ui_text_width(fm, rows[i].label);
+		if (two_col && rows[i].value && !ROW_IS_NOTE(rows[i]))
+			w += gap + ui_text_width(fm, rows[i].value);
 		if (w > content_w) content_w = w;
 	}
 	if (head2) {
@@ -1583,7 +1613,12 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 	if (content_w > TORTOS_SCREEN_W - margin * 2 - pad * 2)
 		content_w = TORTOS_SCREEN_W - margin * 2 - pad * 2;
 
-	if (content_off + n * row_h + pad > TORTOS_SCREEN_H - margin * 2) {
+	{
+		int sum = 0;
+		for (i = 0; i < n; i++) sum += ROW_H(rows[i]);
+		rows_h = sum;
+	}
+	if (content_off + rows_h + pad > TORTOS_SCREEN_H - margin * 2) {
 		vis = (TORTOS_SCREEN_H - margin * 2 - content_off - pad) / row_h;
 		if (vis < 1) vis = 1;
 		if (vis > n) vis = n;
@@ -1593,7 +1628,11 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 	}
 
 	panel.w = content_w + pad * 2;
-	panel.h = content_off + vis * row_h + pad;
+	{   /* the heights actually on screen, not vis * row_h */
+		int sum = 0, j;
+		for (j = first; j < first + vis && j < n; j++) sum += ROW_H(rows[j]);
+		panel.h = content_off + sum + pad;
+	}
 	panel.x = (TORTOS_SCREEN_W - panel.w) / 2;
 	panel.y = (TORTOS_SCREEN_H - panel.h) / 2;
 	cx = panel.x + panel.w / 2;
@@ -1669,12 +1708,26 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 		                                      content_w, 2 });
 	}
 
-	for (k = 0; k < vis; k++) {
-		int y = content_y + k * row_h;
-		int ty = y + (row_h - text_h) / 2 + ink_off;
+	for (k = 0, i = first; k < vis && i < n; k++, i++) {
+		int y = content_y;
+		int ty, j;
 		SDL_Color lc, vc;
 
-		i = first + k;
+		for (j = first; j < i; j++) y += ROW_H(rows[j]);
+		ty = y + (row_h - text_h) / 2 + ink_off;
+
+		/* The same bar as the heading's, at the same alpha and width. If one
+		 * is ever retuned the other follows, which is the point. */
+		if (!rows[i].label) {
+			SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+			SDL_SetRenderDrawColor(a->r, (Uint8)(accent >> 16),
+			                       (Uint8)(accent >> 8), (Uint8)accent, 70);
+			SDL_RenderFillRect(a->r, &(SDL_Rect){ content_x,
+			                                      y + rule_h - 2,
+			                                      content_w, 2 });
+			continue;
+		}
+
 		if (i == sel) {
 			/* A soft white plate, not the system's color. The accent already
 			 * frames the panel; using it again for the cursor made the two
@@ -1724,7 +1777,12 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 		 *
 		 * The VALUE yields first: labels are short and fixed ("File", "Size"),
 		 * values are whatever the card happens to hold. */
-		if (two_col) {
+		if (ROW_IS_NOTE(rows[i])) {
+			char note[192];
+
+			ui_fit_text(fm, rows[i].label, note, sizeof note, content_w);
+			ui_text(a->r, fm, note, cx, ty, 0, lc);
+		} else if (two_col) {
 			char lbl[192], val[192];
 			int lw, room;
 
@@ -2021,9 +2079,10 @@ static void wifi_screen(app *a)
 {
 	wifi_net nets[WIFI_MAX_NETS];
 	char vals[WIFI_MAX_NETS][32];
-	/* +2, not +1: the switch is row 0 and a hint or status row can follow the
-	 * networks. At WIFI_MAX_NETS results the old +1 was exactly full. */
-	menu_row rows[WIFI_MAX_NETS + 2];
+	/* +3, not +1: the switch is row 0, and the networks can be followed by a
+	 * rule and a hint. At WIFI_MAX_NETS results the original +1 was exactly
+	 * full, so each of those additions had to grow it. */
+	menu_row rows[WIFI_MAX_NETS + 3];
 	char status[96], ssid[WIFI_SSID_MAX], ip[64];
 	int nrows;
 	int n = 0, sel = 0, i;
@@ -2053,7 +2112,9 @@ static void wifi_screen(app *a)
 				         (cur[0] && !strcmp(cur, nets[i].ssid)) ? " - connected"
 				         : nets[i].known ? " - saved"
 				                         : nets[i].secured ? "" : " - open");
-			if (sel >= n) sel = n ? n - 1 : 0;
+			/* Rows are the switch plus n networks, so the last network is
+			 * row n. Clamping to n-1 moved the cursor off it for no reason. */
+			if (sel > n) sel = n;
 			rescan = false;
 		}
 
@@ -2075,17 +2136,24 @@ static void wifi_screen(app *a)
 			bool any_saved = false;
 			for (i = 0; i < n; i++)
 				if (nets[i].known) { any_saved = true; break; }
-			rows[nrows++] = (menu_row){
-				any_saved ? "Y: rescan   X: forget"
-				          : "Y: rescan", NULL, false };
+			rows[nrows++] = MENU_RULE;
+			rows[nrows++] = MENU_NOTE(any_saved ? "Y: rescan   X: forget"
+			                                    : "Y: rescan");
 		}
 
 		plat_input_poll(&a->in);
 		if (a->in.quit_requested) { a->running = false; return; }
 		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); return; }
 
-		if (in_repeat(&a->in, IN_UP))   sel = (sel + nrows - 1) % nrows;
-		if (in_repeat(&a->in, IN_DOWN)) sel = (sel + 1) % nrows;
+		/* Step over dead rows rather than letting the cursor rest on one.
+		 * `live` already means "drawn quiet and doing nothing", but navigation
+		 * was walking every row, so the placeholders and the hint could be
+		 * selected and then answered with A to no effect. Row 0 is the Wi-Fi
+		 * switch and is always live, so neither loop can spin. */
+		if (in_repeat(&a->in, IN_UP))
+			do { sel = (sel + nrows - 1) % nrows; } while (!rows[sel].live);
+		if (in_repeat(&a->in, IN_DOWN))
+			do { sel = (sel + 1) % nrows; } while (!rows[sel].live);
 		if (a->in.pressed[IN_Y] && on) rescan = true;
 		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = true;
 
@@ -2980,10 +3048,18 @@ static int menu_measure(const menu_row *rows, int n, const char *heading)
 	int gap = menu_row_h(), w = 0, i;
 	bool two_col = false;
 
-	for (i = 0; i < n; i++) if (rows[i].value) two_col = true;
+	/* The same three row kinds menu_draw knows about. This function is a
+	 * second copy of that measuring pass and the two must agree, or a panel is
+	 * sized by one rule and drawn by another. */
+	for (i = 0; i < n; i++)
+		if (rows[i].value && !ROW_IS_NOTE(rows[i])) two_col = true;
 	for (i = 0; i < n; i++) {
-		int rw = ui_text_width(fm, rows[i].label);
-		if (two_col && rows[i].value) rw += gap + ui_text_width(fm, rows[i].value);
+		int rw;
+
+		if (!rows[i].label) continue;          /* a rule measures nothing */
+		rw = ui_text_width(fm, rows[i].label);
+		if (two_col && rows[i].value && !ROW_IS_NOTE(rows[i]))
+			rw += gap + ui_text_width(fm, rows[i].value);
 		if (rw > w) w = rw;
 	}
 	if (heading) {
