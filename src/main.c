@@ -1965,6 +1965,49 @@ static const char *wifi_strength(int dbm)
 	return "weak";
 }
 
+/* A yes/no panel, drawn like wait_panel but answerable.
+ *
+ * Defaults to "no": the selection starts on the safe row, so a stray press of
+ * the button that opened the panel cannot also confirm it. Returns false for
+ * BACK, for MENU, and for a power-off, because everything except a deliberate
+ * press on the destructive row means "not that".
+ *
+ * Power is handled here rather than left to the caller. A confirm can sit on
+ * screen indefinitely, which makes it exactly the kind of place the device gets
+ * put down and the power button pressed. */
+static bool confirm_panel(app *a, const char *heading, const char *msg,
+                          const char *yes_label)
+{
+	menu_row rows[3];
+	int sel = 2;
+
+	rows[0] = (menu_row){ msg, NULL, false };
+	rows[1] = (menu_row){ yes_label, NULL, true };
+	rows[2] = (menu_row){ "Cancel", NULL, true };
+
+	for (;;) {
+		plat_input_poll(&a->in);
+		if (a->in.quit_requested) { a->running = false; return false; }
+		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); return false; }
+		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) return false;
+
+		/* Only the two answerable rows are reachable; row 0 is the question. */
+		if (in_repeat(&a->in, IN_UP) || in_repeat(&a->in, IN_DOWN))
+			sel = (sel == 1) ? 2 : 1;
+		if (a->in.pressed[IN_ACCEPT]) return sel == 1;
+
+		tick_tint(a);
+		draw_shelf(a);
+		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
+		SDL_RenderFillRect(a->r, NULL);
+		menu_draw(a, heading, rows, 3, sel, 0, MENU_ACCENT);
+		plat_draw_osd(a->r);
+		SDL_RenderPresent(a->r);
+		SDL_Delay(8);
+	}
+}
+
 static void wifi_backdrop(void *ctx)
 {
 	app *a = ctx;
@@ -1978,7 +2021,9 @@ static void wifi_screen(app *a)
 {
 	wifi_net nets[WIFI_MAX_NETS];
 	char vals[WIFI_MAX_NETS][32];
-	menu_row rows[WIFI_MAX_NETS + 1];
+	/* +2, not +1: the switch is row 0 and a hint or status row can follow the
+	 * networks. At WIFI_MAX_NETS results the old +1 was exactly full. */
+	menu_row rows[WIFI_MAX_NETS + 2];
 	char status[96], ssid[WIFI_SSID_MAX], ip[64];
 	int nrows;
 	int n = 0, sel = 0, i;
@@ -2018,10 +2063,22 @@ static void wifi_screen(app *a)
 		for (i = 0; i < n; i++)
 			rows[i + 1] = (menu_row){ nets[i].ssid, vals[i], true };
 		nrows = n + 1;
-		if (!on)
+		if (!on) {
 			rows[nrows++] = (menu_row){ "Turn Wi-Fi on to scan", NULL, false };
-		else if (n == 0)
+		} else if (n == 0) {
 			rows[nrows++] = (menu_row){ "No networks found", NULL, false };
+		} else {
+			/* Y and X are otherwise undiscoverable: nothing on screen says
+			 * they do anything, so only somebody who already knew would ever
+			 * press them. Which saved networks exist decides whether forget is
+			 * worth mentioning at all. */
+			bool any_saved = false;
+			for (i = 0; i < n; i++)
+				if (nets[i].known) { any_saved = true; break; }
+			rows[nrows++] = (menu_row){
+				any_saved ? "Y: rescan   X: forget"
+				          : "Y: rescan", NULL, false };
+		}
 
 		plat_input_poll(&a->in);
 		if (a->in.quit_requested) { a->running = false; return; }
@@ -2031,6 +2088,46 @@ static void wifi_screen(app *a)
 		if (in_repeat(&a->in, IN_DOWN)) sel = (sel + 1) % nrows;
 		if (a->in.pressed[IN_Y] && on) rescan = true;
 		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = true;
+
+		/* Forget a saved network. Only saved rows offer it - there is nothing
+		 * to forget about one the device has never joined, and a button that
+		 * silently does nothing on some rows is the same defect as a menu entry
+		 * wired to nothing.
+		 *
+		 * Forgetting the CONNECTED network is allowed, deliberately. Refusing
+		 * would be safer - it drops the device off the LAN, taking Over The
+		 * Hare and ssh with it, and a handheld has no keyboard to climb back
+		 * out with. But "I want to forget this one" is a reasonable thing to
+		 * want, and the honest place to say what it costs is the confirm, not a
+		 * button that appears broken on exactly one row. */
+		if (a->in.pressed[IN_X] && on && sel >= 1 && sel <= n
+		    && nets[sel - 1].known) {
+			int k = sel - 1;
+			char cur[WIFI_SSID_MAX], msg[160];
+			bool joined;
+
+			joined = wifi_status(cur, sizeof cur, NULL, 0) == WIFI_CONNECTED
+			         && !strcmp(cur, nets[k].ssid);
+			if (joined)
+				snprintf(msg, sizeof msg,
+				         "Forget %s? You are connected to it "
+				         "and will lose the network.", nets[k].ssid);
+			else
+				snprintf(msg, sizeof msg, "Forget %s?", nets[k].ssid);
+
+			if (confirm_panel(a, "Wi-Fi", msg, "Forget")) {
+				if (wifi_forget(nets[k].ssid))
+					snprintf(status, sizeof status, "Forgot %s", nets[k].ssid);
+				else
+					snprintf(status, sizeof status,
+					         "Could not forget %s", nets[k].ssid);
+				wait_panel(a, "Wi-Fi", status);
+				SDL_Delay(1400);
+				rescan = true;
+			}
+			if (!a->running) return;
+			continue;
+		}
 
 		/* The switch. Saved on every change rather than on the way out: the
 		 * way out of a handheld is often the power button. */
