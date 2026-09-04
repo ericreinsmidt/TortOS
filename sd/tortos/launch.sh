@@ -277,11 +277,121 @@ else
 	radio_off &
 fi
 
-# Bluetooth off, always.
-killall -q bluealsa bluetoothd 2> /dev/null
-/etc/init.d/bluetooth stop 2> /dev/null
-rfkill block bluetooth 2> /dev/null
-echo 0 > /sys/class/rfkill/rfkill0/state 2> /dev/null
+# Bluetooth, on the same terms as WiFi above: off unless asked for, because
+# both radios are battery drain and boot time, and the state the player left it
+# in wins over the shipped default.
+#
+# The bring-up is the vendor's own, established on 2026-09-03. Three details in
+# it are not guesses and should not be "simplified":
+#
+#   - The attach protocol is `xradio`. /etc/bluetooth/bt_init.sh on this rootfs
+#     is the AIC variant and FAILS here ("bring up hci0 failed"; it also calls
+#     hcidump_xr, which does not exist). /etc/init.d/hciattach has the right
+#     invocation and is what this mirrors.
+#   - rfkill needs a POWER CYCLE, not an unblock. After a failed attach the chip
+#     wedges: hciattach runs happily and no hci0 ever appears. Every bt_init.sh
+#     variant cycles the rail; /etc/init.d/hciattach does not, which is why the
+#     boot service has never once succeeded - it is enabled as S80 and fails
+#     against the radio we block four lines further down.
+#   - hfp-ag is not optional. With a2dp-source alone a headset connects but
+#     behaves oddly; with the Hands-Free gateway role it connects the way it
+#     would to a phone and speaks its own prompt. --a2dp-volume leaves volume
+#     with the headset, which is right: a BT sink is outside both the speaker
+#     and jack ladders in src/platform.c and must not be attenuated here.
+bt_off() {
+	killall -q bluealsa bluetoothd hciattach 2> /dev/null
+	/etc/init.d/bluetooth stop 2> /dev/null
+	rfkill block bluetooth 2> /dev/null
+	echo 0 > /sys/class/rfkill/rfkill0/state 2> /dev/null
+}
+
+bt_on() {
+	# Power cycle rather than unblock. See above.
+	echo 0 > /sys/class/rfkill/rfkill0/state 2> /dev/null
+	sleep 2
+	echo 1 > /sys/class/rfkill/rfkill0/state 2> /dev/null
+	sleep 2
+	rfkill unblock bluetooth 2> /dev/null
+
+	# Retried, not attempted once. Measured 2026-09-03: the identical command
+	# takes ~4s and succeeds on a settled device, and FAILS outright when run
+	# about two seconds after the unblock during boot - the chip is not ready
+	# that early and the attach dies silently. A longer fixed sleep would be a
+	# guess at how long boot happens to take on this card with this library;
+	# a retry costs nothing when it works first time.
+	#
+	# The stock service is stopped first because /etc/rc.d/S80hciattach is
+	# procd-managed and has already run and failed by the time we get here.
+	# Leaving procd holding a failed instance means two things reaching for the
+	# same UART.
+	/etc/init.d/hciattach stop > /dev/null 2>&1
+	killall -q hciattach 2> /dev/null
+
+	try=0
+	while [ $try -lt 3 ]; do
+		start-stop-daemon -S -b -x /usr/bin/hciattach -- -n ttyS1 xradio > /dev/null 2>&1
+		i=0
+		while [ $i -lt 10 ]; do
+			[ -d /sys/class/bluetooth/hci0 ] && break
+			sleep 1
+			i=$((i + 1))
+		done
+		[ -d /sys/class/bluetooth/hci0 ] && break
+		try=$((try + 1))
+		echo "bt: attach attempt $try produced no hci0" >> "$LOGS_PATH/tortos.log"
+		# A dead attach leaves the chip wedged; only a rail cycle clears it.
+		killall -q hciattach 2> /dev/null
+		echo 0 > /sys/class/rfkill/rfkill0/state 2> /dev/null
+		sleep 2
+		echo 1 > /sys/class/rfkill/rfkill0/state 2> /dev/null
+		sleep 2
+	done
+	if [ ! -d /sys/class/bluetooth/hci0 ]; then
+		echo "bt: gave up after $try attach attempts" >> "$LOGS_PATH/tortos.log"
+		return 1
+	fi
+
+	hciconfig hci0 up 2> /dev/null
+	/etc/bluetooth/bluetoothd start > /dev/null 2>&1
+	start-stop-daemon -S -b -x /usr/bin/bluealsa -- \
+		-S -p a2dp-source -p hfp-ag --a2dp-volume > /dev/null 2>&1
+	sleep 3          # let both profiles register with BlueZ before any connect
+
+	bt_reconnect &
+}
+
+# Keep a remembered headset connected, so powering it on reconnects it wherever
+# you are rather than only at a screen that happens to be watching.
+#
+# Trusted devices only: BlueZ writes those to /etc/lib/bluetooth/<adapter>/, NOT
+# to /etc/bluetooth/keys/ - that directory is a decoy created by the bluetoothd
+# init wrapper's `ln -snf ... /var/lib/bluetooth`, and bluetoothd never reads it
+# because its storage path is compiled in with --localstatedir=/etc.
+#
+# Judge success by `info`, never by the return of `connect`: bluetoothctl reports
+# Failed for a2dp even when the link came up.
+bt_reconnect() {
+	adapter=$(hciconfig hci0 2> /dev/null | sed -n 's/.*BD Address: \([0-9A-F:]*\).*/\1/p')
+	[ -n "$adapter" ] || return 0
+	while :; do
+		for d in /etc/lib/bluetooth/"$adapter"/*:*; do
+			[ -d "$d" ] || continue
+			grep -q '^Trusted=true' "$d/info" 2> /dev/null || continue
+			mac=$(basename "$d")
+			bluetoothctl info "$mac" 2> /dev/null | grep -q 'Connected: yes' && continue
+			bluetoothctl connect "$mac" > /dev/null 2>&1
+		done
+		sleep 20
+	done
+}
+
+BT=$(sed -n 's/^bluetooth=//p' "$USERDATA_PATH/bt.cfg" 2> /dev/null | head -1)
+[ -n "$BT" ] || BT=$(getcfg bluetooth)
+if [ "$BT" = "1" ]; then
+	bt_on &
+else
+	bt_off &
+fi
 
 # CPU: interactive scaling
 echo interactive > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2> /dev/null
