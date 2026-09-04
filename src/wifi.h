@@ -44,6 +44,26 @@ void wifi_down(void);
  * networks are dropped: without an SSID there is nothing to show or select. */
 int wifi_scan(wifi_net *out, int max);
 
+/* The networks the supplicant already holds, with no scan and no radio time.
+ * Instant, so a screen can show something while a scan runs. `signal` is 0 and
+ * meaningless: a saved network is not necessarily in range. */
+int wifi_known(wifi_net *out, int max);
+
+/* A scan the caller does not wait for. A full scan takes several seconds by
+ * design - the weak networks arrive last, and cutting it short drops exactly
+ * the ones somebody is looking for - so this splits the waiting out.
+ *
+ *   wifi_scan_start()  kick it off; false if the supplicant is not answering
+ *   wifi_scan_poll()   0 running, 1 results ready, -1 no scan running.
+ *                      Safe every frame: it does nothing until its next
+ *                      second is due.
+ *   wifi_scan_take()   fill the array from the results poll reported ready
+ *
+ * wifi_scan() above is these three with the waiting put back in. */
+bool wifi_scan_start(void);
+int  wifi_scan_poll(void);
+int  wifi_scan_take(wifi_net *out, int max);
+
 /* Associate, and on success write the credential to wpa_supplicant.conf and
  * take a DHCP lease. `psk` may be NULL or empty for an open network. Blocking,
  * with an internal timeout. */

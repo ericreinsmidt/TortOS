@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "wifi.h"
 
@@ -174,40 +175,14 @@ static int known_ssids(char list[][WIFI_SSID_MAX], int max)
 	return n;
 }
 
-int wifi_scan(wifi_net *out, int max)
+/* Parse a scan_results block. Split out so the blocking and non-blocking
+ * entry points share one parser rather than drifting apart. Destroys `buf`. */
+static int parse_results(char *buf, wifi_net *out, int max)
 {
-	char buf[8192];
 	char known[WIFI_MAX_NETS][WIFI_SSID_MAX];
 	char *line, *save;
 	int n = 0, nknown, i;
 
-	if (wpa(buf, sizeof buf, "ping", NULL, NULL, NULL) != 0 ||
-	    !strstr(buf, "PONG")) return -1;
-
-	wpa(buf, sizeof buf, "scan", NULL, NULL, NULL);
-
-	/* Poll until the result count settles rather than sleeping a guessed
-	 * duration. A scan fills in over several seconds and the weak entries
-	 * arrive last: measured 2026-08-29, a flat 3-second wait returned one
-	 * network where the radio could actually see two, and the one it dropped
-	 * was the weaker of the pair -- exactly the network a user is most likely
-	 * to be squinting at the list for. Two identical reads in a row is the
-	 * signal that it has finished; the cap stops a radio that never settles
-	 * from hanging the UI. */
-	{
-		int last = -1, stable = 0, t;
-		for (t = 0; t < 9; t++) {
-			int c = 0;
-			const char *q;
-			sleep(1);
-			if (wpa(buf, sizeof buf, "scan_results", NULL, NULL, NULL) != 0)
-				continue;
-			for (q = buf; *q; q++) if (*q == '\n') c++;
-			if (c > 0 && c == last) { if (++stable >= 2) break; }
-			else { stable = 0; last = c; }
-		}
-		if (last <= 0) return 0;                  /* radio up, nothing heard */
-	}
 	nknown = known_ssids(known, WIFI_MAX_NETS);
 
 	for (line = strtok_r(buf, "\n", &save); line;
@@ -258,6 +233,105 @@ int wifi_scan(wifi_net *out, int max)
 		out[j + 1] = t;
 	}
 	return n;
+}
+
+/* The networks the supplicant already holds, with no scan and no radio time.
+ * Instant, so a screen has something to show while a scan runs. Signal is 0 and
+ * meaningless until the scan lands - a saved network is not necessarily in
+ * range, and this deliberately does not pretend to know. */
+int wifi_known(wifi_net *out, int max)
+{
+	char list[WIFI_MAX_NETS][WIFI_SSID_MAX];
+	int n, i, k = 0;
+
+	n = known_ssids(list, WIFI_MAX_NETS);
+	for (i = 0; i < n && k < max; i++) {
+		memset(&out[k], 0, sizeof out[k]);
+		/* Bounded read, not just a bounded write. known_ssids terminates
+		 * every row, but the compiler cannot see that and assumes the copy
+		 * could run the whole 24 x 33 array. */
+		snprintf(out[k].ssid, sizeof out[k].ssid, "%.*s",
+		         (int)(WIFI_SSID_MAX - 1), list[i]);
+		out[k].known = true;
+		out[k].secured = true;    /* a saved network needed a key, or did not */
+		k++;
+	}
+	return k;
+}
+
+/* A scan that does not block the caller.
+ *
+ * The settling rule is the same one wifi_scan has always used and it is not
+ * negotiable: results fill in over several seconds and the WEAK entries arrive
+ * last. Measured 2026-08-29, a flat 3-second wait returned one network where
+ * the radio could see two, and the one it dropped was the weaker of the pair -
+ * exactly the network somebody is squinting at the list for. Two identical
+ * counts in a row means it has finished; a cap stops a radio that never settles
+ * from scanning forever.
+ *
+ * What changed is only WHO waits. This holds the same state across calls and
+ * does at most one scan_results per second, so a screen can poll it from the
+ * frame it is already drawing instead of standing still for nine. */
+static char g_scan[8192];
+static int  g_scan_last, g_scan_stable, g_scan_ticks;
+static bool g_scanning;
+static time_t g_scan_next;
+
+bool wifi_scan_start(void)
+{
+	char buf[512];
+
+	if (wpa(buf, sizeof buf, "ping", NULL, NULL, NULL) != 0 ||
+	    !strstr(buf, "PONG")) return false;
+	wpa(buf, sizeof buf, "scan", NULL, NULL, NULL);
+	g_scan[0] = '\0';
+	g_scan_last = -1;
+	g_scan_stable = 0;
+	g_scan_ticks = 0;
+	g_scan_next = time(NULL) + 1;
+	g_scanning = true;
+	return true;
+}
+
+/* 0 while running, 1 when results are ready to take, -1 if no scan is running.
+ * Safe to call every frame: it does nothing until its next second is due. */
+int wifi_scan_poll(void)
+{
+	const char *q;
+	int c = 0;
+
+	if (!g_scanning) return -1;
+	if (time(NULL) < g_scan_next) return 0;
+	g_scan_next = time(NULL) + 1;
+
+	if (++g_scan_ticks >= 9) { g_scanning = false; return 1; }  /* cap */
+	if (wpa(g_scan, sizeof g_scan, "scan_results", NULL, NULL, NULL) != 0)
+		return 0;
+
+	for (q = g_scan; *q; q++) if (*q == '\n') c++;
+	if (c > 0 && c == g_scan_last) {
+		if (++g_scan_stable >= 2) { g_scanning = false; return 1; }
+	} else {
+		g_scan_stable = 0;
+		g_scan_last = c;
+	}
+	return 0;
+}
+
+int wifi_scan_take(wifi_net *out, int max)
+{
+	if (g_scan_last <= 0) return 0;           /* radio up, nothing heard */
+	return parse_results(g_scan, out, max);
+}
+
+/* The blocking form, kept for the --wifi diagnostic where standing still is
+ * exactly what is wanted. Built on the same three calls so there is one scan
+ * implementation rather than two that can disagree. */
+int wifi_scan(wifi_net *out, int max)
+{
+	if (!wifi_scan_start()) return -1;
+	while (wifi_scan_poll() == 0) sleep(1);
+	return wifi_scan_take(out, max);
 }
 
 /* Ask for a lease. The vendor's own invocation, from /etc/wifi/udhcpc_wlan0.
@@ -472,6 +546,10 @@ bool wifi_forget(const char *ssid)
 bool wifi_up(void) { return false; }
 void wifi_down(void) { }
 int wifi_scan(wifi_net *out, int max) { (void)out; (void)max; return -1; }
+int wifi_known(wifi_net *out, int max) { (void)out; (void)max; return 0; }
+bool wifi_scan_start(void) { return false; }
+int wifi_scan_poll(void) { return -1; }
+int wifi_scan_take(wifi_net *out, int max) { (void)out; (void)max; return 0; }
 bool wifi_connect(const char *ssid, const char *psk)
 {
 	(void)ssid; (void)psk; return false;

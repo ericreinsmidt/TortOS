@@ -2198,31 +2198,50 @@ typedef struct {
 	char     vals[WIFI_MAX_NETS][32];
 	int      n;
 	bool     on;
-	bool     rescan;
+	bool     scanning;   /* a scan is running; the list is provisional */
+	bool     scanned;    /* a scan has finished at least once this visit */
 } wifi_ui;
 
-/* The scan, kept out of build() because it blocks for seconds and build() runs
- * every frame. Called from the key handler and from entry. */
-static void wifi_rescan(app *a, wifi_ui *w)
+/* The right-hand column for every row, rebuilt whenever the list changes.
+ *
+ * "connected" outranks "saved": after a successful connect the list was redrawn
+ * saying only that the network was known, which is what it said before the
+ * connect too, so the screen gave no sign anything had happened. */
+static void wifi_label(wifi_ui *w)
 {
 	char cur[WIFI_SSID_MAX];
 	int i;
 
-	wait_panel(a, "Wi-Fi", "Scanning...");
-	w->n = wifi_scan(w->nets, WIFI_MAX_NETS);
-	if (w->n < 0) w->n = 0;
 	if (wifi_status(cur, sizeof cur, NULL, 0) != WIFI_CONNECTED) cur[0] = '\0';
-	for (i = 0; i < w->n; i++)
-		/* "connected" outranks "saved": after a successful connect the list
-		 * was redrawn saying only that the network was known, which is what it
-		 * said before the connect too, so the screen gave no sign anything had
-		 * happened. */
-		snprintf(w->vals[i], sizeof w->vals[i], "%s%s",
-		         wifi_strength(w->nets[i].signal),
-		         (cur[0] && !strcmp(cur, w->nets[i].ssid)) ? " - connected"
-		         : w->nets[i].known ? " - saved"
-		                            : w->nets[i].secured ? "" : " - open");
-	w->rescan = false;
+	for (i = 0; i < w->n; i++) {
+		const char *state = (cur[0] && !strcmp(cur, w->nets[i].ssid))
+		                    ? " - connected"
+		                    : w->nets[i].known ? " - saved"
+		                    : w->nets[i].secured ? "" : " - open";
+
+		/* A saved network listed before the scan has no signal reading, and
+		 * printing "weak" for one that has simply not been heard from yet
+		 * would be a measurement we do not have. */
+		if (!w->scanned && w->nets[i].known)
+			snprintf(w->vals[i], sizeof w->vals[i], "saved");
+		else
+			snprintf(w->vals[i], sizeof w->vals[i], "%s%s",
+			         wifi_strength(w->nets[i].signal), state);
+	}
+}
+
+/* Start a scan and show what we already know while it runs.
+ *
+ * Entering this screen used to stand still behind a "Scanning..." panel for up
+ * to nine seconds, because a scan settles slowly on purpose. The saved networks
+ * need no scan at all - the supplicant is holding them - so they go up
+ * immediately and the scan fills in around them. */
+static void wifi_begin_scan(wifi_ui *w)
+{
+	w->scanned = false;
+	w->n = wifi_known(w->nets, WIFI_MAX_NETS);
+	wifi_label(w);
+	w->scanning = wifi_scan_start();
 }
 
 static int wifi_build(void *ctx, menu_row *rows, int max)
@@ -2230,6 +2249,22 @@ static int wifi_build(void *ctx, menu_row *rows, int max)
 	wifi_ui *w = ctx;
 	int nrows = 0, i;
 	bool any_saved = false;
+
+	/* The scan is driven from here because this is the function that already
+	 * runs every frame. wifi_scan_poll() does nothing until its next second is
+	 * due, so calling it per frame costs a comparison. When results land the
+	 * provisional list of saved networks is replaced by what the radio heard.
+	 *
+	 * This is still the only place rows are built, and it still touches no
+	 * renderer - ADR-0001's requirement holds. */
+	if (w->scanning && wifi_scan_poll() == 1) {
+		int got = wifi_scan_take(w->nets, WIFI_MAX_NETS);
+
+		w->scanning = false;
+		w->scanned = true;
+		if (got >= 0) w->n = got;
+		wifi_label(w);
+	}
 
 	/* The switch is row 0, so the state of the radio is the first thing read
 	 * and the first thing reachable. */
@@ -2245,7 +2280,7 @@ static int wifi_build(void *ctx, menu_row *rows, int max)
 		rows[nrows++] = MENU_NOTE("Turn Wi-Fi on to scan");
 		return nrows;
 	}
-	if (w->n == 0) {
+	if (w->n == 0 && !w->scanning) {
 		rows[nrows++] = MENU_RULE;
 		rows[nrows++] = MENU_NOTE("No networks found");
 		return nrows;
@@ -2253,7 +2288,12 @@ static int wifi_build(void *ctx, menu_row *rows, int max)
 	for (i = 0; i < w->n; i++)
 		if (w->nets[i].known) { any_saved = true; break; }
 	rows[nrows++] = MENU_RULE;
-	rows[nrows++] = MENU_NOTE(any_saved ? "Y: rescan   X: forget" : "Y: rescan");
+	/* What is happening, then what you can do. The footer is the honest place
+	 * for progress: it is already outside the list, and swapping its text
+	 * means the screen never has to put a modal in front of you. */
+	rows[nrows++] = w->scanning
+	              ? MENU_NOTE("Scanning...")
+	              : MENU_NOTE(any_saved ? "Y: rescan   X: forget" : "Y: rescan");
 	return nrows;
 }
 
@@ -2264,7 +2304,7 @@ static menu_result wifi_key(app *a, void *ctx, in_button key, int sel)
 	int k = sel - 1;                    /* row 0 is the switch */
 	bool net_row = sel >= 1 && sel <= w->n;
 
-	if (key == IN_Y && w->on) { wifi_rescan(a, w); return MENU_STAY; }
+	if (key == IN_Y && w->on) { wifi_begin_scan(w); return MENU_STAY; }
 
 	/* Forget a saved network. Only saved rows offer it - there is nothing to
 	 * forget about one the device has never joined, and a button that silently
@@ -2295,7 +2335,7 @@ static menu_result wifi_key(app *a, void *ctx, in_button key, int sel)
 			         w->nets[k].ssid);
 			wait_panel(a, "Wi-Fi", status);
 			SDL_Delay(1400);
-			if (w->on) wifi_rescan(a, w);
+			if (w->on) wifi_begin_scan(w);
 		}
 		return MENU_STAY;
 	}
@@ -2318,7 +2358,7 @@ static menu_result wifi_key(app *a, void *ctx, in_button key, int sel)
 				wait_panel(a, "Wi-Fi", "Wi-Fi did not come up");
 				SDL_Delay(1800);
 			}
-			if (w->on) wifi_rescan(a, w);
+			if (w->on) wifi_begin_scan(w);
 		}
 		return MENU_STAY;
 	}
@@ -2362,7 +2402,7 @@ static menu_result wifi_key(app *a, void *ctx, in_button key, int sel)
 		 * out by hand to see the result. On failure stay, because the next
 		 * thing wanted is another try or another network, and both are here. */
 		if (ok) return MENU_DONE;
-		wifi_rescan(a, w);
+		wifi_begin_scan(w);
 	}
 	return MENU_STAY;
 }
@@ -2375,7 +2415,7 @@ static void wifi_screen(app *a)
 	 * impossible to leave in the off state: you opened it to turn wifi OFF and
 	 * the act of opening it turned wifi on. */
 	w.on = wifi_status(NULL, 0, NULL, 0) != WIFI_OFF;
-	if (w.on) wifi_rescan(a, &w);
+	if (w.on) wifi_begin_scan(&w);
 
 	menu_run(a, "Wi-Fi", MENU_ACCENT, wifi_build, wifi_key, &w);
 }
