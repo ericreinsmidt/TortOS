@@ -121,16 +121,17 @@ check-xfer: build-native/xfer-check
 # defect this screen has had was some form of "nobody noticed the list was
 # wrong", and every one of them needed a device to see.
 #
-# It links src/wifi_menu.c and src/wifi.c and NOT SDL. If it ever needs SDL to
+# It links the pure halves of the screens and NOT SDL. If it ever needs SDL to
 # link, ADR-0001 has failed - reopen it rather than adding the flag.
 check-menus: build-native/menu-check
 	@./build-native/menu-check
 
 build-native/menu-check: tools/menu-check.c src/wifi_menu.c src/wifi.c \
-                        src/wifi_menu.h src/menu.h FORCE
+                        src/sys_menu.c src/wifi_menu.h src/sys_menu.h \
+                        src/menu.h FORCE
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
-	      -o $@ tools/menu-check.c src/wifi_menu.c src/wifi.c
+	      -o $@ tools/menu-check.c src/wifi_menu.c src/wifi.c src/sys_menu.c
 
 build-native/xfer-check: tools/xfer-check.c src/xfer.c src/xfer.h FORCE
 	@mkdir -p build-native

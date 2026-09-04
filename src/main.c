@@ -27,6 +27,7 @@
 #include "keyboard.h"
 #include "wifi.h"
 #include "menu.h"
+#include "sys_menu.h"
 #include "ui.h"
 #include "wifi_menu.h"
 
@@ -634,13 +635,6 @@ static void auto_off_save(int seconds)
 	if (!f) return;
 	fprintf(f, "seconds=%d\n", seconds);
 	atomic_commit(f, p);
-}
-
-static void auto_off_label(int seconds, char *out, size_t n)
-{
-	if (seconds <= 0)      snprintf(out, n, "off");
-	else if (seconds < 60) snprintf(out, n, "%ds", seconds);
-	else                   snprintf(out, n, "%dm", seconds / 60);
 }
 
 /* The account. Per-device rather than shared, because it holds a session
@@ -1826,31 +1820,7 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 	}
 }
 
-/* MENU has two menus behind it, chosen by where it was pressed.
- *
- * From the systems row it is about the firmware. From inside a system it is
- * about THAT system, because a menu that repeated the firmware's settings
- * while a shelf of NES games sat behind it would be answering a question
- * nobody asked. Almost every row in both is a placeholder: the lists are here
- * to hold the shape of what TortOS grows into, and a row that is drawn but
- * does nothing states that more honestly than an empty menu does. */
-typedef enum {
-	PM_WIFI, PM_BT, PM_XFER, PM_ACHIEVEMENTS, PM_SCRAPE,
-	PM_TEXT, PM_SLEEP, PM_ABOUT, PM_ROWS
-} pm_row;
-
-/* The system menu. Games and Core carry real values rather than invented ones,
- * because a placeholder that lies about the machine it is describing is worse
- * than no row. The rest name capabilities that already exist on the emulator
- * side - Diatom has per-system display modes and core-supplied button labels -
- * so these are hooks waiting to be wired, not wishes. */
-typedef enum {
-	SM_GAMES, SM_CORE, SM_SORT, SM_SHOW,
-	SM_DISPLAY, /* SM_BUTTONS, */ SM_BOXART, SM_RESCAN, SM_ROWS
-} sm_row;
-
-#define MENU_MAX_ROWS 12
-typedef struct { char a[24], b[CFG_STR]; } menu_bufs;
+/* The two menus behind MENU, their row indices and their buffers: src/sys_menu.h */
 
 /* Build whichever menu the current screen calls for. Returns the row count, so
  * the input loop never needs to know which of the two it is driving. */
@@ -1881,103 +1851,41 @@ static wifi_state menu_wifi(char *ssid, int cap)
 	return st;
 }
 
+/* Gather what the device currently is, and hand it to sys_menu_build.
+ *
+ * The split is ADR-0001's: this half is allowed to fork wpa_cli and read the
+ * app, the other half is not allowed to do anything but produce rows. That is
+ * what lets tools/menu-check.c state a whole device situation in a struct
+ * initializer and ask what the menu says about it.
+ *
+ * Returns the row count, so the input loop never needs to know which of the
+ * two menus it is driving. */
 static int menu_build(app *a, screen_id screen, int sys,
                       menu_row *out, menu_bufs *b, const char **heading)
 {
-	if (screen == SCREEN_GAMES) {
-		const system_cfg *s = &a->sys.systems[sys];
+	char ss[WIFI_SSID_MAX];
+	sys_ui u = { 0 };
 
-		snprintf(b->a, sizeof b->a, "%d", a->view[sys].list.count);
-		snprintf(b->b, sizeof b->b, "%s", s->core);
-		*heading = s->name;
-		out[SM_GAMES]   = (menu_row){ "Games",          b->a,            false };
-		out[SM_CORE]    = (menu_row){ "Core",           b->b,            false };
-		out[SM_SORT]    = (menu_row){ "Sort By",        "Name",          false };
-		out[SM_SHOW]    = (menu_row){ "Show",           "All games",     false };
-		out[SM_DISPLAY] = (menu_row){ "Display Mode",
-		                              DMODES[a->view[sys].dmode].label, true };
-		/* Button Mapping is out until there is something behind it. Diatom
-		 * supplies core button labels, so the hook is real - but a dead row
-		 * in a menu of live ones is a promise the launcher is not keeping,
-		 * and it has sat there unwired longer than it was ever going to be
-		 * worth. Put the enum entry back with it when it is built. */
-		/* out[SM_BUTTONS] = (menu_row){ "Button Mapping", NULL,     false }; */
-		{	/* Just this system. Needs the network like its counterpart in
-			 * the TortOS menu, and says so rather than opening a screen
-			 * that can only report the same thing. */
-			bool on = menu_wifi(NULL, 0) == WIFI_CONNECTED;
+	/* Asked once. The cache is why - see menu_wifi - and three rows used to
+	 * ask separately, which is how it got expensive in the first place. */
+	u.wifi  = menu_wifi(ss, sizeof ss);
+	u.ssid  = ss;
+	u.games = screen == SCREEN_GAMES;
 
-			out[SM_BOXART] = (menu_row){ "Box Art",
-			                             on ? NULL : "needs Wi-Fi", on };
-		}
-		/* Live now that there is something behind it. It rescans the whole card
-	 * rather than this one folder - the work is three directory reads and the
-	 * shared parts (hiding a system that emptied, rebuilding Favorites) have
-	 * to run anyway - but the folder you are standing in is the one you came
-	 * here to refresh, so the name still describes what you asked for. */
-	out[SM_RESCAN]  = (menu_row){ "Rescan Folder",  NULL,            true  };
-		return SM_ROWS;
+	if (u.games) {
+		const system_cfg *sc = &a->sys.systems[sys];
+
+		u.sys_name   = sc->name;
+		u.sys_core   = sc->core;
+		u.game_count = a->view[sys].list.count;
+		u.dmode      = DMODES[a->view[sys].dmode].label;
+	} else {
+		u.ra_in     = ra_signed_in();
+		u.ra_name   = u.ra_in ? ra_user() : NULL;
+		u.text_size = TEXT_NAMES[text_scale_step()];
+		u.auto_off  = a->auto_off;
 	}
-
-	snprintf(b->a, sizeof b->a, "%s", TEXT_NAMES[text_scale_step()]);
-	*heading = "TortOS";
-	{	/* Reported rather than remembered: the radio can be brought up or
-		 * dropped from outside the launcher, so asking is the only answer that
-		 * is true when it is drawn.
-		 *
-		 * Cached for two seconds, on the same reasoning as battery_low(), and
-		 * for a sharper reason: menu_build runs every frame and wifi_status
-		 * forks wpa_cli, so the first version of this was spawning a process
-		 * about 125 times a second on a 1GHz device for a line that changes
-		 * a few times an hour.
-		 *
-		 * The network's name, not its address. A settings row should say what
-		 * the setting IS; the address is a fact about the machine and lives on
-		 * the About page with the other ones. */
-		char ss[WIFI_SSID_MAX];
-		wifi_state ws = menu_wifi(ss, sizeof ss);
-
-		if (ws == WIFI_CONNECTED && ss[0]) snprintf(b->b, sizeof b->b, "%s", ss);
-		else snprintf(b->b, sizeof b->b, "%s",
-		              ws == WIFI_CONNECTING ? "connecting" :
-		              ws == WIFI_IDLE       ? "not connected" : "off");
-		out[PM_WIFI]     = (menu_row){ "Wi-Fi",             b->b,      true  };
-	}
-	out[PM_BT]           = (menu_row){ "Bluetooth",         "not yet", false };
-	/* Files onto and off the device over Wi-Fi: a small web server on the LAN
-	 * that a phone or a laptop opens. Named for OTA, which is what everyone
-	 * already calls this, and for the other half of the fable - the tortoise
-	 * runs the system, the hare carries the files.
-	 *
-	 * Directly under Wi-Fi because it is useless without it, and reads as an
-	 * answer to the row above rather than a separate idea. */
-	{	bool on = menu_wifi(NULL, 0) == WIFI_CONNECTED;
-
-		/* Useless without a network, and saying so is more use than a row
-		 * that opens a screen showing no address. */
-		out[PM_XFER]     = (menu_row){ "Over The Hare",
-		                               on ? NULL : "needs Wi-Fi", on };
-	}
-	out[PM_ACHIEVEMENTS] = (menu_row){ "Cheevos",
-	                                   ra_signed_in() ? ra_user() : "sign in",
-	                                   true };
-	{	bool on = menu_wifi(NULL, 0) == WIFI_CONNECTED;
-
-		out[PM_SCRAPE]   = (menu_row){ "Box Art",
-		                               on ? NULL : "needs Wi-Fi", on };
-	}
-	out[PM_TEXT]         = (menu_row){ "Text Size",         b->a,      true  };
-	/* Not "Sleep". The device has no suspend and is not getting one - see the
-	 * backlog. This powers off, and resume-into-game brings you back where you
-	 * were, which is what sleep would have been for. */
-	{
-		static char lbl[16];
-
-		auto_off_label(a->auto_off, lbl, sizeof lbl);
-		out[PM_SLEEP]    = (menu_row){ "Auto Off",          lbl,       true  };
-	}
-	out[PM_ABOUT]        = (menu_row){ "About TortOS",      NULL,      true  };
-	return PM_ROWS;
+	return sys_menu_build(&u, out, b, heading);
 }
 
 
@@ -2121,12 +2029,26 @@ static void menu_run(app *a, const char *heading, unsigned accent,
 		if (in_repeat(&a->in, IN_UP))   sel = menu_step_sel(rows, n, sel, -1);
 		if (in_repeat(&a->in, IN_DOWN)) sel = menu_step_sel(rows, n, sel, +1);
 
+		/* Volume and brightness keep working here, as they do everywhere.
+		 *
+		 * They were missed when this runner was written, so the Wi-Fi screen
+		 * spent a day as the one screen in the launcher where the volume keys
+		 * did nothing. That is the exact failure this runner exists to make
+		 * impossible, arriving by the one route it could still come from: the
+		 * runner forgetting, rather than a screen forgetting. Every other loop
+		 * in this file carries these four lines by hand. */
+		if (in_repeat(&a->in, IN_VOLUP))    plat_volume_nudge(+1);
+		if (in_repeat(&a->in, IN_VOLDN))    plat_volume_nudge(-1);
+		if (in_repeat(&a->in, IN_BRIGHTUP)) plat_brightness_nudge(+1);
+		if (in_repeat(&a->in, IN_BRIGHTDN)) plat_brightness_nudge(-1);
+
 		/* Everything the runner did not consume goes to the screen, so a
 		 * screen-specific key needs no runner change to exist. */
 		for (b = 0; b < IN_COUNT; b++) {
 			if (!a->in.pressed[b]) continue;
 			if (b == IN_UP || b == IN_DOWN || b == IN_BACK || b == IN_MENU
-			    || b == IN_POWER) continue;
+			    || b == IN_POWER || b == IN_VOLUP || b == IN_VOLDN
+			    || b == IN_BRIGHTUP || b == IN_BRIGHTDN) continue;
 			if (on_key && on_key(a, ctx, (in_button)b, sel) == MENU_DONE)
 				return;
 			if (!a->running) return;
