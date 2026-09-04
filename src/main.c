@@ -1545,11 +1545,17 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 	int pad = row_h * 3 / 4;
 	/* A rule is 2px of bar plus the gap the heading's rule gets below it, so
 	 * the footer sits off the list by the same amount the first row sits off
-	 * the heading. Giving it a whole row_h left it swimming. */
+	 * the heading. Giving it a whole row_h left it swimming.
+	 *
+	 * A note is one line of text and nothing else. row_h is 1.5x the line, so a
+	 * note in a full row carried half a row of air underneath it and then the
+	 * panel's own pad on top of that, which read as the footer floating off the
+	 * bottom border. */
 	int rule_h = pad / 2 + 2;
-#define ROW_H(r) ((r).label ? row_h : rule_h)
 	int gap = row_h;                 /* between the label and value columns */
 	int text_h = fm ? TTF_FontHeight(fm) : row_h;
+	int note_h = text_h + pad / 3;
+#define ROW_H(r) (!(r).label ? rule_h : (ROW_IS_NOTE(r) ? note_h : row_h))
 	/* Center the ink, not the em box. The box reserves a descender's depth
 	 * below the baseline that labels like "Wi-Fi" and "Bluetooth" never use,
 	 * so centering the box leaves the visible line riding high in its row and
@@ -1631,9 +1637,20 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 
 	panel.w = content_w + pad * 2;
 	{   /* the heights actually on screen, not vis * row_h */
-		int sum = 0, j;
+		int sum = 0, j, last = first + vis - 1;
+
 		for (j = first; j < first + vis && j < n; j++) sum += ROW_H(rows[j]);
 		panel.h = content_off + sum + pad;
+		/* A panel that ends in a footer gets a smaller bottom pad. The full
+		 * pad is there to keep list ITEMS off the border; a note is already
+		 * held off the list by its rule and is meant to sit low.
+		 *
+		 * The gap under the footer text is pad/6 from centring plus whatever
+		 * bottom pad is left. Set by eye on the device 2026-09-04, not derived:
+		 * the full pad gives 1.17 and floats, 0.50 is too tight, and 0.75 is
+		 * where Eric called it. 5/12 is the subtraction that leaves 0.75. */
+		if (last >= 0 && last < n && rows[last].label && ROW_IS_NOTE(rows[last]))
+			panel.h -= pad * 5 / 12;
 	}
 	panel.x = (TORTOS_SCREEN_W - panel.w) / 2;
 	panel.y = (TORTOS_SCREEN_H - panel.h) / 2;
@@ -1716,7 +1733,8 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 		SDL_Color lc, vc;
 
 		for (j = first; j < i; j++) y += ROW_H(rows[j]);
-		ty = y + (row_h - text_h) / 2 + ink_off;
+		/* Centered in ITS OWN row, not in row_h: a note is shorter. */
+		ty = y + (ROW_H(rows[i]) - text_h) / 2 + ink_off;
 
 		/* The same bar as the heading's, at the same alpha and width. If one
 		 * is ever retuned the other follows, which is the point. */
@@ -2068,6 +2086,101 @@ static bool confirm_panel(app *a, const char *heading, const char *msg,
 	}
 }
 
+/* ---- the menu runner (ADR-0001) --------------------------------------- */
+
+/* Wi-Fi is the largest menu: the switch, WIFI_MAX_NETS networks, a rule and a
+ * note. Distinct from MENU_MAX_ROWS, which is the system menu's own count and
+ * is much smaller. */
+#define MENU_RUN_ROWS (WIFI_MAX_NETS + 8)
+
+typedef enum {
+	MENU_STAY,   /* keep the screen up */
+	MENU_DONE    /* leave it */
+} menu_result;
+
+/* Fill `rows` and return how many. MUST NOT touch the renderer, the event loop
+ * or the device: the point of this signature is that a menu's contents can be
+ * checked offline, and ADR-0001 says the decision has failed if that stops
+ * being true. Called every frame, so it is also where live state is reflected -
+ * there is no separate "refresh". */
+typedef int (*menu_build_fn)(void *ctx, menu_row *rows, int max);
+
+/* A key the runner did not consume, and the row it happened on. Free to open a
+ * confirm, a keyboard or a wait panel: each runs its own loop and returns.
+ * `sel` indexes the rows the last build produced. */
+typedef menu_result (*menu_key_fn)(app *a, void *ctx, in_button key, int sel);
+
+/* Move to the next live row in `dir`, or stay put if none is.
+ *
+ * The bounded walk matters: a menu can legitimately be all dead rows - "No
+ * networks found" on its own is exactly that - and an unbounded do/while would
+ * spin forever on one. */
+static int menu_step_sel(const menu_row *rows, int n, int sel, int dir)
+{
+	int i, k = sel;
+
+	for (i = 0; i < n; i++) {
+		k = (k + dir + n) % n;
+		if (rows[k].live) return k;
+	}
+	return sel;
+}
+
+/* One screen, one loop. Owns polling, power, idle, quit, back, the cursor and
+ * the whole frame, so that no screen can forget any of them - which is what
+ * five separate defects on 2026-09-04 all came down to. See docs/menus.md. */
+static void menu_run(app *a, const char *heading, unsigned accent,
+                     menu_build_fn build, menu_key_fn on_key, void *ctx)
+{
+	menu_row rows[MENU_RUN_ROWS];
+	int sel = 0, n = 0, b;
+
+	while (a->running && !want_quit) {
+		n = build(ctx, rows, MENU_RUN_ROWS);
+		if (n > MENU_RUN_ROWS) n = MENU_RUN_ROWS;
+		if (n <= 0) return;
+
+		/* The list is rebuilt every frame and can shrink under the cursor -
+		 * a rescan finding fewer networks, a row going away. Clamp first,
+		 * then land on something live. */
+		if (sel >= n) sel = n - 1;
+		if (sel < 0) sel = 0;
+		if (!rows[sel].live) sel = menu_step_sel(rows, n, sel, +1);
+
+		plat_input_poll(&a->in);
+		if (a->in.quit_requested) { a->running = false; return; }
+		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); return; }
+		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) return;
+
+		if (in_repeat(&a->in, IN_UP))   sel = menu_step_sel(rows, n, sel, -1);
+		if (in_repeat(&a->in, IN_DOWN)) sel = menu_step_sel(rows, n, sel, +1);
+
+		/* Everything the runner did not consume goes to the screen, so a
+		 * screen-specific key needs no runner change to exist. */
+		for (b = 0; b < IN_COUNT; b++) {
+			if (!a->in.pressed[b]) continue;
+			if (b == IN_UP || b == IN_DOWN || b == IN_BACK || b == IN_MENU
+			    || b == IN_POWER) continue;
+			if (on_key && on_key(a, ctx, (in_button)b, sel) == MENU_DONE)
+				return;
+			if (!a->running) return;
+			/* A handler may have run a modal and changed everything under
+			 * us; rebuild before drawing rather than drawing stale rows. */
+			break;
+		}
+
+		tick_tint(a);
+		draw_shelf(a);
+		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
+		SDL_RenderFillRect(a->r, NULL);
+		menu_draw(a, heading, rows, n, sel, 0, accent);
+		plat_draw_osd(a->r);
+		SDL_RenderPresent(a->r);
+		SDL_Delay(8);
+	}
+}
+
 static void wifi_backdrop(void *ctx)
 {
 	app *a = ctx;
@@ -2077,205 +2190,194 @@ static void wifi_backdrop(void *ctx)
 	SDL_RenderFillRect(a->r, NULL);
 }
 
+/* The Wi-Fi screen's state, declared rather than scattered through a loop's
+ * locals. Deliberately holds no `app` and no renderer: wifi_build() has to be
+ * callable offline, which is the requirement ADR-0001 rests on. */
+typedef struct {
+	wifi_net nets[WIFI_MAX_NETS];
+	char     vals[WIFI_MAX_NETS][32];
+	int      n;
+	bool     on;
+	bool     rescan;
+} wifi_ui;
+
+/* The scan, kept out of build() because it blocks for seconds and build() runs
+ * every frame. Called from the key handler and from entry. */
+static void wifi_rescan(app *a, wifi_ui *w)
+{
+	char cur[WIFI_SSID_MAX];
+	int i;
+
+	wait_panel(a, "Wi-Fi", "Scanning...");
+	w->n = wifi_scan(w->nets, WIFI_MAX_NETS);
+	if (w->n < 0) w->n = 0;
+	if (wifi_status(cur, sizeof cur, NULL, 0) != WIFI_CONNECTED) cur[0] = '\0';
+	for (i = 0; i < w->n; i++)
+		/* "connected" outranks "saved": after a successful connect the list
+		 * was redrawn saying only that the network was known, which is what it
+		 * said before the connect too, so the screen gave no sign anything had
+		 * happened. */
+		snprintf(w->vals[i], sizeof w->vals[i], "%s%s",
+		         wifi_strength(w->nets[i].signal),
+		         (cur[0] && !strcmp(cur, w->nets[i].ssid)) ? " - connected"
+		         : w->nets[i].known ? " - saved"
+		                            : w->nets[i].secured ? "" : " - open");
+	w->rescan = false;
+}
+
+static int wifi_build(void *ctx, menu_row *rows, int max)
+{
+	wifi_ui *w = ctx;
+	int nrows = 0, i;
+	bool any_saved = false;
+
+	/* The switch is row 0, so the state of the radio is the first thing read
+	 * and the first thing reachable. */
+	rows[nrows++] = (menu_row){ "Wi-Fi", w->on ? "on" : "off", true };
+	for (i = 0; i < w->n && nrows < max - 2; i++)
+		rows[nrows++] = (menu_row){ w->nets[i].ssid, w->vals[i], true };
+
+	/* These are footers, not list items - they say something about the list
+	 * rather than offering anything - so they sit under a rule like the key
+	 * legend does. */
+	if (!w->on) {
+		rows[nrows++] = MENU_RULE;
+		rows[nrows++] = MENU_NOTE("Turn Wi-Fi on to scan");
+		return nrows;
+	}
+	if (w->n == 0) {
+		rows[nrows++] = MENU_RULE;
+		rows[nrows++] = MENU_NOTE("No networks found");
+		return nrows;
+	}
+	for (i = 0; i < w->n; i++)
+		if (w->nets[i].known) { any_saved = true; break; }
+	rows[nrows++] = MENU_RULE;
+	rows[nrows++] = MENU_NOTE(any_saved ? "Y: rescan   X: forget" : "Y: rescan");
+	return nrows;
+}
+
+static menu_result wifi_key(app *a, void *ctx, in_button key, int sel)
+{
+	wifi_ui *w = ctx;
+	char status[96], ssid[WIFI_SSID_MAX], ip[64];
+	int k = sel - 1;                    /* row 0 is the switch */
+	bool net_row = sel >= 1 && sel <= w->n;
+
+	if (key == IN_Y && w->on) { wifi_rescan(a, w); return MENU_STAY; }
+
+	/* Forget a saved network. Only saved rows offer it - there is nothing to
+	 * forget about one the device has never joined, and a button that silently
+	 * does nothing on some rows is the same defect as a menu entry wired to
+	 * nothing.
+	 *
+	 * Forgetting the CONNECTED network is allowed, deliberately. Refusing would
+	 * be safer - it drops the device off the LAN, taking Over The Hare and ssh
+	 * with it, and a handheld has no keyboard to climb back out with. But
+	 * wanting to forget the network you are on is reasonable, and the honest
+	 * place to say what it costs is the confirm. */
+	if (key == IN_X && w->on && net_row && w->nets[k].known) {
+		char cur[WIFI_SSID_MAX], msg[160];
+		bool joined = wifi_status(cur, sizeof cur, NULL, 0) == WIFI_CONNECTED
+		              && !strcmp(cur, w->nets[k].ssid);
+
+		if (joined)
+			snprintf(msg, sizeof msg,
+			         "Forget %s? You are connected to it and will lose "
+			         "the network.", w->nets[k].ssid);
+		else
+			snprintf(msg, sizeof msg, "Forget %s?", w->nets[k].ssid);
+
+		if (confirm_panel(a, "Wi-Fi", msg, "Forget")) {
+			snprintf(status, sizeof status,
+			         wifi_forget(w->nets[k].ssid) ? "Forgot %s"
+			                                      : "Could not forget %s",
+			         w->nets[k].ssid);
+			wait_panel(a, "Wi-Fi", status);
+			SDL_Delay(1400);
+			if (w->on) wifi_rescan(a, w);
+		}
+		return MENU_STAY;
+	}
+
+	if (key != IN_ACCEPT) return MENU_STAY;
+
+	/* The switch. Saved on every change rather than on the way out: the way out
+	 * of a handheld is often the power button. */
+	if (sel == 0) {
+		if (w->on) {
+			wifi_down();
+			wifi_pref_save(false);
+			w->on = false;
+			w->n = 0;
+		} else {
+			wait_panel(a, "Wi-Fi", "Turning Wi-Fi on...");
+			w->on = wifi_up();
+			wifi_pref_save(w->on);
+			if (!w->on) {
+				wait_panel(a, "Wi-Fi", "Wi-Fi did not come up");
+				SDL_Delay(1800);
+			}
+			if (w->on) wifi_rescan(a, w);
+		}
+		return MENU_STAY;
+	}
+
+	if (net_row) {
+		char psk[80] = "";
+		bool ok;
+
+		/* A saved network already has its passphrase in wpa_supplicant.conf,
+		 * so asking again would be asking the user to retype something the
+		 * device is holding. An open network has none to ask for. */
+		if (w->nets[k].secured && !w->nets[k].known) {
+			kb_result kr = kb_prompt(a->r, &a->in, w->nets[k].ssid,
+			                         psk, (int)sizeof psk, MENU_ACCENT,
+			                         wifi_backdrop, idle_due_ctx, a);
+			if (kr == KB_POWER) { power_off(a); return MENU_DONE; }
+			if (kr != KB_ACCEPT) return MENU_STAY;
+		}
+
+		wait_panel(a, "Wi-Fi", "Connecting...");
+		ok = wifi_connect(w->nets[k].ssid, psk[0] ? psk : NULL);
+		/* Wiped as soon as it has been handed over. It still exists in the
+		 * supplicant's config, which is the point, but there is no reason for
+		 * a copy to sit in the launcher's stack afterwards. */
+		memset(psk, 0, sizeof psk);
+
+		if (ok) {
+			/* Connecting is turning it on, whatever the switch said. */
+			wifi_pref_save(true);
+			w->on = true;
+			wifi_status(ssid, sizeof ssid, ip, sizeof ip);
+			snprintf(status, sizeof status, "Connected to %s", ssid);
+		} else {
+			snprintf(status, sizeof status, "Could not connect to %s",
+			         w->nets[k].ssid);
+		}
+		wait_panel(a, "Wi-Fi", status);
+		SDL_Delay(1800);
+		/* Out on success, because the job is done and the menu row behind this
+		 * screen already names the network - staying in the list makes you back
+		 * out by hand to see the result. On failure stay, because the next
+		 * thing wanted is another try or another network, and both are here. */
+		if (ok) return MENU_DONE;
+		wifi_rescan(a, w);
+	}
+	return MENU_STAY;
+}
+
 static void wifi_screen(app *a)
 {
-	wifi_net nets[WIFI_MAX_NETS];
-	char vals[WIFI_MAX_NETS][32];
-	/* +3, not +1: the switch is row 0, and the networks can be followed by a
-	 * rule and a hint. At WIFI_MAX_NETS results the original +1 was exactly
-	 * full, so each of those additions had to grow it. */
-	menu_row rows[WIFI_MAX_NETS + 3];
-	char status[96], ssid[WIFI_SSID_MAX], ip[64];
-	int nrows;
-	int n = 0, sel = 0, i;
-	bool done = false, rescan = false, on;
+	wifi_ui w = { 0 };
 
-	/* Entering does not switch the radio on. It used to, which made the
-	 * screen impossible to leave in the off state: you opened it to turn
-	 * wifi OFF and the act of opening it turned wifi on. */
-	on = wifi_status(NULL, 0, NULL, 0) != WIFI_OFF;
-	if (on) rescan = true;
+	/* Entering does not switch the radio on. It used to, which made the screen
+	 * impossible to leave in the off state: you opened it to turn wifi OFF and
+	 * the act of opening it turned wifi on. */
+	w.on = wifi_status(NULL, 0, NULL, 0) != WIFI_OFF;
+	if (w.on) wifi_rescan(a, &w);
 
-	while (!done && !want_quit && a->running) {
-		if (rescan) {
-			wait_panel(a, "Wi-Fi", "Scanning...");
-			char cur[WIFI_SSID_MAX];
-			n = wifi_scan(nets, WIFI_MAX_NETS);
-			if (n < 0) n = 0;
-			if (wifi_status(cur, sizeof cur, NULL, 0) != WIFI_CONNECTED)
-				cur[0] = '\0';
-			for (i = 0; i < n; i++)
-				/* "connected" outranks "saved": after a successful connect the
-				 * list was redrawn saying only that the network was known,
-				 * which is what it said before the connect too, so the screen
-				 * gave no sign anything had happened. */
-				snprintf(vals[i], sizeof vals[i], "%s%s",
-				         wifi_strength(nets[i].signal),
-				         (cur[0] && !strcmp(cur, nets[i].ssid)) ? " - connected"
-				         : nets[i].known ? " - saved"
-				                         : nets[i].secured ? "" : " - open");
-			/* Rows are the switch plus n networks, so the last network is
-			 * row n. Clamping to n-1 moved the cursor off it for no reason. */
-			if (sel > n) sel = n;
-			rescan = false;
-		}
-
-		/* The switch is row 0 and the networks follow it, so the state of the
-		 * radio is the first thing read and the first thing reachable. */
-		rows[0] = (menu_row){ "Wi-Fi", on ? "on" : "off", true };
-		for (i = 0; i < n; i++)
-			rows[i + 1] = (menu_row){ nets[i].ssid, vals[i], true };
-		nrows = n + 1;
-		if (!on) {
-			rows[nrows++] = (menu_row){ "Turn Wi-Fi on to scan", NULL, false };
-		} else if (n == 0) {
-			rows[nrows++] = (menu_row){ "No networks found", NULL, false };
-		} else {
-			/* Y and X are otherwise undiscoverable: nothing on screen says
-			 * they do anything, so only somebody who already knew would ever
-			 * press them. Which saved networks exist decides whether forget is
-			 * worth mentioning at all. */
-			bool any_saved = false;
-			for (i = 0; i < n; i++)
-				if (nets[i].known) { any_saved = true; break; }
-			rows[nrows++] = MENU_RULE;
-			rows[nrows++] = MENU_NOTE(any_saved ? "Y: rescan   X: forget"
-			                                    : "Y: rescan");
-		}
-
-		plat_input_poll(&a->in);
-		if (a->in.quit_requested) { a->running = false; return; }
-		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); return; }
-
-		/* Step over dead rows rather than letting the cursor rest on one.
-		 * `live` already means "drawn quiet and doing nothing", but navigation
-		 * was walking every row, so the placeholders and the hint could be
-		 * selected and then answered with A to no effect. Row 0 is the Wi-Fi
-		 * switch and is always live, so neither loop can spin. */
-		if (in_repeat(&a->in, IN_UP))
-			do { sel = (sel + nrows - 1) % nrows; } while (!rows[sel].live);
-		if (in_repeat(&a->in, IN_DOWN))
-			do { sel = (sel + 1) % nrows; } while (!rows[sel].live);
-		if (a->in.pressed[IN_Y] && on) rescan = true;
-		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = true;
-
-		/* Forget a saved network. Only saved rows offer it - there is nothing
-		 * to forget about one the device has never joined, and a button that
-		 * silently does nothing on some rows is the same defect as a menu entry
-		 * wired to nothing.
-		 *
-		 * Forgetting the CONNECTED network is allowed, deliberately. Refusing
-		 * would be safer - it drops the device off the LAN, taking Over The
-		 * Hare and ssh with it, and a handheld has no keyboard to climb back
-		 * out with. But "I want to forget this one" is a reasonable thing to
-		 * want, and the honest place to say what it costs is the confirm, not a
-		 * button that appears broken on exactly one row. */
-		if (a->in.pressed[IN_X] && on && sel >= 1 && sel <= n
-		    && nets[sel - 1].known) {
-			int k = sel - 1;
-			char cur[WIFI_SSID_MAX], msg[160];
-			bool joined;
-
-			joined = wifi_status(cur, sizeof cur, NULL, 0) == WIFI_CONNECTED
-			         && !strcmp(cur, nets[k].ssid);
-			if (joined)
-				snprintf(msg, sizeof msg,
-				         "Forget %s? You are connected to it "
-				         "and will lose the network.", nets[k].ssid);
-			else
-				snprintf(msg, sizeof msg, "Forget %s?", nets[k].ssid);
-
-			if (confirm_panel(a, "Wi-Fi", msg, "Forget")) {
-				if (wifi_forget(nets[k].ssid))
-					snprintf(status, sizeof status, "Forgot %s", nets[k].ssid);
-				else
-					snprintf(status, sizeof status,
-					         "Could not forget %s", nets[k].ssid);
-				wait_panel(a, "Wi-Fi", status);
-				SDL_Delay(1400);
-				rescan = true;
-			}
-			if (!a->running) return;
-			continue;
-		}
-
-		/* The switch. Saved on every change rather than on the way out: the
-		 * way out of a handheld is often the power button. */
-		if (a->in.pressed[IN_ACCEPT] && sel == 0) {
-			if (on) {
-				wifi_down();
-				wifi_pref_save(false);
-				on = false;
-				n = 0;
-			} else {
-				wait_panel(a, "Wi-Fi", "Turning Wi-Fi on...");
-				on = wifi_up();
-				wifi_pref_save(on);
-				if (!on) {
-					wait_panel(a, "Wi-Fi", "Wi-Fi did not come up");
-					SDL_Delay(1800);
-				}
-				rescan = on;
-			}
-			continue;
-		}
-
-		if (a->in.pressed[IN_ACCEPT] && sel >= 1 && sel <= n) {
-			int k = sel - 1;
-			char psk[80] = "";
-			bool ok;
-
-			/* A saved network already has its passphrase in
-			 * wpa_supplicant.conf, so asking again would be asking the user
-			 * to retype something the device is holding. An open network has
-			 * none to ask for. */
-			if (nets[k].secured && !nets[k].known) {
-				kb_result kr = kb_prompt(a->r, &a->in, nets[k].ssid,
-				                         psk, (int)sizeof psk, MENU_ACCENT,
-				                         wifi_backdrop, idle_due_ctx, a);
-				if (kr == KB_POWER) { power_off(a); return; }
-				if (kr != KB_ACCEPT) continue;
-			}
-
-			wait_panel(a, "Wi-Fi", "Connecting...");
-			ok = wifi_connect(nets[k].ssid, psk[0] ? psk : NULL);
-			/* Wiped as soon as it has been handed over. It still exists in
-			 * the supplicant's config, which is the point, but there is no
-			 * reason for a copy to sit in the launcher's stack afterwards. */
-			memset(psk, 0, sizeof psk);
-
-			if (ok) {
-				/* Connecting is turning it on, whatever the switch said. */
-				wifi_pref_save(true);
-				on = true;
-				wifi_status(ssid, sizeof ssid, ip, sizeof ip);
-				snprintf(status, sizeof status, "Connected to %s", ssid);
-			} else {
-				snprintf(status, sizeof status,
-				         "Could not connect to %s", nets[k].ssid);
-			}
-			wait_panel(a, "Wi-Fi", status);
-			SDL_Delay(1800);
-			/* Out on success, because the job is done and the menu row behind
-			 * this screen already names the network - staying in the list
-			 * makes you back out by hand to see the result. On failure stay,
-			 * because the next thing wanted is another try or another
-			 * network, and both are here. */
-			if (ok) { done = true; continue; }
-			rescan = true;
-			continue;
-		}
-
-		tick_tint(a);
-		draw_shelf(a);
-		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
-		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
-		SDL_RenderFillRect(a->r, NULL);
-		menu_draw(a, "Wi-Fi", rows, nrows, sel, 0, MENU_ACCENT);
-		plat_draw_osd(a->r);
-		SDL_RenderPresent(a->r);
-		SDL_Delay(8);
-	}
+	menu_run(a, "Wi-Fi", MENU_ACCENT, wifi_build, wifi_key, &w);
 }
 
 
