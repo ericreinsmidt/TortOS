@@ -293,11 +293,18 @@ fi
 #     variant cycles the rail; /etc/init.d/hciattach does not, which is why the
 #     boot service has never once succeeded - it is enabled as S80 and fails
 #     against the radio we block four lines further down.
-#   - hfp-ag is not optional. With a2dp-source alone a headset connects but
-#     behaves oddly; with the Hands-Free gateway role it connects the way it
-#     would to a phone and speaks its own prompt. --a2dp-volume leaves volume
-#     with the headset, which is right: a BT sink is outside both the speaker
-#     and jack ladders in src/platform.c and must not be attenuated here.
+#   - hfp-ag is ASSUMED to matter, not measured. Another firmware on this
+#     device reports that with a2dp-source alone a headset connects but behaves
+#     oddly, and that the Hands-Free gateway role makes it connect the way it
+#     would to a phone. That is plausible and costs nothing, so it is here - but
+#     nobody has A/B'd it, and pairing was fixed on 2026-09-03 by an unrelated
+#     change (the agent capability), so hfp-ag has never been shown to be doing
+#     anything. To settle it: run bluealsa with -p a2dp-source alone, reconnect
+#     the headset, and listen for whether it speaks or only beeps.
+#
+#     --a2dp-volume IS load-bearing and is not an assumption: it leaves volume
+#     with the headset, so a BT sink stays outside both the speaker and jack
+#     ladders in src/platform.c and must not be attenuated here.
 bt_off() {
 	killall -q bluealsa bluetoothd hciattach 2> /dev/null
 	/etc/init.d/bluetooth stop 2> /dev/null
