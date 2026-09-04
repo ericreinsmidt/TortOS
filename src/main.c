@@ -1493,6 +1493,8 @@ static void power_off(app *a)
  * cannot drift apart. The slab is sized to its own widest row with the same
  * padding on every side, rather than to a number picked once and left behind
  * by the next label someone adds. */
+/* Row kinds, the rules a screen must follow, and the reason there is no menu
+ * loop yet: docs/menus.md. Read it before adding a screen or a row kind. */
 typedef struct {
 	const char *label;
 	const char *value;  /* the right column, or NULL for a row that is only a label */
