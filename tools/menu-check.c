@@ -43,13 +43,15 @@ static void off_state(void)
 {
 	wifi_ui w;
 	menu_row rows[64];
+	const char *heading;
 	int n;
 
 	memset(&w, 0, sizeof w);
 	w.on = false;
-	n = wifi_build(&w, rows, 64);
+	n = wifi_build(&w, rows, 64, &heading);
 
 	printf("radio off:\n");
+	ck(heading && !strcmp(heading, "Wi-Fi"), "the screen names itself");
 	ck(n == 3, "switch, rule, note");
 	ck(rows[0].live, "the switch is live");
 	ck(!strcmp(rows[0].label, "Wi-Fi"), "row 0 is the switch");
@@ -67,6 +69,7 @@ static void scanning_state(void)
 {
 	wifi_ui w;
 	menu_row rows[64];
+	const char *heading;
 	int n;
 
 	memset(&w, 0, sizeof w);
@@ -79,7 +82,7 @@ static void scanning_state(void)
 	snprintf(w.nets[1].ssid, sizeof w.nets[1].ssid, "Transport");
 	w.nets[1].known = true;
 	wifi_label(&w);
-	n = wifi_build(&w, rows, 64);
+	n = wifi_build(&w, rows, 64, &heading);
 
 	printf("scanning, two saved networks:\n");
 	ck(n == 5, "switch, two networks, rule, note");
@@ -97,6 +100,7 @@ static void scanned_state(void)
 {
 	wifi_ui w;
 	menu_row rows[64];
+	const char *heading;
 	int n;
 
 	memset(&w, 0, sizeof w);
@@ -108,7 +112,7 @@ static void scanned_state(void)
 	w.nets[0].secured = true;
 	w.nets[0].signal = -55;
 	wifi_label(&w);
-	n = wifi_build(&w, rows, 64);
+	n = wifi_build(&w, rows, 64, &heading);
 
 	printf("scan done, one unsaved network:\n");
 	ck(n == 4, "switch, network, rule, note");
@@ -117,7 +121,7 @@ static void scanned_state(void)
 
 	w.nets[0].known = true;
 	wifi_label(&w);
-	n = wifi_build(&w, rows, 64);
+	n = wifi_build(&w, rows, 64, &heading);
 	ck(!strcmp(rows[3].label, "Y: rescan   X: forget"), "forget offered once saved");
 	ck(!strcmp(rows[1].value, "strong - saved"), "a saved network in range shows both");
 }
@@ -139,6 +143,7 @@ static void respects_max(void)
 {
 	wifi_ui w;
 	menu_row rows[4];
+	const char *heading;
 	int n, i;
 
 	memset(&w, 0, sizeof w);
@@ -148,7 +153,7 @@ static void respects_max(void)
 	for (i = 0; i < WIFI_MAX_NETS; i++)
 		snprintf(w.nets[i].ssid, sizeof w.nets[i].ssid, "net%d", i);
 	wifi_label(&w);
-	n = wifi_build(&w, rows, 4);
+	n = wifi_build(&w, rows, 4, &heading);
 
 	printf("a small buffer:\n");
 	ck(n <= 4, "never returns more rows than it was offered");

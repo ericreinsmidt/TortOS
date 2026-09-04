@@ -66,11 +66,13 @@ void wifi_begin_scan(wifi_ui *w)
 	w->scanning = wifi_scan_start();
 }
 
-int wifi_build(void *ctx, menu_row *rows, int max)
+int wifi_build(void *ctx, menu_row *rows, int max, const char **heading)
 {
 	wifi_ui *w = ctx;
 	int nrows = 0, i;
 	bool any_saved = false;
+
+	*heading = "Wi-Fi";
 
 	/* The scan is driven from here because this is the function that already
 	 * runs every frame. wifi_scan_poll() does nothing until its next second is

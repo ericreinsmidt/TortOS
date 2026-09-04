@@ -1972,12 +1972,33 @@ typedef enum {
 	MENU_DONE    /* leave it */
 } menu_result;
 
-/* Fill `rows` and return how many. MUST NOT touch the renderer, the event loop
- * or the device: the point of this signature is that a menu's contents can be
- * checked offline, and ADR-0001 says the decision has failed if that stops
- * being true. Called every frame, so it is also where live state is reflected -
- * there is no separate "refresh". */
-typedef int (*menu_build_fn)(void *ctx, menu_row *rows, int max);
+/* Fill `rows`, name the screen, and return how many rows. MUST NOT touch the
+ * renderer, the event loop or the device: the point of this signature is that a
+ * menu's contents can be checked offline, and ADR-0001 says the decision has
+ * failed if that stops being true. Called every frame, so it is also where live
+ * state is reflected - there is no separate "refresh".
+ *
+ * The heading comes from here because it is a function of the same state the
+ * rows are: the system menu is titled with the system whose rows it is showing.
+ * Passing it to the runner separately meant keeping two things in step that are
+ * really one thing. */
+typedef int (*menu_build_fn)(void *ctx, menu_row *rows, int max,
+                             const char **heading);
+
+/* How the panel is drawn, as opposed to what is in it. Everything here needs
+ * the renderer or the app, which is exactly why it is not in the build
+ * function - see ADR-0001. */
+typedef struct {
+	/* 0: measure these rows. The system menu passes menu_shelf_width, a width
+	 * measured once across every system and every display mode, because a
+	 * panel that resizes while you cycle a value on it reads as a glitch. */
+	int      fixed_w;
+	unsigned accent;
+	/* The shelf's animated tint instead of `accent`, read per frame. The
+	 * system menu on a game shelf belongs to that system, and tick_tint is
+	 * still moving toward its color while the menu is open. */
+	bool     follow_tint;
+} menu_style;
 
 /* A key the runner did not consume, and the row it happened on. Free to open a
  * confirm, a keyboard or a wait panel: each runs its own loop and returns.
@@ -2000,17 +2021,17 @@ static int menu_step_sel(const menu_row *rows, int n, int sel, int dir)
 	return sel;
 }
 
-/* One screen, one loop. Owns polling, power, idle, quit, back, the cursor and
- * the whole frame, so that no screen can forget any of them - which is what
- * five separate defects on 2026-09-04 all came down to. See docs/menus.md. */
-static void menu_run(app *a, const char *heading, unsigned accent,
-                     menu_build_fn build, menu_key_fn on_key, void *ctx)
+/* The loop itself. Called only through menu_run below, which owns the flush on
+ * either side of it. */
+static void menu_run_body(app *a, const menu_style *st,
+                          menu_build_fn build, menu_key_fn on_key, void *ctx)
 {
 	menu_row rows[MENU_RUN_ROWS];
+	const char *heading = NULL;
 	int sel = 0, n = 0, b;
 
 	while (a->running && !want_quit) {
-		n = build(ctx, rows, MENU_RUN_ROWS);
+		n = build(ctx, rows, MENU_RUN_ROWS, &heading);
 		if (n > MENU_RUN_ROWS) n = MENU_RUN_ROWS;
 		if (n <= 0) return;
 
@@ -2042,10 +2063,21 @@ static void menu_run(app *a, const char *heading, unsigned accent,
 		if (in_repeat(&a->in, IN_BRIGHTUP)) plat_brightness_nudge(+1);
 		if (in_repeat(&a->in, IN_BRIGHTDN)) plat_brightness_nudge(-1);
 
+		/* Left and right reach the screen on REPEAT, not just on press, so a
+		 * row whose value cycles can be held down. Everything else is edge
+		 * triggered: holding A on a row that opens a screen should open it
+		 * once. Sent before the press loop below, which skips them. */
+		if (on_key && in_repeat(&a->in, IN_LEFT))
+			if (on_key(a, ctx, IN_LEFT, sel) == MENU_DONE) return;
+		if (on_key && in_repeat(&a->in, IN_RIGHT))
+			if (on_key(a, ctx, IN_RIGHT, sel) == MENU_DONE) return;
+		if (!a->running) return;
+
 		/* Everything the runner did not consume goes to the screen, so a
 		 * screen-specific key needs no runner change to exist. */
 		for (b = 0; b < IN_COUNT; b++) {
 			if (!a->in.pressed[b]) continue;
+			if (b == IN_LEFT || b == IN_RIGHT) continue;
 			if (b == IN_UP || b == IN_DOWN || b == IN_BACK || b == IN_MENU
 			    || b == IN_POWER || b == IN_VOLUP || b == IN_VOLDN
 			    || b == IN_BRIGHTUP || b == IN_BRIGHTDN) continue;
@@ -2062,11 +2094,34 @@ static void menu_run(app *a, const char *heading, unsigned accent,
 		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
 		SDL_RenderFillRect(a->r, NULL);
-		menu_draw(a, heading, rows, n, sel, 0, accent);
+		menu_draw(a, heading, rows, n, sel, st->fixed_w,
+		          st->follow_tint ? a->tint : st->accent);
 		plat_draw_osd(a->r);
 		SDL_RenderPresent(a->r);
 		SDL_Delay(8);
 	}
+}
+
+/* One screen, one loop. Owns polling, power, idle, quit, back, volume,
+ * brightness, the cursor and the whole frame, so that no screen can forget any
+ * of them - which every menu defect this project has had came down to. See
+ * docs/menus.md and ADR-0001.
+ *
+ * The flush is here rather than in the body: the press that opens a screen must
+ * not also close it, and the press that closes one must not arrive again at
+ * whatever is underneath. This file does that by hand about twenty times, and
+ * the body has nine ways out, so putting it at each of them would eventually
+ * mean missing one. */
+static void menu_run(app *a, const menu_style *st,
+                     menu_build_fn build, menu_key_fn on_key, void *ctx)
+{
+	plat_input_flush();
+	memset(&a->in, 0, sizeof a->in);
+
+	menu_run_body(a, st, build, on_key, ctx);
+
+	plat_input_flush();
+	memset(&a->in, 0, sizeof a->in);
 }
 
 static void wifi_backdrop(void *ctx)
@@ -2198,7 +2253,8 @@ static void wifi_screen(app *a)
 	w.on = wifi_status(NULL, 0, NULL, 0) != WIFI_OFF;
 	if (w.on) wifi_begin_scan(&w);
 
-	menu_run(a, "Wi-Fi", MENU_ACCENT, wifi_build, wifi_key, &w);
+	menu_run(a, &(menu_style){ .accent = MENU_ACCENT },
+	         wifi_build, wifi_key, &w);
 }
 
 

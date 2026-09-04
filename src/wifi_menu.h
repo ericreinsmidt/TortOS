@@ -30,6 +30,9 @@ const char *wifi_strength(int dbm);
 
 void wifi_label(wifi_ui *w);
 void wifi_begin_scan(wifi_ui *w);
-int  wifi_build(void *ctx, menu_row *rows, int max);
+/* Fills `rows` and names the screen. The heading is a function of the same
+ * state the rows are, so it is produced here rather than being handed to the
+ * runner separately and then having to be kept in step with what is below it. */
+int  wifi_build(void *ctx, menu_row *rows, int max, const char **heading);
 
 #endif
