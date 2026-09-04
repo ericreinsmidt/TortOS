@@ -1973,6 +1973,16 @@ typedef enum {
 	MENU_DONE    /* leave it */
 } menu_result;
 
+/* How a screen ended, for the callers that have to act differently. The
+ * in-game menu is the one that does: B and MENU mean Continue there, and it
+ * has to send RESUME - but the runner owns those two buttons and flushes the
+ * input on the way out, so asking a->in afterwards would always say no. */
+typedef enum {
+	MENU_LEFT_BACK,     /* B or MENU, the ordinary way out */
+	MENU_LEFT_SCREEN,   /* the screen's own handler said so */
+	MENU_LEFT_GONE      /* quit, power, or nothing left to show */
+} menu_exit;
+
 /* Fill `rows`, name the screen, and return how many rows. MUST NOT touch the
  * renderer or the event loop, and the part that actually decides what the rows
  * SAY must be a separate function in a file the check can link - src/wifi_menu.c
@@ -2007,6 +2017,16 @@ typedef struct {
 	 * system menu on a game shelf belongs to that system, and tick_tint is
 	 * still moving toward its color while the menu is open. */
 	bool     follow_tint;
+	/* What goes behind the panel. NULL is the shelf, tinted and dimmed, which
+	 * is what every screen reached from the shelf wants. The in-game menu
+	 * draws the paused game instead, because the shelf is not what is under
+	 * it. Called before the panel, every frame. */
+	void   (*backdrop)(app *a, void *ctx);
+	/* What the power button and the idle timer mean here. NULL powers the
+	 * device off. The in-game menu stops the GAME instead: the device is not
+	 * going anywhere, and the wait loop below it has to be told, or it goes
+	 * straight back to waiting on a game nobody is running. */
+	menu_result (*on_power)(app *a, void *ctx);
 } menu_style;
 
 /* Read every frame through the caller's pointer, so a screen that keeps its
@@ -2021,8 +2041,9 @@ typedef menu_result (*menu_key_fn)(app *a, void *ctx, in_button key, int sel);
 
 /* The loop itself. Called only through menu_run below, which owns the flush on
  * either side of it. */
-static void menu_run_body(app *a, const menu_style *st,
-                          menu_build_fn build, menu_key_fn on_key, void *ctx)
+static menu_exit menu_run_body(app *a, const menu_style *st,
+                               menu_build_fn build, menu_key_fn on_key,
+                               void *ctx)
 {
 	menu_row rows[MENU_RUN_ROWS];
 	const char *heading = NULL;
@@ -2031,7 +2052,7 @@ static void menu_run_body(app *a, const menu_style *st,
 	while (a->running && !want_quit) {
 		n = build(ctx, rows, MENU_RUN_ROWS, &heading);
 		if (n > MENU_RUN_ROWS) n = MENU_RUN_ROWS;
-		if (n <= 0) return;
+		if (n <= 0) return MENU_LEFT_GONE;
 
 		/* The list is rebuilt every frame and can shrink under the cursor -
 		 * a rescan finding fewer networks, a row going away. Clamp first,
@@ -2041,9 +2062,13 @@ static void menu_run_body(app *a, const menu_style *st,
 		if (!rows[sel].live) sel = menu_step_sel(rows, n, sel, +1);
 
 		plat_input_poll(&a->in);
-		if (a->in.quit_requested) { a->running = false; return; }
-		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); return; }
-		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) return;
+		if (a->in.quit_requested) { a->running = false; return MENU_LEFT_GONE; }
+		if (a->in.pressed[IN_POWER] || idle_due(a)) {
+			if (!st->on_power) { power_off(a); return MENU_LEFT_GONE; }
+			if (st->on_power(a, ctx) == MENU_DONE) return MENU_LEFT_GONE;
+		}
+		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU])
+			return MENU_LEFT_BACK;
 
 		if (in_repeat(&a->in, IN_UP))   sel = menu_step_sel(rows, n, sel, -1);
 		if (in_repeat(&a->in, IN_DOWN)) sel = menu_step_sel(rows, n, sel, +1);
@@ -2066,10 +2091,12 @@ static void menu_run_body(app *a, const menu_style *st,
 		 * triggered: holding A on a row that opens a screen should open it
 		 * once. Sent before the press loop below, which skips them. */
 		if (on_key && in_repeat(&a->in, IN_LEFT))
-			if (on_key(a, ctx, IN_LEFT, sel) == MENU_DONE) return;
+			if (on_key(a, ctx, IN_LEFT, sel) == MENU_DONE)
+				return MENU_LEFT_SCREEN;
 		if (on_key && in_repeat(&a->in, IN_RIGHT))
-			if (on_key(a, ctx, IN_RIGHT, sel) == MENU_DONE) return;
-		if (!a->running) return;
+			if (on_key(a, ctx, IN_RIGHT, sel) == MENU_DONE)
+				return MENU_LEFT_SCREEN;
+		if (!a->running) return MENU_LEFT_GONE;
 
 		/* Everything the runner did not consume goes to the screen, so a
 		 * screen-specific key needs no runner change to exist. */
@@ -2080,24 +2107,29 @@ static void menu_run_body(app *a, const menu_style *st,
 			    || b == IN_POWER || b == IN_VOLUP || b == IN_VOLDN
 			    || b == IN_BRIGHTUP || b == IN_BRIGHTDN) continue;
 			if (on_key && on_key(a, ctx, (in_button)b, sel) == MENU_DONE)
-				return;
-			if (!a->running) return;
+				return MENU_LEFT_SCREEN;
+			if (!a->running) return MENU_LEFT_GONE;
 			/* A handler may have run a modal and changed everything under
 			 * us; rebuild before drawing rather than drawing stale rows. */
 			break;
 		}
 
 		tick_tint(a);
-		draw_shelf(a);
-		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
-		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
-		SDL_RenderFillRect(a->r, NULL);
+		if (st->backdrop) {
+			st->backdrop(a, ctx);
+		} else {
+			draw_shelf(a);
+			SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+			SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
+			SDL_RenderFillRect(a->r, NULL);
+		}
 		menu_draw(a, heading, rows, n, sel, st->fixed_w,
 		          st->follow_tint ? a->tint : st->accent);
 		plat_draw_osd(a->r);
 		SDL_RenderPresent(a->r);
 		SDL_Delay(8);
 	}
+	return MENU_LEFT_GONE;
 }
 
 /* One screen, one loop. Owns polling, power, idle, quit, back, volume,
@@ -2110,16 +2142,19 @@ static void menu_run_body(app *a, const menu_style *st,
  * whatever is underneath. This file does that by hand about twenty times, and
  * the body has nine ways out, so putting it at each of them would eventually
  * mean missing one. */
-static void menu_run(app *a, const menu_style *st,
-                     menu_build_fn build, menu_key_fn on_key, void *ctx)
+static menu_exit menu_run(app *a, const menu_style *st,
+                          menu_build_fn build, menu_key_fn on_key, void *ctx)
 {
-	plat_input_flush();
-	memset(&a->in, 0, sizeof a->in);
-
-	menu_run_body(a, st, build, on_key, ctx);
+	menu_exit how;
 
 	plat_input_flush();
 	memset(&a->in, 0, sizeof a->in);
+
+	how = menu_run_body(a, st, build, on_key, ctx);
+
+	plat_input_flush();
+	memset(&a->in, 0, sizeof a->in);
+	return how;
 }
 
 static void wifi_backdrop(void *ctx)
@@ -3221,10 +3256,7 @@ static void build_child_env(void)
 /* Display sits with the things you do to the game rather than the things you do
  * to a save, because it is the one row whose effect you judge by looking at the
  * game behind the menu. */
-typedef enum {
-	GM_CONTINUE, GM_SAVE, GM_LOAD, GM_DISPLAY, GM_CHEEVOS, GM_RESET, GM_QUIT,
-	GM_ROWS
-} gm_row;
+/* gm_row, gm_ui and gm_rows: src/game_menu.h */
 
 /* The paused frame, drawn where the game actually is.
  *
@@ -3483,31 +3515,16 @@ static void gm_cycle_display(app *a, int d)
 	plat_resident_sync_rect(150);
 }
 
-/* The in-game rows, carrying the display mode's current label. */
-static void gm_build(app *a, menu_row *out)
+/* What the in-game menu needs from the app, handed to gm_rows to become rows.
+ * Same split as everywhere else - see ADR-0001. */
+static int gm_build(app *a, menu_row *out, gm_bufs *b)
 {
-	static const char *label[GM_ROWS] = {
-		"Continue", "Save", "Load", "Display", "Cheevos", "Reset", "Quit"
-	};
-	/* Static because menu_row holds a pointer, not a copy, and the row has to
-	 * outlive this function. */
-	static char cheevo_val[24];
-	int i;
+	gm_ui u;
 
-	for (i = 0; i < GM_ROWS; i++) out[i] = (menu_row){ label[i], NULL, true };
-	out[GM_DISPLAY].value = DMODES[a->view[a->sys_cursor].dmode].label;
-
-	/* Most of a library has no set, and a row that says so plainly is better
-	 * than one that is missing: "none" answers the question the player opened
-	 * the menu to ask. Drawn quiet, and does nothing when chosen. */
-	if (chv_count() > 0) {
-		snprintf(cheevo_val, sizeof cheevo_val, "%d / %d",
-		         chv_earned(), chv_count());
-	} else {
-		snprintf(cheevo_val, sizeof cheevo_val, "none");
-		out[GM_CHEEVOS].live = false;
-	}
-	out[GM_CHEEVOS].value = cheevo_val;
+	u.dmode  = DMODES[a->view[a->sys_cursor].dmode].label;
+	u.earned = chv_earned();
+	u.total  = chv_count();
+	return gm_rows(&u, out, b);
 }
 
 /* The list itself, over the paused frame. menu_draw already windows a list
@@ -3598,9 +3615,10 @@ static void cheevos_screen(app *a, SDL_Texture *bg)
 static int gm_width(app *a)
 {
 	menu_row rows[GM_ROWS];
+	gm_bufs b;
 	int w = 0, k;
 
-	gm_build(a, rows);
+	gm_build(a, rows, &b);
 	for (k = 0; k < DMODE_COUNT; k++) {
 		int mw;
 		rows[GM_DISPLAY].value = DMODES[k].label;
@@ -3610,144 +3628,158 @@ static int gm_width(app *a)
 	return w;
 }
 
+/* The in-game menu's context. `resume` is what the epilogue turns on: whether
+ * the player is going back to the game or the game is over. */
+typedef struct {
+	app         *a;
+	SDL_Texture *bg;       /* the paused frame, as Diatom last wrote it */
+	gm_bufs      bufs;
+	menu_style   st;
+	bool         resume;
+} gm_ctx;
+
+static int gm_menu_build(void *ctx, menu_row *rows, int max,
+                         const char **heading)
+{
+	gm_ctx *c = ctx;
+
+	(void)max;
+	*heading = NULL;       /* no title: the game behind it is the title */
+	return gm_build(c->a, rows, &c->bufs);
+}
+
+/* The paused game, not the shelf. Diatom reports its rect with every DISPLAY
+ * message, so the preview lands where the game actually is. */
+static void gm_backdrop(app *a, void *ctx)
+{
+	gm_ctx *c = ctx;
+
+	SDL_SetRenderDrawColor(a->r, 0, 0, 0, 255);
+	SDL_RenderClear(a->r);
+	draw_paused_frame(a, c->bg);
+	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+	SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
+	SDL_RenderFillRect(a->r, NULL);
+}
+
+/* Power here stops the GAME. The device is not going anywhere, and the wait
+ * loop under this menu has to be told or it goes straight back to waiting on
+ * a game nobody is running. */
+static menu_result gm_power(app *a, void *ctx)
+{
+	(void)a; (void)ctx;
+	plat_note_power_pressed();
+	plat_resident_line("STOP");
+	return MENU_DONE;
+}
+
+static menu_result gm_key(app *a, void *ctx, in_button key, int sel)
+{
+	gm_ctx *c = ctx;
+
+	/* Applied to the running game at once, not on resume: the whole point of
+	 * this row being here rather than on the shelf is judging the mode against
+	 * the game it is being applied to. Diatom takes SETDISPLAY while paused
+	 * (its ADR-0020), answers with the new rect, and the backdrop behind this
+	 * menu redraws into it. */
+	if (sel == GM_DISPLAY && (key == IN_LEFT || key == IN_RIGHT)) {
+		gm_cycle_display(a, key == IN_RIGHT ? 1 : -1);
+		return MENU_STAY;
+	}
+	if (key != IN_ACCEPT) return MENU_STAY;
+
+	switch ((gm_row)sel) {
+	case GM_CONTINUE:
+		c->resume = true;
+		return MENU_DONE;
+	case GM_SAVE:
+	case GM_LOAD: {
+		int slot = slot_strip(a, c->bg, sel == GM_SAVE);
+
+		if (slot) {
+			sysview *sv = &a->view[a->sys_cursor];
+			char sp[LIB_PATH * 2], pp[LIB_PATH * 2];
+
+			slot_state_path(a, a->sys_cursor, &sv->list.items[sv->cursor],
+			                slot, sp, sizeof sp);
+			if (sel == GM_SAVE) {
+				plat_resident_line("SAVE\tpath=%s", sp);
+				/* The paused frame is what the save holds, and Diatom already
+				 * wrote it as the pause preview: copy it beside the state so
+				 * the strip can show what is inside the slot. */
+				slot_preview_path(a, a->sys_cursor, &sv->list.items[sv->cursor],
+				                  slot, pp, sizeof pp);
+				copy_file(plat_resident_last_preview(), pp);
+			} else {
+				plat_resident_line("LOAD\tpath=%s", sp);
+			}
+			c->resume = true;
+			return MENU_DONE;
+		}
+		/* Backed out: fall through to the menu, still paused. */
+		plat_input_flush();
+		memset(&a->in, 0, sizeof a->in);
+		break;
+	}
+	/* A cycles it forward as well as left and right. Every other row in this
+	 * menu is something A does, so a row that only answered to left and right
+	 * was a row that looked broken. */
+	case GM_DISPLAY:
+		gm_cycle_display(a, +1);
+		break;
+	case GM_CHEEVOS:
+		cheevos_screen(a, c->bg);
+		break;
+	case GM_RESET:
+		plat_resident_line("RESET");
+		c->resume = true;
+		return MENU_DONE;
+	case GM_QUIT:
+		/* The wait loop carries on until EXIT arrives; quitting is asking,
+		 * not tearing down. */
+		plat_resident_line("STOP");
+		return MENU_DONE;
+	default: break;
+	}
+
+	/* A nested screen may have been the one that took the power press or ran
+	 * the clock out - the slot strip and the achievements list both stop the
+	 * game and close themselves, which would leave this menu drawn over a game
+	 * that had already been told to stop. Only those two set the flag, and
+	 * both are reached from right here, so this is where it is asked. */
+	if (plat_run_power_pressed()) return MENU_DONE;
+	return MENU_STAY;
+}
+
 static void game_menu(app *a)
 {
-	SDL_Texture *bg = NULL;
+	gm_ctx c = { 0 };
 	const char *pv = plat_resident_last_preview();
-	int sel = 0, done = 0, resume = 0;
-	int width = gm_width(a);
 
+	c.a = a;
 	if (pv && *pv) {
 		SDL_Surface *sf = IMG_Load(pv);
-		if (sf) { bg = SDL_CreateTextureFromSurface(a->r, sf); SDL_FreeSurface(sf); }
+
+		if (sf) {
+			c.bg = SDL_CreateTextureFromSurface(a->r, sf);
+			SDL_FreeSurface(sf);
+		}
 	}
+	/* Measured across every mode label, so cycling Display does not resize
+	 * the panel underneath the cursor. */
+	c.st.fixed_w     = gm_width(a);
+	c.st.follow_tint = true;
+	c.st.backdrop    = gm_backdrop;
+	c.st.on_power    = gm_power;
 
-	plat_input_flush();
-	memset(&a->in, 0, sizeof a->in);
+	/* B and MENU are the runner's, and both mean Continue here. The runner has
+	 * to be the one to say so: it flushes the input on its way out, so asking
+	 * a->in afterwards would always say no button was pressed. */
+	if (menu_run(a, &c.st, gm_menu_build, gm_key, &c) == MENU_LEFT_BACK)
+		c.resume = true;
 
-	while (!done && !want_quit) {
-		plat_input_poll(&a->in);
+	if (c.bg) SDL_DestroyTexture(c.bg);
 
-		if (in_repeat(&a->in, IN_UP))   sel = (sel + GM_ROWS - 1) % GM_ROWS;
-		if (in_repeat(&a->in, IN_DOWN)) sel = (sel + 1) % GM_ROWS;
-
-		/* Applied to the running game at once, not on resume: the whole point
-		 * of this row being here rather than on the shelf is judging the mode
-		 * against the game it is being applied to. Diatom takes SETDISPLAY
-		 * while paused (its ADR-0020), answers with the new rect, and the
-		 * backdrop behind this menu redraws into it. */
-		if (sel == GM_DISPLAY) {
-			int d = in_repeat(&a->in, IN_RIGHT) ? 1
-			      : in_repeat(&a->in, IN_LEFT)  ? -1 : 0;
-			if (d) gm_cycle_display(a, d);
-		}
-		/* MENU again, or B: back to the game, same as Continue. */
-		if (a->in.pressed[IN_MENU] || a->in.pressed[IN_BACK]) {
-			resume = 1;
-			done = 1;
-		} else if (a->in.pressed[IN_ACCEPT]) {
-			switch ((gm_row)sel) {
-			case GM_CONTINUE:
-				resume = 1;
-				done = 1;
-				break;
-			case GM_SAVE:
-			case GM_LOAD: {
-				int slot = slot_strip(a, bg, sel == GM_SAVE);
-				if (slot) {
-					sysview *sv = &a->view[a->sys_cursor];
-					char sp[LIB_PATH * 2], pp[LIB_PATH * 2];
-
-					slot_state_path(a, a->sys_cursor,
-					                &sv->list.items[sv->cursor], slot,
-					                sp, sizeof sp);
-					if (sel == GM_SAVE) {
-						plat_resident_line("SAVE\tpath=%s", sp);
-						/* The paused frame is what the save holds, and
-						 * Diatom already wrote it as the pause preview:
-						 * copy it beside the state so the strip can show
-						 * what is inside the slot. */
-						slot_preview_path(a, a->sys_cursor,
-						                  &sv->list.items[sv->cursor], slot,
-						                  pp, sizeof pp);
-						copy_file(plat_resident_last_preview(), pp);
-					} else {
-						plat_resident_line("LOAD\tpath=%s", sp);
-					}
-					resume = 1;
-					done = 1;
-				}
-				/* Backed out: fall through to the menu, still paused. */
-				plat_input_flush();
-				memset(&a->in, 0, sizeof a->in);
-				break;
-			}
-			/* A cycles it forward as well as left and right. Every other
-			 * row in this menu is something A does, so a row that only
-			 * answered to left and right was a row that looked broken. */
-			case GM_DISPLAY:
-				gm_cycle_display(a, +1);
-				break;
-			case GM_CHEEVOS:
-				cheevos_screen(a, bg);
-				break;
-			case GM_RESET:
-				plat_resident_line("RESET");
-				resume = 1;
-				done = 1;
-				break;
-			case GM_QUIT:
-				/* The wait loop carries on until EXIT arrives; quitting is
-				 * asking, not tearing down. */
-				plat_resident_line("STOP");
-				done = 1;
-				break;
-			default: break;
-			}
-		}
-		if (a->in.pressed[IN_POWER] || idle_due(a)) {
-			plat_note_power_pressed();
-			plat_resident_line("STOP");
-			done = 1;
-		}
-		/* A nested screen may have been the one that took the press or ran
-		 * the clock out - the slot strip and the achievements list both stop
-		 * the game and close themselves, which left THIS loop drawing a menu
-		 * over a game that had already been told to stop. */
-		if (plat_run_power_pressed()) done = 1;
-
-		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 255);
-		SDL_RenderClear(a->r);
-		draw_paused_frame(a, bg);
-		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
-		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
-		SDL_RenderFillRect(a->r, NULL);
-
-		{
-			menu_row rows[GM_ROWS];
-			gm_build(a, rows);
-			menu_draw(a, NULL, rows, GM_ROWS, sel, width, a->tint);
-		}
-		SDL_RenderPresent(a->r);
-		SDL_Delay(8);
-	}
-
-	if (bg) SDL_DestroyTexture(bg);
-
-	/* Hand the pages back the way Diatom expects to find them.
-	 *
-	 * Diatom does not repaint the area outside its picture every frame - its
-	 * pages start opaque black and it writes only the rect - which is sound
-	 * while it owns the framebuffer and false the moment this process has
-	 * drawn a full-screen menu into the same pages. At any display mode that
-	 * does not fill the panel, resuming showed the game correctly sized with
-	 * this menu still surrounding it, and flickering: Diatom cycles three
-	 * pages and only the two this process presents into had been dirtied, so
-	 * the border alternated menu, menu, black at the refresh rate.
-	 *
-	 * Twice because this process alternates two pages and one present only
-	 * clears the one it lands on. Before RESUME and never after: afterwards
-	 * Diatom is drawing, and this would be a second presenter. */
 	/* Asked to quit with the menu open. Leaving here without saying anything
 	 * strands the game: it is paused, waiting on this socket, and the wait
 	 * loop below would go straight back to waiting on IT. Each on the other,
@@ -3755,17 +3787,29 @@ static void game_menu(app *a)
 	 *
 	 * STOP rather than RESUME - the process is going away, and a game that
 	 * ends writes its state on the way out. */
-	if (want_quit && !resume) plat_resident_line("STOP");
+	if (want_quit && !c.resume) plat_resident_line("STOP");
 
-	if (resume) {
+	if (c.resume) {
+		/* Hand the pages back the way Diatom expects to find them.
+		 *
+		 * Diatom does not repaint the area outside its picture every frame -
+		 * its pages start opaque black and it writes only the rect - which is
+		 * sound while it owns the framebuffer and false the moment this
+		 * process has drawn a full-screen menu into the same pages. At any
+		 * display mode that does not fill the panel, resuming showed the game
+		 * correctly sized with this menu still surrounding it, and flickering:
+		 * Diatom cycles three pages and only the two this process presents
+		 * into had been dirtied, so the border alternated menu, menu, black at
+		 * the refresh rate.
+		 *
+		 * Twice because this process alternates two pages and one present only
+		 * clears the one it lands on. Before RESUME and never after:
+		 * afterwards Diatom is drawing, and this would be a second presenter. */
 		present_black(a);
 		present_black(a);
 		plat_resident_line("RESUME");
 	}
-
 	/* Nothing presents from here: the next frame on screen is the game's. */
-	plat_input_flush();
-	memset(&a->in, 0, sizeof a->in);
 }
 
 /* Bring the resident emulator back.

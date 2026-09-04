@@ -437,6 +437,42 @@ static void info_rows(void)
 	ck(holds(got, k, GI_MAX - 1), "and it is Favorite");
 }
 
+
+/* ---------- the in-game menu ---------------------------------------------- */
+
+/* Cheevos is the only row that can be dead, and it is dead exactly when the
+ * game has no set. Everything else is always something A does. */
+static void ingame_rows(void)
+{
+	gm_ui u;
+	gm_bufs b;
+	menu_row rows[GM_ROWS];
+	int got[GM_ROWS], n, k;
+
+	u.dmode = "Native"; u.earned = 12; u.total = 40;
+	n = gm_rows(&u, rows, &b);
+
+	printf("in-game menu, a game with a set:\n");
+	ck(n == GM_ROWS, "seven rows");
+	ck(!strcmp(rows[GM_CONTINUE].label, "Continue"), "Continue leads");
+	ck(!strcmp(val(&rows[GM_DISPLAY]), "Native"), "Display carries the mode");
+	ck(!strcmp(val(&rows[GM_CHEEVOS]), "12 / 40"), "Cheevos counts the set");
+	ck(rows[GM_CHEEVOS].live, "and is reachable");
+	k = reachable(rows, n, got, GM_ROWS);
+	ck(k == GM_ROWS, "every row is a stop");
+
+	u.earned = 0; u.total = 0;
+	n = gm_rows(&u, rows, &b);
+	printf("in-game menu, a game with no set:\n");
+	ck(!strcmp(val(&rows[GM_CHEEVOS]), "none"), "Cheevos says none");
+	ck(!rows[GM_CHEEVOS].live, "and does nothing");
+	k = reachable(rows, n, got, GM_ROWS);
+	ck(k == GM_ROWS - 1, "so the cursor steps over it");
+	ck(!holds(got, k, GM_CHEEVOS), "and never rests on it");
+	ck(holds(got, k, GM_QUIT) && holds(got, k, GM_CONTINUE),
+	   "the rows either side of it still work");
+}
+
 int main(void)
 {
 	off_state();
@@ -452,6 +488,7 @@ int main(void)
 	cursor_reaches();
 	step_terminates();
 	info_rows();
+	ingame_rows();
 	if (fails) { printf("\n%d menu check(s) failed\n", fails); return 1; }
 	printf("\nok: menus contain what they should\n");
 	return 0;

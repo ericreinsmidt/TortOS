@@ -39,4 +39,24 @@ typedef struct {
  * two rows that need one say so instead of quietly doing nothing. */
 int gi_rows(menu_row *out, const game_info *gi, bool net);
 
+/* ---------- the in-game menu ---------------------------------------------- */
+
+typedef enum {
+	GM_CONTINUE, GM_SAVE, GM_LOAD, GM_DISPLAY, GM_CHEEVOS, GM_RESET, GM_QUIT,
+	GM_ROWS
+} gm_row;
+
+/* What the in-game menu needs to know, gathered by the caller. */
+typedef struct {
+	const char *dmode;    /* the display mode's label */
+	int         earned;
+	int         total;    /* 0: this game has no achievement set */
+} gm_ui;
+
+/* Where the Cheevos row's text lives; the caller owns it, because a row holds
+ * a pointer rather than a copy. */
+typedef struct { char cheevos[24]; } gm_bufs;
+
+int gm_rows(const gm_ui *u, menu_row *out, gm_bufs *b);
+
 #endif

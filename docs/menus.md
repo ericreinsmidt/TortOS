@@ -92,10 +92,33 @@ ADR-0001 says the decision has failed if it stops being true. The Wi-Fi screen's
 pure half lives in `src/wifi_menu.c` for exactly this reason, and
 `tools/menu-check.c` links it without SDL.
 
-**Migrated:** the Wi-Fi screen.
+Every menu is on it: the Wi-Fi screen, both MENU-button menus, the game info
+screen and the in-game menu. Each is a `build`, an `on_key` and a `menu_style`,
+and none of them writes a loop.
 
-**Not yet:** `game_info_screen`, `tortos_menu`, `cheevos_screen`, `game_menu`.
-Each still writes its own loop and its own cursor walk. Migrate one at a time,
-with a check for its rows written first - the check is what makes a
-behavior-preserving refactor verifiable by something other than looking at a
-handheld.
+`menu_style` is the half that needs the renderer: a fixed width, an accent,
+whether to follow the shelf's animated tint, and two hooks with sane defaults -
+`backdrop` (NULL is the shelf, dimmed) and `on_power` (NULL is powering the
+device off). The in-game menu overrides both, because the shelf is not what is
+behind it and power there stops the game.
+
+`menu_run` returns how it ended. Only the in-game menu asks: B and MENU mean
+Continue there, so it has to send RESUME, and it cannot look at `a->in` to find
+out because the runner flushes the input on its way out.
+
+## Cheevos is not a menu, and should not be made one
+
+`cheevos_screen` draws with `menu_draw` and is not on the runner. That is
+deliberate, and it is not a to-do.
+
+- It uses `live` to mean **earned**, not "does something". Putting it on the
+  runner would make the cursor skip every UNEARNED achievement, which is
+  backwards - browsing the ones you have not got yet is the point of the list.
+- `CHV_MAX` is 256 and the largest set measured is 203, against a runner that
+  holds `MENU_RUN_ROWS` (32). It would silently show the first 32.
+- A closes it rather than acting on a row, and L1/R1 page by eight.
+
+It is a list browser that borrows the panel. If a second screen ever wants
+emphasis without action, the answer is a `dim` flag on `menu_row` so `live`
+goes back to meaning one thing - not a switch on the runner to skip the rule
+the runner exists for.
