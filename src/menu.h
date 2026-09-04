@@ -36,4 +36,12 @@ typedef struct {
 #define MENU_NOTE(s)   ((menu_row){ (s), MENU_NOTE_MARK, false })
 #define ROW_IS_NOTE(r) ((r).value == MENU_NOTE_MARK)
 
+/* Move to the next live row in `dir` (+1 or -1), or stay put if none is.
+ *
+ * Bounded, deliberately. A menu can legitimately be all dead rows - "No
+ * networks found" under a rule is exactly that - and the do/while this
+ * replaced would spin forever on one. Pure, so tools/menu-check.c holds it
+ * to that. */
+int menu_step_sel(const menu_row *rows, int n, int sel, int dir);
+
 #endif

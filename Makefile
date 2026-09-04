@@ -12,6 +12,8 @@ SSH := sshpass -p 'tina' ssh -o StrictHostKeyChecking=no root@$(BRICK)
         check-raset check-xfer check-menus check-artscrape \
         deploy restart logs
 
+all: build/tortos.elf
+
 # Everything offline, in one command. There was no umbrella target: every check
 # had to be remembered by name, which is a suite in the same sense that a list
 # of good intentions is a plan. A check nobody runs is a check that does not
@@ -26,8 +28,6 @@ check:
 	done; \
 	if [ $$fail -ne 0 ]; then printf '\nsome checks FAILED\n' >&2; exit 1; fi; \
 	printf '\nok: every check passed\n'
-
-all: build/tortos.elf
 
 # One version number: the zip name and the About page both read it from here.
 VERSION ?= 1.0
@@ -127,11 +127,12 @@ check-menus: build-native/menu-check
 	@./build-native/menu-check
 
 build-native/menu-check: tools/menu-check.c src/wifi_menu.c src/wifi.c \
-                        src/sys_menu.c src/wifi_menu.h src/sys_menu.h \
-                        src/menu.h FORCE
+                        src/sys_menu.c src/menu.c src/wifi_menu.h \
+                        src/sys_menu.h src/menu.h FORCE
 	@mkdir -p build-native
-	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
-	      -o $@ tools/menu-check.c src/wifi_menu.c src/wifi.c src/sys_menu.c
+	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g -o $@ \
+	      tools/menu-check.c src/wifi_menu.c src/wifi.c src/sys_menu.c \
+	      src/menu.c
 
 build-native/xfer-check: tools/xfer-check.c src/xfer.c src/xfer.h FORCE
 	@mkdir -p build-native

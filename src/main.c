@@ -1973,10 +1973,18 @@ typedef enum {
 } menu_result;
 
 /* Fill `rows`, name the screen, and return how many rows. MUST NOT touch the
- * renderer, the event loop or the device: the point of this signature is that a
- * menu's contents can be checked offline, and ADR-0001 says the decision has
- * failed if that stops being true. Called every frame, so it is also where live
- * state is reflected - there is no separate "refresh".
+ * renderer or the event loop, and the part that actually decides what the rows
+ * SAY must be a separate function in a file the check can link - src/wifi_menu.c
+ * and src/sys_menu.c are those files. ADR-0001 says the decision has failed if
+ * that stops being true.
+ *
+ * Reading the device from here is allowed and unavoidable: a row that reports
+ * the network has to ask every frame. What makes it checkable is that the
+ * asking is confined to this half - wifi.c is stubbed on a host build, and the
+ * system menu's asking lives in menu_build rather than in sys_menu_build.
+ *
+ * Called every frame, so it is also where live state is reflected - there is no
+ * separate "refresh".
  *
  * The heading comes from here because it is a function of the same state the
  * rows are: the system menu is titled with the system whose rows it is showing.
@@ -2004,22 +2012,6 @@ typedef struct {
  * confirm, a keyboard or a wait panel: each runs its own loop and returns.
  * `sel` indexes the rows the last build produced. */
 typedef menu_result (*menu_key_fn)(app *a, void *ctx, in_button key, int sel);
-
-/* Move to the next live row in `dir`, or stay put if none is.
- *
- * The bounded walk matters: a menu can legitimately be all dead rows - "No
- * networks found" on its own is exactly that - and an unbounded do/while would
- * spin forever on one. */
-static int menu_step_sel(const menu_row *rows, int n, int sel, int dir)
-{
-	int i, k = sel;
-
-	for (i = 0; i < n; i++) {
-		k = (k + dir + n) % n;
-		if (rows[k].live) return k;
-	}
-	return sel;
-}
 
 /* The loop itself. Called only through menu_run below, which owns the flush on
  * either side of it. */
@@ -3101,134 +3093,124 @@ static void tortos_menu_draw(app *a, int sel)
 	          a->screen == SCREEN_SYSTEMS ? MENU_ACCENT : a->tint);
 }
 
-static void tortos_menu(app *a)
+/* The system menu's context. It holds the app rather than a copy of what was
+ * on screen when it opened, so `a->screen` and `a->sys_cursor` are read live
+ * exactly as the hand-written loop read them. Neither can change while the
+ * menu is up; reading them is simply one fewer thing that could drift. */
+typedef struct {
+	app      *a;
+	menu_bufs bufs;   /* the built rows point into this, so it outlives them */
+} sysmenu_ctx;
+
+static int sysmenu_build(void *ctx, menu_row *rows, int max,
+                         const char **heading)
 {
-	menu_row rows[MENU_MAX_ROWS];
-	menu_bufs bufs;
-	const char *heading;
-	/* The screen cannot change while the menu is open, so the row count is
-	 * settled here and the loop below is the same loop for either menu. */
-	int n = menu_build(a, a->screen, a->sys_cursor, rows, &bufs, &heading);
-	int sel = 0, done = 0;
+	sysmenu_ctx *c = ctx;
+	int n = menu_build(c->a, c->a->screen, c->a->sys_cursor, rows, &c->bufs,
+	                   heading);
 
-	plat_input_flush();
-	memset(&a->in, 0, sizeof a->in);
+	return n > max ? max : n;
+}
 
-	while (!done && !want_quit && a->running) {
-		plat_input_poll(&a->in);
-		if (a->in.quit_requested) { a->running = false; return; }
+/* Left and right cycle the value on a row that has one; A opens whatever the
+ * row leads to. Everything else the runner has already dealt with. */
+static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
+{
+	int d = key == IN_RIGHT ? 1 : key == IN_LEFT ? -1 : 0;
 
-		/* Rebuilt every frame: a row that can be changed from inside the menu
-		 * has to show what it was changed to. */
-		n = menu_build(a, a->screen, a->sys_cursor, rows, &bufs, &heading);
+	(void)ctx;
 
-		if (in_repeat(&a->in, IN_UP))   sel = (sel + n - 1) % n;
-		if (in_repeat(&a->in, IN_DOWN)) sel = (sel + 1) % n;
+	if (a->screen == SCREEN_GAMES) {
+		/* Display mode, saved the moment it changes because there is no
+		 * confirm step to hang the write off. */
+		if (d && sel == SM_DISPLAY) {
+			sysview *v = &a->view[a->sys_cursor];
 
-		/* Left and right cycle the value on a row that has one. Display mode
-		 * is the only such row so far; it is saved the moment it changes,
-		 * because there is no confirm step to hang the write off. */
-		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_GAMES &&
-		    sel == SM_BOXART)
-			/* The system's own color, not the menu's. This acts on the
-			 * shelf you are looking at, and menu_draw already follows that
-			 * rule everywhere else. */
+			v->dmode = (v->dmode + d + DMODE_COUNT) % DMODE_COUNT;
+			display_save(a);
+			return MENU_STAY;
+		}
+		if (key != IN_ACCEPT) return MENU_STAY;
+		/* The system's own color, not the menu's. This acts on the shelf you
+		 * are looking at, and menu_draw already follows that rule everywhere
+		 * else. */
+		if (sel == SM_BOXART)
 			art_screen(a, a->sys.systems[a->sys_cursor].folder, NULL,
 			           a->sys.systems[a->sys_cursor].accent);
-		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_GAMES &&
-		    sel == SM_RESCAN) {
+		if (sel == SM_RESCAN) {
 			wait_panel(a, a->sys.systems[a->sys_cursor].name, "Scanning...");
 			rescan_all(a);
 			/* Close, rather than redraw this menu over a shelf that may have
-			 * just lost the system it was built for: `rows` was filled at the
-			 * top of this frame and `sel` counts rows for the screen we were
-			 * on. Acting and closing is also what pressing it means. */
-			done = 1;
+			 * just lost the system it was built for. Acting and closing is
+			 * also what pressing it means. */
+			return MENU_DONE;
 		}
-		if (a->screen == SCREEN_GAMES && sel == SM_DISPLAY) {
-			int d = in_repeat(&a->in, IN_RIGHT) ? 1
-			      : in_repeat(&a->in, IN_LEFT)  ? -1 : 0;
-			if (d) {
-				sysview *v = &a->view[a->sys_cursor];
-				v->dmode = (v->dmode + d + DMODE_COUNT) % DMODE_COUNT;
-				display_save(a);
-			}
-		}
-		/* Text size, on the same left/right idiom as Display mode. Changing it
-		 * reopens every font, so the whole UI is rebuilt: the panel's cached
-		 * width is measured from font metrics, and any card generated for a
-		 * game with no box art has its title baked in at the old size. Both
-		 * are dropped here rather than left to look subtly wrong. */
-		if (a->screen == SCREEN_SYSTEMS && sel == PM_SLEEP) {
-			int d = in_repeat(&a->in, IN_RIGHT) ? 1
-			      : in_repeat(&a->in, IN_LEFT)  ? -1 : 0;
-			if (d) {
-				int k, at = 0;
-
-				for (k = 0; k < AUTO_OFF_COUNT; k++)
-					if (AUTO_OFF[k] == a->auto_off) { at = k; break; }
-				at += d;
-				if (at < 0) at = 0;
-				if (at >= AUTO_OFF_COUNT) at = AUTO_OFF_COUNT - 1;
-				a->auto_off = AUTO_OFF[at];
-				auto_off_save(a->auto_off);
-				/* From now, not from whenever the last countdown began:
-				 * choosing 30s should not inherit two minutes of an old
-				 * one already spent. */
-				a->idle.since_ms = plat_now_ms();
-			}
-		}
-		if (a->screen == SCREEN_SYSTEMS && sel == PM_TEXT) {
-			int d = in_repeat(&a->in, IN_RIGHT) ? 1
-			      : in_repeat(&a->in, IN_LEFT)  ? -1 : 0;
-			if (d) {
-				int k = text_scale_step() + d;
-				if (k < 0) k = 0;
-				if (k >= TEXT_SCALE_COUNT) k = TEXT_SCALE_COUNT - 1;
-				if (TEXT_SCALES[k] != ui_get_font_scale()) {
-					free_all_textures(a);
-					ui_quit();
-					ui_set_font_scale(TEXT_SCALES[k]);
-					ui_init(a->r, P_FONT);
-					a->menu_w = 0;      /* fonts reopened: remeasure the panel */
-					prime_sys_window(a);
-					text_scale_save(TEXT_SCALES[k]);
-				}
-			}
-		}
-		/* Volume and brightness keep working here, as they do everywhere. */
-		if (in_repeat(&a->in, IN_VOLUP))    plat_volume_nudge(+1);
-		if (in_repeat(&a->in, IN_VOLDN))    plat_volume_nudge(-1);
-		if (in_repeat(&a->in, IN_BRIGHTUP)) plat_brightness_nudge(+1);
-		if (in_repeat(&a->in, IN_BRIGHTDN)) plat_brightness_nudge(-1);
-
-		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = 1;
-		/* The power button, which works here and on the shelf and in the
-		 * in-game menu. There was a Power Off row as well, directly above
-		 * Auto Power Off - a setting and an action a row apart with almost
-		 * the same name, duplicating a button the device already has. */
-		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); return; }
-		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
-		    sel == PM_WIFI) wifi_screen(a);
-		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
-		    sel == PM_XFER) xfer_screen(a);
-		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
-		    sel == PM_SCRAPE) art_screen(a, NULL, NULL, MENU_ACCENT);
-		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
-		    sel == PM_ACHIEVEMENTS) ra_signin_screen(a);
-		if (a->in.pressed[IN_ACCEPT] && a->screen == SCREEN_SYSTEMS &&
-		    sel == PM_ABOUT) about_screen(a);
-
-		tick_tint(a);
-		draw_shelf(a);
-		tortos_menu_draw(a, sel);
-		plat_draw_osd(a->r);
-		SDL_RenderPresent(a->r);
-		SDL_Delay(8);
+		return MENU_STAY;
 	}
 
-	plat_input_flush();
-	memset(&a->in, 0, sizeof a->in);
+	/* Auto Off, on the left/right idiom Display mode uses. */
+	if (d && sel == PM_SLEEP) {
+		int k, at = 0;
+
+		for (k = 0; k < AUTO_OFF_COUNT; k++)
+			if (AUTO_OFF[k] == a->auto_off) { at = k; break; }
+		at += d;
+		if (at < 0) at = 0;
+		if (at >= AUTO_OFF_COUNT) at = AUTO_OFF_COUNT - 1;
+		a->auto_off = AUTO_OFF[at];
+		auto_off_save(a->auto_off);
+		/* From now, not from whenever the last countdown began: choosing 30s
+		 * should not inherit two minutes of an old one already spent. */
+		a->idle.since_ms = plat_now_ms();
+		return MENU_STAY;
+	}
+	/* Text size, same idiom. Changing it reopens every font, so the whole UI
+	 * is rebuilt: the panel's cached width is measured from font metrics, and
+	 * any card generated for a game with no box art has its title baked in at
+	 * the old size. Both are dropped here rather than left subtly wrong. */
+	if (d && sel == PM_TEXT) {
+		int k = text_scale_step() + d;
+
+		if (k < 0) k = 0;
+		if (k >= TEXT_SCALE_COUNT) k = TEXT_SCALE_COUNT - 1;
+		if (TEXT_SCALES[k] != ui_get_font_scale()) {
+			free_all_textures(a);
+			ui_quit();
+			ui_set_font_scale(TEXT_SCALES[k]);
+			ui_init(a->r, P_FONT);
+			a->menu_w = 0;      /* fonts reopened: remeasure the panel */
+			prime_sys_window(a);
+			text_scale_save(TEXT_SCALES[k]);
+		}
+		return MENU_STAY;
+	}
+
+	if (key != IN_ACCEPT) return MENU_STAY;
+	switch (sel) {
+	case PM_WIFI:         wifi_screen(a); break;
+	case PM_XFER:         xfer_screen(a); break;
+	case PM_SCRAPE:       art_screen(a, NULL, NULL, MENU_ACCENT); break;
+	case PM_ACHIEVEMENTS: ra_signin_screen(a); break;
+	case PM_ABOUT:        about_screen(a); break;
+	default: break;
+	}
+	return MENU_STAY;
+}
+
+static void tortos_menu(app *a)
+{
+	sysmenu_ctx c = { a, { { 0 }, { 0 }, { 0 } } };
+	menu_style st = {
+		/* Measured across every system and every display mode, so the panel
+		 * does not resize while Display Mode is being cycled on it. */
+		.fixed_w     = menu_shelf_width(a),
+		.accent      = MENU_ACCENT,
+		/* On a game shelf this menu is about THAT system, so it wears the
+		 * shelf's color - which tick_tint is still moving while it is open. */
+		.follow_tint = a->screen != SCREEN_SYSTEMS,
+	};
+
+	menu_run(a, &st, sysmenu_build, sysmenu_key, &c);
 }
 
 /* ---------- launching ----------------------------------------------------- */

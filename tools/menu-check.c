@@ -13,6 +13,7 @@
 #include "../src/sys_menu.h"
 
 #include <stdio.h>
+#include <stdbool.h>
 #include <string.h>
 
 static int fails;
@@ -308,6 +309,87 @@ static void auto_off_words(void)
 	}
 }
 
+
+/* ---------- where the cursor can go --------------------------------------- */
+
+/* Walk the whole menu and collect every row the cursor can actually rest on.
+ * A row that is drawn but cannot be selected is fine; a row that CAN be
+ * selected and then does nothing when pressed is the defect. */
+static int reachable(const menu_row *rows, int n, int *out, int max)
+{
+	int sel = 0, k = 0, i;
+
+	if (!rows[0].live) sel = menu_step_sel(rows, n, 0, +1);
+	if (!rows[sel].live) return 0;      /* nothing live at all */
+	for (i = 0; i < n && k < max; i++) {
+		out[k++] = sel;
+		sel = menu_step_sel(rows, n, sel, +1);
+		if (sel == out[0]) break;       /* wrapped */
+	}
+	return k;
+}
+
+static bool holds(const int *v, int n, int want)
+{
+	int i;
+	for (i = 0; i < n; i++) if (v[i] == want) return true;
+	return false;
+}
+
+/* The migration of the system menu onto the runner changed this on purpose:
+ * the cursor used to walk every row, including the four that only report a
+ * fact. Now it visits what can be pressed. */
+static void cursor_reaches(void)
+{
+	sys_ui u;
+	menu_bufs b;
+	menu_row rows[MENU_MAX_ROWS];
+	const char *heading;
+	int got[MENU_MAX_ROWS], n, k;
+
+	memset(&u, 0, sizeof u);
+	u.games = true;
+	u.wifi = WIFI_CONNECTED;
+	u.sys_name = "NES"; u.sys_core = "nestopia";
+	u.game_count = 3; u.dmode = "Native";
+	n = sys_menu_build(&u, rows, &b, &heading);
+	k = reachable(rows, n, got, MENU_MAX_ROWS);
+
+	printf("system menu, what the cursor can reach:\n");
+	ck(k == 3, "three rows, not seven");
+	ck(holds(got, k, SM_DISPLAY), "Display Mode");
+	ck(holds(got, k, SM_BOXART), "Box Art");
+	ck(holds(got, k, SM_RESCAN), "Rescan Folder");
+	ck(!holds(got, k, SM_GAMES) && !holds(got, k, SM_CORE),
+	   "the reported facts are not stops");
+
+	memset(&u, 0, sizeof u);
+	u.wifi = WIFI_OFF;
+	u.text_size = "100%";
+	n = sys_menu_build(&u, rows, &b, &heading);
+	k = reachable(rows, n, got, MENU_MAX_ROWS);
+
+	printf("TortOS menu offline, what the cursor can reach:\n");
+	ck(!holds(got, k, PM_BT), "Bluetooth is skipped while it is a placeholder");
+	ck(!holds(got, k, PM_XFER), "OTH is skipped with no network");
+	ck(!holds(got, k, PM_SCRAPE), "Box Art is skipped with no network");
+	ck(holds(got, k, PM_WIFI), "Wi-Fi is reachable, which is how you fix that");
+	ck(holds(got, k, PM_ABOUT), "About is reachable");
+}
+
+/* The bound is the point. An all-dead menu must terminate, not spin. */
+static void step_terminates(void)
+{
+	menu_row dead[3];
+	int i;
+
+	for (i = 0; i < 3; i++) dead[i] = (menu_row){ "x", NULL, false };
+	printf("a menu with nothing live:\n");
+	ck(menu_step_sel(dead, 3, 1, +1) == 1, "forward stays put");
+	ck(menu_step_sel(dead, 3, 1, -1) == 1, "backward stays put");
+	ck(menu_step_sel(dead, 0, 0, +1) == 0, "an empty menu is survivable");
+}
+
 int main(void)
 {
 	off_state();
@@ -320,6 +402,8 @@ int main(void)
 	wifi_row_wording();
 	system_menu();
 	auto_off_words();
+	cursor_reaches();
+	step_terminates();
 	if (fails) { printf("\n%d menu check(s) failed\n", fails); return 1; }
 	printf("\nok: menus contain what they should\n");
 	return 0;
