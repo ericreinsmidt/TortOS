@@ -11,6 +11,7 @@
  */
 #include "../src/wifi_menu.h"
 #include "../src/sys_menu.h"
+#include "../src/game_menu.h"
 
 #include <stdio.h>
 #include <stdbool.h>
@@ -390,6 +391,52 @@ static void step_terminates(void)
 	ck(menu_step_sel(dead, 0, 0, +1) == 0, "an empty menu is survivable");
 }
 
+
+/* ---------- the game info screen ------------------------------------------ */
+
+/* Five facts and two actions. The facts are not stops for the cursor; the two
+ * actions are, except that fetching art needs a network and says so. */
+static void info_rows(void)
+{
+	game_info gi;
+	menu_row rows[GI_MAX];
+	int got[GI_MAX], n, k;
+
+	memset(&gi, 0, sizeof gi);
+	snprintf(gi.file, sizeof gi.file, "Chrono Trigger.sfc");
+	snprintf(gi.size, sizeof gi.size, "4.0 MB");
+	snprintf(gi.saves, sizeof gi.saves, "2");
+	snprintf(gi.cheevos, sizeof gi.cheevos, "12 of 78");
+	snprintf(gi.art, sizeof gi.art, "yes");
+	gi.has_art = true;
+	gi.favorite = false;
+
+	n = gi_rows(rows, &gi, true);
+	printf("game info, art present and a network:\n");
+	ck(n == GI_MAX, "five facts and two actions");
+	ck(!strcmp(rows[0].label, "File"), "File leads");
+	ck(!strcmp(val(&rows[0]), "Chrono Trigger.sfc"), "and names the file");
+	ck(!strcmp(rows[GI_MAX - 2].label, "Replace Box Art"),
+	   "art present offers a replace");
+	ck(!strcmp(val(&rows[GI_MAX - 1]), "no"), "Favorite reads its state");
+	k = reachable(rows, n, got, GI_MAX);
+	ck(k == 2, "only the two actions are stops");
+	ck(!holds(got, k, 0) && !holds(got, k, 4), "no fact is a stop");
+
+	gi.has_art = false;
+	gi.favorite = true;
+	n = gi_rows(rows, &gi, false);
+	printf("game info, no art and no network:\n");
+	ck(!strcmp(rows[GI_MAX - 2].label, "Get Box Art"),
+	   "no art offers a get, not a replace");
+	ck(!strcmp(val(&rows[GI_MAX - 2]), "needs Wi-Fi"), "and says why it is dead");
+	ck(!rows[GI_MAX - 2].live, "which it is");
+	ck(!strcmp(val(&rows[GI_MAX - 1]), "yes"), "Favorite follows the flag");
+	k = reachable(rows, n, got, GI_MAX);
+	ck(k == 1, "Favorite is the only stop left");
+	ck(holds(got, k, GI_MAX - 1), "and it is Favorite");
+}
+
 int main(void)
 {
 	off_state();
@@ -404,6 +451,7 @@ int main(void)
 	auto_off_words();
 	cursor_reaches();
 	step_terminates();
+	info_rows();
 	if (fails) { printf("\n%d menu check(s) failed\n", fails); return 1; }
 	printf("\nok: menus contain what they should\n");
 	return 0;

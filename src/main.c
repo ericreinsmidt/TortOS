@@ -28,6 +28,7 @@
 #include "wifi.h"
 #include "menu.h"
 #include "sys_menu.h"
+#include "game_menu.h"
 #include "ui.h"
 #include "wifi_menu.h"
 
@@ -2008,6 +2009,11 @@ typedef struct {
 	bool     follow_tint;
 } menu_style;
 
+/* Read every frame through the caller's pointer, so a screen that keeps its
+ * style inside its own context can change it between frames. The info screen
+ * does: its accent belongs to the system that OWNS the game, and toggling a
+ * favorite on the Favorites shelf can hand it a different one. */
+
 /* A key the runner did not consume, and the row it happened on. Free to open a
  * confirm, a keyboard or a wait panel: each runs its own loop and returns.
  * `sel` indexes the rows the last build produced. */
@@ -2578,24 +2584,7 @@ void art_preview(app *a, const char *now, const char *where,
 	menu_draw(a, head, rows, n, -1, 0, MENU_ACCENT);
 }
 
-/* What the info screen offers to do, beyond telling you things. */
-typedef enum { GI_ART, GI_FAV, GI_ROWS } gi_row;
-
-/* Everything worth saying about one game, gathered once.
- *
- * Gathered rather than watched: this screen is a still. It reads the card,
- * the save directory and the achievement set when it opens, and again after
- * an action changes one of them. Polling would mean a stat storm every frame
- * for numbers that only move when the player does something. */
-typedef struct {
-	char  file[LIB_PATH];
-	char  size[32];
-	char  saves[32];
-	char  cheevos[64];
-	char  art[32];
-	bool  favorite;
-	bool  has_art;
-} game_info;
+/* game_info, gi_row and gi_rows: src/game_menu.h */
 
 static void gi_gather(app *a, int owner, const game_entry *g, game_info *gi)
 {
@@ -2672,24 +2661,6 @@ static void gi_gather(app *a, int owner, const game_entry *g, game_info *gi)
 		snprintf(gi->cheevos, sizeof gi->cheevos, "none");
 
 	gi->favorite = fav_is(s->tag, g->file);
-}
-
-#define GI_MAX 7          /* five facts, two actions */
-
-static int gi_rows(menu_row *out, const game_info *gi, bool net)
-{
-	int n = 0;
-
-	out[n++] = (menu_row){ "File",     gi->file,    false };
-	out[n++] = (menu_row){ "Size",     gi->size,    false };
-	out[n++] = (menu_row){ "Saves",    gi->saves,   false };
-	out[n++] = (menu_row){ "Cheevos",  gi->cheevos, false };
-	out[n++] = (menu_row){ "Box Art",  gi->art,     false };
-	/* The two live rows last, under the facts, because they act on them. */
-	out[n++] = (menu_row){ gi->has_art ? "Replace Box Art" : "Get Box Art",
-	                       net ? NULL : "needs Wi-Fi", net };
-	out[n++] = (menu_row){ "Favorite", gi->favorite ? "yes" : "no", true };
-	return n;
 }
 
 /* `only` names one system's folder, or NULL for the whole library.
@@ -2827,105 +2798,100 @@ static void art_screen(app *a, const char *only, const char *one,
  * again after an action changes something, rather than every frame - these
  * are numbers that only move when the player moves them, and the alternative
  * is a stat storm at 120 Hz for a panel nobody is interacting with. */
-static void game_info_screen(app *a)
-{
-	sysview   *v = &a->view[a->sys_cursor];
-	int        owner;
+/* The info screen's context. owner, g and v all move when a favorite is
+ * toggled, so they live here where the key handler can put them back. */
+typedef struct {
+	app        *a;
+	sysview    *v;
 	game_entry *g;
-	game_info  gi;
-	menu_row   rows[GI_MAX];
-	int        sel = 0, n;
-	bool       done = false;
+	int         owner;
+	game_info   gi;
+	menu_style  st;   /* the accent follows the OWNING system, which can move */
+} info_ctx;
 
-	if (v->list.count == 0) return;
-	owner = shelf_owner(a, a->sys_cursor, v->cursor);
-	g = &v->list.items[v->cursor];
-	gi_gather(a, owner, g, &gi);
+static int info_build(void *ctx, menu_row *rows, int max, const char **heading)
+{
+	info_ctx *c = ctx;
+	int n;
 
+	(void)max;
+	*heading = c->g->title;
+	/* menu_wifi, not wifi_status. This loop runs every frame and wifi_status
+	 * forks wpa_cli out of a 119 MB process; this screen was doing it about
+	 * 125 times a second for a row that says "needs Wi-Fi". The system menu
+	 * was measured at 12 fps for the same mistake. */
+	n = gi_rows(rows, &c->gi, menu_wifi(NULL, 0) == WIFI_CONNECTED);
+	return n > max ? max : n;
+}
+
+static menu_result info_key(app *a, void *ctx, in_button key, int sel)
+{
+	info_ctx *c = ctx;
+	menu_row  rows[GI_MAX];
+	const char *heading;
+	int n = info_build(c, rows, GI_MAX, &heading);
+
+	/* X closes it, the same button that opened it. */
+	if (key == IN_X) return MENU_DONE;
+	if (key != IN_ACCEPT || sel >= n || !rows[sel].live) return MENU_STAY;
+
+	if (!strcmp(rows[sel].label, "Favorite")) {
+		char was[LIB_PATH], fp[CFG_STR * 2];
+
+		fav_toggle(a->sys.systems[c->owner].tag, c->g->file);
+		fav_path(fp, sizeof fp);
+		fav_save(fp);
+		/* The Favorites shelf is built from this list, so it has to be rebuilt
+		 * before anything reads it again - including the cursor this screen is
+		 * standing on. Everything from before this line may have moved:
+		 * sys_cursor, the indices, and v itself. */
+		snprintf(was, sizeof was, "%s", c->g->file);
+		refresh_favorites_shelf(a);
+		c->v = &a->view[a->sys_cursor];
+		if (c->v->list.count == 0) return MENU_DONE;
+		c->owner = shelf_owner(a, a->sys_cursor, c->v->cursor);
+		c->g = &c->v->list.items[c->v->cursor];
+		c->st.accent = a->sys.systems[c->owner].accent;
+		/* Un-favoriting ON the Favorites shelf takes the game out from under
+		 * the cursor, and something else slides into its place. Carrying on
+		 * would leave this screen quietly describing a different game than the
+		 * one it opened on, under the heading of the one it opened on. */
+		if (strcmp(was, c->g->file)) return MENU_DONE;
+	} else {
+		/* Replace: delete, then run the ordinary one-system scrape. It finds
+		 * exactly one thing missing and fetches exactly one image, so there is
+		 * no separate single-game code path to keep honest - "replace" is
+		 * "remove, then fill in". */
+		char p[LIB_PATH * 3];
+
+		snprintf(p, sizeof p, "%s/%s/.media/%s.png",
+		         P_ROMS, a->sys.systems[c->owner].folder, c->g->name);
+		remove(p);
+		art_screen(a, a->sys.systems[c->owner].folder, c->g->title,
+		           a->sys.systems[c->owner].accent);
+	}
+	gi_gather(a, c->owner, c->g, &c->gi);
 	plat_input_flush();
 	memset(&a->in, 0, sizeof a->in);
+	return MENU_STAY;
+}
 
-	while (!done && !want_quit && a->running) {
-		bool net = wifi_status(NULL, 0, NULL, 0) == WIFI_CONNECTED;
+static void game_info_screen(app *a)
+{
+	info_ctx c = { 0 };
 
-		n = gi_rows(rows, &gi, net);
+	c.a = a;
+	c.v = &a->view[a->sys_cursor];
+	if (c.v->list.count == 0) return;
+	c.owner = shelf_owner(a, a->sys_cursor, c.v->cursor);
+	c.g = &c.v->list.items[c.v->cursor];
+	gi_gather(a, c.owner, c.g, &c.gi);
+	c.st.accent = a->sys.systems[c.owner].accent;
 
-		plat_input_poll(&a->in);
-		if (a->in.quit_requested) { a->running = false; return; }
-		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); return; }
-		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU] ||
-		    a->in.pressed[IN_X]) done = true;
-
-		if (in_repeat(&a->in, IN_UP))   sel = (sel + n - 1) % n;
-		if (in_repeat(&a->in, IN_DOWN)) sel = (sel + 1) % n;
-
-		if (a->in.pressed[IN_ACCEPT] && rows[sel].live) {
-			if (!strcmp(rows[sel].label, "Favorite")) {
-				fav_toggle(a->sys.systems[owner].tag, g->file);
-				{	char fp[CFG_STR * 2];
-					fav_path(fp, sizeof fp);
-					fav_save(fp);
-				}
-				/* The Favorites shelf is built from this list, so it has to
-				 * be rebuilt before anything reads it again - including the
-				 * cursor this screen is standing on. Everything from before
-				 * this line may have moved: sys_cursor, the indices, and v
-				 * itself. */
-				{	char was[LIB_PATH];
-
-					snprintf(was, sizeof was, "%s", g->file);
-					refresh_favorites_shelf(a);
-					v = &a->view[a->sys_cursor];
-					if (v->list.count == 0) return;
-					owner = shelf_owner(a, a->sys_cursor, v->cursor);
-					g = &v->list.items[v->cursor];
-					/* Un-favoriting ON the Favorites shelf takes the game out
-					 * from under the cursor, and something else slides into
-					 * its place. Carrying on would leave this screen quietly
-					 * describing a different game than the one it opened on,
-					 * under the heading of the one it opened on. */
-					if (strcmp(was, g->file)) return;
-				}
-			} else {
-				/* Replace: delete, then run the ordinary one-system scrape.
-				 * It finds exactly one thing missing and fetches exactly one
-				 * image, so there is no separate single-game code path to
-				 * keep honest - "replace" is "remove, then fill in". */
-				char p[LIB_PATH * 3];
-
-				snprintf(p, sizeof p, "%s/%s/.media/%s.png",
-				         P_ROMS, a->sys.systems[owner].folder, g->name);
-				remove(p);
-				art_screen(a, a->sys.systems[owner].folder, g->title,
-				           a->sys.systems[owner].accent);
-			}
-			gi_gather(a, owner, g, &gi);
-			plat_input_flush();
-			memset(&a->in, 0, sizeof a->in);
-			continue;
-		}
-
-		if (in_repeat(&a->in, IN_VOLUP))    plat_volume_nudge(+1);
-		if (in_repeat(&a->in, IN_VOLDN))    plat_volume_nudge(-1);
-		if (in_repeat(&a->in, IN_BRIGHTUP)) plat_brightness_nudge(+1);
-		if (in_repeat(&a->in, IN_BRIGHTDN)) plat_brightness_nudge(-1);
-
-		tick_tint(a);
-		draw_shelf(a);
-		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
-		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
-		SDL_RenderFillRect(a->r, NULL);
-		menu_draw(a, g->title, rows, n, sel, 0,
-		          a->sys.systems[owner].accent);
-		plat_draw_osd(a->r);
-		SDL_RenderPresent(a->r);
-		SDL_Delay(8);
-	}
+	menu_run(a, &c.st, info_build, info_key, &c);
 
 	/* The card may now hold art it did not before. */
 	free_all_textures(a);
-	plat_input_flush();
-	memset(&a->in, 0, sizeof a->in);
 }
 
 /* One frame of it, from the real gatherer where possible: the fixture is the
