@@ -123,6 +123,9 @@ bool plat_resident_line(const char *fmt, ...);
  * where it was asked to put it - a sink that will not open, or one that died,
  * makes the port fall back and report the fallback. False until it has said. */
 bool plat_resident_audio(char *out, size_t cap);
+/* Increments each time the launcher connects to a resident emulator. Anything
+ * the launcher pushed into the last one has to be pushed into a new one. */
+unsigned plat_resident_generation(void);
 /* Path from the most recent PREVIEW message, or "" - the menu's backdrop. */
 const char *plat_resident_last_preview(void);
 /* Core options the launcher wants applied to every game, read once from

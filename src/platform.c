@@ -651,6 +651,13 @@ static pid_t diatom_pid(void)
 static char d_audio_dev[128];
 static bool d_audio_known;
 
+/* Bumped on every successful connect. State the launcher pushed into a PREVIOUS
+ * Diatom has to be pushed again into a new one, and this is how a caller tells
+ * "still the same emulator" from "a different one that knows nothing". */
+static unsigned d_generation;
+
+unsigned plat_resident_generation(void) { return d_generation; }
+
 /* Connect if not connected, and cope with what READY says. state=running
  * means a previous launcher died mid-game and this one just started: the
  * game on screen is real, but this launcher believes it owns the display, so
@@ -666,9 +673,11 @@ static bool dconnect(void)
 
 	/* A new socket may be a new Diatom, which starts on its default output.
 	 * Forgetting what the old one reported is what stops the launcher from
-	 * believing a sink that this process was never told about. */
+	 * believing a sink that this process was never told about. The generation
+	 * bump is how a caller notices the same thing without polling for it. */
 	d_audio_known = false;
 	d_audio_dev[0] = '\0';
+	d_generation++;
 
 	dsock = socket(AF_UNIX, SOCK_STREAM, 0);
 	if (dsock < 0) return false;

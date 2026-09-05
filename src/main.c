@@ -758,6 +758,7 @@ static char g_pending_active[LIB_PATH * 2];
 static aout_policy g_aout_policy;
 static char g_aout_sent[128];      /* the device Diatom was last told to use */
 static bool g_aout_ever;
+static unsigned g_aout_gen;        /* which connection it was told on */
 
 static void aout_path(char *out, size_t n)
 {
@@ -848,20 +849,24 @@ static void aout_apply(bool force)
 {
 	aout_state  s   = aout_now();
 	const char *dev = aout_device(&s);
-	char at[128];
+	unsigned    gen = plat_resident_generation();
 
-	/* What Diatom SAYS beats what this process remembers sending. A restarted
-	 * Diatom comes back on its default while the launcher still believes it
-	 * sent a sink, and nothing would ever re-send because the remembered
-	 * value still matches. Comparing against the report makes that heal
-	 * itself. Until Diatom has said anything, the memory is all there is. */
-	if (!force) {
-		if (plat_resident_audio(at, sizeof at)) {
-			if (!strcmp(dev, at)) return;
-		} else if (g_aout_ever && !strcmp(dev, g_aout_sent)) {
-			return;
-		}
-	}
+	/* Send when the ASKED-FOR device changes, or when the emulator is a new
+	 * one. Never because Diatom ended up somewhere else.
+	 *
+	 * An earlier version compared against what Diatom REPORTED, so that a
+	 * restarted emulator would be re-told. That is unrecoverable on a
+	 * fallback: a headset switched off makes Diatom report the default while
+	 * this side still wants the sink, the two can never agree, and the resend
+	 * fires every tick. Measured 2026-09-05 - 413 route decisions and 335
+	 * device reopens in one session, which left the codec parked in SETUP and
+	 * the game silent on a speaker that was technically open.
+	 *
+	 * The restart case is covered by the generation instead, which changes
+	 * exactly once per connection rather than continuously. */
+	if (!force && g_aout_ever && gen == g_aout_gen && !strcmp(dev, g_aout_sent))
+		return;
+	g_aout_gen = gen;
 	/* Only remember it as sent if it actually went. dsend does nothing when
 	 * the socket is not open, and returns false saying so - which on the shelf
 	 * before the first game is every time. Recording it as sent anyway meant
