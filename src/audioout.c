@@ -28,3 +28,27 @@ const char *aout_dest_name(aout_dest d)
 {
 	return d == AOUT_BT ? "bluetooth" : d == AOUT_WIRED ? "wired" : "speaker";
 }
+
+bool aout_should_reapply(int remembered, bool wired_now, bool have_level)
+{
+	if (!have_level) return false;
+	/* Unknown is not "unchanged". This is the line the defect was. */
+	if (remembered == AOUT_JACK_UNKNOWN) return true;
+	return remembered != (wired_now ? 1 : 0);
+}
+
+int aout_level_to_raw(int level, int level_max, int win_top, int win_bottom)
+{
+	long span = (long)win_bottom - win_top;
+	long raw;
+
+	if (level_max <= 0) return win_top;
+	if (level < 0) level = 0;
+	if (level > level_max) level = level_max;
+	/* Rounded, not truncated: a half-rung lost at every step walks the whole
+	 * ladder away from the ends it was calibrated against. */
+	raw = win_top + ((long)(level_max - level) * span + level_max / 2) / level_max;
+	if (raw < win_top) raw = win_top;
+	if (raw > win_bottom) raw = win_bottom;
+	return (int)raw;
+}

@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: 0BSD */
 #include "atomic.h"
 #include "platform.h"
+#include "audioout.h"
 
 #include "ui.h"   /* the settings line shares the rail's weight and palette */
 
@@ -1027,9 +1028,30 @@ static int diatom_wait(void)
 	}
 }
 
+/* Declared with the ladder, defined far below it; called here because this is
+ * the one place the launcher is known to be taking input back. */
+static void jack_forget(void);
+
 int plat_resident_wait(void)
 {
-	return diatom_wait();
+	int r = diatom_wait();
+
+	/* Input ownership just came back to this process, so anything remembered
+	 * about the jack was formed while something else was driving.
+	 *
+	 * A cable that went in or out DURING the game was seen by Diatom and not
+	 * by this side, which leaves jack_was describing a world that is over. The
+	 * poll then compares the hardware against that memory, finds them equal,
+	 * and returns without re-mapping - so a headphone-window value stays in
+	 * the register with the jack out. Measured 2026-09-05: 29, against a
+	 * speaker window whose quiet end is 39, which is a working speaker at
+	 * almost no volume.
+	 *
+	 * It is here rather than at the call site because forgetting it is not
+	 * optional and a caller cannot be relied on to remember. Diatom does the
+	 * same on its side, in diatom_port_level_invalidate. */
+	jack_forget();
+	return r;
 }
 
 void plat_request_poweroff(void)
@@ -1387,9 +1409,9 @@ static int jack_was = -1;         /* last state acted on; -1 = never asked */
 static void apply_volume(int v)
 {
 	int hp = jack_present();
-	long top = hp ? HP_RAW_TOP : SPK_RAW_TOP;
-	long bot = hp ? HP_RAW_BOTTOM : SPK_RAW_BOTTOM;
-	long raw = top + ((long)(VOL_MAX - v) * (bot - top) + VOL_MAX / 2) / VOL_MAX;
+	long raw = aout_level_to_raw(v, VOL_MAX,
+	                             hp ? HP_RAW_TOP : SPK_RAW_TOP,
+	                             hp ? HP_RAW_BOTTOM : SPK_RAW_BOTTOM);
 	long on;
 
 	jack_was = hp;
@@ -1411,11 +1433,14 @@ bool plat_headphones_present(void) { return jack_present() != 0; }
 
 void plat_audio_jack_poll(void)
 {
-	int hp = jack_present();
-
-	if (hp == jack_was || cur_vol < 0) return;
+	if (!aout_should_reapply(jack_was, jack_present() != 0, cur_vol >= 0))
+		return;
 	apply_volume(cur_vol);
 }
+
+/* Forget which way the jack was, so the next poll re-applies whatever the
+ * hardware says now instead of trusting a memory formed before a handover. */
+static void jack_forget(void) { jack_was = -1; }
 
 static void apply_brightness(int b)
 {
@@ -1496,6 +1521,7 @@ static void apply_brightness(int b) { cur_bright = b; }
 /* No jack on the host, so nothing can be plugged into it. */
 void plat_audio_jack_poll(void) { }
 bool plat_headphones_present(void) { return false; }
+static void jack_forget(void) { }
 
 /* No levels.cfg to read on the host, so the config defaults are all there is.
  * Taken anyway rather than ignored: a shelf rendered by --shot should show the

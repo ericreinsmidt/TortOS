@@ -54,4 +54,40 @@ const char *aout_device(const aout_state *s);
 const char *aout_policy_name(aout_policy p);
 const char *aout_dest_name(aout_dest d);
 
+/* ---- the headphone jack, and why a remembered state is not enough --------- */
+
+/* "Nobody has acted on the jack yet, or whatever was acted on happened while
+ * another process was driving." Distinct from both true and false, because the
+ * whole defect was treating "I do not know" as "unchanged". */
+#define AOUT_JACK_UNKNOWN (-1)
+
+/* Should the volume be written again?
+ *
+ * The level is mapped into one of two raw windows depending on whether a cable
+ * is in, so a transition has to re-write it or the register keeps a value that
+ * belongs to the other window. Each process re-maps only on a transition IT
+ * observes, and observes none while the other owns the pad - so `remembered`
+ * has to be set to AOUT_JACK_UNKNOWN at every handover, and this must then say
+ * yes without a transition to point at.
+ *
+ * Measured 2026-09-05: with a cable pulled during a game, the launcher's memory
+ * still said "out" from before the game, the poll found it already agreeing
+ * with the hardware, and the register kept 29 - a headphone value against a
+ * speaker window whose quiet end is 39, which sounds like a broken speaker.
+ *
+ * `have_level` is false before any level is known; there is nothing to write. */
+bool aout_should_reapply(int remembered, bool wired_now, bool have_level);
+
+/* Level to raw register, for whichever window the cable selects.
+ *
+ * INVERTED: the codec's control is attenuation, so the top of the window is the
+ * LOUD end and a bigger raw is quieter. Both ends are clamped to the window,
+ * because the ranges outside it are either inaudible or painful - see the
+ * ladder constants in the caller.
+ *
+ * `level_max` is the top index, not a count. The two differ by one, and this
+ * takes the index form deliberately: ADR-0020 pins the other convention on the
+ * wire, and having both spelled the same way here is how they get confused. */
+int aout_level_to_raw(int level, int level_max, int win_top, int win_bottom);
+
 #endif
