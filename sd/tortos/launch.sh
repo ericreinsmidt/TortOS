@@ -382,6 +382,55 @@ bt_on() {
 #
 # Judge success by `info`, never by the return of `connect`: bluetoothctl reports
 # Failed for a2dp even when the link came up.
+# One named ALSA PCM per bonded headset, written BEFORE the emulator starts.
+#
+# This has to exist before the first PCM open in that process. alsa-lib loads
+# its config once and tracks the files it actually read: a .asoundrc created
+# later is never noticed, so a config written when a headset CONNECTS arrives
+# too late for a resident emulator that opened the speaker at boot. Measured
+# 2026-09-05 - it failed in place and then worked immediately on restarting the
+# emulator with the file already there.
+#
+# The bond is persistent (/etc/lib/bluetooth/<adapter>/<device>/), so every
+# headset that could connect is known now, without waiting for one to. A PCM
+# for a headset that is not connected simply fails to open, and the port falls
+# back to the speaker and says so - which is ADR-0029's behaviour anyway.
+#
+# One per device rather than one reused name, so switching headsets needs no
+# restart. bt_pcm_name is the single place the naming is decided.
+bt_pcm_name() {
+	echo "bt_$(echo "$1" | tr ':' '_')"
+}
+
+bt_write_asoundrc() {
+	rc=$USERDATA_PATH/.asoundrc
+	: > "$rc.tmp"
+	for d in /etc/lib/bluetooth/*/*:*; do
+		[ -d "$d" ] || continue
+		grep -q '^Trusted=true' "$d/info" 2> /dev/null || continue
+		mac=$(basename "$d")
+		cat >> "$rc.tmp" <<-EOF
+		pcm.$(bt_pcm_name "$mac") {
+		    type bluealsa
+		    device "$mac"
+		    profile "a2dp"
+		}
+		EOF
+	done
+	# `default` is deliberately not redefined: ALSA reads this in addition to
+	# /etc/asound.conf, and the speaker path must stay exactly as it was.
+	mv "$rc.tmp" "$rc"
+}
+
+start_resident() {
+	pgrep -f "TortOS/diatom --socket" > /dev/null && return
+	rm -f "$TORTOS_DIATOM_SOCKET"
+	LD_LIBRARY_PATH=/usr/trimui/lib \
+		"$TORTOS_DIR/diatom" --socket "$TORTOS_DIATOM_SOCKET" \
+		--save "$SDCARD/Saves" --system "$SDCARD/Bios" >> "$LOG" 2>&1 &
+	echo $! > /tmp/diatom.pid
+}
+
 bt_reconnect() {
 	adapter=$(hciconfig hci0 2> /dev/null | sed -n 's/.*BD Address: \([0-9A-F:]*\).*/\1/p')
 	[ -n "$adapter" ] || return 0
@@ -418,7 +467,25 @@ bt_reconnect() {
 		# path. The ALSA device string is built here for the same reason: the
 		# MAC is here and Diatom must never learn what kind of thing it names.
 		if [ -n "$connected" ]; then
-			echo "bluealsa:DEV=$connected,PROFILE=a2dp" > /tmp/tortos_btsink.tmp &&
+			# Publish the PCM NAME, not a bluealsa device string.
+			#
+			# Measured 2026-09-05 with diatom/tools/btaudio.c - the same SDL,
+			# the same writes, the same headset:
+			#
+			#   AUDIODEV=bluealsa:DEV=..,PROFILE=a2dp   queue climbs to 385 kB
+			#                                           and never drains; the
+			#                                           close never returns
+			#   a named PCM of type bluealsa            drains to 0; close
+			#                                           returns in ~105 ms
+			#
+			# Three runs each way. The device string goes through the plugin's
+			# own argument parser and yields a PCM that SDL opens and then never
+			# writes to; the config form goes through ALSA's normal path and
+			# works. Wrapping the string form in `plug` does not help.
+			#
+			# The config itself is written at boot by bt_write_asoundrc, which
+			# explains why it is not written here.
+			echo "$(bt_pcm_name "$connected")" > /tmp/tortos_btsink.tmp &&
 				mv /tmp/tortos_btsink.tmp /tmp/tortos_btsink
 		else
 			rm -f /tmp/tortos_btsink
@@ -470,19 +537,16 @@ LOG=$LOGS_PATH/tortos.log
 # added. The fallback for a resident that dies mid-session is the same
 # binary run standalone by the launcher - one emulator, held two ways.
 export TORTOS_DIATOM_SOCKET=/tmp/diatom.sock
-start_resident() {
-	pgrep -f "TortOS/diatom --socket" > /dev/null && return
-	rm -f "$TORTOS_DIATOM_SOCKET"
-	LD_LIBRARY_PATH=/usr/trimui/lib \
-		"$TORTOS_DIR/diatom" --socket "$TORTOS_DIATOM_SOCKET" \
-		--save "$SDCARD/Saves" --system "$SDCARD/Bios" >> "$LOG" 2>&1 &
-	echo $! > /tmp/diatom.pid
-}
+# BEFORE start_resident, and that order is the whole point: alsa-lib caches its
+# config at the first PCM open, so a definition written afterwards is invisible
+# to this process for as long as it lives.
+bt_write_asoundrc
 start_resident
 
 rm -f /tmp/tortos_poweroff
-# Nothing is connected yet; bt_reconnect writes this when something is.
-rm -f /tmp/tortos_btsink
+# Nothing is CONNECTED yet; bt_reconnect writes this when something is. The
+# .asoundrc is not removed with it - it describes bonds, which outlive any
+# connection, and removing it here would undo the line above.
 
 # Restart loop: only ever exits for a power-off.
 cd "$TORTOS_DIR"
