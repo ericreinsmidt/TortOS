@@ -10,7 +10,7 @@ SSH := sshpass -p 'tina' ssh -o StrictHostKeyChecking=no root@$(BRICK)
         adb adb-elf adb-res adb-vendor adb-restart adb-run adb-log \
         check check-cheevos check-hare check-httpd check-idle check-rahash \
         check-raset check-xfer check-menus check-artscrape check-audioout \
-        deploy restart logs
+        check-backlog deploy restart logs
 
 all: build/tortos.elf
 
@@ -19,7 +19,8 @@ all: build/tortos.elf
 # of good intentions is a plan. A check nobody runs is a check that does not
 # exist, and check-menus was about to join eight others in that state.
 CHECKS = check-cheevos check-hare check-httpd check-idle check-rahash \
-         check-raset check-xfer check-menus check-artscrape check-audioout
+         check-raset check-xfer check-menus check-artscrape check-audioout \
+         check-backlog
 
 check:
 	@fail=0; for c in $(CHECKS); do \
@@ -219,6 +220,16 @@ vendor:
 # rule is kept in step with config/systems.cfg by tools/recolor-cards.py.
 boot:
 	python3 tools/genboot.py
+
+# BACKLOG.md is the other open-item store, and until 2026-09-05 it was the only
+# one with nothing checking it. It drifted exactly that far: a heading still
+# reading DECIDED, NOT BUILT while that work was being finished, and four
+# Diatom-owned sections sitting where check-register could not see them.
+#
+# The file is gitignored, so this skips cleanly when it is absent rather than
+# failing a worktree over a file a worktree cannot have.
+check-backlog:
+	@python3 tools/backlog-check.py
 
 # src/main.c hand-keeps a copy of the mark that C cannot import from
 # tools/markdef.py. payload depends on this for the same reason payload.sh
