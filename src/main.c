@@ -864,6 +864,12 @@ static void aout_apply(bool force)
 	}
 	snprintf(g_aout_sent, sizeof g_aout_sent, "%s", dev);
 	g_aout_ever = true;
+	/* Logged because it only happens on a real change - a cable, a headset,
+	 * or the row - and because "where is the sound going" is otherwise
+	 * invisible after the fact. Diatom logs its own fallback, so the pair of
+	 * lines says both what was asked for and what happened. */
+	fprintf(stderr, "audio: %s -> %s\n",
+	        aout_dest_name(aout_resolve(&s)), dev[0] ? dev : "default");
 	plat_resident_line("SETAUDIO\tdevice=%s", dev);
 }
 
