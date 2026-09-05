@@ -395,7 +395,18 @@ bt_reconnect() {
 				connected=$mac
 				continue
 			fi
-			bluetoothctl connect "$mac" > /dev/null 2>&1 &&
+			bluetoothctl connect "$mac" > /dev/null 2>&1
+			# Judge by info, NEVER by the return. connect reports Failed for
+			# a2dp even when the link came up - measured 2026-09-03, and
+			# written in the backlog before this loop was, then used anyway.
+			#
+			# Trusting the return made this publish "no sink" while a headset
+			# was connected, so the launcher fell back to the speaker, then
+			# picked the sink up on the next pass and switched again. Every
+			# flip reopens Diatom's audio device: 2026-09-05 that was nine
+			# route changes and 407236 dropped audio frames in one game.
+			sleep 1
+			bluetoothctl info "$mac" 2> /dev/null | grep -q 'Connected: yes' &&
 				connected=$mac
 		done
 		# Tell the launcher where the sound can go, if anywhere.
