@@ -803,6 +803,20 @@ bool plat_resident_line(const char *fmt, ...)
 	char line[1600];
 	va_list ap;
 
+	/* Connect if we are not already. dsend refuses on a closed socket, and
+	 * before the first game of a session there IS no socket - the connection
+	 * was only ever made by plat_resident_send on the way into a game.
+	 *
+	 * That made every state write from the shelf a silent no-op. ADR-0029's
+	 * audio output is the first state the launcher sets while nothing is
+	 * running, and it spent 2026-09-05 announcing routes in the log that
+	 * Diatom had never been told about, because the line went nowhere and
+	 * nobody looked at the return.
+	 *
+	 * Cheap when it fails: connecting to a unix socket that is not there
+	 * returns immediately. */
+	if (!dconnect()) return false;
+
 	va_start(ap, fmt);
 	vsnprintf(line, sizeof line, fmt, ap);
 	va_end(ap);

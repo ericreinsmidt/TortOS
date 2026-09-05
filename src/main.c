@@ -862,6 +862,13 @@ static void aout_apply(bool force)
 			return;
 		}
 	}
+	/* Only remember it as sent if it actually went. dsend does nothing when
+	 * the socket is not open, and returns false saying so - which on the shelf
+	 * before the first game is every time. Recording it as sent anyway meant
+	 * the next call compared equal and never retried, so the route the log
+	 * announced was one Diatom had never been told about. */
+	if (!plat_resident_line("SETAUDIO\tdevice=%s", dev)) return;
+
 	snprintf(g_aout_sent, sizeof g_aout_sent, "%s", dev);
 	g_aout_ever = true;
 	/* Logged because it only happens on a real change - a cable, a headset,
@@ -870,7 +877,6 @@ static void aout_apply(bool force)
 	 * lines says both what was asked for and what happened. */
 	fprintf(stderr, "audio: %s -> %s\n",
 	        aout_dest_name(aout_resolve(&s)), dev[0] ? dev : "default");
-	plat_resident_line("SETAUDIO\tdevice=%s", dev);
 }
 
 /* Auto Off while a game runs. Diatom holds the clock, because it owns the pad
