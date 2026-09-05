@@ -184,6 +184,29 @@ MENU means three different menus depending on where you are, and each one is
 about the thing you are looking at: the firmware on the systems row, one
 console inside it, the running game in a game.
 
+The TortOS menu is the firmware's own, and opens from the systems row:
+
+| | |
+|---|---|
+| **Wi-Fi** | the network's name when connected, or why it is not |
+| **Bluetooth** | stated, not yet a setting - pairing is still done over a shell |
+| **Audio Output** | `Auto` or `Speaker`, and where Auto landed - see **Audio** below |
+| **Over The Hare** | the file server; needs Wi-Fi and says so when there is none |
+| **Cheevos** | the RetroAchievements account, or `sign in` |
+| **Box Art** | fetch what the whole library is missing |
+| **Text Size** | left/right; reopens every font, so the whole UI is rebuilt |
+| **Auto Off** | how long without a button before the device powers itself down |
+| **About TortOS** | version, address, battery, uptime |
+
+Over The Hare and Box Art need a network, and go quiet without one rather than
+disappearing - a row that vanishes teaches nobody why. Cheevos stays reachable
+either way, because signing in is the thing you go there to do.
+
+On the Wi-Fi screen, **Y** rescans and **X** forgets the network under the
+cursor, behind a confirm. Forgetting the one you are connected through is
+allowed - refusing would leave a row that is visibly saved and visibly
+un-forgettable, which is worse to explain than the consequence.
+
 The system menu opens on a shelf of games and applies to that system alone:
 
 | | |
@@ -223,6 +246,54 @@ Volume and brightness draw the same thin line across the top of the screen in
 the launcher, in a game, and in the in-game menu. One firmware, one piece of
 feedback - tinted by which of the two it is, warm for brightness and cyan for
 volume, so the line says what it is without a glyph or a number on it.
+
+---
+
+## Audio
+
+Sound can come out of three places, and TortOS picks in a fixed order:
+
+**wired headphones, then Bluetooth, then the speaker.**
+
+A cable wins outright, in every setting. Someone who physically plugged
+something in has said what they want more plainly than any menu can, and a
+headset that merely happens to be connected has not said anything at all.
+
+The **Audio Output** row has two positions rather than three. `Auto` follows
+the rule above; `Speaker` refuses Bluetooth and nothing else - a cable still
+works through it. There is no third "Headset" position because it would do
+nothing `Auto` does not already do: `Auto` takes a headset whenever one is
+connected, and neither setting can route to one that is not there. The row
+shows where the sound actually went - `auto (wired)` - because `Auto` on its
+own names a rule, not a place you can hear.
+
+The wired jack has its own volume range, not the speaker's. The two are about
+9 dB apart, and the level is re-mapped the moment a cable goes in or out, so
+plugging in mid-game does not arrive at nine decibels louder than you left it.
+
+### Bluetooth
+
+A paired headset reconnects by itself at boot and mid-session, and game audio
+follows it without relaunching anything. The bond survives a reboot.
+
+**Pairing is not in the UI yet.** It is done once over `bluetoothctl` on the
+device, and the one thing that matters there is the agent: headsets pair
+"Just Works" and need `agent NoInputNoOutput`. With the default agent every
+attempt fails with an authentication error that looks like a broken key, a
+broken chip, or broken headphones, and is none of them.
+
+Two things behave differently on a Bluetooth sink and are not bugs:
+
+- **the volume keys do nothing.** Volume lives on the headset, so the device's
+  own control is not in the path. Reachable, and not done yet.
+- **there is roughly 100-150 ms of latency**, from SBC, the radio and the
+  headset's own buffer. That is what Bluetooth audio costs on any device and
+  nothing here can tune it away.
+
+If a headset is switched off or walks out of range mid-game, sound falls back
+to the speaker within a second or two and the game keeps running. It never ends
+a game to report an audio problem. That fallback is the emulator's own - it
+does not wait for the launcher to notice the headset is gone.
 
 ---
 
@@ -491,6 +562,23 @@ TortOS hands this to Diatom just after a game loads and Diatom does the rest, so
 the rate is the same whatever core is running. Delete a line to turn a system
 back into a plain pad.
 
+### What the launcher writes for itself
+
+Those four are the files you edit. Everything set from a menu is written by the
+launcher into `.userdata/<platform>/`, so a card can be reformatted without
+losing a setting anyone chose, and none of it needs editing by hand:
+
+| | |
+|---|---|
+| `levels.cfg` | volume and brightness, once either has been touched |
+| `display.cfg` | display mode, per system tag |
+| `audioout.cfg` | `auto` or `speaker` - the Audio Output row |
+| `autooff.cfg` | the Auto Off interval |
+| `textsize.cfg` | the text scale |
+| `favorites.cfg` | which games are on the Favorites shelf |
+| `ra.cfg` | the RetroAchievements account, per device - it holds a session token, so a card moved to another handheld does not carry one with it |
+| `cheevos.cfg` | which achievements have already been earned |
+
 ---
 
 ## Building
@@ -508,13 +596,30 @@ make vendor     # the libretro cores      -> vendor/
 make payload    # the installable card    -> out/sd/ and out/TortOS-v1.0.zip
 make native     # host build of the launcher, for working on how it looks
 make boot       # regenerate the boot animation
-make check-cheevos  # the achievement half, on the host: parsing and filtering
-make check-rahash   # the C and Python ROM hashers agree, over the whole library
-make check-raset    # the C and Python set converters agree (needs RA_USER/RA_PASS)
+make check      # every check below, offline, in a second or two
 ```
 
 `make payload` needs a built Diatom binary (`DIATOM_ELF`, defaulting to a
 sibling checkout).
+
+`make check` runs before every commit. Each part can be run alone, and each
+exists because something once broke in a way nothing noticed:
+
+| | |
+|---|---|
+| `check-menus` | what each menu CONTAINS in a given state, with no renderer and no device |
+| `check-audioout` | where sound goes given a cable, a headset and a setting - all eight combinations |
+| `check-idle` | the Auto Off clock, including the charger case and the counter wrapping |
+| `check-cheevos` | the achievement half: parsing and filtering |
+| `check-rahash` | the C and Python ROM hashers agree, over the whole library |
+| `check-raset` | the C and Python set converters agree (needs `RA_USER`/`RA_PASS`) |
+| `check-artscrape` | two name normalizers agree on every candidate |
+| `check-hare` | nothing on the file server is reachable without the PIN |
+| `check-httpd` | request parsing, including the malformed ones |
+| `check-xfer` | upload paths cannot escape the directory they were aimed at |
+
+They are offline and need no device. A screen's rows are a pure function of
+its state precisely so the first two can exist - see `docs/decisions/`.
 
 The host build renders exactly what the handheld renders, and can be asked for
 a single frame:
@@ -550,9 +655,13 @@ off when the launch loop exits.
 
 ```
 src/            the launcher (MIT)
+docs/           why the code is shaped the way it is: the architecture
+                decisions in docs/decisions/, and the rules a menu follows
+                in docs/menus.md. Not user documentation - read before
+                changing a screen, not before using one.
 mk/             cross build, payload, deployment
 tools/          the boot-animation and card generators, setbright, the
-                achievement fetcher and its check
+                achievement fetcher, and the checks
 res/            the boot animation, the system cards, the font, Over The
                 Hare's page, and the two marks this README shows
 config/         systems.cfg and tortos.cfg as shipped
