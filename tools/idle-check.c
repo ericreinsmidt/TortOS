@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: 0BSD */
+/* SPDX-License-Identifier: MIT */
 /* Does Auto Off's clock behave?
  *
  *     make check-idle

@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: 0BSD */
+/* SPDX-License-Identifier: MIT */
 /* Favorites. See favorites.h for the keying; this is the storage.
  *
  * Tab-separated, because a ROM filename may legally contain almost anything

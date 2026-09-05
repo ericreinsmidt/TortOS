@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: 0BSD */
+/* SPDX-License-Identifier: MIT */
 #include "ui.h"
 
 #include <math.h>

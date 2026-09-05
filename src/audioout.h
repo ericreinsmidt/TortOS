@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: 0BSD */
+/* SPDX-License-Identifier: MIT */
 /* Where the system's sound goes, as a decision rather than as a device.
  *
  * Diatom's ADR-0029 says the launcher owns WHICH output and the port owns

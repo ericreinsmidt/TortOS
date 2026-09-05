@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: 0BSD */
+/* SPDX-License-Identifier: MIT */
 /* Does the server read what a client actually sends?
  *
  *     make check-httpd

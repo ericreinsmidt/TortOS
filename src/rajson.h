@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: 0BSD */
+/* SPDX-License-Identifier: MIT */
 #ifndef TORTOS_RAJSON_H
 #define TORTOS_RAJSON_H
 

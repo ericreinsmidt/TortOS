@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: 0BSD */
+/* SPDX-License-Identifier: MIT */
 #ifndef TORTOS_IDLE_H
 #define TORTOS_IDLE_H
 

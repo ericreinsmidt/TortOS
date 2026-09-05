@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: 0BSD */
+/* SPDX-License-Identifier: MIT */
 #ifndef TORTOS_RAHASH_H
 #define TORTOS_RAHASH_H
 

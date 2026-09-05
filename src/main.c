@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: 0BSD
+/* SPDX-License-Identifier: MIT
  *
  * TortOS -- a custom firmware for the TrimUI Brick that plays NES, TurboGrafx
  * -16 and Game Boy Advance games, and does nothing else.

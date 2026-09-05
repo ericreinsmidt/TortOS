@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: 0BSD */
+/* SPDX-License-Identifier: MIT */
 /* See xfer.h for why every path the browser sends comes through here. */
 #include <stdio.h>
 #include <string.h>

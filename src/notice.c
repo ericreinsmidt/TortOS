@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: 0BSD */
+/* SPDX-License-Identifier: MIT */
 /* See notice.h for why the launcher draws this and Diatom shows it. */
 #include <SDL.h>
 #include <SDL_ttf.h>

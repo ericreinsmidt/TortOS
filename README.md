@@ -549,7 +549,7 @@ off when the launch loop exits.
 ## Layout
 
 ```
-src/            the launcher (0BSD)
+src/            the launcher (MIT)
 mk/             cross build, payload, deployment
 tools/          the boot-animation and card generators, setbright, the
                 achievement fetcher and its check
@@ -563,7 +563,7 @@ vendor/         fetched: the libretro cores, hash-pinned
 
 ## License
 
-TortOS's own code is **0BSD** (`LICENSE`).
+TortOS's own code is **MIT** (`LICENSE`).
 
 The emulator is [Diatom](https://github.com/ericreinsmidt/diatom), **MIT**, a
 separate program the launcher runs and talks to over a socket. The cores keep

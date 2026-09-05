@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: 0BSD */
+/* SPDX-License-Identifier: MIT */
 /* Can a browser get at the card without the PIN?
  *
  *     make check-hare

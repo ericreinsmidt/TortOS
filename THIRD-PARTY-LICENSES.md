@@ -1,7 +1,7 @@
 # Third-party notices
 
 TortOS itself - everything under `src/`, `tools/`, `mk/`, and the configs,
-scripts and generated art written for this project - is licensed **0BSD**; see
+scripts and generated art written for this project - is licensed **MIT**; see
 `LICENSE`.
 
 A built TortOS card (`out/sd/`) also redistributes third-party software that
@@ -74,4 +74,4 @@ left with it.
 ## Cover Flow
 
 The perspective card row in `src/coverflow.c` is carried over from EROS, an
-earlier project by the same author, and is 0BSD like the rest of TortOS.
+earlier project by the same author, and is MIT like the rest of TortOS.

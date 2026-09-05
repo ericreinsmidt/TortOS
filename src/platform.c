@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: 0BSD */
+/* SPDX-License-Identifier: MIT */
 #include "atomic.h"
 #include "platform.h"
 #include "audioout.h"

@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: 0BSD */
+/* SPDX-License-Identifier: MIT */
 /* WiFi over the stock wpa_supplicant. See wifi.h for the position: none of
  * this is TortOS's own networking, it is a client of firmware that already
  * works.

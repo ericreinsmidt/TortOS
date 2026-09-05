@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: 0BSD */
+/* SPDX-License-Identifier: MIT */
 /* Does an achievement set survive the round trip?
  *
  *     make check-cheevos

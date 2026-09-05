@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: 0BSD */
+/* SPDX-License-Identifier: MIT */
 /* Does the device's title matcher agree with the host tool's?
  *
  *     make check-artscrape

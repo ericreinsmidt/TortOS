@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: 0BSD */
+/* SPDX-License-Identifier: MIT */
 /* See src/audioout.h for why this is a file of its own. */
 #include "audioout.h"
 

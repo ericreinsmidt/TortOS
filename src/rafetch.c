@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: 0BSD */
+/* SPDX-License-Identifier: MIT */
 /* See rafetch.h. The network is net.c, the JSON is rajson.c, the hash is
  * rahash.c; this is the RetroAchievements workflow those three serve. */
 #include <fcntl.h>
