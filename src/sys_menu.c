@@ -64,6 +64,17 @@ int sys_menu_build(const sys_ui *u, menu_row *out, menu_bufs *b,
 		         u->wifi == WIFI_IDLE       ? "not connected" : "off");
 	out[PM_WIFI]         = (menu_row){ "Wi-Fi",     b->b,      true  };
 	out[PM_BT]           = (menu_row){ "Bluetooth", "not yet", false };
+	/* Where the system's sound goes - not Diatom's, which is why the label says
+	 * neither "game" nor "emulator": the audiobook and music player will read
+	 * the same setting. Diatom's ADR-0029, and src/audioout.c for the rule.
+	 *
+	 * Auto names what it resolved to, because a row that reads only "Auto"
+	 * makes the player guess which of three places they are about to hear. */
+	if (u->audio_policy == AOUT_AUTO)
+		snprintf(b->d, sizeof b->d, "auto (%s)", aout_dest_name(u->audio_dest));
+	else
+		snprintf(b->d, sizeof b->d, "%s", aout_dest_name(u->audio_dest));
+	out[PM_AUDIO]        = (menu_row){ "Audio Output", b->d, true };
 	/* Files onto and off the device over Wi-Fi: a small web server on the LAN
 	 * that a phone or a laptop opens. Named for OTA, which is what everyone
 	 * already calls this, and for the other half of the fable - the tortoise

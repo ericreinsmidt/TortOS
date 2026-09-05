@@ -306,6 +306,11 @@ fi
 #     with the headset, so a BT sink stays outside both the speaker and jack
 #     ladders in src/platform.c and must not be attenuated here.
 bt_off() {
+	# Before anything else: no radio means no sink, and a stale file would
+	# leave the launcher routing sound at a device that is gone. The port
+	# would fall back and say so (ADR-0029), but a launcher showing the wrong
+	# answer for twenty seconds is a thing to avoid, not to recover from.
+	rm -f /tmp/tortos_btsink
 	killall -q bluealsa bluetoothd hciattach 2> /dev/null
 	/etc/init.d/bluetooth stop 2> /dev/null
 	rfkill block bluetooth 2> /dev/null
@@ -381,13 +386,32 @@ bt_reconnect() {
 	adapter=$(hciconfig hci0 2> /dev/null | sed -n 's/.*BD Address: \([0-9A-F:]*\).*/\1/p')
 	[ -n "$adapter" ] || return 0
 	while :; do
+		connected=
 		for d in /etc/lib/bluetooth/"$adapter"/*:*; do
 			[ -d "$d" ] || continue
 			grep -q '^Trusted=true' "$d/info" 2> /dev/null || continue
 			mac=$(basename "$d")
-			bluetoothctl info "$mac" 2> /dev/null | grep -q 'Connected: yes' && continue
-			bluetoothctl connect "$mac" > /dev/null 2>&1
+			if bluetoothctl info "$mac" 2> /dev/null | grep -q 'Connected: yes'; then
+				connected=$mac
+				continue
+			fi
+			bluetoothctl connect "$mac" > /dev/null 2>&1 &&
+				connected=$mac
 		done
+		# Tell the launcher where the sound can go, if anywhere.
+		#
+		# A file rather than the launcher asking, because asking means forking
+		# bluetoothctl out of a 119 MB process - the exact mistake menu_wifi
+		# exists to prevent, measured at 12 fps with a menu open. This loop
+		# already knows the answer, so it writes it and the launcher stats a
+		# path. The ALSA device string is built here for the same reason: the
+		# MAC is here and Diatom must never learn what kind of thing it names.
+		if [ -n "$connected" ]; then
+			echo "bluealsa:DEV=$connected,PROFILE=a2dp" > /tmp/tortos_btsink.tmp &&
+				mv /tmp/tortos_btsink.tmp /tmp/tortos_btsink
+		else
+			rm -f /tmp/tortos_btsink
+		fi
 		sleep 20
 	done
 }
@@ -446,6 +470,8 @@ start_resident() {
 start_resident
 
 rm -f /tmp/tortos_poweroff
+# Nothing is connected yet; bt_reconnect writes this when something is.
+rm -f /tmp/tortos_btsink
 
 # Restart loop: only ever exits for a power-off.
 cd "$TORTOS_DIR"

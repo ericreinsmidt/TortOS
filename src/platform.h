@@ -119,6 +119,10 @@ void plat_resident_on_unlock(void (*fn)(int id));
 void plat_resident_on_tick(void (*fn)(void));
 /* Diatom only: one protocol line (RESUME, STOP, SAVE\tpath=...), newline added. */
 bool plat_resident_line(const char *fmt, ...);
+/* Where Diatom says its sound actually is (its ADR-0029), which may not be
+ * where it was asked to put it - a sink that will not open, or one that died,
+ * makes the port fall back and report the fallback. False until it has said. */
+bool plat_resident_audio(char *out, size_t cap);
 /* Path from the most recent PREVIEW message, or "" - the menu's backdrop. */
 const char *plat_resident_last_preview(void);
 /* Core options the launcher wants applied to every game, read once from
@@ -176,6 +180,15 @@ void plat_brightness_set(int level);
  * periodic path; it is one ioctl and writes nothing unless the state changed.
  * A no-op on the host. */
 void plat_audio_jack_poll(void);
+
+/* Is a cable in the headphone jack? SW_HEADPHONE_INSERT on the codec's input
+ * node, the same switch the volume ladder above already follows.
+ *
+ * Exposed because ADR-0029 puts the choice of OUTPUT in the launcher, and a
+ * cable outranks everything else (src/audioout.c). The port keeps reading the
+ * switch for its own reason - which volume window to use - so both halves ask
+ * the hardware rather than one telling the other something it could get wrong. */
+bool plat_headphones_present(void);
 /* kind: 1 = brightness, 2 = volume */
 void plat_osd_show(int kind, int val, int max);
 void plat_draw_osd(SDL_Renderer *r);

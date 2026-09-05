@@ -196,6 +196,49 @@ static void tortos_menu_offline(void)
 	ck(!strcmp(val(&rows[PM_SLEEP]), "2m"), "120s reads as 2m");
 	ck(!strcmp(val(&rows[PM_TEXT]), "100%"), "text size is passed through");
 	ck(!rows[PM_BT].live, "Bluetooth is still a placeholder");
+	/* Always reachable, even with no radio and no cable: it is the row you go
+	 * to in order to say "not Bluetooth", so it must not vanish with the thing
+	 * it refuses. */
+	ck(rows[PM_AUDIO].live, "Audio Output is reachable offline");
+	ck(!strcmp(val(&rows[PM_AUDIO]), "auto (speaker)"),
+	   "and Auto names where it landed rather than only saying Auto");
+}
+
+/* The row has to say a PLACE. "Auto" alone makes the player guess which of
+ * three they are about to hear. */
+static void audio_row(void)
+{
+	sys_ui u;
+	menu_bufs b;
+	menu_row rows[MENU_MAX_ROWS];
+	const char *heading;
+
+	memset(&u, 0, sizeof u);
+	u.text_size = "100%";
+	printf("the Audio Output row:\n");
+
+	u.audio_policy = AOUT_AUTO;
+	u.audio_dest = AOUT_WIRED;
+	sys_menu_build(&u, rows, &b, &heading);
+	ck(!strcmp(val(&rows[PM_AUDIO]), "auto (wired)"), "auto, on a cable");
+
+	u.audio_dest = AOUT_BT;
+	sys_menu_build(&u, rows, &b, &heading);
+	ck(!strcmp(val(&rows[PM_AUDIO]), "auto (bluetooth)"), "auto, on a headset");
+
+	/* Pinned says the place with no "auto", because there is no rule left to
+	 * describe - it is just where the sound is. */
+	u.audio_policy = AOUT_SPEAKER;
+	u.audio_dest = AOUT_SPK;
+	sys_menu_build(&u, rows, &b, &heading);
+	ck(!strcmp(val(&rows[PM_AUDIO]), "speaker"), "pinned reads as the place");
+
+	/* Pinned to Speaker with a cable in is still the cable: the pin refuses
+	 * Bluetooth, never the jack. */
+	u.audio_dest = AOUT_WIRED;
+	sys_menu_build(&u, rows, &b, &heading);
+	ck(!strcmp(val(&rows[PM_AUDIO]), "wired"),
+	   "and a cable still shows through the Speaker pin");
 }
 
 /* Connected and signed in. The Wi-Fi row shows the network's NAME - a settings
@@ -489,6 +532,7 @@ int main(void)
 	step_terminates();
 	info_rows();
 	ingame_rows();
+	audio_row();
 	if (fails) { printf("\n%d menu check(s) failed\n", fails); return 1; }
 	printf("\nok: menus contain what they should\n");
 	return 0;

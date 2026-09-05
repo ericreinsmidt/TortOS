@@ -21,10 +21,11 @@
 #include "menu.h"
 #include "config.h"
 #include "wifi.h"
+#include "audioout.h"
 
 /* The TortOS menu. */
 typedef enum {
-	PM_WIFI, PM_BT, PM_XFER, PM_ACHIEVEMENTS, PM_SCRAPE,
+	PM_WIFI, PM_BT, PM_AUDIO, PM_XFER, PM_ACHIEVEMENTS, PM_SCRAPE,
 	PM_TEXT, PM_SLEEP, PM_ABOUT, PM_ROWS
 } pm_row;
 
@@ -43,7 +44,7 @@ typedef enum {
 /* Where the built rows' text lives. A row holds pointers, not copies, so the
  * strings a build formats have to outlive the build; the caller owns this and
  * keeps it alive as long as it keeps the rows. */
-typedef struct { char a[24], b[CFG_STR], c[16]; } menu_bufs;
+typedef struct { char a[24], b[CFG_STR], c[16], d[40]; } menu_bufs;
 
 /* Everything either menu needs to know about the device, gathered by the
  * caller. A struct rather than a dozen arguments so that adding a fact to a
@@ -60,6 +61,11 @@ typedef struct {
 	const char *ra_name;     /* only read when ra_in */
 	const char *text_size;   /* "100%" - the caller owns the scale table */
 	int         auto_off;    /* seconds, 0 for off */
+	/* Where sound goes: the policy the player set, and where it actually ends
+	 * up under that policy. Both, because the row has to name a place - "Auto"
+	 * on its own is a rule, not somewhere you can hear. */
+	aout_policy audio_policy;
+	aout_dest   audio_dest;
 
 	/* The system menu */
 	const char *sys_name;

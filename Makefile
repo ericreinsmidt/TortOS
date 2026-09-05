@@ -9,7 +9,7 @@ SSH := sshpass -p 'tina' ssh -o StrictHostKeyChecking=no root@$(BRICK)
 .PHONY: all clean native toolchain vendor boot checkmark payload release install-card \
         adb adb-elf adb-res adb-vendor adb-restart adb-run adb-log \
         check check-cheevos check-hare check-httpd check-idle check-rahash \
-        check-raset check-xfer check-menus check-artscrape \
+        check-raset check-xfer check-menus check-artscrape check-audioout \
         deploy restart logs
 
 all: build/tortos.elf
@@ -19,7 +19,7 @@ all: build/tortos.elf
 # of good intentions is a plan. A check nobody runs is a check that does not
 # exist, and check-menus was about to join eight others in that state.
 CHECKS = check-cheevos check-hare check-httpd check-idle check-rahash \
-         check-raset check-xfer check-menus check-artscrape
+         check-raset check-xfer check-menus check-artscrape check-audioout
 
 check:
 	@fail=0; for c in $(CHECKS); do \
@@ -126,14 +126,26 @@ check-xfer: build-native/xfer-check
 check-menus: build-native/menu-check
 	@./build-native/menu-check
 
+# Where sound goes, given a cable, a headset and a setting. Eight combinations
+# and a five-line rule, which is exactly the kind of thing that is obviously
+# right until a headset connects mid-game and it is not.
+check-audioout: build-native/audioout-check
+	@./build-native/audioout-check
+
+build-native/audioout-check: tools/audioout-check.c src/audioout.c \
+                            src/audioout.h FORCE
+	@mkdir -p build-native
+	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
+	      -o $@ tools/audioout-check.c src/audioout.c
+
 build-native/menu-check: tools/menu-check.c src/wifi_menu.c src/wifi.c \
                         src/sys_menu.c src/menu.c src/game_menu.c \
-                        src/wifi_menu.h src/sys_menu.h src/game_menu.h \
-                        src/menu.h FORCE
+                        src/audioout.c src/wifi_menu.h src/sys_menu.h \
+                        src/game_menu.h src/menu.h src/audioout.h FORCE
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g -o $@ \
 	      tools/menu-check.c src/wifi_menu.c src/wifi.c src/sys_menu.c \
-	      src/menu.c src/game_menu.c
+	      src/menu.c src/game_menu.c src/audioout.c
 
 build-native/xfer-check: tools/xfer-check.c src/xfer.c src/xfer.h FORCE
 	@mkdir -p build-native

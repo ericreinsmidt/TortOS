@@ -26,6 +26,7 @@
 #include "net.h"
 #include "keyboard.h"
 #include "wifi.h"
+#include "audioout.h"
 #include "menu.h"
 #include "sys_menu.h"
 #include "game_menu.h"
@@ -749,6 +750,123 @@ static void ra_flush_unlocks(const char *rom, const char *tag)
 static char g_pending_set[LIB_PATH * 2];
 static char g_pending_active[LIB_PATH * 2];
 
+/* ---- where the system's sound goes (Diatom's ADR-0029) ------------------- */
+
+/* The policy is a setting; the other two facts are read from the device. The
+ * RULE that combines them is src/audioout.c, where it can be checked without a
+ * handheld - this half only gathers. */
+static aout_policy g_aout_policy;
+static char g_aout_sent[128];      /* the device Diatom was last told to use */
+static bool g_aout_ever;
+
+static void aout_path(char *out, size_t n)
+{
+	snprintf(out, n, "%s/audioout.cfg", P_USERDATA);
+}
+
+static aout_policy aout_load(void)
+{
+	char p[CFG_STR * 2], v[32] = { 0 };
+	FILE *f;
+
+	aout_path(p, sizeof p);
+	f = fopen(p, "r");
+	if (!f) return AOUT_AUTO;                 /* the default: follow the cable */
+	if (fscanf(f, "policy=%31s", v) != 1) v[0] = '\0';
+	fclose(f);
+	return !strcmp(v, "speaker") ? AOUT_SPEAKER : AOUT_AUTO;
+}
+
+static void aout_save(aout_policy p)
+{
+	char path[CFG_STR * 2];
+	FILE *f;
+
+	aout_path(path, sizeof path);
+	f = atomic_open(path, 0644);
+	if (!f) return;
+	fprintf(f, "policy=%s\n", p == AOUT_SPEAKER ? "speaker" : "auto");
+	atomic_commit(f, path);
+}
+
+/* The connected sink, published by bt_reconnect in launch.sh.
+ *
+ * A file rather than asking Bluetooth ourselves: asking means forking
+ * bluetoothctl out of a 119 MB process, which is what menu_wifi exists to
+ * prevent. The shell loop already knows, so it writes and this reads. */
+static const char *aout_bt_sink(void)
+{
+	static char   sink[128];
+	static unsigned last;
+	static bool   primed;
+	unsigned now = plat_now_ms();
+	FILE *f;
+
+	/* Half a second. Plugging a cable in should feel immediate; a stat that
+	 * often is nothing, but there is no reason to do it 120 times a second. */
+	if (primed && now - last < 500) return sink;
+	primed = true;
+	last = now;
+	sink[0] = '\0';
+	f = fopen("/tmp/tortos_btsink", "r");
+	if (f) {
+		if (fgets(sink, sizeof sink, f)) sink[strcspn(sink, "\r\n")] = '\0';
+		fclose(f);
+	}
+	return sink;
+}
+
+static aout_state aout_now(void)
+{
+	aout_state s;
+
+	s.policy  = g_aout_policy;
+	s.wired   = plat_headphones_present();
+	s.bt_sink = aout_bt_sink();
+	return s;
+}
+
+/* Where Diatom actually IS, which is not always where it was told to go: a
+ * sink that will not open, or one that died under it, makes the port fall back
+ * and report the fallback (ADR-0029). A non-empty device is the named sink; an
+ * empty one is the codec, where the cable decides what you hear.
+ *
+ * Falls back to the launcher's own resolution until Diatom has said anything -
+ * on the desktop build it never will. */
+static aout_dest aout_actual(const aout_state *s)
+{
+	char at[128];
+
+	if (!plat_resident_audio(at, sizeof at)) return aout_resolve(s);
+	if (at[0]) return AOUT_BT;
+	return s->wired ? AOUT_WIRED : AOUT_SPK;
+}
+
+/* Send only on a change. SETAUDIO reopens an audio device, which is cheap but
+ * not free, and doing it every tick would be a reopen per tick. */
+static void aout_apply(bool force)
+{
+	aout_state  s   = aout_now();
+	const char *dev = aout_device(&s);
+	char at[128];
+
+	/* What Diatom SAYS beats what this process remembers sending. A restarted
+	 * Diatom comes back on its default while the launcher still believes it
+	 * sent a sink, and nothing would ever re-send because the remembered
+	 * value still matches. Comparing against the report makes that heal
+	 * itself. Until Diatom has said anything, the memory is all there is. */
+	if (!force) {
+		if (plat_resident_audio(at, sizeof at)) {
+			if (!strcmp(dev, at)) return;
+		} else if (g_aout_ever && !strcmp(dev, g_aout_sent)) {
+			return;
+		}
+	}
+	snprintf(g_aout_sent, sizeof g_aout_sent, "%s", dev);
+	g_aout_ever = true;
+	plat_resident_line("SETAUDIO\tdevice=%s", dev);
+}
+
 /* Auto Off while a game runs. Diatom holds the clock, because it owns the pad
  * and this process is blocked in plat_resident_wait; the launcher's part is
  * telling it the number and keeping that number true as the charger comes and
@@ -771,6 +889,11 @@ static void on_game_tick(void)
 	 * Which is also why this only sends on a CHANGE. Sending it every tick
 	 * would restart that clock ten times a second and Auto Off would never
 	 * fire at all. */
+	/* A cable plugged in mid-game, or a headset that connected or walked out
+	 * of range, moves the sound without leaving the game. That is the whole
+	 * point of ADR-0029 making this a state rather than a launch argument. */
+	aout_apply(false);
+
 	if (g_idle_secs > 0) {
 		bool ch = on_charger();
 
@@ -1881,10 +2004,14 @@ static int menu_build(app *a, screen_id screen, int sys,
 		u.game_count = a->view[sys].list.count;
 		u.dmode      = DMODES[a->view[sys].dmode].label;
 	} else {
+		aout_state ao = aout_now();
+
 		u.ra_in     = ra_signed_in();
 		u.ra_name   = u.ra_in ? ra_user() : NULL;
 		u.text_size = TEXT_NAMES[text_scale_step()];
 		u.auto_off  = a->auto_off;
+		u.audio_policy = ao.policy;
+		u.audio_dest   = aout_actual(&ao);
 	}
 	return sys_menu_build(&u, out, b, heading);
 }
@@ -3186,6 +3313,19 @@ static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
 		return MENU_STAY;
 	}
 
+	/* Two positions, so left and right and A all do the same thing: there is
+	 * nothing to step through, only something to turn off and on. */
+	if (sel == PM_AUDIO && (d || key == IN_ACCEPT)) {
+		g_aout_policy = g_aout_policy == AOUT_AUTO ? AOUT_SPEAKER : AOUT_AUTO;
+		aout_save(g_aout_policy);
+		/* Forced: the resolved DEVICE may not have changed - pinning Speaker
+		 * with a cable in is still the codec - but the setting did, and the
+		 * next unplug must act on the new policy rather than on a cached
+		 * device string that happens to match. */
+		aout_apply(true);
+		return MENU_STAY;
+	}
+
 	if (key != IN_ACCEPT) return MENU_STAY;
 	switch (sel) {
 	case PM_WIFI:         wifi_screen(a); break;
@@ -3200,7 +3340,10 @@ static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
 
 static void tortos_menu(app *a)
 {
-	sysmenu_ctx c = { a, { { 0 }, { 0 }, { 0 } } };
+	sysmenu_ctx c;
+
+	memset(&c, 0, sizeof c);
+	c.a = a;
 	menu_style st = {
 		/* Measured across every system and every display mode, so the panel
 		 * does not resize while Display Mode is being cycled on it. */
@@ -4951,6 +5094,7 @@ int main(int argc, char *argv[])
 		/* Without this every HTTPS request fails verification, because the
 		 * device has no trust store of its own - res/ssl/README.md. */
 		a.auto_off = auto_off_load();
+		g_aout_policy = aout_load();
 
 		snprintf(cp, sizeof cp, "%s/cacert.pem", P_ROOT);
 		net_set_ca_path(cp);
@@ -5093,6 +5237,11 @@ int main(int argc, char *argv[])
 	while (a.running) {
 		plat_input_poll(&a.in);
 		if (a.in.quit_requested || want_quit) break;
+
+		/* Followed here as well as during a game. Diatom is resident and takes
+		 * SETAUDIO while idle, so a cable plugged in at the shelf moves the
+		 * sound before the next launch rather than at it. */
+		aout_apply(false);
 
 		/* Auto Off is the same line as the power button, on every screen
 		 * that draws. Diatom watches it during a game, because it owns the

@@ -647,6 +647,9 @@ static pid_t diatom_pid(void)
 	return strstr(cmd, "diatom") ? (pid_t)v : -1;
 }
 
+static char d_audio_dev[128];
+static bool d_audio_known;
+
 /* Connect if not connected, and cope with what READY says. state=running
  * means a previous launcher died mid-game and this one just started: the
  * game on screen is real, but this launcher believes it owns the display, so
@@ -659,6 +662,12 @@ static bool dconnect(void)
 
 	if (dsock >= 0) return true;
 	if (!path) return false;
+
+	/* A new socket may be a new Diatom, which starts on its default output.
+	 * Forgetting what the old one reported is what stops the launcher from
+	 * believing a sink that this process was never told about. */
+	d_audio_known = false;
+	d_audio_dev[0] = '\0';
 
 	dsock = socket(AF_UNIX, SOCK_STREAM, 0);
 	if (dsock < 0) return false;
@@ -808,6 +817,27 @@ const char *plat_resident_last_preview(void) { return d_preview; }
  * held rather than applied - Diatom owns the hardware while the game runs
  * (its ADR-0020), and applying over the top is exactly the fight the state
  * plane exists to end. They are applied when EXIT hands ownership back. */
+/* Where Diatom says the sound ACTUALLY is (its ADR-0029). Not necessarily
+ * where it was told to put it: a sink that will not open, or one that died
+ * under it, makes the port fall back and say so. Reported to the launcher so a
+ * menu can show the truth instead of the request. */
+static void d_note_audio(const char *l)
+{
+	const char *d = strstr(l, "device=");
+
+	if (!d) return;
+	snprintf(d_audio_dev, sizeof d_audio_dev, "%s", d + 7);
+	d_audio_dev[strcspn(d_audio_dev, "\r\n")] = '\0';
+	d_audio_known = true;
+}
+
+bool plat_resident_audio(char *out, size_t cap)
+{
+	if (!d_audio_known) return false;
+	if (out && cap) snprintf(out, cap, "%s", d_audio_dev);
+	return true;
+}
+
 static void d_note_level(const char *l)
 {
 	const char *k = strstr(l, "kind=");
@@ -870,6 +900,7 @@ bool plat_resident_sync_rect(int timeout_ms)
 		if (!l) break;
 		if (strncmp(l, "DISPLAY\t", 8) == 0) { d_note_display(l); return true; }
 		if (strncmp(l, "LEVEL\t", 6) == 0) d_note_level(l);
+		else if (strncmp(l, "AUDIO\t", 6) == 0) d_note_audio(l);
 	}
 	return false;
 }
@@ -919,6 +950,7 @@ static int diatom_wait(void)
 			else if (strncmp(l, "PREVIEW\tpath=", 13) == 0)
 				snprintf(d_preview, sizeof d_preview, "%s", l + 13);
 			else if (strncmp(l, "LEVEL\t", 6) == 0) d_note_level(l);
+			else if (strncmp(l, "AUDIO\t", 6) == 0) d_note_audio(l);
 			else if (strncmp(l, "DISPLAY\t", 8) == 0) d_note_display(l);
 			else if (strncmp(l, "CHEEVO\t", 7) == 0) d_note_cheevo(l);
 			/* Nobody has pressed anything for as long as the player asked.
@@ -1375,6 +1407,8 @@ static void apply_volume(int v)
  * the moment the difference is 9 dB and being worn on your head. Cheap enough
  * to call from a periodic path: one ioctl on an already-open fd, and it writes
  * nothing unless the state actually changed. */
+bool plat_headphones_present(void) { return jack_present() != 0; }
+
 void plat_audio_jack_poll(void)
 {
 	int hp = jack_present();
@@ -1461,6 +1495,7 @@ static void apply_volume(int v) { cur_vol = v; }
 static void apply_brightness(int b) { cur_bright = b; }
 /* No jack on the host, so nothing can be plugged into it. */
 void plat_audio_jack_poll(void) { }
+bool plat_headphones_present(void) { return false; }
 
 /* No levels.cfg to read on the host, so the config defaults are all there is.
  * Taken anyway rather than ignored: a shelf rendered by --shot should show the
