@@ -240,7 +240,7 @@ because their pads use X and Y for real buttons. Which systems get it, and how
 fast, is `turbo.cfg` below.
 
 Diatom does the pulsing, not the emulator core, which is why it works the same
-on all six rather than only on the one core that happens to implement turbo.
+on all nine rather than only on the one core that happens to implement turbo.
 
 Volume and brightness draw the same thin line across the top of the screen in
 the launcher, in a game, and in the in-game menu. One firmware, one piece of
