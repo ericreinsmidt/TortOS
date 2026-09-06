@@ -3049,7 +3049,8 @@ static void bt_screen(app *a)
 {
 	bt_device dev[BT_MAX];
 	char vals[BT_VISIBLE][32], labels[BT_VISIBLE][BT_NAME_MAX];
-	menu_row rows[BT_VISIBLE];
+	char hint[64];
+	menu_row rows[BT_VISIBLE + 1];       /* +1 for the footer note */
 	char note[96] = "";
 	unsigned next_refresh = 0, scan_until = 0;
 	int n = 0, cursor = 0, top = 0;
@@ -3079,15 +3080,31 @@ static void bt_screen(app *a)
 			const char *why =
 				st == BT_NO_ADAPTER  ? "No Bluetooth adapter" :
 				st == BT_POWERED_OFF ? "Bluetooth is off" :
-				scan_until           ? "Searching..." : "Nothing found - press Y to search";
+				scan_until           ? "Searching..." : "Nothing found";
 			snprintf(labels[0], sizeof labels[0], "%s", why);
 			rows[0] = (menu_row){ labels[0], NULL, false };
 			shown = 1;
-		} else if (note[0] && shown < BT_VISIBLE) {
-			snprintf(labels[shown], sizeof labels[0], "%s", note);
-			rows[shown] = (menu_row){ labels[shown], NULL, false };
-			shown++;
 		}
+
+		/* The footer, the same shape the Wi-Fi screen uses. Three actions with
+		 * no hint for any of them is three actions nobody finds - and what the
+		 * buttons DO depends on the row, so the hint has to as well: A pairs a
+		 * device that is only in range and connects one that is already
+		 * bonded, and X has nothing to forget until it is. */
+		if (note[0]) {
+			snprintf(hint, sizeof hint, "%s", note);
+		} else if (scan_until) {
+			snprintf(hint, sizeof hint, "Searching...");
+		} else if (n == 0) {
+			snprintf(hint, sizeof hint, "Y: search");
+		} else if (dev[cursor].connected) {
+			snprintf(hint, sizeof hint, "A: disconnect   Y: search   X: forget");
+		} else if (dev[cursor].bonded) {
+			snprintf(hint, sizeof hint, "A: connect   Y: search   X: forget");
+		} else {
+			snprintf(hint, sizeof hint, "A: pair   Y: search");
+		}
+		rows[shown++] = MENU_NOTE(hint);
 
 		plat_input_poll(&a->in);
 		if (a->in.quit_requested) { a->running = false; return; }
