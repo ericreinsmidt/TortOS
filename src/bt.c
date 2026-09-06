@@ -205,17 +205,36 @@ int bt_sweep_cache(const char *root)
 #include <dirent.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <poll.h>
+#include <time.h>
+#include <signal.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
-static int run(char *const argv[], char *out, size_t cap)
+/* Run a command with a DEADLINE, capture stdout, return its exit status - or
+ * -1 if it could not be run, and -2 if it had to be killed.
+ *
+ * The deadline is not defensive programming, it is a bug fix. On a fresh card
+ * Bluetooth is off, so launch.sh never runs hciattach and there is no adapter;
+ * `bluetoothctl power on` in that state does not fail and does not exit, it
+ * WAITS for a controller that is never coming. The launcher sat in waitpid
+ * behind it and the screen froze on "Turning on...", needing the process
+ * killed over adb. Seen on the device 2026-09-06.
+ *
+ * bluetoothctl has a --timeout of its own and it is used for scanning, but
+ * relying on the tool to bound itself is what produced the hang. This bounds
+ * it from outside, where a tool that ignores its own timeout cannot reach. */
+static int run(char *const argv[], char *out, size_t cap, int timeout_s)
 {
 	int fd[2], status = -1;
 	pid_t pid;
 	size_t used = 0;
+	struct timespec t0, now;
+	bool killed = false;
 
 	if (out && cap) out[0] = '\0';
 	if (pipe(fd) < 0) return -1;
+
 	pid = fork();
 	if (pid < 0) { close(fd[0]); close(fd[1]); return -1; }
 	if (pid == 0) {
@@ -227,11 +246,29 @@ static int run(char *const argv[], char *out, size_t cap)
 		_exit(127);
 	}
 	close(fd[1]);
+	clock_gettime(CLOCK_MONOTONIC, &t0);
+
 	for (;;) {
+		struct pollfd pfd = { fd[0], POLLIN, 0 };
 		ssize_t n;
 		char scratch[256];
-		char *dst = (out && used + 1 < cap) ? out + used : scratch;
-		size_t room = (out && used + 1 < cap) ? cap - used - 1 : sizeof scratch;
+		char *dst;
+		size_t room;
+		long elapsed;
+
+		clock_gettime(CLOCK_MONOTONIC, &now);
+		elapsed = now.tv_sec - t0.tv_sec;
+		if (elapsed >= timeout_s) {
+			/* SIGKILL rather than SIGTERM: a bluetoothctl waiting on a
+			 * controller has already shown it is not minded to leave. */
+			kill(pid, SIGKILL);
+			killed = true;
+			break;
+		}
+		if (poll(&pfd, 1, 200) <= 0) continue;
+
+		dst  = (out && used + 1 < cap) ? out + used : scratch;
+		room = (out && used + 1 < cap) ? cap - used - 1 : sizeof scratch;
 		n = read(fd[0], dst, room);
 		if (n <= 0) break;
 		if (dst != scratch) used += (size_t)n;
@@ -239,13 +276,19 @@ static int run(char *const argv[], char *out, size_t cap)
 	if (out && cap) out[used] = '\0';
 	close(fd[0]);
 	if (waitpid(pid, &status, 0) < 0) return -1;
+	if (killed) return -2;
 	return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
 }
 
 /* bluetoothctl with the agent always supplied. A headset will not pair without
  * one, and bluetoothctl registers a default agent only in interactive mode -
  * which is the single fact that made pairing work at all. */
-static int btctl(char *out, size_t cap, const char *a, const char *b)
+/* Asking something costs a second or two; pairing legitimately takes longer,
+ * because the headset has to answer. Neither may take forever. */
+#define BT_ASK_S   6
+#define BT_ACT_S  20
+
+static int btctl(char *out, size_t cap, int timeout_s, const char *a, const char *b)
 {
 	char *argv[8];
 	int n = 0;
@@ -256,7 +299,7 @@ static int btctl(char *out, size_t cap, const char *a, const char *b)
 	if (a) argv[n++] = (char *)a;
 	if (b) argv[n++] = (char *)b;
 	argv[n] = NULL;
-	return run(argv, out, cap);
+	return run(argv, out, cap, timeout_s);
 }
 
 /* One call for all of them. See bt.h for the two cheaper-looking sources this
@@ -266,7 +309,7 @@ int bt_mark_connected_now(bt_device *list, int n)
 	char con[2048];
 	char *argv[] = { (char *)"/usr/bin/hcitool", (char *)"con", NULL };
 
-	if (run(argv, con, sizeof con) != 0) return 0;
+	if (run(argv, con, sizeof con, BT_ASK_S) != 0) return 0;
 	return bt_mark_connected(con, list, n);
 }
 
@@ -275,7 +318,7 @@ bt_state bt_status(void)
 	char out[512];
 
 	if (access("/sys/class/bluetooth/hci0", F_OK) != 0) return BT_NO_ADAPTER;
-	if (btctl(out, sizeof out, "show", NULL) != 0) return BT_NO_ADAPTER;
+	if (btctl(out, sizeof out, BT_ASK_S, "show", NULL) != 0) return BT_NO_ADAPTER;
 	return strstr(out, "Powered: yes") ? BT_READY : BT_POWERED_OFF;
 }
 
@@ -344,7 +387,7 @@ int bt_visible(bt_device *out, int max)
 	bt_device bond[BT_MAX];
 
 	if (!out || max <= 0) return 0;
-	if (btctl(text, sizeof text, "devices", NULL) != 0) return bt_bonded(out, max);
+	if (btctl(text, sizeof text, BT_ASK_S, "devices", NULL) != 0) return bt_bonded(out, max);
 	n = bt_parse_devices(text, out, max);
 
 	/* Mark the ones that are bonded, so the screen can say which will come
@@ -406,7 +449,7 @@ static bool info_says(const char *mac, const char *needle)
 	char out[1024];
 
 	if (!bt_mac_valid(mac)) return false;
-	if (btctl(out, sizeof out, "info", mac) < 0) return false;
+	if (btctl(out, sizeof out, BT_ASK_S, "info", mac) < 0) return false;
 	return strstr(out, needle) != NULL;
 }
 
@@ -417,7 +460,7 @@ bool bt_pair(const char *mac, char *err, size_t n)
 	if (err && n) err[0] = '\0';
 	if (!bt_mac_valid(mac)) { if (err) snprintf(err, n, "not an address"); return false; }
 
-	btctl(out, sizeof out, "pair", mac);
+	btctl(out, sizeof out, BT_ACT_S, "pair", mac);
 	if (!info_says(mac, "Paired: yes")) {
 		if (err) snprintf(err, n, "%s", strstr(out, "AuthenticationFailed")
 		                  ? "the headset refused the pairing"
@@ -426,7 +469,7 @@ bool bt_pair(const char *mac, char *err, size_t n)
 	}
 	/* Trusted, or it will not reconnect on its own at the next boot - which
 	 * is the whole reason the bond is worth having. */
-	btctl(out, sizeof out, "trust", mac);
+	btctl(out, sizeof out, BT_ASK_S, "trust", mac);
 	return true;
 }
 
@@ -436,7 +479,7 @@ bool bt_connect(const char *mac, char *err, size_t n)
 
 	if (err && n) err[0] = '\0';
 	if (!bt_mac_valid(mac)) { if (err) snprintf(err, n, "not an address"); return false; }
-	btctl(out, sizeof out, "connect", mac);
+	btctl(out, sizeof out, BT_ACT_S, "connect", mac);
 	if (info_says(mac, "Connected: yes")) return true;
 	if (err) snprintf(err, n, "it did not connect");
 	return false;
@@ -445,14 +488,14 @@ bool bt_connect(const char *mac, char *err, size_t n)
 bool bt_power(bool on)
 {
 	char out[512];
-	return btctl(out, sizeof out, "power", on ? "on" : "off") == 0;
+	return btctl(out, sizeof out, BT_ASK_S, "power", on ? "on" : "off") == 0;
 }
 
 bool bt_disconnect(const char *mac)
 {
 	char out[512];
 	if (!bt_mac_valid(mac)) return false;
-	btctl(out, sizeof out, "disconnect", mac);
+	btctl(out, sizeof out, BT_ACT_S, "disconnect", mac);
 	return !info_says(mac, "Connected: yes");
 }
 
@@ -489,7 +532,7 @@ bool bt_forget(const char *mac)
 	char out[512];
 
 	if (!bt_mac_valid(mac)) return false;
-	btctl(out, sizeof out, "remove", mac);
+	btctl(out, sizeof out, BT_ASK_S, "remove", mac);
 	if (info_says(mac, "Paired: yes")) return false;
 	forget_cache(mac);
 	return true;

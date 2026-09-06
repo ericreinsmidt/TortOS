@@ -3113,16 +3113,30 @@ static void bt_screen(app *a)
 			char err[64];
 
 			if (u.cursor < 0) {
-				/* The toggle. The preference is what launch.sh reads at the
-				 * next boot; powering the adapter is what changes anything
-				 * now, and only works when the stack is already up. */
 				bool want = u.state != BT_READY;
-				wait_panel(a, "Bluetooth", want ? "Turning on..." : "Turning off...");
+
+				/* The preference either way: launch.sh reads it at boot and
+				 * that is what starts or stops the stack. */
 				db_set_int(db_dev(), "bluetooth", want ? 1 : 0);
 				db_write_boot_env();
-				bt_power(want);
-				snprintf(u.note, sizeof u.note, "%s",
-				         want ? "On" : "Off"); note_until = now + 4000;
+
+				if (u.state == BT_NO_ADAPTER) {
+					/* Nothing to power. hciattach, bluetoothd and bluealsa
+					 * are launch.sh's to start, and on a card that booted
+					 * with Bluetooth off there is no adapter for
+					 * bluetoothctl to talk to - it waits for one that is
+					 * never coming rather than failing. Saying so beats
+					 * spawning a call that cannot succeed. */
+					snprintf(u.note, sizeof u.note,
+					         "Saved. Bluetooth starts at the next boot");
+					note_until = now + 4000;
+				} else {
+					wait_panel(a, "Bluetooth",
+					           want ? "Turning on..." : "Turning off...");
+					bt_power(want);
+					snprintf(u.note, sizeof u.note, "%s", want ? "On" : "Off");
+					note_until = now + 4000;
+				}
 				next_refresh = 0;
 			} else if (u.cursor < u.n) {
 				bt_device *d = &u.dev[u.cursor];
