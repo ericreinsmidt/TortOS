@@ -3057,7 +3057,7 @@ static void bt_screen(app *a)
 {
 	bt_ui u = { 0 };
 	menu_row rows[BT_VISIBLE + 4];
-	unsigned next_refresh = 0, scan_until = 0;
+	unsigned next_refresh = 0, scan_until = 0, note_until = 0;
 	int sel = 0;                  /* ROW space: 0 is the toggle, then devices */
 	bool done = false;
 
@@ -3072,7 +3072,12 @@ static void bt_screen(app *a)
 				bt_label(&u.dev[i], u.vals[i], sizeof u.vals[0]);
 			next_refresh = now + 2000;
 		}
-		if (scan_until && now >= scan_until) { scan_until = 0; u.note[0] = '\0'; }
+		if (scan_until && now >= scan_until) scan_until = 0;
+		/* A message says what just happened; it is not the state of anything,
+		 * so it goes away on its own. "Forgotten" used to sit there until the
+		 * screen was left and re-entered, which made it read as a condition
+		 * rather than an event. */
+		if (note_until && now >= note_until) { note_until = 0; u.note[0] = '\0'; }
 		u.scanning = scan_until != 0;
 
 		if (sel > u.n) sel = u.n;
@@ -3101,6 +3106,7 @@ static void bt_screen(app *a)
 			scan_until = now + 10000;
 			next_refresh = now + 1500;
 			u.note[0] = '\0';
+			note_until = 0;
 		}
 
 		if (a->in.pressed[IN_ACCEPT]) {
@@ -3116,7 +3122,7 @@ static void bt_screen(app *a)
 				db_write_boot_env();
 				bt_power(want);
 				snprintf(u.note, sizeof u.note, "%s",
-				         want ? "On" : "Off");
+				         want ? "On" : "Off"); note_until = now + 4000;
 				next_refresh = 0;
 			} else if (u.cursor < u.n) {
 				bt_device *d = &u.dev[u.cursor];
@@ -3124,27 +3130,32 @@ static void bt_screen(app *a)
 				if (d->connected) {
 					wait_panel(a, "Bluetooth", "Disconnecting...");
 					if (bt_disconnect(d->mac)) d->connected = false;
-					snprintf(u.note, sizeof u.note, "Disconnected");
+					snprintf(u.note, sizeof u.note, "Disconnected"); note_until = now + 4000;
 				} else {
 					bool ok = true;
 
 					if (!d->bonded) {
 						wait_panel(a, "Bluetooth", "Pairing...");
 						ok = bt_pair(d->mac, err, sizeof err);
-						if (!ok) snprintf(u.note, sizeof u.note, "%s", err);
-						/* A PCM for the new bond, so the NEXT emulator start
-						 * can reach it. It cannot help the one already
-						 * running: alsa-lib reads its config once. See bt.h. */
-						else bt_asoundrc(P_USERDATA);
+						if (!ok) {
+							snprintf(u.note, sizeof u.note, "%s", err);
+							note_until = now + 4000;
+						} else {
+							/* A PCM for the new bond, so the NEXT emulator
+							 * start can reach it. It cannot help the one
+							 * already running: alsa-lib reads its config
+							 * once. See bt.h. */
+							bt_asoundrc(P_USERDATA);
+						}
 					}
 					if (ok) {
 						wait_panel(a, "Bluetooth", "Connecting...");
 						if (bt_connect(d->mac, err, sizeof err)) {
 							d->connected = true;
 							snprintf(u.note, sizeof u.note,
-							         "Connected. Game audio from the next launch");
+							         "Connected. Game audio from the next launch"); note_until = now + 4000;
 						} else {
-							snprintf(u.note, sizeof u.note, "%s", err);
+							snprintf(u.note, sizeof u.note, "%s", err); note_until = now + 4000;
 						}
 					}
 				}
@@ -3157,9 +3168,9 @@ static void bt_screen(app *a)
 			wait_panel(a, "Bluetooth", "Forgetting...");
 			if (bt_forget(u.dev[u.cursor].mac)) {
 				bt_asoundrc(P_USERDATA);
-				snprintf(u.note, sizeof u.note, "Forgotten");
+				snprintf(u.note, sizeof u.note, "Forgotten"); note_until = now + 4000;
 			} else {
-				snprintf(u.note, sizeof u.note, "It would not unpair");
+				snprintf(u.note, sizeof u.note, "It would not unpair"); note_until = now + 4000;
 			}
 			next_refresh = 0;
 		}

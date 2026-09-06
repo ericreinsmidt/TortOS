@@ -384,12 +384,42 @@ bool bt_disconnect(const char *mac)
 	return !info_says(mac, "Connected: yes");
 }
 
+/* BlueZ keeps a cache entry per device beside the bonds, named for the address
+ * and holding the friendly name and the A2DP endpoint capabilities. `remove`
+ * deletes the bond and leaves this - observed on 5.54; whether that is
+ * deliberate is not something I know.
+ *
+ * It carries no key material, so leaving it cannot let a forgotten headset
+ * reconnect. What it does leave is a record on the card that the device was
+ * here, with its name and address, and the row is called Forget rather than
+ * Unpair. Deleting it costs a slower first reconnect next time - the name is
+ * re-fetched and the endpoints renegotiated - and cannot break pairing,
+ * because nothing in it is needed to pair. */
+static void forget_cache(const char *mac)
+{
+	DIR *ad;
+	struct dirent *a;
+
+	if (!(ad = opendir(BONDS))) return;
+	while ((a = readdir(ad))) {
+		char path[700];
+
+		if (a->d_name[0] == '.') continue;
+		snprintf(path, sizeof path, "%s/%s/cache/%.17s", BONDS, a->d_name, mac);
+		unlink(path);
+	}
+	closedir(ad);
+}
+
 bool bt_forget(const char *mac)
 {
 	char out[512];
+
 	if (!bt_mac_valid(mac)) return false;
 	btctl(out, sizeof out, "remove", mac);
-	return !info_says(mac, "Paired: yes");
+	if (info_says(mac, "Paired: yes")) return false;
+	forget_cache(mac);
+	return true;
 }
 
 bool bt_asoundrc(const char *userdata_dir)
