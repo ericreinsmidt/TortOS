@@ -5022,6 +5022,54 @@ int main(int argc, char *argv[])
 	 * so losing the ability to SEE a setting would be a real loss where losing
 	 * the ability to edit one is the point. Runs before video: it is a
 	 * question asked over adb, not a screen. */
+	/* Repair, not configuration. A wrong shipped default is permanent on a
+	 * device that already seeded it - seeding fills absent keys only, and it
+	 * cannot tell "the player chose this" from "we seeded it by mistake" - so
+	 * there has to be a way to correct one in place. There is no sqlite3 on
+	 * the device to do it with.
+	 *
+	 * It refuses a key that does not already exist, in either scope. That is
+	 * what keeps it a repair tool: a typo cannot invent a setting that looks
+	 * real, is written faithfully, and is read by nothing. */
+	if (argc > 2 && !strcmp(argv[1], "--set")) {
+		char dev[CFG_STR * 2], lib[CFG_STR * 2], env[CFG_STR * 2];
+		char key[CFG_STR];
+		const char *eq = strchr(argv[2], '=');
+		db *target;
+
+		if (!eq || eq == argv[2]) {
+			fprintf(stderr, "usage: tortos.elf --set key=value\n");
+			return 2;
+		}
+		snprintf(key, sizeof key, "%.*s", (int)(eq - argv[2]), argv[2]);
+		paths_init();
+		db_paths_ready(dev, sizeof dev, lib, sizeof lib, env, sizeof env);
+		if (!db_init(dev, lib, env)) {
+			fprintf(stderr, "cannot open the settings database\n");
+			return 1;
+		}
+		target = db_has(db_dev(), key) ? db_dev()
+		       : db_has(db_lib(), key) ? db_lib() : NULL;
+		if (!target) {
+			fprintf(stderr, "no setting named '%s' - --dump lists them\n", key);
+			db_shutdown();
+			return 1;
+		}
+		if (!db_set_str(target, key, eq + 1)) {
+			fprintf(stderr, "could not write '%s'\n", key);
+			db_shutdown();
+			return 1;
+		}
+		/* Three of these keys are exported for launch.sh, and a value the
+		 * database holds but boot.env does not is a setting that takes effect
+		 * everywhere except at boot. Setting wifi=1 and rebooting into a
+		 * radio that stays down is how that was found. */
+		db_write_boot_env();
+		printf("%s = %s\n", key, eq + 1);
+		db_shutdown();
+		return 0;
+	}
+
 	if (argc > 1 && !strcmp(argv[1], "--dump")) {
 		char dev[CFG_STR * 2], lib[CFG_STR * 2];
 		paths_init();
