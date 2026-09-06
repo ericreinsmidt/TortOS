@@ -1,0 +1,46 @@
+#!/bin/sh
+# Copy the untracked working documents into a new worktree.
+#
+# CLAUDE.md, BACKLOG.md, DEVICE-LOOP.md and VOLUME-CURVE.md are gitignored on
+# purpose: none of them is needed to build or contribute, and none is written
+# for anyone outside this working copy. The consequence is that `git worktree
+# add` cannot carry them, because a worktree is a checkout of TRACKED files and
+# an ignored one stays behind. So a worktree session had no working agreement,
+# no list of open items, and no device-loop file - the last being the one
+# CLAUDE.md names as required reading before touching the hardware. The device
+# rules are the expensive ones to be without.
+#
+# git runs post-checkout after `git worktree add`, and hooks are shared across
+# worktrees from the common dir, so installing this once covers every worktree
+# made afterwards. It also runs on ordinary `git checkout`, which is why the
+# work is guarded rather than the trigger: copy only into a LINKED worktree,
+# and only a file that is not already there. That makes it a no-op everywhere
+# else and safe to run twice.
+#
+# Install with `make hooks`.
+set -eu
+
+common=$(git rev-parse --git-common-dir)
+gitdir=$(git rev-parse --git-dir)
+[ "$common" != "$gitdir" ] || exit 0          # the main worktree, nothing to do
+
+case $common in /*) ;; *) common=$(cd "$common" && pwd) ;; esac
+main=$(dirname "$common")
+here=$(git rev-parse --show-toplevel)
+[ "$main" != "$here" ] || exit 0
+
+copied=
+for f in CLAUDE.md BACKLOG.md DEVICE-LOOP.md VOLUME-CURVE.md; do
+	[ -f "$main/$f" ] || continue
+	[ -f "$here/$f" ] && continue
+	cp -p "$main/$f" "$here/$f"               # -p keeps BACKLOG.md at 600
+	copied="$copied $f"
+done
+
+[ -n "$copied" ] && echo "worktree: copied$copied from $main"
+
+# The other half of this cannot be fixed here, and saying so beats silence:
+# session memory is keyed by absolute path, so a worktree gets its own project
+# slug with no memory directory at all. The rules arrive with the files above;
+# the standing ones do not.
+exit 0

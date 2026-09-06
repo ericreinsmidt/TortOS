@@ -10,7 +10,7 @@ SSH := sshpass -p 'tina' ssh -o StrictHostKeyChecking=no root@$(BRICK)
         adb adb-elf adb-res adb-vendor adb-restart adb-run adb-log \
         check check-cheevos check-hare check-httpd check-idle check-rahash \
         check-raset check-xfer check-menus check-artscrape check-audioout \
-        check-backlog deploy restart logs
+        check-backlog hooks storeprobe deploy restart logs
 
 all: build/tortos.elf
 
@@ -220,6 +220,40 @@ vendor:
 # rule is kept in step with config/systems.cfg by tools/recolor-cards.py.
 boot:
 	python3 tools/genboot.py
+
+# What a session record costs to commit, measured on the filesystem you point
+# it at. Built here rather than described in a commit message, because the
+# numbers behind the game-stats storage decision will be re-run: the SD card
+# and /mnt/UDISK answer differently, and so did this Mac, which is the reason
+# the probe exists rather than an argument about fsync counts.
+#
+#   make storeprobe && adb push build/storeprobe /tmp/storeprobe
+#   adb shell '/tmp/storeprobe /mnt/SDCARD/.userdata/tg3040 60'
+#
+# It writes only inside <dir>/storeprobe.tmp and removes it on the way out.
+storeprobe:
+	@docker image inspect $(IMAGE) > /dev/null 2>&1 || { \
+		echo "toolchain image missing; run: make toolchain" >&2; exit 1; }
+	docker run --rm -v $(CURDIR):/work -w /work $(IMAGE) \
+		make -f mk/cross.mk build/storeprobe
+	@# The same guard build/tortos.elf carries, and it earned its place on the
+	@# first run of this target: after `rm -f build/storeprobe` the container
+	@# still reported "up to date" and produced nothing, because Docker on macOS
+	@# showed it a stale view of a file the host had just deleted.
+	@[ -f build/storeprobe ] || { \
+		echo "STALE: the container reported success and produced nothing." >&2; \
+		echo "  run it again." >&2; exit 1; }
+	@[ tools/storeprobe.c -nt build/storeprobe ] && { \
+		echo "STALE: build/storeprobe is older than tools/storeprobe.c" >&2; \
+		exit 1; } || true
+
+# A worktree is a checkout of TRACKED files, so the four gitignored working
+# documents stay behind in the main tree and a worktree session starts without
+# the device rules. git runs post-checkout after `git worktree add`, and hooks
+# come from the shared common dir, so this is a one-time install per clone.
+hooks:
+	git config core.hooksPath mk/hooks
+	@echo "hooks: post-checkout will copy the working documents into new worktrees"
 
 # BACKLOG.md is the other open-item store, and until 2026-09-05 it was the only
 # one with nothing checking it. It drifted exactly that far: a heading still
