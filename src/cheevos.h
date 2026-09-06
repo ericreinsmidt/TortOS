@@ -81,8 +81,8 @@ bool chv_note_unlock(int id);
  *
  * A row with no third field is read as pending, which is true of every row
  * written before this existed. */
-void chv_earned_load(const char *path);
-bool chv_earned_save(const char *path);
+void chv_earned_load(void);
+bool chv_earned_save(void);
 
 /* Record something earned. `synced` is true when it came FROM the account, so
  * it is already there and needs no sending. Returns true if this was new. */

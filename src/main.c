@@ -544,22 +544,7 @@ static void wifi_pref_save(bool on)
 	db_write_boot_env();
 }
 
-/* Beside the save states and keyed like them, so a favorite travels with the
- * saves it belongs next to and survives a card reflash. */
-static void fav_path(char *out, size_t n)
-{
-	snprintf(out, n, "%s/.tortos/favorites.cfg", P_SHARED);
-}
 
-/* Beside favorites, and shared rather than per-device for the same reason:
- * what a player has earned belongs to them, not to the card it was earned on.
- * Keyed by RetroAchievements game id and achievement id, so it survives a ROM
- * being renamed or moved between folders - which the tag-and-file key that
- * favorites use would not. */
-static void chv_store_path(char *out, size_t n)
-{
-	snprintf(out, n, "%s/.tortos/cheevos.cfg", P_SHARED);
-}
 
 /* Diatom watches this file, and it is rewritten per launch: it is the set
  * minus what has already been earned, which only this side knows. Runtime
@@ -590,12 +575,6 @@ static void auto_off_save(int seconds)
 	db_set_int(db_dev(), "autooff", seconds);
 }
 
-/* The account. Per-device rather than shared, because it holds a session
- * token: a card moved to another device should not carry one with it. */
-static void ra_creds_path(char *out, size_t n)
-{
-	snprintf(out, n, "%s/ra.cfg", P_USERDATA);
-}
 
 /* Defined with the Wi-Fi screen it began in, and used here because signing in
  * and syncing are the other two things that make the player wait. */
@@ -630,9 +609,7 @@ static void ra_merge_unlocks(const int *ids, int n)
 	}
 
 	if (added) {
-		char p[CFG_STR * 2];
-		chv_store_path(p, sizeof p);
-		chv_earned_save(p);
+		chv_earned_save();
 	}
 }
 
@@ -683,9 +660,7 @@ static void ra_flush_unlocks(const char *rom, const char *tag)
 	 * outside the launcher, refused as already-held, and asked again at the
 	 * end of every game after that. */
 	if (settled) {
-		char p[CFG_STR * 2];
-		chv_store_path(p, sizeof p);
-		chv_earned_save(p);
+		chv_earned_save();
 		fprintf(stderr, "ra: %d sent, %d already held, %d still queued\n",
 		        sent, settled - sent, chv_pending_count());
 	}
@@ -897,11 +872,10 @@ static void on_cheevo_unlocked(int id)
 
 	if (!chv_note_unlock(id)) return;
 
-	chv_store_path(p, sizeof p);
 	/* Written through immediately rather than at exit. A game ends by power
 	 * button as often as by menu, and an achievement lost to a flat battery is
 	 * one the player has to earn twice. */
-	chv_earned_save(p);
+	chv_earned_save();
 
 	/* And say so, on screen, now. This process owns no display while a game
 	 * runs, so it renders the line and Diatom composites it (its ADR-0027).
@@ -2388,7 +2362,6 @@ static void wifi_screen(app *a)
 static void ra_signin_screen(app *a)
 {
 	char user[RA_USER_MAX] = "", pass[96] = "", err[160] = "";
-	char path[CFG_STR * 2];
 	menu_row row;
 	kb_result kr;
 	bool ok;
@@ -2422,8 +2395,7 @@ static void ra_signin_screen(app *a)
 	memset(pass, 0, sizeof pass);
 
 	if (ok) {
-		ra_creds_path(path, sizeof path);
-		ra_creds_save(path);
+		ra_creds_save();
 		snprintf(err, sizeof err, "Signed in as %s", ra_user());
 	} else if (!err[0]) {
 		snprintf(err, sizeof err, "Sign-in failed");
@@ -2949,11 +2921,10 @@ static menu_result info_key(app *a, void *ctx, in_button key, int sel)
 	if (key != IN_ACCEPT || sel >= n || !rows[sel].live) return MENU_STAY;
 
 	if (!strcmp(rows[sel].label, "Favorite")) {
-		char was[LIB_PATH], fp[CFG_STR * 2];
+		char was[LIB_PATH];
 
 		fav_toggle(a->sys.systems[c->owner].tag, c->g->file);
-		fav_path(fp, sizeof fp);
-		fav_save(fp);
+		fav_save();
 		/* The Favorites shelf is built from this list, so it has to be rebuilt
 		 * before anything reads it again - including the cursor this screen is
 		 * standing on. Everything from before this line may have moved:
@@ -4375,11 +4346,9 @@ static void update_games(app *a)
 	 * there is no confirm step to hang the save off, and the alternative is
 	 * losing the choice to a flat battery. */
 	if (a->in.pressed[IN_Y] && n > 0) {
-		char p[CFG_STR * 2];
 		fav_toggle(a->sys.systems[shelf_owner(a, a->sys_cursor, v->cursor)].tag,
 		           v->list.items[v->cursor].file);
-		fav_path(p, sizeof p);
-		fav_save(p);
+		fav_save();
 		/* The shelf follows immediately. Everything below this line may have
 		 * moved - the system indices, sys_cursor, and v itself - so nothing
 		 * from before it can be reused. */
@@ -5117,14 +5086,10 @@ int main(int argc, char *argv[])
 
 	/* Before the scan, because the scan builds the Favorites shelf out of
 	 * them and a shelf cannot be built from a list that has not been read. */
-	{	char fp[CFG_STR * 2];
-		fav_path(fp, sizeof fp);
-		fav_load(fp);
-	}
+	fav_load();
 
 	{	char cp[CFG_STR * 2];
-		chv_store_path(cp, sizeof cp);
-		chv_earned_load(cp);
+		chv_earned_load();
 		plat_resident_on_unlock(on_cheevo_unlocked);
 		plat_resident_on_tick(on_game_tick);
 
@@ -5135,8 +5100,7 @@ int main(int argc, char *argv[])
 
 		snprintf(cp, sizeof cp, "%s/cacert.pem", P_ROOT);
 		net_set_ca_path(cp);
-		ra_creds_path(cp, sizeof cp);
-		ra_creds_load(cp);
+		ra_creds_load();
 	}
 
 	/* Scan every system now, not when one is opened: it is three directory

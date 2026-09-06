@@ -83,10 +83,10 @@ check-cheevos: build-native/cheevos-check
 	@./build-native/cheevos-check
 
 build-native/cheevos-check: tools/cheevos-check.c src/cheevos.c src/cheevos.h \
-                            src/atomic.c src/atomic.h FORCE
+                            src/atomic.c src/atomic.h src/db.c src/db.h FORCE
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
-	      -o $@ tools/cheevos-check.c src/cheevos.c src/atomic.c
+	      -o $@ tools/cheevos-check.c src/cheevos.c src/atomic.c src/db.c
 
 # Hare's routes: is anything reachable without the PIN? check-xfer proves a
 # path cannot climb out of a root; this proves the routes actually ask it, and
@@ -193,10 +193,10 @@ build-native/rahash-check: tools/rahash-check.c src/rahash.c src/rahash.h FORCE
 check-raset: build-native/raset-check
 	@python3 tools/raset-check.py
 
-build-native/raset-check: tools/raset-check.c src/rafetch.c src/rajson.c src/rahash.c src/net.c src/atomic.c FORCE
+build-native/raset-check: tools/raset-check.c src/rafetch.c src/rajson.c src/rahash.c src/net.c src/atomic.c src/db.c FORCE
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g -DTORTOS_VERSION='"check"' \
-	      -o $@ tools/raset-check.c src/rafetch.c src/rajson.c src/rahash.c src/net.c src/atomic.c
+	      -o $@ tools/raset-check.c src/rafetch.c src/rajson.c src/rahash.c src/net.c src/atomic.c src/db.c
 
 # One-time: the cross-compiler image. Pinned by digest, so it does not drift.
 toolchain:

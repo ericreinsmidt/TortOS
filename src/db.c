@@ -2,6 +2,7 @@
 /* See db.h. No SDL and no platform header, deliberately, so the check can link
  * it without a window - the same reason atomic.c is kept clean. */
 #include <dlfcn.h>
+#include <sys/stat.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -168,6 +169,20 @@ db *db_open(const char *path, db_scope scope)
 		return NULL;
 	}
 	if (!run(d, SCHEMA)) { db_close(d); return NULL; }
+
+	/* The device database holds the RetroAchievements session token, so it is
+	 * 0600 - which is the mode ra.cfg carried before it moved in here. After
+	 * the schema, not before: journal_mode=WAL creates the sidecars, and
+	 * sqlite gives those the permissions the database has AT THAT MOMENT. Do
+	 * this first and the -wal would be created 0600 from a 0600 file; do it
+	 * without the sidecars and the token's pages sit in a 0644 -wal, which is
+	 * the same secret in a different file. */
+	if (scope == DB_DEVICE) {
+		char side[1100];
+		chmod(path, 0600);
+		snprintf(side, sizeof side, "%s-wal", path); chmod(side, 0600);
+		snprintf(side, sizeof side, "%s-shm", path); chmod(side, 0600);
+	}
 
 	/* Seed only what is absent, so a default never overwrites a choice. That
 	 * is the bug the old tortos.cfg had until 2026-08: it was applied over

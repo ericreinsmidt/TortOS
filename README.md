@@ -560,13 +560,19 @@ is on the list despite its core having a turbo of its own.
 
 ### What the launcher still writes as files
 
-Three things are not in a database, each for a reason:
+Two things, each for a reason:
 
 | | |
 |---|---|
 | `cheevos-active.set` | Diatom reads it, handed over as a path on RUN under its ADR-0026. Moving it would mean Diatom linking sqlite and learning the schema |
-| `favorites.cfg`, `cheevos.cfg` | player records rather than settings; they move next |
-| `ra.cfg` | the RetroAchievements account, per device - it holds a session token, so a card moved to another handheld does not carry one with it. It is `0600`, which is why it has not moved yet |
+| `systems.cfg` | build input rather than a setting, as above |
+
+Everything else is in one of the two databases. Favorites are rows keyed
+`fav.<tag>\t<file>` in the library, earned achievements are `chv.<game>.<id>`,
+and the RetroAchievements account is `ra.user` and `ra.token` in the device
+database - **which is `0600` for that reason**, sidecars included, since a
+`-wal` holding the same token at `0644` would be the same secret in a
+different file.
 
 ---
 

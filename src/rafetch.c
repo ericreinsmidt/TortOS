@@ -10,6 +10,7 @@
 #include <unistd.h>
 
 #include "atomic.h"
+#include "db.h"
 #include "rafetch.h"
 #include "rahash.h"
 #include "rajson.h"
@@ -25,53 +26,35 @@ const char *ra_user(void) { return g_user; }
 
 void ra_creds_clear(void) { g_user[0] = '\0'; g_token[0] = '\0'; }
 
-bool ra_creds_load(const char *path)
+bool ra_creds_load(void)
 {
-	char line[256];
-	FILE *f = fopen(path, "r");
+	char user[RA_USER_MAX * 2], token[RA_TOKEN_MAX * 2];
 
 	ra_creds_clear();
-	if (!f) return false;
+	db_get_str(db_dev(), "ra.user", user, sizeof user, "");
+	db_get_str(db_dev(), "ra.token", token, sizeof token, "");
 	/* A value too long for its field is REFUSED, not stored short. Half a
 	 * token still looks like a token: it would read as signed in and every
-	 * request would come back with an auth error that says nothing about
-	 * the real cause. */
-	while (fgets(line, sizeof line, f)) {
-		const char *v = NULL;
-		char *dst = NULL;
-		size_t cap = 0;
-
-		line[strcspn(line, "\r\n")] = '\0';
-		if (!strncmp(line, "user=", 5)) {
-			v = line + 5; dst = g_user; cap = sizeof g_user;
-		} else if (!strncmp(line, "token=", 6)) {
-			v = line + 6; dst = g_token; cap = sizeof g_token;
-		} else {
-			continue;
-		}
-		if (strlen(v) >= cap) {
-			fprintf(stderr, "ra: %s has an over-long value; ignoring it\n", path);
-			ra_creds_clear();
-			break;
-		}
-		memcpy(dst, v, strlen(v) + 1);
+	 * request would come back with an auth error that says nothing about the
+	 * real cause. The buffers above are deliberately twice the limit so an
+	 * over-long value arrives whole and can be seen to be over-long. */
+	if (strlen(user) >= sizeof g_user || strlen(token) >= sizeof g_token) {
+		fprintf(stderr, "ra: stored credentials are over-long; ignoring them\n");
+		return false;
 	}
-	fclose(f);
+	memcpy(g_user, user, strlen(user) + 1);
+	memcpy(g_token, token, strlen(token) + 1);
 	return ra_signed_in();
 }
 
-bool ra_creds_save(const char *path)
-{
-	FILE *f;
 
-	if (!ra_signed_in()) { unlink(path); return true; }
-	/* 0600 from creation. A token is a credential: anything that can read it
-	 * can act as this account. Atomically too - losing this to a power cut
-	 * would silently sign the device out. */
-	f = atomic_open(path, 0600);
-	if (!f) return false;
-	fprintf(f, "user=%s\ntoken=%s\n", g_user, g_token);
-	return atomic_commit(f, path);
+bool ra_creds_save(void)
+{
+	/* The device database is 0600 for this, and only this - see db_open. A
+	 * token is the one thing on the card that is not the player's own data
+	 * to leave lying around. */
+	return db_set_str(db_dev(), "ra.user", g_user) &&
+	       db_set_str(db_dev(), "ra.token", g_token);
 }
 
 bool ra_sign_in(const char *user, const char *password, char *err, size_t errn)

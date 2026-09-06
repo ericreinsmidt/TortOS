@@ -21,13 +21,13 @@
 #define FAV_TAG_MAX   16
 #define FAV_FILE_MAX 544     /* LIB_PATH */
 
-/* Read the file if it is there. Absent is not an error: nobody has favorited
- * anything yet. */
-void fav_load(const char *path);
+/* Read them from the library database. None is not an error: nobody has
+ * favorited anything yet. */
+void fav_load(void);
 
-/* Whole file, every time. It is one short line per favorite and rewriting the
- * lot means it cannot drift out of step with what is in memory. */
-bool fav_save(const char *path);
+/* The whole set, every time, removals included - so what is stored cannot
+ * drift out of step with what is in memory. */
+bool fav_save(void);
 
 bool fav_is(const char *tag, const char *file);
 

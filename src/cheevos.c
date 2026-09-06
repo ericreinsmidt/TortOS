@@ -7,6 +7,7 @@
 
 #include "atomic.h"
 #include "cheevos.h"
+#include "db.h"
 
 static cheevo g_ach[CHV_MAX];
 static int    g_n;
@@ -284,49 +285,48 @@ bool chv_note_unlock(int id)
 	return g_game ? chv_note_earned(g_game, id, false) : false;
 }
 
-void chv_earned_load(const char *path)
+static bool chv_earned_row(const char *key, const char *value, void *ctx)
 {
-	char line[64];
-	FILE *f;
+	const char *rest = key + strlen("chv.");
+	int game, id;
 
-	g_nearned = 0;
-	g_earned_dirty = false;
-	f = fopen(path, "r");
-	if (!f) return;                    /* nobody has earned anything yet */
-	while (fgets(line, sizeof line, f) && g_nearned < CHV_EARNED_MAX) {
-		int game, id;
-		char st = 0;
-
-		/* Three fields or the row is not one. chv_earned_save is the only
-		 * thing that writes this file and it always writes all three. */
-		if (sscanf(line, "%d %d %c", &game, &id, &st) != 3) continue;
-		if (game <= 0 || id <= 0) continue;
-		g_earned[g_nearned].game   = game;
-		g_earned[g_nearned].id     = id;
-		g_earned[g_nearned].synced = (st == 's');
-		g_nearned++;
-	}
-	fclose(f);
+	(void)ctx;
+	if (g_nearned >= CHV_EARNED_MAX) return false;
+	/* Both halves or the row is not one. chv_earned_save writes both. */
+	if (sscanf(rest, "%d.%d", &game, &id) != 2) return true;
+	if (game <= 0 || id <= 0) return true;
+	g_earned[g_nearned].game   = game;
+	g_earned[g_nearned].id     = id;
+	g_earned[g_nearned].synced = value[0] == 's';
+	g_nearned++;
+	return true;
 }
 
-bool chv_earned_save(const char *path)
+void chv_earned_load(void)
 {
-	FILE *f;
+	g_nearned = 0;
+	g_earned_dirty = false;
+	db_each_prefix(db_lib(), "chv.", chv_earned_row, NULL);
+}
+
+bool chv_earned_save(void)
+{
+	char key[48];
 	int i;
 
 	if (!g_earned_dirty) return true;
-	/* Atomically: this is the only record of anything earned that the account
-	 * has not seen, and it is written on every unlock - including the ones
-	 * that happen just before somebody presses the power button. */
-	f = atomic_open(path, 0644);
-	if (!f) return false;
-	/* Whole file, every time, for the same reason favorites are written that
-	 * way: it is two numbers a line and rewriting the lot means what is on
-	 * disk cannot drift out of step with what is in memory. */
-	for (i = 0; i < g_nearned; i++)
-		fprintf(f, "%d\t%d\t%c\n", g_earned[i].game, g_earned[i].id,
-		        g_earned[i].synced ? 's' : 'p');
-	if (!atomic_commit(f, path)) return false;
+	/* Every row, every time. Nothing here is ever removed - the load is the
+	 * only thing that resets the count - so a write-all cannot leave a stale
+	 * row behind, and there is no deletion pass to get wrong.
+	 *
+	 * This is the only record of anything earned that the account has not
+	 * seen, and it is written on every unlock - including the ones that
+	 * happen just before somebody presses the power button. */
+	for (i = 0; i < g_nearned; i++) {
+		snprintf(key, sizeof key, "chv.%d.%d", g_earned[i].game, g_earned[i].id);
+		if (!db_set_str(db_lib(), key, g_earned[i].synced ? "s" : "p"))
+			return false;
+	}
 	g_earned_dirty = false;
 	return true;
 }

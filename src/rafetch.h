@@ -21,9 +21,11 @@
 #define RA_TOKEN_MAX 64
 #define RA_USER_MAX  64
 
-/* Read and write .userdata/ra.cfg. Written 0600; it holds the token. */
-bool ra_creds_load(const char *path);
-bool ra_creds_save(const char *path);
+/* Read and write the account in the device database, which is 0600 because
+ * of the token this puts in it. Per-device rather than per-card: a card moved
+ * to another handheld must not carry a session token with it. */
+bool ra_creds_load(void);
+bool ra_creds_save(void);
 void ra_creds_clear(void);
 bool ra_signed_in(void);
 const char *ra_user(void);

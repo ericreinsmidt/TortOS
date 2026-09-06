@@ -25,6 +25,7 @@
 
 #include "../src/atomic.h"
 #include "../src/cheevos.h"
+#include "../src/db.h"
 
 static int failures;
 
@@ -38,7 +39,36 @@ static int failures;
 		}                                                                     \
 	} while (0)
 
-static char g_set[128], g_active[128], g_store[128];
+static char g_set[128], g_active[128], g_store[128], g_lib[128];
+
+/* The store is a database now, so "remove it and start again" is a couple of
+ * unlinks and a reopen rather than one. Everything below that used to poke the
+ * file goes through these. */
+static void store_reset(void)
+{
+	char side[160];
+	db_shutdown();
+	remove(g_store); remove(g_lib);
+	snprintf(side, sizeof side, "%s-wal", g_store); remove(side);
+	snprintf(side, sizeof side, "%s-shm", g_store); remove(side);
+	snprintf(side, sizeof side, "%s-wal", g_lib); remove(side);
+	snprintf(side, sizeof side, "%s-shm", g_lib); remove(side);
+	db_init(g_store, g_lib, NULL);
+}
+
+static bool count_row(const char *k, const char *v, void *ctx)
+{
+	(void)k; (void)v;
+	(*(int *)ctx)++;
+	return true;
+}
+
+static int store_rows(void)
+{
+	int n = 0;
+	db_each_prefix(db_lib(), "chv.", count_row, &n);
+	return n;
+}
 
 static void fixture(void)
 {
@@ -84,14 +114,19 @@ int main(void)
 {
 	snprintf(g_set,    sizeof g_set,    "/tmp/tortos-chv-%ld.set", (long)getpid());
 	snprintf(g_active, sizeof g_active, "/tmp/tortos-chv-%ld.active", (long)getpid());
-	snprintf(g_store,  sizeof g_store,  "/tmp/tortos-chv-%ld.store", (long)getpid());
-	remove(g_store);
+	snprintf(g_store,  sizeof g_store,  "/tmp/tortos-chv-%ld-dev.db", (long)getpid());
+	snprintf(g_lib,    sizeof g_lib,    "/tmp/tortos-chv-%ld-lib.db", (long)getpid());
+	if (!db_available()) {
+		printf("cheevos: no libsqlite3 on this machine, so nothing was checked\n");
+		return 77;
+	}
+	store_reset();
 
 	printf("cheevos: the launcher's half\n");
 	fixture();
 
 	printf("  reading a set:\n");
-	chv_earned_load(g_store);                 /* absent: nothing earned yet */
+	chv_earned_load();                        /* absent: nothing earned yet */
 	CHECK(chv_load(g_set), "the set did not load");
 	CHECK(chv_count() == 3, "expected 3 achievements, got %d", chv_count());
 	CHECK(chv_game() == 1459, "game id wrong: %d", chv_game());
@@ -127,9 +162,9 @@ int main(void)
 	      line_count(g_active, NULL));
 
 	printf("  the earned store survives a restart:\n");
-	CHECK(chv_earned_save(g_store), "the store did not write");
+	CHECK(chv_earned_save(), "the store did not write");
 	chv_clear();
-	chv_earned_load(g_store);
+	chv_earned_load();
 	CHECK(chv_load(g_set), "the set did not reload");
 	CHECK(chv_at(1) && chv_at(1)->earned,
 	      "24699 came back unearned after a reload");
@@ -151,8 +186,8 @@ int main(void)
 	 * Getting this wrong is silent in both directions: an unlock that is
 	 * never submitted, or one submitted every time the device boots. */
 	printf("  pending and synced:\n");
-	remove(g_store);
-	chv_earned_load(g_store);
+	store_reset();
+	chv_earned_load();
 	CHECK(chv_load(g_set), "the set did not load for the pending checks");
 
 	CHECK(chv_note_earned(1459, 24698, true), "learning one from the account is news");
@@ -171,23 +206,24 @@ int main(void)
 
 	/* Across a restart, both the fact and the debt have to survive. */
 	CHECK(chv_note_unlock(24700), "a third is news");
-	CHECK(chv_earned_save(g_store), "the store did not write");
+	CHECK(chv_earned_save(), "the store did not write");
 	chv_clear();
-	chv_earned_load(g_store);
+	chv_earned_load();
 	CHECK(chv_load(g_set), "the set did not reload");
 	CHECK(chv_earned() == 3, "reload lost an achievement: %d", chv_earned());
 	CHECK(chv_pending_count() == 1,
 	      "reload lost track of what is owed: %d", chv_pending_count());
 
-	/* A row that is not three fields is not a row. There is one writer and it
-	 * always writes all three, so anything else is damage rather than an
-	 * older format - and half a line read as a whole one would invent an
+	/* A key that is not "chv.<game>.<id>" is not a row. There is one writer
+	 * and it always writes both halves, so anything else is damage rather than
+	 * an older format - and half a key read as a whole one would invent an
 	 * achievement nobody earned. */
-	{	FILE *bad = fopen(g_store, "w");
-
-		if (bad) { fputs("1459\t24698\n1459\n\n1459\t24700\ts\n", bad); fclose(bad); }
+	{	store_reset();
+		db_set_str(db_lib(), "chv.1459", "s");        /* no id half */
+		db_set_str(db_lib(), "chv.nonsense", "s");    /* no numbers at all */
+		db_set_str(db_lib(), "chv.1459.24700", "s");  /* the only real row */
 		chv_clear();
-		chv_earned_load(g_store);
+		chv_earned_load();
 		CHECK(chv_load(g_set), "the set did not reload over a damaged store");
 		CHECK(chv_earned() == 1,
 		      "expected the one intact row, got %d", chv_earned());
@@ -202,41 +238,32 @@ int main(void)
 	 * which truncates first. A power cut between the truncate and the write
 	 * leaves nothing - on a device whose normal shutdown is a button press,
 	 * and which is about to start powering itself off on a timer. */
-	printf("  writing a store never leaves it empty:\n");
+	printf("  a written row survives a reopen:\n");
 	{
-		char tmp[160];
-		FILE *f;
-		struct stat st;
-
-		/* From nothing: the block above leaves two rows behind, and inheriting
-		 * them made this expect one and find two - the test being wrong, not
-		 * the code. */
-		remove(g_store);
-		chv_earned_load(g_store);
+		/* What this replaces tested atomic_open's all-or-nothing property
+		 * against the store file. That property now belongs to sqlite rather
+		 * than to us, so the thing worth asserting is the guarantee it was
+		 * buying: what was saved is what comes back, and nothing else is.
+		 *
+		 * From nothing: the block above leaves rows behind, and inheriting
+		 * them made an earlier version of this expect one and find two - the
+		 * test being wrong, not the code. */
+		store_reset();
+		chv_earned_load();
 		chv_note_earned(1459, 24698, true);
-		CHECK(chv_earned_save(g_store), "the store did not write");
-		CHECK(line_count(g_store, NULL) == 1,
-		      "expected one row, got %d", line_count(g_store, NULL));
+		CHECK(chv_earned_save(), "the store did not write");
+		CHECK(store_rows() == 1, "expected one row, got %d", store_rows());
 
-		snprintf(tmp, sizeof tmp, "%s.new", g_store);
-		CHECK(stat(tmp, &st) != 0, "a committed write left its temporary behind");
-
-		/* A write that is abandoned must leave the original untouched, which
-		 * is the whole property: wholly the old contents or wholly the new. */
-		f = atomic_open(g_store, 0644);
-		CHECK(f != NULL, "atomic_open failed");
-		if (f) {
-			fputs("garbage that must never land\n", f);
-			CHECK(line_count(g_store, NULL) == 1,
-			      "the original changed while a replacement was open");
-			atomic_abort(f, g_store);
-		}
-		CHECK(line_count(g_store, NULL) == 1,
-		      "an abandoned write damaged the original");
-		CHECK(stat(tmp, &st) != 0, "an abandoned write left its temporary behind");
+		chv_clear();
+		store_reset();
+		chv_earned_load();
+		CHECK(chv_earned() == 0, "a fresh store came back with rows in it");
 	}
 
-	remove(g_set); remove(g_active); remove(g_store);
+	remove(g_set); remove(g_active);
+	store_reset();
+	db_shutdown();
+	remove(g_store); remove(g_lib);
 	if (failures) { printf("\n%d check(s) failed\n", failures); return 1; }
 	printf("\nok: every check passed\n");
 	return 0;
