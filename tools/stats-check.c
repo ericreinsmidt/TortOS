@@ -1,0 +1,221 @@
+/* Play time: does it record what happened, and does it stay off the launch?
+ *
+ * The second half is the one worth a check. "Launch does no I/O" is a claim
+ * about a path nobody watches, and the way it stops being true is one
+ * reasonable-looking write at a time - so it is asserted here rather than
+ * remembered. The rest is arithmetic that a power cut is allowed to interrupt
+ * at any point, which is exactly the sort of thing a test can enumerate and a
+ * person cannot.
+ *
+ * Time is passed in, the way idle_check takes it, so a checkpoint interval and
+ * a clock wrap can be driven directly instead of waited for.
+ *
+ * Links src/stats.c and src/db.c and NOT SDL.
+ */
+#include "../src/db.h"
+#include "../src/stats.h"
+
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+
+static int fails;
+static void ck(int cond, const char *what)
+{
+	if (!cond) { printf("  FAIL %s\n", what); fails++; }
+}
+
+#define DEV "/tmp/tortos-stats-dev.db"
+#define LIB "/tmp/tortos-stats-lib.db"
+
+static void scrub(void)
+{
+	const char *base[] = { DEV, LIB };
+	const char *suf[] = { "", "-wal", "-shm" };
+	char p[160];
+	unsigned i, j;
+	db_shutdown();
+	for (i = 0; i < 2; i++)
+		for (j = 0; j < 3; j++) {
+			snprintf(p, sizeof p, "%s%s", base[i], suf[j]);
+			unlink(p);
+		}
+	db_init(DEV, LIB, NULL);
+}
+
+static bool count_cb(const char *k, const char *v, void *ctx)
+{
+	(void)k; (void)v; (*(int *)ctx)++; return true;
+}
+static int rows(void)
+{
+	int n = 0;
+	db_each_prefix(db_lib(), "sess.", count_cb, &n);
+	return n;
+}
+
+static bool grab(const char *k, const char *v, void *ctx)
+{
+	(void)k;
+	snprintf(ctx, 64, "%s", v);
+	return false;                       /* the first is enough */
+}
+static const char *only_value(void)
+{
+	static char v[64];
+	v[0] = '\0';
+	db_each_prefix(db_lib(), "sess.", grab, v);
+	return v;
+}
+
+/* THE property. A launch that touches storage is the failure this design
+ * exists to prevent, and it would be invisible in every other test here. */
+static void launch_writes_nothing(void)
+{
+	printf("a launch writes nothing at all:\n");
+	scrub();
+	ck(rows() == 0, "the store starts empty");
+	stats_begin("NES", "Contra (USA).zip", 1000);
+	ck(rows() == 0, "stats_begin wrote no row");
+	stats_tick(1100);
+	ck(rows() == 0, "and neither did the first tick");
+	stats_tick(1000 + STATS_MARK_MS - 1);
+	ck(rows() == 0, "nor a tick just before the marker is due");
+}
+
+static void a_short_session_leaves_no_marker(void)
+{
+	printf("backing straight out of a game:\n");
+	scrub();
+	stats_begin("NES", "Contra (USA).zip", 1000);
+	stats_tick(2000);
+	ck(rows() == 0, "nothing written during a two-second visit");
+	stats_end(NULL, 3000);
+	ck(rows() == 1, "but the session itself is still recorded");
+	ck(!strcmp(only_value(), "2\tquit"), "two seconds, quit");
+}
+
+static void a_long_session_marks_and_checkpoints(void)
+{
+	printf("a session long enough to be worth recovering:\n");
+	scrub();
+	stats_begin("GBA", "Sigma Star Saga.zip", 0);
+	stats_tick(STATS_MARK_MS);
+	ck(rows() == 1, "the marker lands once the session is worth it");
+	ck(!strcmp(only_value(), "5\topen"), "and says it is still open");
+
+	stats_tick(STATS_MARK_MS + 1000);
+	ck(!strcmp(only_value(), "5\topen"), "a tick before the interval changes nothing");
+
+	stats_tick(STATS_MARK_MS + STATS_CKPT_MS);
+	ck(!strcmp(only_value(), "65\topen"), "the checkpoint moves it forward");
+	ck(rows() == 1, "and updates the row rather than adding one");
+
+	stats_end("quit", 120000);
+	ck(rows() == 1, "the end still updates the same row");
+	ck(!strcmp(only_value(), "120\tquit"), "with the final length and reason");
+}
+
+static void a_power_cut_is_recovered_at_the_checkpoint(void)
+{
+	printf("a session the device never saw end:\n");
+	scrub();
+	stats_begin("SNES", "Super Metroid.zip", 0);
+	stats_tick(STATS_MARK_MS);
+	stats_tick(STATS_MARK_MS + STATS_CKPT_MS);      /* 65s on the card */
+	/* and then the battery goes. No stats_end, ever. */
+
+	db_shutdown();
+	db_init(DEV, LIB, NULL);                        /* next boot */
+	ck(!strcmp(only_value(), "65\topen"), "it is still marked open");
+	stats_recover();
+	ck(!strcmp(only_value(), "65\tlost"),
+	   "recovery closes it at the last checkpoint, and says it was lost");
+	ck(rows() == 1, "without inventing a second row");
+
+	stats_recover();
+	ck(!strcmp(only_value(), "65\tlost"), "and running recovery twice is a no-op");
+}
+
+static void the_clock_wrapping_is_not_a_49_day_session(void)
+{
+	printf("the millisecond clock wrapping:\n");
+	scrub();
+	/* SDL_GetTicks is 32-bit and wraps after ~49 days of uptime. Signed
+	 * arithmetic here would turn a 10-second session into a colossal one. */
+	stats_begin("GB", "Link's Awakening.zip", 0xFFFFF000u);
+	stats_end("quit", 0xFFFFF000u + 10000u);        /* wraps past zero */
+	ck(!strcmp(only_value(), "10\tquit"), "ten seconds, not forty-nine days");
+}
+
+static void two_systems_can_hold_the_same_filename(void)
+{
+	printf("the same file on two shelves is two games:\n");
+	scrub();
+	stats_begin("GB", "Tetris.zip", 0);   stats_end("quit", 60000);
+	stats_begin("GBC", "Tetris.zip", 0);  stats_end("quit", 30000);
+	ck(stats_summarize() == 2, "two distinct games");
+}
+
+static void summarize_folds_and_ranks(void)
+{
+	const char *tag, *file;
+	long secs;
+	int launches;
+
+	printf("summarizing:\n");
+	scrub();
+	/* Contra twice, Metroid once and longer. The two Contra runs start in
+	 * the same wall-clock second on purpose - back to back with no sleep is
+	 * exactly how the key collision was found. */
+	stats_begin("NES", "Contra.zip", 0);       stats_end("quit", 60000);
+	stats_begin("NES", "Contra.zip", 1);       stats_end("quit", 120001);
+	stats_begin("SNES", "Metroid.zip", 0);     stats_end("quit", 600000);
+
+	ck(stats_summarize() == 2, "two games");
+	ck(stats_total_seconds() == 60 + 120 + 600, "total is every session");
+	ck(stats_total_launches() == 3, "three launches");
+
+	ck(stats_at(0, &tag, &file, &secs, &launches), "the first row reads");
+	ck(!strcmp(file, "Metroid.zip"), "most played first");
+	ck(secs == 600 && launches == 1, "with its own total and count");
+
+	ck(stats_at(1, &tag, &file, &secs, &launches), "the second row reads");
+	ck(!strcmp(file, "Contra.zip") && secs == 180 && launches == 2,
+	   "and the two Contra sessions folded into one row");
+
+	ck(!stats_at(2, NULL, NULL, NULL, NULL), "and there is no third");
+}
+
+static void formatting(void)
+{
+	char b[16];
+	printf("how a duration reads:\n");
+	stats_format(0, b, sizeof b);     ck(!strcmp(b, "never"), "nothing played");
+	stats_format(45, b, sizeof b);    ck(!strcmp(b, "45s"), "under a minute");
+	stats_format(432, b, sizeof b);   ck(!strcmp(b, "7m 12s"), "minutes and seconds");
+	stats_format(45296, b, sizeof b); ck(!strcmp(b, "12h 34m"), "hours and minutes");
+}
+
+int main(void)
+{
+	if (!db_available()) {
+		printf("stats-check: no libsqlite3 here, so nothing was checked\n");
+		return 77;
+	}
+	launch_writes_nothing();
+	a_short_session_leaves_no_marker();
+	a_long_session_marks_and_checkpoints();
+	a_power_cut_is_recovered_at_the_checkpoint();
+	the_clock_wrapping_is_not_a_49_day_session();
+	two_systems_can_hold_the_same_filename();
+	summarize_folds_and_ranks();
+	formatting();
+	db_shutdown();
+	scrub();
+	db_shutdown();
+
+	if (fails) { printf("\n%d FAILED\n", fails); return 1; }
+	printf("\nok: play time is recorded, and a launch still writes nothing\n");
+	return 0;
+}

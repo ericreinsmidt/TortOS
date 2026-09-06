@@ -93,6 +93,7 @@ int sys_menu_build(const sys_ui *u, menu_row *out, menu_bufs *b,
 	 * were, which is what sleep would have been for. */
 	sys_menu_auto_off_label(u->auto_off, b->c, sizeof b->c);
 	out[PM_SLEEP]        = (menu_row){ "Auto Off",  b->c,      true  };
+	out[PM_STATS]        = (menu_row){ "Play Time",  NULL,      true  };
 	out[PM_ABOUT]        = (menu_row){ "About TortOS", NULL,   true  };
 	return PM_ROWS;
 }

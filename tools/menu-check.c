@@ -419,6 +419,9 @@ static void cursor_reaches(void)
 	ck(!holds(got, k, PM_SCRAPE), "Box Art is skipped with no network");
 	ck(holds(got, k, PM_WIFI), "Wi-Fi is reachable, which is how you fix that");
 	ck(holds(got, k, PM_ABOUT), "About is reachable");
+	/* Play Time reads what is already stored and asks nothing of the network,
+	 * so it stays reachable when everything else is greyed out. */
+	ck(holds(got, k, PM_STATS), "Play Time is reachable offline");
 }
 
 /* The bound is the point. An all-dead menu must terminate, not spin. */

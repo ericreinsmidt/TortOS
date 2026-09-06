@@ -10,7 +10,7 @@ SSH := sshpass -p 'tina' ssh -o StrictHostKeyChecking=no root@$(BRICK)
         adb adb-elf adb-res adb-vendor adb-restart adb-run adb-log \
         check check-cheevos check-hare check-httpd check-idle check-rahash \
         check-raset check-xfer check-menus check-artscrape check-audioout \
-        check-db check-backlog hooks storeprobe deploy restart logs
+        check-db check-stats check-backlog hooks storeprobe deploy restart logs
 
 all: build/tortos.elf
 
@@ -20,7 +20,7 @@ all: build/tortos.elf
 # exist, and check-menus was about to join eight others in that state.
 CHECKS = check-cheevos check-hare check-httpd check-idle check-rahash \
          check-raset check-xfer check-menus check-artscrape check-audioout \
-         check-db check-backlog
+         check-db check-stats check-backlog
 
 check:
 	@fail=0; for c in $(CHECKS); do \
@@ -279,6 +279,20 @@ build-native/db-check: tools/db-check.c src/db.c src/db.h src/atomic.c FORCE
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
 	      -o $@ tools/db-check.c src/db.c src/atomic.c
+
+# Play time. The assertion that earns this its place is that a LAUNCH writes
+# nothing: that is a claim about a path nobody watches, and it stops being true
+# one reasonable-looking write at a time.
+check-stats: build-native/stats-check
+	@./build-native/stats-check; s=$$?; \
+	if [ $$s -eq 77 ]; then \
+		echo "  install sqlite3 - the launcher needs it, not just this check" >&2; \
+	fi; exit $$s
+
+build-native/stats-check: tools/stats-check.c src/stats.c src/stats.h src/db.c src/atomic.c FORCE
+	@mkdir -p build-native
+	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
+	      -o $@ tools/stats-check.c src/stats.c src/db.c src/atomic.c
 
 check-backlog:
 	@python3 tools/backlog-check.py

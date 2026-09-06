@@ -14,6 +14,7 @@
 #include "cheevos.h"
 #include "config.h"
 #include "db.h"
+#include "stats.h"
 #include "coverflow.h"
 #include "library.h"
 #include "platform.h"
@@ -806,6 +807,11 @@ static void on_game_tick(void)
 	char msg[96];
 
 	int rc;
+
+	/* Play time. Writes at most one unsynced row and usually nothing, and
+	 * never an fsync: measured on the card, an fsync is 1.56 ms median but
+	 * 16.4 ms at the tail, which is a dropped frame. */
+	stats_tick(plat_now_ms());
 
 	/* The charger, followed rather than sampled once at launch. Plugging in
 	 * mid-game has to stop the countdown and unplugging has to start a fresh
@@ -3001,6 +3007,93 @@ void info_preview(app *a, bool net)
 	          a->sys.systems[owner].accent);
 }
 
+/* Play time, most played first.
+ *
+ * Summarized once on entry rather than every frame: it is a fold over every
+ * session ever recorded, which measured 6.3 ms cold on the card - nothing at
+ * all once, and a waste sixty times a second. Nothing here writes.
+ */
+#define STATS_VISIBLE 8
+
+static void stats_screen(app *a)
+{
+	char vals[STATS_VISIBLE + 1][32], labels[STATS_VISIBLE + 1][80];
+	menu_row rows[STATS_VISIBLE + 1];
+	/* The total row says more than a duration, so it gets its own buffer
+	 * rather than borrowing a game's - which the device compiler caught as a
+	 * truncation the host compiler let through. */
+	char total[32], total_val[64];
+	int ngames = stats_summarize();
+	int cursor = 0, top = 0;
+	bool done = false;
+
+	stats_format(stats_total_seconds(), total, sizeof total);
+
+	while (!done && !want_quit && a->running) {
+		int shown = 0, i;
+
+		/* The total is a row rather than a heading, so it lines up with the
+		 * games under it and reads as one table. */
+		snprintf(labels[0], sizeof labels[0], "Total");
+		snprintf(total_val, sizeof total_val, "%s over %d launches",
+		         total, stats_total_launches());
+		rows[shown++] = (menu_row){ labels[0], total_val, false };
+
+		for (i = top; i < ngames && shown <= STATS_VISIBLE; i++) {
+			const char *tag, *file;
+			long secs;
+			int launches;
+			const char *dot;
+			int len;
+
+			if (!stats_at(i, &tag, &file, &secs, &launches)) break;
+			/* The extension is noise in a list of names. Last dot only, so a
+			 * title with dots of its own keeps them. */
+			dot = strrchr(file, '.');
+			len = dot && dot != file ? (int)(dot - file) : (int)strlen(file);
+			snprintf(labels[shown], sizeof labels[0], "%.*s", len, file);
+			stats_format(secs, vals[shown], sizeof vals[0]);
+			rows[shown] = (menu_row){ labels[shown], vals[shown], i == cursor };
+			shown++;
+		}
+
+		if (ngames == 0) {
+			snprintf(labels[1], sizeof labels[1], "Nothing played yet");
+			rows[1] = (menu_row){ labels[1], NULL, false };
+			shown = 2;
+		}
+
+		plat_input_poll(&a->in);
+		if (a->in.quit_requested) { a->running = false; return; }
+		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); return; }
+		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = true;
+
+		if (ngames > 0) {
+			if (in_repeat(&a->in, IN_DOWN) && cursor < ngames - 1) cursor++;
+			if (in_repeat(&a->in, IN_UP)   && cursor > 0)          cursor--;
+			/* The window follows the cursor rather than the other way round,
+			 * so a long list scrolls one row at a time from either end. */
+			if (cursor < top) top = cursor;
+			if (cursor >= top + STATS_VISIBLE) top = cursor - STATS_VISIBLE + 1;
+		}
+
+		if (in_repeat(&a->in, IN_VOLUP))    plat_volume_nudge(+1);
+		if (in_repeat(&a->in, IN_VOLDN))    plat_volume_nudge(-1);
+		if (in_repeat(&a->in, IN_BRIGHTUP)) plat_brightness_nudge(+1);
+		if (in_repeat(&a->in, IN_BRIGHTDN)) plat_brightness_nudge(-1);
+
+		tick_tint(a);
+		draw_shelf(a);
+		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
+		SDL_RenderFillRect(a->r, NULL);
+		menu_draw(a, "Play Time", rows, shown, -1, 0, MENU_ACCENT);
+		plat_draw_osd(a->r);
+		SDL_RenderPresent(a->r);
+		SDL_Delay(8);
+	}
+}
+
 static void about_screen(app *a)
 {
 	char ver[48], addr[80], batt[32], up[48];
@@ -3254,6 +3347,7 @@ static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
 	case PM_XFER:         xfer_screen(a); break;
 	case PM_SCRAPE:       art_screen(a, NULL, NULL, MENU_ACCENT); break;
 	case PM_ACHIEVEMENTS: ra_signin_screen(a); break;
+	case PM_STATS:        stats_screen(a); break;
 	case PM_ABOUT:        about_screen(a); break;
 	default: break;
 	}
@@ -3939,7 +4033,12 @@ static void launch(app *a)
 
 	snprintf(core, sizeof core, "%s/cores/%s_libretro.so", P_ROOT, s->core);
 	snprintf(elf, sizeof elf, "%s/diatom", P_ROOT);
-	snprintf(rom, sizeof rom, "%s/%s/%s", P_ROMS, s->folder, v->list.items[v->cursor].file);
+	/* Captured once, beside the path it goes into: play time is keyed on the
+	 * launch path the same way favorites are, and reading the cursor again
+	 * further down would be reading it at a different moment. */
+	const char *romfile = v->list.items[v->cursor].file;
+
+	snprintf(rom, sizeof rom, "%s/%s/%s", P_ROMS, s->folder, romfile);
 	snprintf(save, sizeof save, "%s/Saves", P_CARD);
 	snprintf(bios, sizeof bios, "%s/Bios", P_CARD);
 
@@ -4050,6 +4149,12 @@ static void launch(app *a)
 		                       console, active[0] ? active : NULL)) {
 			int r;
 
+			/* Play time starts here, and costs a clock read. Nothing is
+			 * opened or written - the launch path does no I/O for this, on
+			 * purpose, because a millisecond bought here is the first of
+			 * several. See stats.h. */
+			stats_begin(s->tag, romfile, plat_now_ms());
+
 			/* Straight after RUN and the levels, and for the same reason: the
 			 * mode is Diatom's own global and survives from the last game, so
 			 * a system that has never been set would otherwise inherit
@@ -4110,6 +4215,11 @@ static void launch(app *a)
 				break;
 			}
 			resident = (r == RES_EXIT);
+
+			/* The game is over, so this is the one write that is synced -
+			 * on the path where the player is waiting for the shelf rather
+			 * than for a game to start. */
+			stats_end(NULL, plat_now_ms());
 
 			/* The game is over and the display is ours again, which is the
 			 * first moment it is safe to make a request: the wait loop above
@@ -5087,6 +5197,11 @@ int main(int argc, char *argv[])
 	/* Before the scan, because the scan builds the Favorites shelf out of
 	 * them and a shelf cannot be built from a list that has not been read. */
 	fav_load();
+
+	/* Close any session the device never saw end - a power cut, a flat
+	 * battery - at its last checkpoint, before anything reads a total. See
+	 * stats.h: short by up to the checkpoint interval beats lost entirely. */
+	stats_recover();
 
 	{	char cp[CFG_STR * 2];
 		chv_earned_load();
