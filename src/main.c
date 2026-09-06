@@ -3061,12 +3061,6 @@ static void bt_screen(app *a)
 		if (next_refresh == 0 || now >= next_refresh) {
 			u.state = bt_status();
 			u.n = u.state == BT_READY ? bt_visible(u.dev, BT_MAX) : 0;
-			/* The row under the cursor is asked of BlueZ directly: bt_visible
-			 * infers connections from the sink file, which launch.sh writes on
-			 * a twenty-second poll and which says nothing about a connect this
-			 * screen just made. One fork for the row that matters. */
-			if (u.cursor >= 0 && u.cursor < u.n)
-				u.dev[u.cursor].connected = bt_connected(u.dev[u.cursor].mac);
 			for (i = 0; i < u.n; i++)
 				bt_label(&u.dev[i], u.vals[i], sizeof u.vals[0]);
 			next_refresh = now + 2000;

@@ -53,6 +53,19 @@ bool bt_mac_valid(const char *mac);
  * line is skipped rather than guessed at. */
 int bt_parse_devices(const char *text, bt_device *out, int max);
 
+/* Mark every device in `list` that appears in `hcitool con` output. Returns
+ * how many were marked.
+ *
+ * ONE call for ALL of them, which is the whole point. This started as
+ * /tmp/tortos_btsink, which launch.sh writes on a twenty-second poll and so
+ * knows nothing about a connect this screen just made; then as an `info` per
+ * row, which was a fork each and which I limited to the row under the cursor
+ * to keep the cost down. That made the label depend on where the CURSOR was -
+ * move off the headset and it went back to saying "paired". Connection state
+ * is a property of the device, not of the selection. Seen on the device
+ * 2026-09-06. */
+int bt_mark_connected(const char *hcitool_con, bt_device *list, int n);
+
 /* The right-hand column for one device. Pure, so the wording is checkable:
  * "connected" has to outrank "paired", or a successful connect redraws the
  * list saying exactly what it said before and the screen gives no sign

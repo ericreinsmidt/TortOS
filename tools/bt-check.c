@@ -87,6 +87,41 @@ static void device_lines(void)
 	ck(n == 2, "it stops at max rather than writing past it");
 }
 
+/* Connection state is a property of the DEVICE, not of where the cursor is.
+ * The version before this asked only about the selected row, so moving the
+ * cursor up to the toggle made the headset go back to reading "paired". */
+static void connections(void)
+{
+	bt_device d[3] = {
+		{ "A8:F5:E1:4A:93:71", "Shokz", true, false },
+		{ "11:22:33:44:55:66", "JBL",   true, false },
+		{ "AA:BB:CC:DD:EE:FF", "Other", false, true },   /* stale, must clear */
+	};
+	const char *real =
+		"Connections:\n"
+		"\t> ACL A8:F5:E1:4A:93:71 handle 128 state 1 lm MASTER AUTH ENCRYPT \n";
+
+	printf("who is connected, from one call for all of them:\n");
+	ck(bt_mark_connected(real, d, 3) == 1, "one of three");
+	ck(d[0].connected, "the one hcitool listed");
+	ck(!d[1].connected, "not the one it did not");
+	ck(!d[2].connected, "and a stale flag is cleared rather than left standing");
+
+	ck(bt_mark_connected("Connections:\n", d, 3) == 0, "nothing connected");
+	ck(!d[0].connected, "clears the previous answer too");
+
+	/* Case differs between hcitool and the bond directory names. */
+	ck(bt_mark_connected("\t> ACL a8:f5:e1:4a:93:71 handle 1 state 1\n", d, 3) == 1,
+	   "lower case matches an upper case bond");
+
+	/* A SCO link is the microphone channel and says nothing about audio out. */
+	ck(bt_mark_connected("\t> SCO A8:F5:E1:4A:93:71 handle 5 state 1\n", d, 3) == 0,
+	   "a SCO link is not an audio connection");
+
+	ck(bt_mark_connected("", d, 3) == 0, "empty output");
+	ck(bt_mark_connected(NULL, d, 3) == 0, "no output at all");
+}
+
 static void labels(void)
 {
 	bt_device d = { "AA:BB:CC:DD:EE:FF", "Shokz", false, false };
@@ -193,6 +228,7 @@ int main(void)
 {
 	addresses();
 	device_lines();
+	connections();
 	labels();
 	pcm_names();
 	rows_are_shaped_like_the_others();

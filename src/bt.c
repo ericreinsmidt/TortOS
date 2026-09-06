@@ -95,6 +95,39 @@ void bt_label(const bt_device *d, char *out, size_t n)
 	else                snprintf(out, n, "in range");
 }
 
+/* "\t> ACL A8:F5:E1:4A:93:71 handle 128 state 1 lm MASTER AUTH ENCRYPT" */
+int bt_mark_connected(const char *text, bt_device *list, int n)
+{
+	const char *p = text;
+	int marked = 0, i;
+
+	if (!text || !list) return 0;
+	for (i = 0; i < n; i++) list[i].connected = false;
+
+	while (p && *p) {
+		const char *eol = strchr(p, '\n');
+		size_t len = eol ? (size_t)(eol - p) : strlen(p);
+		char line[256];
+		const char *acl;
+
+		snprintf(line, sizeof line, "%.*s",
+		         (int)(len < sizeof line ? len : sizeof line - 1), p);
+		p = eol ? eol + 1 : NULL;
+
+		/* ACL only. A SCO link is the headset's microphone channel and says
+		 * nothing about whether audio is going out to it. */
+		if (!(acl = strstr(line, "ACL "))) continue;
+		if (!mac_ok_prefix(acl + 4)) continue;
+		for (i = 0; i < n; i++)
+			if (!strncasecmp(list[i].mac, acl + 4, 17)) {
+				list[i].connected = true;
+				marked++;
+				break;
+			}
+	}
+	return marked;
+}
+
 #ifdef __linux__
 
 #include <dirent.h>
@@ -242,24 +275,12 @@ int bt_visible(bt_device *out, int max)
 				break;
 			}
 
-	/* Which one is CONNECTED comes from the sink file the shell already
-	 * writes, not from an `info` per device: this list is redrawn on an
-	 * interval and a fork per row would be the thing menu_wifi exists to
-	 * avoid. bt_reconnect in launch.sh is the writer. */
+	/* Which are CONNECTED, in one call for all of them. See bt.h for the two
+	 * cheaper-looking sources this replaced and why each was wrong. */
 	{
-		char sink[160] = "", *p2;
-		FILE *sf = fopen("/tmp/tortos_btsink", "r");
-		if (sf) {
-			if (!fgets(sink, sizeof sink, sf)) sink[0] = '\0';
-			fclose(sf);
-			sink[strcspn(sink, "\r\n")] = '\0';
-			/* "bluealsa:DEV=AA:BB:CC:DD:EE:FF,PROFILE=a2dp" */
-			if ((p2 = strstr(sink, "DEV="))) {
-				for (i = 0; i < n; i++)
-					if (!strncasecmp(p2 + 4, out[i].mac, 17))
-						out[i].connected = true;
-			}
-		}
+		char con[2048];
+		char *argv[] = { (char *)"/usr/bin/hcitool", (char *)"con", NULL };
+		if (run(argv, con, sizeof con) == 0) bt_mark_connected(con, out, n);
 	}
 
 	/* A bonded device out of range does not appear in `devices` at all, and
@@ -350,11 +371,6 @@ bool bt_power(bool on)
 	return btctl(out, sizeof out, "power", on ? "on" : "off") == 0;
 }
 
-bool bt_connected(const char *mac)
-{
-	return info_says(mac, "Connected: yes");
-}
-
 bool bt_disconnect(const char *mac)
 {
 	char out[512];
@@ -405,7 +421,6 @@ bool bt_scan(int secs) { (void)secs; return false; }
 bool bt_pair(const char *m, char *e, size_t n) { (void)m; if (e && n) e[0] = 0; return false; }
 bool bt_connect(const char *m, char *e, size_t n) { (void)m; if (e && n) e[0] = 0; return false; }
 bool bt_power(bool on) { (void)on; return false; }
-bool bt_connected(const char *m) { (void)m; return false; }
 bool bt_disconnect(const char *m) { (void)m; return false; }
 bool bt_forget(const char *m) { (void)m; return false; }
 bool bt_asoundrc(const char *d) { (void)d; return false; }
