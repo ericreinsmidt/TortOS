@@ -23,6 +23,12 @@
  * sqlite3.h - the ABI is stable and the eight entry points are declared below.
  *
  *   storeprobe <dir> [iterations]
+ *   storeprobe <dir> exposure <sysfs stat path>
+ *
+ * The second mode answers a different question: after a write that does NOT
+ * fsync, how long until the bytes are actually on the card? That window is
+ * what a power cut can take. It polls the block device's written-sector
+ * counter, so it measures the card rather than the page cache.
  *
  * It writes only inside <dir>/storeprobe.tmp and removes it on the way out.
  */
@@ -107,9 +113,112 @@ static int record(char *buf, int i)
 	                60 + i % 3600, i % 7 ? "quit" : "crash");
 }
 
+/* Sectors written to the block device, from /sys/block/<dev>/stat field 7. */
+static long long sectors_written(const char *statpath)
+{
+	FILE *f = fopen(statpath, "r");
+	if (!f) return -1;
+	long long v[8] = { 0 };
+	int n = fscanf(f, "%lld %lld %lld %lld %lld %lld %lld %lld",
+	               &v[0], &v[1], &v[2], &v[3], &v[4], &v[5], &v[6], &v[7]);
+	fclose(f);
+	return n >= 7 ? v[6] : -1;
+}
+
+/* Wait for the counter to move, or give up. Returns seconds, or -1. */
+static double wait_for_flush(const char *statpath, long long base, double limit_s)
+{
+	double t0 = now_ms();
+	for (;;) {
+		double el = (now_ms() - t0) / 1000.0;
+		long long now = sectors_written(statpath);
+		if (now > base) return el;
+		if (el > limit_s) return -1;
+		usleep(200000);
+	}
+}
+
+static void exposure(const char *dir, const char *statpath)
+{
+	char path[640];
+	long long base;
+	double t;
+
+	printf("\n  how long until an unsynced write reaches the card\n");
+	printf("  (polling %s, 0.2s resolution)\n\n", statpath);
+
+	/* Settle first, so nothing older is still in flight and confusing this. */
+	snprintf(path, sizeof path, "%s/exp.log", dir);
+	FILE *f = fopen(path, "w"); fputs("seed\n", f); fclose(f);
+	sync(); sleep(3);
+
+	{	/* Append, no fsync - the candidate design. */
+		base = sectors_written(statpath);
+		int fd = open(path, O_WRONLY | O_APPEND);
+		char rec[96]; int len = record(rec, 1);
+		if (write(fd, rec, len) < 0) perror("write");
+		close(fd);
+		t = wait_for_flush(statpath, base, 45);
+		if (t < 0) printf("  %-26s no write in 45s\n", "append, no fsync");
+		else       printf("  %-26s %5.1f s\n", "append, no fsync", t);
+	}
+
+	{	/* Append with fsync - expected to be durable before write() returns. */
+		sync(); sleep(3);
+		base = sectors_written(statpath);
+		int fd = open(path, O_WRONLY | O_APPEND);
+		char rec[96]; int len = record(rec, 2);
+		if (write(fd, rec, len) < 0) perror("write");
+		fsync(fd);
+		double after = (sectors_written(statpath) > base) ? 0.0 : -1.0;
+		close(fd);
+		if (after == 0.0) printf("  %-26s %5.1f s  (before fsync returned)\n",
+		                         "append + fsync", 0.0);
+		else printf("  %-26s %5.1f s\n", "append + fsync",
+		            wait_for_flush(statpath, base, 45));
+	}
+
+	if (!sq_open && !sqlite_load()) { printf("  (no libsqlite3, sqlite rows skipped)\n"); return; }
+
+	const char *modes[3]   = { "DELETE", "WAL",  "WAL" };
+	const char *sync_of[3] = { "FULL",   "FULL", "NORMAL" };
+	for (int m = 0; m < 3; m++) {
+		sqlite3 *db = NULL; sqlite3_stmt *st = NULL; char *err = NULL, sql[128];
+		snprintf(path, sizeof path, "%s/exp-%s-%s.db", dir, modes[m], sync_of[m]);
+		unlink(path);
+		if (sq_open(path, &db) != 0) continue;
+		snprintf(sql, sizeof sql, "PRAGMA journal_mode=%s;", modes[m]);
+		sq_exec(db, sql, NULL, NULL, &err);
+		snprintf(sql, sizeof sql, "PRAGMA synchronous=%s;", sync_of[m]);
+		sq_exec(db, sql, NULL, NULL, &err);
+		sq_exec(db, "CREATE TABLE s(game INTEGER, started INTEGER, secs INTEGER, reason INTEGER);",
+		        NULL, NULL, &err);
+		sq_prepare(db, "INSERT INTO s VALUES(?,?,?,?);", -1, &st, NULL);
+
+		/* Settle the table creation before timing the insert. */
+		sync(); sleep(3);
+		base = sectors_written(statpath);
+		sq_bind_int64(st, 1, 305419896); sq_bind_int64(st, 2, 1757000000);
+		sq_bind_int64(st, 3, 1234);      sq_bind_int64(st, 4, 1);
+		sq_step(st); sq_reset(st);
+		int immediate = sectors_written(statpath) > base;
+		char label[40];
+		snprintf(label, sizeof label, "sqlite %s/%s", modes[m], sync_of[m]);
+		if (immediate) printf("  %-26s %5.1f s  (before the insert returned)\n", label, 0.0);
+		else {
+			t = wait_for_flush(statpath, base, 45);
+			if (t < 0) printf("  %-26s no write in 45s  <- until checkpoint or close\n", label);
+			else       printf("  %-26s %5.1f s\n", label, t);
+		}
+		sq_finalize(st);
+		sq_close(db);
+	}
+}
+
 int main(int argc, char **argv)
 {
-	if (argc < 2) { fprintf(stderr, "usage: storeprobe <dir> [iterations]\n"); return 2; }
+	if (argc < 2) { fprintf(stderr, "usage: storeprobe <dir> [iterations]\n"
+	                                "       storeprobe <dir> exposure <sysfs stat path>\n"); return 2; }
 	int n = argc > 2 ? atoi(argv[2]) : 100;
 	if (n < 5) n = 5;
 
@@ -118,6 +227,15 @@ int main(int argc, char **argv)
 	if (mkdir(dir, 0755) < 0 && access(dir, W_OK) < 0) {
 		fprintf(stderr, "storeprobe: cannot write in %s\n", argv[1]);
 		return 1;
+	}
+
+	if (argc > 3 && !strcmp(argv[2], "exposure")) {
+		if (!sqlite_load()) printf("  (no libsqlite3 found)\n");
+		exposure(dir, argv[3]);
+		char cmd[640];
+		snprintf(cmd, sizeof cmd, "rm -rf '%s'", dir);
+		if (system(cmd) != 0) fprintf(stderr, "storeprobe: could not remove %s\n", dir);
+		return 0;
 	}
 
 	double *v = malloc(n * sizeof *v);
@@ -167,6 +285,29 @@ int main(int argc, char **argv)
 		v[i] = now_ms() - t0;
 	}
 	report("APPEND LOG", v, n, "open, write, fsync, close");
+
+	/* --- how TortOS writes a config file today ---------------------------
+	 * atomic_open/atomic_commit: a .new beside the target, fsync, rename.
+	 * levels.cfg goes through this on EVERY volume and brightness nudge, and
+	 * the rocker produces a stream of them while a game is running. This row
+	 * is the baseline any change to config storage has to beat. */
+	snprintf(path, sizeof path, "%s/levels.cfg", dir);
+	{
+		char tmp[700];
+		snprintf(tmp, sizeof tmp, "%s.new", path);
+		for (int i = 0; i < n; i++) {
+			double t0 = now_ms();
+			FILE *f = fopen(tmp, "w");
+			if (!f) { perror("fopen"); return 1; }
+			fprintf(f, "volume=%d\nbrightness=%d\n", i % 40, i % 10);
+			fflush(f);
+			fsync(fileno(f));
+			fclose(f);
+			if (rename(tmp, path) != 0) { perror("rename"); return 1; }
+			v[i] = now_ms() - t0;
+		}
+		report("atomic cfg replace", v, n, "what a volume nudge costs today");
+	}
 
 	/* --- candidate: sqlite, both journal modes --------------------------- */
 	if (!sqlite_load()) {
@@ -281,7 +422,7 @@ int main(int argc, char **argv)
 
 	/* Sizes matter for a card and for what has to be read at startup. */
 	printf("\n  on disk:\n");
-	const char *names[] = { "fold.log", "read.db", "stats-DELETE-FULL.db",
+	const char *names[] = { "fold.log", "levels.cfg", "read.db", "stats-DELETE-FULL.db",
 	                        "stats-WAL-FULL.db", "stats-WAL-NORMAL.db" };
 	for (unsigned i = 0; i < sizeof names / sizeof *names; i++) {
 		struct stat sb;
