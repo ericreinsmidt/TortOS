@@ -56,7 +56,10 @@ static void opens_and_seeds(void)
 	ck(db_get_int(d, "brightness", -1) == 7, "brightness seeded");
 	db_get_str(d, "audioout", buf, sizeof buf, "");
 	ck(!strcmp(buf, "auto"), "audioout seeded to auto");
-	ck(db_get_int(d, "autooff", -1) == 0, "auto off seeded to off");
+	/* Two minutes, which is what auto_off_load() returned when no file
+	 * existed. Seeding 0 here would quietly change the shipped default to
+	 * "never", which is exactly what it did the first time. */
+	ck(db_get_int(d, "autooff", -1) == 120, "auto off seeded to two minutes");
 	db_close(d);
 }
 

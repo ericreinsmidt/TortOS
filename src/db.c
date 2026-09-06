@@ -86,7 +86,7 @@ static const db_default device_defaults[] = {
 	{ "volume",     "8"  },
 	{ "brightness", "7"  },
 	{ "audioout",   "auto" },  /* auto | speaker - see src/audioout.h */
-	{ "autooff",    "0"  },    /* seconds without input, 0 is off */
+	{ "autooff",    "120" },   /* seconds without input, 0 is off */
 	{ "textsize",   "1.0" },
 	{ "wifi",       "0"  },    /* what THIS device was last doing, not the */
 	{ "bluetooth",  "0"  },    /* shipped default - seeding merges the two */

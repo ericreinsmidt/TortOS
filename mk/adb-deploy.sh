@@ -43,10 +43,11 @@ case $WHAT in elf|all)
 	[ -f "$ROOT/build/tortos.elf" ] || { echo "run make first"; exit 1; }
 	$A push "$ROOT/build/tortos.elf"        "$P/" > /dev/null
 	$A push "$ROOT/build/setbright"         "$P/" > /dev/null
+	# systems.cfg only. tortos.cfg, coreopts.cfg and turbo.cfg are compiled
+	# into the launcher and seed the settings database, so there is nothing
+	# left to push - and pushing a stale copy would leave a file on the card
+	# that looks like configuration and is read by nothing.
 	$A push "$ROOT/config/systems.cfg"      "$P/" > /dev/null
-	$A push "$ROOT/config/tortos.cfg"       "$P/" > /dev/null
-	$A push "$ROOT/config/coreopts.cfg"     "$P/" > /dev/null
-	$A push "$ROOT/config/turbo.cfg"        "$P/" > /dev/null
 	$A push "$ROOT/sd/tortos/launch.sh"     "$P/" > /dev/null
 	$A push "$ROOT/sd/.tmp_update/updater"   /mnt/SDCARD/.tmp_update/ > /dev/null
 	$A push "$ROOT/sd/.tmp_update/tg3040.sh" /mnt/SDCARD/.tmp_update/ > /dev/null
