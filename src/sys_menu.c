@@ -63,7 +63,9 @@ int sys_menu_build(const sys_ui *u, menu_row *out, menu_bufs *b,
 		         u->wifi == WIFI_CONNECTING ? "connecting" :
 		         u->wifi == WIFI_IDLE       ? "not connected" : "off");
 	out[PM_WIFI]         = (menu_row){ "Wi-Fi",     b->b,      true  };
-	out[PM_BT]           = (menu_row){ "Bluetooth", "not yet", false };
+	out[PM_BT]           = (menu_row){ "Bluetooth",
+	                                   u->bt_name ? u->bt_name : "not connected",
+	                                   true  };
 	/* Where the system's sound goes - not Diatom's, which is why the label says
 	 * neither "game" nor "emulator": the audiobook and music player will read
 	 * the same setting. Diatom's ADR-0029, and src/audioout.c for the rule.

@@ -13,6 +13,7 @@
 #include "atomic.h"
 #include "cheevos.h"
 #include "config.h"
+#include "bt.h"
 #include "db.h"
 #include "stats.h"
 #include "coverflow.h"
@@ -1943,6 +1944,30 @@ static int menu_build(app *a, screen_id screen, int sys,
 		u.auto_off  = a->auto_off;
 		u.audio_policy = ao.policy;
 		u.audio_dest   = aout_actual(&ao);
+
+		/* The connected headset's name, from the bonds and the sink file the
+		 * shell writes - no fork. This is built for every menu frame, so a
+		 * bluetoothctl call here would be the thing menu_wifi exists to
+		 * prevent. */
+		{
+			static char btname[BT_NAME_MAX];
+			bt_device bd[BT_MAX];
+			int nb = bt_bonded(bd, BT_MAX), i;
+			char sink[160] = "";
+			FILE *sf = fopen("/tmp/tortos_btsink", "r");
+
+			btname[0] = '\0';
+			if (sf) {
+				if (!fgets(sink, sizeof sink, sf)) sink[0] = '\0';
+				fclose(sf);
+			}
+			for (i = 0; i < nb; i++)
+				if (sink[0] && strstr(sink, bd[i].mac)) {
+					snprintf(btname, sizeof btname, "%s", bd[i].name);
+					break;
+				}
+			u.bt_name = btname[0] ? btname : NULL;
+		}
 	}
 	return sys_menu_build(&u, out, b, heading);
 }
@@ -3007,6 +3032,143 @@ void info_preview(app *a, bool net)
 	          a->sys.systems[owner].accent);
 }
 
+/* Bluetooth: pair a headset, connect it, forget it.
+ *
+ * The three things this stack punishes you for getting wrong are all handled
+ * in bt.c rather than here - the agent, judging by `info` instead of by the
+ * return of `connect`, and where the bonds actually live. What is left here is
+ * a list and four buttons.
+ *
+ * The list is refreshed on an INTERVAL, never per frame: every query is a fork
+ * out of a 119 MB process, and this loop runs every frame. Same two seconds
+ * the Wi-Fi row uses, for the same reason.
+ */
+#define BT_VISIBLE 7
+
+static void bt_screen(app *a)
+{
+	bt_device dev[BT_MAX];
+	char vals[BT_VISIBLE][32], labels[BT_VISIBLE][BT_NAME_MAX];
+	menu_row rows[BT_VISIBLE];
+	char note[96] = "";
+	unsigned next_refresh = 0, scan_until = 0;
+	int n = 0, cursor = 0, top = 0;
+	bool done = false;
+
+	while (!done && !want_quit && a->running) {
+		unsigned now = plat_now_ms();
+		int shown = 0, i;
+		bt_state st = BT_READY;
+
+		if (next_refresh == 0 || now >= next_refresh) {
+			st = bt_status();
+			n = st == BT_READY ? bt_visible(dev, BT_MAX) : 0;
+			next_refresh = now + 2000;
+			if (cursor >= n) cursor = n > 0 ? n - 1 : 0;
+			if (cursor < top) top = cursor;
+		}
+		if (scan_until && now >= scan_until) { scan_until = 0; note[0] = '\0'; }
+
+		for (i = top; i < n && shown < BT_VISIBLE; i++) {
+			snprintf(labels[shown], sizeof labels[0], "%s", dev[i].name);
+			bt_label(&dev[i], vals[shown], sizeof vals[0]);
+			rows[shown] = (menu_row){ labels[shown], vals[shown], i == cursor };
+			shown++;
+		}
+		if (n == 0) {
+			const char *why =
+				st == BT_NO_ADAPTER  ? "No Bluetooth adapter" :
+				st == BT_POWERED_OFF ? "Bluetooth is off" :
+				scan_until           ? "Searching..." : "Nothing found - press Y to search";
+			snprintf(labels[0], sizeof labels[0], "%s", why);
+			rows[0] = (menu_row){ labels[0], NULL, false };
+			shown = 1;
+		} else if (note[0] && shown < BT_VISIBLE) {
+			snprintf(labels[shown], sizeof labels[0], "%s", note);
+			rows[shown] = (menu_row){ labels[shown], NULL, false };
+			shown++;
+		}
+
+		plat_input_poll(&a->in);
+		if (a->in.quit_requested) { a->running = false; return; }
+		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); return; }
+		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = true;
+
+		if (n > 0) {
+			if (in_repeat(&a->in, IN_DOWN) && cursor < n - 1) cursor++;
+			if (in_repeat(&a->in, IN_UP)   && cursor > 0)     cursor--;
+			if (cursor < top) top = cursor;
+			if (cursor >= top + BT_VISIBLE) top = cursor - BT_VISIBLE + 1;
+		}
+
+		if (a->in.pressed[IN_Y] && st == BT_READY) {
+			/* Put the headset in pairing mode first - this only listens. */
+			bt_scan(10);
+			scan_until = now + 10000;
+			next_refresh = now + 1500;
+			snprintf(note, sizeof note, "Searching for 10 seconds");
+		}
+
+		if (a->in.pressed[IN_ACCEPT] && n > 0) {
+			char err[64];
+
+			if (dev[cursor].connected) {
+				wait_panel(a, "Bluetooth", "Disconnecting...");
+				bt_disconnect(dev[cursor].mac);
+				snprintf(note, sizeof note, "Disconnected");
+			} else {
+				if (!dev[cursor].bonded) {
+					wait_panel(a, "Bluetooth", "Pairing...");
+					if (!bt_pair(dev[cursor].mac, err, sizeof err)) {
+						snprintf(note, sizeof note, "%s", err);
+						next_refresh = 0;
+						goto drawn;
+					}
+					/* A PCM for the new bond, so the NEXT emulator start can
+					 * reach it. It cannot help the one already running:
+					 * alsa-lib reads its config once and never notices a file
+					 * written afterwards - measured, see bt.h. */
+					bt_asoundrc(P_USERDATA);
+				}
+				wait_panel(a, "Bluetooth", "Connecting...");
+				if (bt_connect(dev[cursor].mac, err, sizeof err))
+					snprintf(note, sizeof note,
+					         "Connected. Game audio from the next launch");
+				else
+					snprintf(note, sizeof note, "%s", err);
+			}
+			next_refresh = 0;
+		}
+
+		if (a->in.pressed[IN_X] && n > 0 && dev[cursor].bonded) {
+			wait_panel(a, "Bluetooth", "Forgetting...");
+			if (bt_forget(dev[cursor].mac)) {
+				bt_asoundrc(P_USERDATA);
+				snprintf(note, sizeof note, "Forgotten");
+			} else {
+				snprintf(note, sizeof note, "It would not unpair");
+			}
+			next_refresh = 0;
+		}
+
+	drawn:
+		if (in_repeat(&a->in, IN_VOLUP))    plat_volume_nudge(+1);
+		if (in_repeat(&a->in, IN_VOLDN))    plat_volume_nudge(-1);
+		if (in_repeat(&a->in, IN_BRIGHTUP)) plat_brightness_nudge(+1);
+		if (in_repeat(&a->in, IN_BRIGHTDN)) plat_brightness_nudge(-1);
+
+		tick_tint(a);
+		draw_shelf(a);
+		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
+		SDL_RenderFillRect(a->r, NULL);
+		menu_draw(a, "Bluetooth", rows, shown, -1, 0, MENU_ACCENT);
+		plat_draw_osd(a->r);
+		SDL_RenderPresent(a->r);
+		SDL_Delay(8);
+	}
+}
+
 /* Play time, most played first.
  *
  * Summarized once on entry rather than every frame: it is a fold over every
@@ -3347,6 +3509,7 @@ static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
 	case PM_XFER:         xfer_screen(a); break;
 	case PM_SCRAPE:       art_screen(a, NULL, NULL, MENU_ACCENT); break;
 	case PM_ACHIEVEMENTS: ra_signin_screen(a); break;
+	case PM_BT:           bt_screen(a); break;
 	case PM_STATS:        stats_screen(a); break;
 	case PM_ABOUT:        about_screen(a); break;
 	default: break;

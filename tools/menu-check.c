@@ -195,7 +195,10 @@ static void tortos_menu_offline(void)
 	ck(rows[PM_ACHIEVEMENTS].live, "Cheevos is reachable signed out");
 	ck(!strcmp(val(&rows[PM_SLEEP]), "2m"), "120s reads as 2m");
 	ck(!strcmp(val(&rows[PM_TEXT]), "100%"), "text size is passed through");
-	ck(!rows[PM_BT].live, "Bluetooth is still a placeholder");
+	/* Live since 2026-09-06, when the pairing screen landed. The row used to
+	 * be dead and read "not yet", which was true of the screen and false of
+	 * the feature - game audio had been going to a headset for three days. */
+	ck(rows[PM_BT].live, "Bluetooth is reachable now that pairing exists");
 	/* Always reachable, even with no radio and no cable: it is the row you go
 	 * to in order to say "not Bluetooth", so it must not vanish with the thing
 	 * it refuses. */
@@ -414,7 +417,9 @@ static void cursor_reaches(void)
 	k = reachable(rows, n, got, MENU_MAX_ROWS);
 
 	printf("TortOS menu offline, what the cursor can reach:\n");
-	ck(!holds(got, k, PM_BT), "Bluetooth is skipped while it is a placeholder");
+	/* No network needed to pair a headset, so it stays reachable offline -
+	 * unlike the three rows above, which do need one. */
+	ck(holds(got, k, PM_BT), "Bluetooth is reachable with no network");
 	ck(!holds(got, k, PM_XFER), "OTH is skipped with no network");
 	ck(!holds(got, k, PM_SCRAPE), "Box Art is skipped with no network");
 	ck(holds(got, k, PM_WIFI), "Wi-Fi is reachable, which is how you fix that");

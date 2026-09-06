@@ -67,6 +67,12 @@ typedef struct {
 	aout_policy audio_policy;
 	aout_dest   audio_dest;
 
+	/* Bluetooth: the name of the connected headset, or NULL. The row used to
+	 * read "not yet" and be dead, which was true of the pairing screen and
+	 * false of the feature - game audio has gone to a headset since
+	 * 2026-09-03. */
+	const char *bt_name;
+
 	/* The system menu */
 	const char *sys_name;
 	const char *sys_core;
