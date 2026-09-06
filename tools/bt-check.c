@@ -18,6 +18,9 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 static int fails;
 static void ck(int cond, const char *what)
@@ -235,6 +238,48 @@ static void rows_are_shaped_like_the_others(void)
 	   "and the footer says how to fix it");
 }
 
+/* The sweep DELETES FILES, so it is checked against a tree built here rather
+ * than trusted against the real one. That is why bt_sweep_cache takes a root
+ * at all. */
+#define SWEEPROOT "/tmp/tortos-bt-sweep"
+#define ADAPTER   SWEEPROOT "/22:22:4A:65:48:D7"
+
+static void mk(const char *path) { mkdir(path, 0755); }
+static void touch(const char *path)
+{
+	FILE *f = fopen(path, "w");
+	if (f) { fputs("[General]\nName=x\n", f); fclose(f); }
+}
+static bool there(const char *path) { return access(path, F_OK) == 0; }
+
+static void sweep(void)
+{
+	printf("scanning leaves a cache entry for everything in range:\n");
+
+	system("rm -rf " SWEEPROOT);
+	mk(SWEEPROOT); mk(ADAPTER); mk(ADAPTER "/cache");
+	/* One bonded device, two that a scan merely saw. */
+	mk(ADAPTER "/A8:F5:E1:4A:93:71");
+	touch(ADAPTER "/A8:F5:E1:4A:93:71/info");
+	touch(ADAPTER "/cache/A8:F5:E1:4A:93:71");
+	touch(ADAPTER "/cache/78:E3:6D:82:98:02");
+	touch(ADAPTER "/cache/11:22:33:44:55:66");
+	touch(ADAPTER "/settings");                 /* not an address; leave alone */
+
+	ck(bt_sweep_cache(SWEEPROOT) == 2, "the two nobody paired with go");
+	ck(there(ADAPTER "/cache/A8:F5:E1:4A:93:71"),
+	   "the bonded one keeps its cache - that is the cache doing its job");
+	ck(!there(ADAPTER "/cache/78:E3:6D:82:98:02"), "the first scan leftover is gone");
+	ck(!there(ADAPTER "/cache/11:22:33:44:55:66"), "and the second");
+	ck(there(ADAPTER "/A8:F5:E1:4A:93:71/info"), "the bond itself is untouched");
+	ck(there(ADAPTER "/settings"), "and a file that is not an address is left alone");
+
+	ck(bt_sweep_cache(SWEEPROOT) == 0, "running it again removes nothing");
+	ck(bt_sweep_cache("/tmp/tortos-bt-nosuchdir") == 0, "no bonds root is not a crash");
+
+	system("rm -rf " SWEEPROOT);
+}
+
 int main(void)
 {
 	addresses();
@@ -243,6 +288,7 @@ int main(void)
 	labels();
 	pcm_names();
 	rows_are_shaped_like_the_others();
+	sweep();
 	if (fails) { printf("\n%d FAILED\n", fails); return 1; }
 	printf("\nok: addresses are validated and names are only ever data\n");
 	return 0;

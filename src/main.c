@@ -3190,6 +3190,11 @@ static void bt_screen(app *a)
 		SDL_RenderPresent(a->r);
 		SDL_Delay(8);
 	}
+
+	/* On the way out, not while the list is up: `bluetoothctl devices` reads
+	 * the same cache, so sweeping mid-screen would empty the list the player
+	 * is looking at. */
+	bt_sweep_cache(NULL);
 }
 
 /* Play time, most played first.

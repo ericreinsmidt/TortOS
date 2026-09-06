@@ -133,4 +133,20 @@ void bt_pcm_name(const char *mac, char *out, size_t n);
  * emulator start, and the screen has to say so rather than look broken. */
 bool bt_asoundrc(const char *userdata_dir);
 
+/* Delete every cached device that is not bonded, and return how many went.
+ *
+ * BlueZ writes a cache entry - name and A2DP endpoints - for every device it
+ * SCANS, not only the ones you pair with. So the search button leaves a
+ * permanent record on the card of every named device that was in range when it
+ * was pressed, accumulating, with nothing to clear it. Two entries appeared
+ * after one scan on 2026-09-06 and only one of them was the headset.
+ *
+ * Bonded devices keep theirs: that is the cache doing its job, for a device
+ * the player chose. Forgetting one removes it, which bt_forget already does.
+ *
+ * `root` is the bonds directory, a parameter rather than a constant because
+ * this deletes files and a check should be able to point it somewhere safe.
+ * Pass NULL for the real one. */
+int bt_sweep_cache(const char *root);
+
 #endif

@@ -6,9 +6,12 @@
  * escaping around it. A MAC is validated besides, because it is the one thing
  * here that is ever passed back out as an argument.
  */
+#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include "bt.h"
 
@@ -156,6 +159,45 @@ int bt_mark_connected(const char *text, bt_device *list, int n)
 			}
 	}
 	return marked;
+}
+
+/* Outside the __linux__ block on purpose: this is dirent, stat and unlink,
+ * which are POSIX, and it is the one function here that DELETES FILES. Inside
+ * it, the check ran against a stub returning 0 and passed while proving
+ * nothing - which is what happened the first time it was written. */
+int bt_sweep_cache(const char *root)
+{
+	DIR *ad;
+	struct dirent *a;
+	int gone = 0;
+
+	if (!root) root = BONDS;
+	if (!(ad = opendir(root))) return 0;
+	while ((a = readdir(ad))) {
+		char cdir[600];
+		DIR *cd;
+		struct dirent *c;
+
+		if (a->d_name[0] == '.') continue;
+		snprintf(cdir, sizeof cdir, "%s/%s/cache", root, a->d_name);
+		if (!(cd = opendir(cdir))) continue;
+		while ((c = readdir(cd))) {
+			char bond[700], path[700];
+			struct stat sb;
+
+			if (!bt_mac_valid(c->d_name)) continue;
+			/* The bond directory sits beside the cache one, named the same
+			 * way. Present means the player chose this device and the cache
+			 * is doing its job; absent means a scan put it there. */
+			snprintf(bond, sizeof bond, "%s/%s/%s", root, a->d_name, c->d_name);
+			if (stat(bond, &sb) == 0 && S_ISDIR(sb.st_mode)) continue;
+			snprintf(path, sizeof path, "%s/%s", cdir, c->d_name);
+			if (unlink(path) == 0) gone++;
+		}
+		closedir(cd);
+	}
+	closedir(ad);
+	return gone;
 }
 
 #ifdef __linux__
@@ -440,6 +482,7 @@ static void forget_cache(const char *mac)
 	}
 	closedir(ad);
 }
+
 
 bool bt_forget(const char *mac)
 {
