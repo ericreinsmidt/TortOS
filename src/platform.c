@@ -1322,8 +1322,15 @@ static void levels_save(void)
 {
 	db_set_int(db_dev(), "volume", cur_vol);
 	db_set_int(db_dev(), "brightness", cur_bright);
-	/* launch.sh sets the panel from this before the boot animation, and it
-	 * cannot read a database, so the export follows the write. */
+	/* launch.sh sets the panel from this before the boot animation and cannot
+	 * read a database, so the export has to follow a brightness change.
+	 *
+	 * It costs nothing when nothing in it moved - db_write_boot_env compares
+	 * against what it last wrote and returns. That matters because VOLUME is
+	 * not in boot.env at all, and calling this unconditionally put a file
+	 * replacement back on the volume rocker: 3.03 ms median, 9.27 ms at the
+	 * tail, while a game is running. Which is the exact cost moving settings
+	 * into the database was meant to remove. */
 	db_write_boot_env();
 }
 

@@ -5387,11 +5387,26 @@ int main(int argc, char *argv[])
 	{
 		char dev[CFG_STR * 2], lib[CFG_STR * 2], env[CFG_STR * 2];
 		db_paths_ready(dev, sizeof dev, lib, sizeof lib, env, sizeof env);
+		/* NOT fatal, and the reason is what "fatal" costs here. launch.sh
+		 * restarts the launcher when it exits, and five exits inside five
+		 * seconds each makes it give up and call poweroff - so returning 1
+		 * from this point turns a settings problem into a device that will
+		 * not boot. It is also BEFORE plat_resident_ready() below, which is
+		 * what stops a running game so that only one process is presenting;
+		 * exiting here skips that entirely.
+		 *
+		 * Every getter takes what to say instead, and db_dev()/db_lib()
+		 * return NULL harmlessly, so the launcher comes up on the shipped
+		 * defaults with no favorites, no turbo and no core options. Worse
+		 * than working, far better than off - and it says so where anyone
+		 * looking at the log will find it. */
 		if (!db_init(dev, lib, env)) {
-			fprintf(stderr, "cannot open the settings database at %s\n", dev);
+			fprintf(stderr, "settings: cannot open the database at %s\n", dev);
 			if (!db_available())
-				fprintf(stderr, "  libsqlite3 did not load\n");
-			return 1;
+				fprintf(stderr, "settings: libsqlite3 did not load\n");
+			fprintf(stderr, "settings: continuing on the shipped defaults - "
+			                "favorites, turbo and core options will be absent, "
+			                "and nothing set here will be remembered\n");
 		}
 		/* Rewritten at every boot, not only on change: it is derived, so a
 		 * card that lost it or never had one gets a correct one for free. */

@@ -3,10 +3,10 @@
  * it without a window - the same reason atomic.c is kept clean. */
 #include <dlfcn.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "atomic.h"
 #include "db.h"
 
 /* --- libsqlite3, declared rather than included ---------------------------
@@ -376,27 +376,64 @@ db *db_lib(void) { return g_lib; }
 /* --- boot.env, see db.h -------------------------------------------------- */
 bool db_write_boot_env(void)
 {
+	static char last[512];
+	char body[512], tz[64];
+	char tmp[1100];
 	FILE *f;
-	char tz[64];
+	int n;
 
 	if (!g_dev || !g_lib || !g_boot_env[0]) return false;
-	if (!(f = atomic_open(g_boot_env, 0644))) return false;
 
 	/* Shell-sourced, so every value is quoted and nothing is computed here.
 	 * The launcher already resolved "the player's choice, else the shipped
 	 * default" by seeding, which is why this is four lines and launch.sh no
 	 * longer needs a fallback for each one. */
-	fprintf(f, "# Written by TortOS from the settings database. Derived, not\n");
-	fprintf(f, "# authoritative: delete it and the next settings change\n");
-	fprintf(f, "# rewrites it. Sourced by launch.sh before tortos.elf runs.\n");
-	fprintf(f, "BRIGHTNESS='%d'\n", db_get_int(g_dev, "brightness", 7));
-	fprintf(f, "WIFI='%d'\n",       db_get_int(g_dev, "wifi", 0) ? 1 : 0);
-	fprintf(f, "BLUETOOTH='%d'\n",  db_get_int(g_dev, "bluetooth", 0) ? 1 : 0);
 	db_get_str(g_lib, "timezone", tz, sizeof tz, "America/New_York");
-	/* A single quote in a timezone name would break the shell that sources
-	 * this. None exist, and a value that could is dropped rather than
-	 * escaped, because a wrong TZ is cheaper than an unbootable launch.sh. */
-	fprintf(f, "TIMEZONE='%s'\n", strchr(tz, '\'') ? "UTC" : tz);
+	n = snprintf(body, sizeof body,
+	             "# Written by TortOS from the settings database. Derived, not\n"
+	             "# authoritative: delete it and the next settings change\n"
+	             "# rewrites it. Sourced by launch.sh before tortos.elf runs.\n"
+	             "BRIGHTNESS='%d'\n"
+	             "WIFI='%d'\n"
+	             "BLUETOOTH='%d'\n"
+	             /* A single quote in a timezone name would break the shell that
+	              * sources this. None exist, and a value that could is dropped
+	              * rather than escaped: a wrong TZ is cheaper than an
+	              * unbootable launch.sh. */
+	             "TIMEZONE='%s'\n",
+	             db_get_int(g_dev, "brightness", 7),
+	             db_get_int(g_dev, "wifi", 0) ? 1 : 0,
+	             db_get_int(g_dev, "bluetooth", 0) ? 1 : 0,
+	             strchr(tz, '\'') ? "UTC" : tz);
+	if (n < 0 || n >= (int)sizeof body) return false;
 
-	return atomic_commit(f, g_boot_env);
+	/* NOTHING TO DO IF NOTHING CHANGED, and this is not an optimization for
+	 * its own sake. levels_save calls this on every nudge of the volume
+	 * rocker, including while a game is running - and volume is not one of the
+	 * four values here. Writing anyway put a file replacement back on the path
+	 * the database was meant to take it off: measured at 3.03 ms median and
+	 * 9.27 ms at the tail, against a 16.7 ms frame. */
+	/* Unless it is not there. The memo is about avoiding a rewrite, not about
+	 * refusing to create the file: this thing's whole licence to be a cache is
+	 * that deleting it costs nothing, and skipping here would make a deleted
+	 * boot.env stay deleted until some unrelated setting moved. */
+	{
+		struct stat sb;
+		if (!strcmp(body, last) && stat(g_boot_env, &sb) == 0) return true;
+	}
+
+	/* Written to a temporary and renamed, but NOT fsynced. rename is what
+	 * makes it atomic, so launch.sh can never source half a file; the fsync
+	 * would only add durability, and this file is derived - losing it to a
+	 * power cut costs one boot at the shipped defaults and the next settings
+	 * change rewrites it. That is the whole reason it is allowed to be a
+	 * cache. */
+	snprintf(tmp, sizeof tmp, "%s.new", g_boot_env);
+	if (!(f = fopen(tmp, "w"))) return false;
+	if (fputs(body, f) == EOF) { fclose(f); unlink(tmp); return false; }
+	if (fclose(f) != 0) { unlink(tmp); return false; }
+	if (rename(tmp, g_boot_env) != 0) { unlink(tmp); return false; }
+
+	snprintf(last, sizeof last, "%s", body);
+	return true;
 }

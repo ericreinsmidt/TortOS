@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 static int fails;
@@ -224,9 +225,29 @@ static void boot_env_says_what_the_shell_needs(void)
 		ck(!strcmp(got, "3\n"), "and bootbright's sed extracts the brightness");
 	}
 
-	/* Derived, not authoritative: losing it must cost nothing. */
+	/* Derived, not authoritative: losing it must cost nothing. This is also
+	 * the case the unchanged-content memo below could have broken - a deleted
+	 * file whose content has not changed still has to come back. */
 	unlink(path);
 	ck(db_write_boot_env(), "it rewrites after being deleted");
+	ck(!access(path, F_OK), "and the file is really there again");
+
+	/* Unchanged content must not rewrite. levels_save calls this on every
+	 * nudge of the volume rocker, while a game is running, and volume is not
+	 * one of the four values in here. */
+	{
+		struct stat a, b;
+		stat(path, &a);
+		sleep(1);                      /* mtime has one-second resolution */
+		ck(db_write_boot_env(), "an unchanged write reports success");
+		stat(path, &b);
+		ck(a.st_mtime == b.st_mtime, "and does not touch the file");
+
+		db_set_int(db_dev(), "brightness", 9);
+		ck(db_write_boot_env(), "a changed value writes");
+		stat(path, &b);
+		ck(a.st_mtime != b.st_mtime, "and does touch it");
+	}
 	unlink(path);
 	db_shutdown();
 	ck(db_dev() == NULL && db_lib() == NULL, "shutdown clears both handles");
@@ -285,6 +306,25 @@ static void prefix_scan(void)
 	db_close(d);
 }
 
+/* A settings failure must not take the launcher down: launch.sh restarts it,
+ * and five exits inside five seconds each makes it call poweroff. So every
+ * getter has to survive there being no database at all. */
+static void no_database_is_survivable(void)
+{
+	char buf[32];
+
+	printf("with no database open at all:\n");
+	db_shutdown();
+	ck(db_dev() == NULL && db_lib() == NULL, "the handles are NULL");
+	ck(db_get_int(NULL, "volume", 8) == 8, "an integer reads its fallback");
+	db_get_str(NULL, "audioout", buf, sizeof buf, "auto");
+	ck(!strcmp(buf, "auto"), "a string reads its fallback");
+	ck(!db_has(NULL, "volume"), "nothing is present");
+	ck(!db_set_int(NULL, "volume", 3), "a write fails rather than crashing");
+	ck(!db_write_boot_env(), "and the export declines rather than crashing");
+	db_each_prefix(NULL, "turbo.", collect, buf);   /* must simply not run */
+}
+
 static void every_default_is_readable(void)
 {
 	db *d;
@@ -324,6 +364,7 @@ int main(void)
 	the_scopes_stay_apart();
 	boot_env_says_what_the_shell_needs();
 	prefix_scan();
+	no_database_is_survivable();
 	every_default_is_readable();
 	scrub();
 
