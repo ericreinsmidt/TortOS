@@ -78,7 +78,7 @@ typedef struct {
  * src/scale.c exactly - it answers an unknown one with ERROR code=bad_display
  * and changes nothing. The labels are ours, and are what the menu shows. */
 /* STRETCH IS FIRST, AND FIRST IS THE DEFAULT. A sysview is zero-initialized
- * and no display.cfg ships, so index 0 is what every system plays at on a card
+ * and no display mode is seeded, so index 0 is what every system plays at
  * nobody has configured. Filling the panel is the right default on a handheld
  * whose screen is the whole device: the alternative spends a fifth of a
  * 1024x768 panel on black bars for the Game Boys before anyone has been given
@@ -199,74 +199,38 @@ static void wait_for_boot_anim(void)
  * systems.cfg then cannot quietly hand a system somebody else's setting. */
 static void display_load(app *a)
 {
-	char p[CFG_STR * 2], line[256];
-	FILE *f;
+	char key[CFG_STR + 16], name[CFG_STR];
+	int i, k;
 
-	snprintf(p, sizeof p, "%s/display.cfg", P_USERDATA);
-	f = fopen(p, "r");
-	if (!f) return;
-	while (fgets(line, sizeof line, f)) {
-		char *eq;
-		int i, k;
-
-		line[strcspn(line, "\r\n")] = '\0';
-		eq = strchr(line, '=');
-		if (!eq) continue;
-		*eq++ = '\0';
-		for (i = 0; i < a->sys.count; i++) {
-			if (strcmp(a->sys.systems[i].tag, line) != 0) continue;
-			for (k = 0; k < DMODE_COUNT; k++)
-				if (strcmp(DMODES[k].name, eq) == 0) { a->view[i].dmode = k; break; }
-			break;
-		}
+	for (i = 0; i < a->sys.count; i++) {
+		snprintf(key, sizeof key, "display.%s", a->sys.systems[i].tag);
+		if (!db_get_str(db_dev(), key, name, sizeof name, NULL)) continue;
+		for (k = 0; k < DMODE_COUNT; k++)
+			if (!strcmp(DMODES[k].name, name)) { a->view[i].dmode = k; break; }
 	}
-	fclose(f);
 }
 
-/* Every visible system every time, plus whatever was already in the file for
- * systems that are not on the shelf right now.
+/* One row per visible system, and nothing else touched.
  *
- * The second half is not tidiness. Empty systems are hidden, so "every system"
- * means "every system with games in it today" - and a plain rewrite would
- * quietly erase the display mode of any system whose ROMs happen to be off
- * the card at the moment. Take the ROMs out, change one unrelated setting,
- * put the ROMs back, and the mode you had chosen is gone with no indication
- * it ever existed. Preserving unknown tags costs one pass over a file that is
- * nine short lines. */
+ * The file this replaces was rewritten whole, so it had to read itself back
+ * first and carry forward the modes of systems that are not on the shelf right
+ * now. That was not tidiness: empty systems are hidden, so "every system" meant
+ * "every system with games in it today", and a plain rewrite would quietly
+ * erase the mode of any system whose ROMs happened to be off the card. Take
+ * the ROMs out, change one unrelated setting, put them back, and the mode you
+ * chose is gone with no sign it existed.
+ *
+ * A row write cannot touch another row, so that whole pass is gone rather than
+ * ported. It is the clearest thing the database bought. */
 static void display_save(app *a)
 {
-	char p[CFG_STR * 2], line[CFG_STR];
-	char keep[CFG_MAX_SYSTEMS * 2][CFG_STR];
-	int nkeep = 0;
-	FILE *f;
+	char key[CFG_STR + 16];
 	int i;
 
-	snprintf(p, sizeof p, "%s/display.cfg", P_USERDATA);
-
-	f = fopen(p, "r");
-	if (f) {
-		while (fgets(line, sizeof line, f) && nkeep < (int)(sizeof keep / sizeof keep[0])) {
-			char *eq;
-			line[strcspn(line, "\r\n")] = '\0';
-			if (!line[0]) continue;
-			eq = strchr(line, '=');
-			if (!eq) continue;
-			*eq = '\0';
-			for (i = 0; i < a->sys.count; i++)
-				if (!strcmp(a->sys.systems[i].tag, line)) break;
-			*eq = '=';
-			if (i == a->sys.count) snprintf(keep[nkeep++], CFG_STR, "%s", line);
-		}
-		fclose(f);
+	for (i = 0; i < a->sys.count; i++) {
+		snprintf(key, sizeof key, "display.%s", a->sys.systems[i].tag);
+		db_set_str(db_dev(), key, DMODES[a->view[i].dmode].name);
 	}
-
-	f = atomic_open(p, 0644);
-	if (!f) return;
-	for (i = 0; i < a->sys.count; i++)
-		fprintf(f, "%s=%s\n", a->sys.systems[i].tag, DMODES[a->view[i].dmode].name);
-	for (i = 0; i < nkeep; i++)
-		fprintf(f, "%s\n", keep[i]);
-	atomic_commit(f, p);
 }
 
 /* ---------- textures ----------------------------------------------------- */
@@ -5155,7 +5119,7 @@ int main(int argc, char *argv[])
 	 * shipped default and the player's saved level - is one key each in the
 	 * database, seeded once and overwritten by a nudge. That is also the end
 	 * of a bug it kept reintroducing: reapplying the config afterwards put
-	 * tortos.cfg ahead of the level the player last chose. */
+	 * the shipped default ahead of the level the player last chose. */
 	plat_settings_init();
 	plat_leds_off();
 	t_mark("video+input");

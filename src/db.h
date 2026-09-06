@@ -59,6 +59,19 @@ bool db_set_str(db *d, const char *key, const char *val);
 bool db_set_int(db *d, const char *key, int val);
 bool db_del(db *d, const char *key);
 
+/* Every key under a prefix, in key order, until the callback returns false.
+ *
+ * What replaced six of the config files is a namespace rather than a table per
+ * file: "display.NES", "turbo.GB", "coreopt.GBC.mgba_gb_model". One table, one
+ * enumeration primitive, and row-level writes - which is also how display.cfg's
+ * most careful behavior became free. That file was rewritten whole on every
+ * change, so it had to read back and preserve the modes of systems whose ROMs
+ * were off the card; miss that and taking a card out, changing one setting and
+ * putting it back would silently erase a choice. A row write cannot touch
+ * another row, so there is nothing to preserve. */
+typedef bool (*db_each_fn)(const char *key, const char *value, void *ctx);
+void db_each_prefix(db *d, const char *prefix, db_each_fn fn, void *ctx);
+
 /* Inspectable without being editable. Nothing on the device can read a
  * database - there is no sqlite3 binary - and losing the ability to SEE what a
  * setting is would be a real loss where losing the ability to edit it is not.

@@ -95,6 +95,31 @@ static const db_default device_defaults[] = {
 static const db_default library_defaults[] = {
 	{ "timezone",       "America/New_York" },
 	{ "startup_system", "NES" },
+
+	/* Turbo, per system tag, from config/turbo.cfg. `x:a~3,y:b~3` says X is a
+	 * turbo A and Y a turbo B, three frames pressed and three released - about
+	 * ten presses a second at 60 Hz. Listed only where X and Y are SPARE: nine
+	 * of the eleven consoles had two face buttons, but a Genesis six-button
+	 * pad and a SNES pad use X and Y for real, so MD and SFC are absent on
+	 * purpose rather than by oversight. The full reasoning, including why PC
+	 * Engine is here despite its core having a turbo of its own, is in
+	 * docs/turbo.md. */
+	{ "turbo.NES",  "x:a~3,y:b~3" },
+	{ "turbo.SMS",  "x:a~3,y:b~3" },
+	{ "turbo.PCE",  "x:a~3,y:b~3" },
+	{ "turbo.GB",   "x:a~3,y:b~3" },
+	{ "turbo.GBC",  "x:a~3,y:b~3" },
+	{ "turbo.NGP",  "x:a~3,y:b~3" },
+	{ "turbo.NGPC", "x:a~3,y:b~3" },
+	{ "turbo.GBA",  "x:a~3,y:b~3" },
+	{ "turbo.GG",   "x:a~3,y:b~3" },
+
+	/* Core options, from config/coreopts.cfg. The segment after "coreopt." is
+	 * the system tag and an EMPTY one means global, which is why the first key
+	 * has two dots. A tagged entry overrides a global of the same name. */
+	{ "coreopt..mgba_sgb_borders",  "OFF" },
+	{ "coreopt.GB.mgba_gb_model",   "Game Boy" },
+	{ "coreopt.GB.mgba_gb_colors",  "DMG Green" },
 };
 
 const db_default *db_defaults(db_scope scope, size_t *count)
@@ -248,6 +273,37 @@ bool db_del(db *d, const char *key)
 	ok = sq_step(st) == SQ_DONE;
 	sq_finalize(st);
 	return ok;
+}
+
+void db_each_prefix(db *d, const char *prefix, db_each_fn fn, void *ctx)
+{
+	sqlite3_stmt *st = NULL;
+	const unsigned char *k, *v;
+	char hi[256];
+	size_t n;
+
+	if (!d || !prefix || !fn) return;
+	/* A range rather than LIKE: no escaping question for keys that contain
+	 * the wildcards, and it uses the primary key index. The upper bound is
+	 * the prefix with its last byte incremented, which is the next key that
+	 * cannot share it. */
+	n = strlen(prefix);
+	if (!n || n + 1 >= sizeof hi) return;
+	memcpy(hi, prefix, n + 1);
+	hi[n - 1]++;
+
+	if (sq_prepare(d->h, "SELECT key,value FROM settings "
+	                     "WHERE key >= ? AND key < ? ORDER BY key;",
+	               -1, &st, NULL) != SQ_OK)
+		return;
+	sq_bind_text(st, 1, prefix, -1, SQ_TRANSIENT);
+	sq_bind_text(st, 2, hi, -1, SQ_TRANSIENT);
+	while (sq_step(st) == SQ_ROW) {
+		k = sq_column_text(st, 0);
+		v = sq_column_text(st, 1);
+		if (!fn(k ? (const char *)k : "", v ? (const char *)v : "", ctx)) break;
+	}
+	sq_finalize(st);
 }
 
 void db_dump(db *d, FILE *out)

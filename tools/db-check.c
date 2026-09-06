@@ -229,6 +229,59 @@ static void boot_env_says_what_the_shell_needs(void)
 	ck(db_dev() == NULL && db_lib() == NULL, "shutdown clears both handles");
 }
 
+/* Six config files became a namespace rather than a table each, so the prefix
+ * scan is what makes them readable at all. The bound matters: "turbo." must
+ * not pick up "turbos.x", and an empty middle segment - "coreopt..global" -
+ * has to come back like any other. */
+static bool collect(const char *key, const char *value, void *ctx)
+{
+	char *out = ctx;
+	strncat(out, key, 200);
+	strncat(out, "=", 2);
+	strncat(out, value, 200);
+	strncat(out, ";", 2);
+	return true;
+}
+
+static void prefix_scan(void)
+{
+	db *d;
+	char got[512] = { 0 };
+
+	printf("the prefix scan brings back a namespace and nothing else:\n");
+	scrub();
+	d = db_open(LIB, DB_LIBRARY);
+	if (!d) { ck(0, "library opens"); return; }
+
+	/* Its own namespace, not turbo. or coreopt. - those are seeded, and an
+	 * assertion written against an empty database would be asserting that the
+	 * defaults are absent. That is how this check failed when it was written. */
+	db_set_str(d, "zz.NES", "a");
+	db_set_str(d, "zz.GB", "b");
+	db_set_str(d, "zzs.NOT", "c");        /* one byte past the prefix */
+	db_set_str(d, "zz", "d");             /* the prefix minus its dot */
+	db_each_prefix(d, "zz.", collect, got);
+	ck(!strcmp(got, "zz.GB=b;zz.NES=a;"), "only the namespace, in key order");
+
+	got[0] = '\0';
+	db_set_str(d, "yy..global", "g");
+	db_set_str(d, "yy.GB.local", "l");
+	db_each_prefix(d, "yy.", collect, got);
+	ck(!strcmp(got, "yy..global=g;yy.GB.local=l;"),
+	   "an empty tag segment scans like any other");
+
+	/* And the real namespaces carry what the defaults declared. */
+	got[0] = '\0';
+	db_each_prefix(d, "turbo.", collect, got);
+	ck(strstr(got, "turbo.NGPC=x:a~3,y:b~3;") != NULL,
+	   "the seeded turbo maps are readable through the same scan");
+
+	got[0] = '\0';
+	db_each_prefix(d, "nothing.", collect, got);
+	ck(!got[0], "an empty namespace yields nothing rather than everything");
+	db_close(d);
+}
+
 static void every_default_is_readable(void)
 {
 	db *d;
@@ -267,6 +320,7 @@ int main(void)
 	a_lost_database_self_heals();
 	the_scopes_stay_apart();
 	boot_env_says_what_the_shell_needs();
+	prefix_scan();
 	every_default_is_readable();
 	scrub();
 

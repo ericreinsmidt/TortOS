@@ -237,7 +237,7 @@ Boy Color, Game Boy Advance, Game Gear, Neo Geo Pocket and Neo Geo Pocket
 Color**. Those consoles had two face buttons,
 so X and Y are spare and turbo can have them. Genesis and SNES are left out
 because their pads use X and Y for real buttons. Which systems get it, and how
-fast, is `turbo.cfg` below.
+fast, is in [docs/turbo.md](docs/turbo.md).
 
 Diatom does the pulsing, not the emulator core, which is why it works the same
 on all nine rather than only on the one core that happens to implement turbo.
@@ -481,103 +481,92 @@ that was never real.
 
 ## Configuration
 
-Four files, and they are the whole settings screen.
+**Settings live in a database, not in files.** Two of them, and the split is
+deliberate:
 
-`TortOS/tortos.cfg`:
+| | holds | why it is separate |
+|---|---|---|
+| `.userdata/<platform>/tortos.db` | volume, brightness, text size, Auto Off, audio output, Wi-Fi, Bluetooth, display mode per system | per handheld. A card moved to another device should not carry the first one's screen and speaker settings, or its account token |
+| `.userdata/shared/.tortos/library.db` | timezone, startup system, turbo maps, core options | per card. It travels with the library, the same way favorites and earned achievements do |
 
-```
-volume=40           # 0..100, the default before one has ever been set
-brightness=7        # 0..11, twelve geometric rungs; 0 is the panel's floor
-startup_system=NES  # only decides the very first boot; after that TortOS
-                    # comes back to wherever you were
-font_scale=1.0      # 0.75..1.50, multiplies the whole type scale at once
-wifi=1              # keeps WiFi up on a development unit, for ssh
-```
+The shipped defaults are **compiled into the launcher** and seed whichever
+database is missing them, so there is no config file to ship, none to drift from
+the code that reads it, and a deleted database comes back working.
 
-The two levels are **defaults, not settings**. Once the volume rocker or F1/F2
-has been touched, the level lives in `.userdata/<platform>/levels.cfg` and that
-is what every boot restores, because it is the level someone actually chose.
-`launch.sh` reads the same file to light the panel for the boot animation, and
-the brightness rungs are shared verbatim with Diatom, so a level set inside a
-game and a level set on the shelf mean the same thing on both sides.
+### Reading it
 
-**Display mode** is per system, set from that system's own menu and kept in
-`.userdata/<platform>/display.cfg` keyed on the system's tag. The seven modes
-are Diatom's, named as it names them, and the launcher hands the chosen one
-over with every launch - the emulator's mode is global and outlives a game, so
-a system that has never been set would otherwise inherit whatever the last one
-chose. An unrecognized name in that file falls back to `aspect`.
-
-`font_scale` moves every size together. The sizes themselves are one base and
-a multiplier per role - title, menu row, heading, the quiet line of counts and
-timestamps - in `src/ui.c`, so the proportions between them are stated in one
-table rather than as numbers spread across the call sites.
-
-`TortOS/systems.cfg` - one line per system:
+Nothing on the device can open a database - there is no `sqlite3` binary - so
+the launcher prints it:
 
 ```
-sys|display name|Roms/ folder|core|tag|card art|accent|extensions
+tortos.elf --dump
 ```
 
-The tag is three characters at most: `struct Core` declares `tag[8]` and a
-longer one is silently truncated.
+That is deliberately read-only. Settings are not hand-edited any more; every one
+of them is reachable from a menu.
 
-`TortOS/coreopts.cfg` - opinions handed to the core before a game loads:
+### What the boot script reads
 
-```
-mgba_sgb_borders=OFF        # no [SECTION] above it, so: every system
+`launch.sh` needs five values before `tortos.elf` exists - the panel brightness
+for before the boot animation, the timezone, and whether each radio should come
+up. It is POSIX shell and cannot read a database, so the launcher exports
+`.userdata/<platform>/boot.env` and the script sources it.
 
-[NES]
-fceumm_turbo_enable=Player 1   # X and Y become turbo A and turbo B
+That file is **derived, never authoritative**. Delete it and the next boot runs
+at the shipped defaults, then the next settings change rewrites it. It replaced
+six `sed` invocations across four files, each one a fork, so the boot path got
+shorter rather than longer.
 
-[GB]
-mgba_gb_model=Game Boy         # not Super Game Boy, whatever the cartridge says
-```
+### `systems.cfg`, which is still a file
 
-A `[TAG]` section applies to that system alone, keyed on the same tag
-`systems.cfg` uses, and overrides a global of the same name. A core that does
-not declare a key ignores it, so a key meant for one core is harmless
-everywhere else. These are sent **before** the game loads, because a core reads
-its `(Restart)` options during load and one set afterwards does nothing until
-the next launch. The file carries the reasoning for every entry in it.
-
-One trap it documents and worth repeating: **a resume state beats these.** A
-save state carries the machine it was made on, so changing an option that
-selects hardware will not appear to work on a game you have already played.
-Test on a game that has never been launched, or delete its `.auto.state`.
-
-`TortOS/turbo.cfg` - which systems get turbo, and how fast:
+`TortOS/systems.cfg` is the one that did not move, because it is **build input
+rather than a setting**. `mk/payload.sh` reads it twice on the host: once to
+refuse a card whose `systems.cfg` names cores that `vendor/` does not have -
+which is how a card was nearly built with four of nine systems dead - and once
+to create the ROM folders. Neither can wait for a database that only exists on
+the device.
 
 ```
-NES=x:a~3,y:b~3
-GB=x:a~3,y:b~3
+sys | display name | Roms/ folder | core | tag | card art | accent | extensions | disc bios
 ```
 
-One line per system tag. `x:a~3` reads *X acts as A, pressed three frames and
-released three*, so about ten presses a second at 60 Hz. Lower is faster. A
-system with no line here plays with X and Y doing nothing, which is what they
-did everywhere before this existed.
+The **tag** keys the per-system display mode and the favorites list. It is not
+what saves and states hang off - states are keyed on the folder and `.srm` files
+sit flat in `Saves/` named after the ROM. `system_cfg` declares `tag[8]`, so up
+to seven characters, and changing a tag orphans that system's display mode and
+favorites.
 
-TortOS hands this to Diatom just after a game loads and Diatom does the rest, so
-the rate is the same whatever core is running. Delete a line to turn a system
-back into a plain pad.
+### Core options and turbo
 
-### What the launcher writes for itself
+Both are entries in the library database rather than files, seeded from the
+values compiled into the launcher.
 
-Those four are the files you edit. Everything set from a menu is written by the
-launcher into `.userdata/<platform>/`, so a card can be reformatted without
-losing a setting anyone chose, and none of it needs editing by hand:
+**Core options** are keyed `coreopt.<tag>.<option>`, with an empty tag for a
+global - so `coreopt..mgba_sgb_borders` applies everywhere and
+`coreopt.GB.mgba_gb_model` to Game Boy alone. A tagged entry overrides a global
+of the same name. A core that does not declare a key ignores it, so a key meant
+for one core is harmless everywhere else. They are sent **before** the game
+loads, because a core reads its `(Restart)` options during load and one set
+afterwards does nothing until the next launch.
+
+One trap worth repeating: **a resume state beats these.** A save state carries
+the machine it was made on, so changing an option that selects hardware will not
+appear to work on a game you have already played. Test on a game that has never
+been launched, or delete its `.auto.state`.
+
+**Turbo** is keyed `turbo.<tag>`, and [docs/turbo.md](docs/turbo.md) carries the
+reasoning: which nine systems get it, why MD and SFC do not, and why PC Engine
+is on the list despite its core having a turbo of its own.
+
+### What the launcher still writes as files
+
+Three things are not in a database, each for a reason:
 
 | | |
 |---|---|
-| `levels.cfg` | volume and brightness, once either has been touched |
-| `display.cfg` | display mode, per system tag |
-| `audioout.cfg` | `auto` or `speaker` - the Audio Output row |
-| `autooff.cfg` | the Auto Off interval |
-| `textsize.cfg` | the text scale |
-| `favorites.cfg` | which games are on the Favorites shelf |
-| `ra.cfg` | the RetroAchievements account, per device - it holds a session token, so a card moved to another handheld does not carry one with it |
-| `cheevos.cfg` | which achievements have already been earned |
+| `cheevos-active.set` | Diatom reads it, handed over as a path on RUN under its ADR-0026. Moving it would mean Diatom linking sqlite and learning the schema |
+| `favorites.cfg`, `cheevos.cfg` | player records rather than settings; they move next |
+| `ra.cfg` | the RetroAchievements account, per device - it holds a session token, so a card moved to another handheld does not carry one with it. It is `0600`, which is why it has not moved yet |
 
 ---
 
@@ -664,7 +653,7 @@ tools/          the boot-animation and card generators, setbright, the
                 achievement fetcher, and the checks
 res/            the boot animation, the system cards, the font, Over The
                 Hare's page, and the two marks this README shows
-config/         systems.cfg and tortos.cfg as shipped
+config/         systems.cfg as shipped; the rest is compiled in
 sd/             the boot hook and launch.sh as they land on the card
 sysroot/        fetched: the device's own SDL2, for linking (mk/fetch-sysroot.sh)
 vendor/         fetched: the libretro cores, hash-pinned

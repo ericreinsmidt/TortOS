@@ -76,7 +76,7 @@ const char *P_SHARED = "/mnt/SDCARD/.userdata/shared";
  * a file-transfer feature existing at all. */
 const char *P_WEB = "/mnt/SDCARD/TortOS/res/web";
 
-/* ---- core options, read once from coreopts.cfg --------------------------- */
+/* ---- core options, read once from the library database ------------------- */
 /* Lines before any [SECTION] apply to every game; a [TAG] section applies only
  * to that system, keyed on the same tag systems.cfg uses for saves and states.
  *
@@ -90,41 +90,38 @@ const char *P_WEB = "/mnt/SDCARD/TortOS/res/web";
 static struct { char tag[8]; char kv[192]; } coreopts[COREOPT_MAX];
 static int  ncoreopts = -1;   /* -1 = not read yet */
 
+static bool coreopt_row(const char *key, const char *value, void *ctx)
+{
+	const char *rest = key + strlen("coreopt.");
+	const char *dot = strchr(rest, '.');
+	char kv[192];
+
+	(void)ctx;
+	if (!dot || ncoreopts >= COREOPT_MAX) return ncoreopts < COREOPT_MAX;
+
+	/* Refused, not stored short. Half a key=value pair is still a
+	 * valid-looking one, and it would be sent to a core as though someone
+	 * meant it. */
+	if ((size_t)(dot - rest) >= sizeof coreopts[0].tag ||
+	    snprintf(kv, sizeof kv, "%s=%s", dot + 1, value) >= (int)sizeof kv) {
+		fprintf(stderr, "coreopts: entry too long, ignoring: %.40s\n", key);
+		return true;
+	}
+	snprintf(coreopts[ncoreopts].tag, sizeof coreopts[0].tag, "%.*s",
+	         (int)(dot - rest), rest);
+	snprintf(coreopts[ncoreopts].kv, sizeof coreopts[0].kv, "%s", kv);
+	ncoreopts++;
+	return true;
+}
+
+/* Keys are "coreopt.<tag>.<option>", with an empty tag for a global - so
+ * "coreopt..mgba_sgb_borders" is global and "coreopt.GB.mgba_gb_model" is not.
+ * The empty segment looks odd and is the point: one prefix scan brings back
+ * both kinds, and coreopt_nth below still decides precedence. */
 static void coreopts_load(void)
 {
-	char path[512], line[256], section[8] = "";
-	FILE *f;
-
 	ncoreopts = 0;
-	snprintf(path, sizeof path, "%s/coreopts.cfg", P_ROOT);
-	if (!(f = fopen(path, "r"))) return;
-	while (ncoreopts < COREOPT_MAX && fgets(line, sizeof line, f)) {
-		char *p = line, *end;
-		while (*p == ' ' || *p == '\t') p++;
-		end = p + strcspn(p, "\r\n");
-		*end = '\0';
-		while (end > p && (end[-1] == ' ' || end[-1] == '\t')) *--end = '\0';
-		if (*p == '#' || !*p) continue;
-		if (*p == '[') {
-			char *close = strchr(p, ']');
-			if (!close) continue;              /* malformed, ignore quietly */
-			*close = '\0';
-			snprintf(section, sizeof section, "%s", p + 1);
-			continue;
-		}
-		if (!strchr(p, '=')) continue;         /* not key=value */
-		/* A line too long for the slot is REFUSED, not stored short. Half a
-		 * key=value pair is still a valid-looking key=value pair, and it would
-		 * be sent to a core as though someone meant it. */
-		if (strlen(p) >= sizeof coreopts[0].kv) {
-			fprintf(stderr, "coreopts.cfg: line too long, ignoring: %.40s...\n", p);
-			continue;
-		}
-		snprintf(coreopts[ncoreopts].tag, sizeof coreopts[0].tag, "%s", section);
-		snprintf(coreopts[ncoreopts].kv,  sizeof coreopts[0].kv,  "%s", p);
-		ncoreopts++;
-	}
-	fclose(f);
+	db_each_prefix(db_lib(), "coreopt.", coreopt_row, NULL);
 }
 
 /* Global entries first, then this tag's, so a system can override a global. */
@@ -157,7 +154,7 @@ const char *plat_coreopt(const char *tag, int i)
 	return kv;
 }
 
-/* ---- turbo, read once from turbo.cfg ------------------------------------- */
+/* ---- turbo, read once from the library database -------------------------- */
 /* One canonical map per system tag, handed to Diatom after RUN. Its ADR-0028
  * makes a pulse a property of a BINDING, so `x:a~3,y:b~3` is the whole feature:
  * X becomes a turbo A and Y a turbo B, three frames pressed and three released.
@@ -173,37 +170,30 @@ const char *plat_coreopt(const char *tag, int i)
 static struct { char tag[8]; char map[96]; } turbos[TURBO_MAX];
 static int nturbos = -1;                     /* -1 = not read yet */
 
+static bool turbo_row(const char *key, const char *value, void *ctx)
+{
+	const char *tag = key + strlen("turbo.");
+
+	(void)ctx;
+	if (nturbos >= TURBO_MAX) return false;
+	/* Refused, not stored short. Half a map is a map nobody wrote, and Diatom
+	 * rejects a bad one whole - after the game is already up, where the
+	 * refusal is invisible. */
+	if (strlen(tag) >= sizeof turbos[0].tag ||
+	    strlen(value) >= sizeof turbos[0].map) {
+		fprintf(stderr, "turbo: entry too long, ignoring: %.32s\n", tag);
+		return true;
+	}
+	snprintf(turbos[nturbos].tag, sizeof turbos[0].tag, "%s", tag);
+	snprintf(turbos[nturbos].map, sizeof turbos[0].map, "%s", value);
+	nturbos++;
+	return true;
+}
+
 static void turbos_load(void)
 {
-	char path[512], line[192];
-	FILE *f;
-
 	nturbos = 0;
-	snprintf(path, sizeof path, "%s/turbo.cfg", P_ROOT);
-	if (!(f = fopen(path, "r"))) return;
-	while (nturbos < TURBO_MAX && fgets(line, sizeof line, f)) {
-		char *p = line, *end, *eq;
-
-		while (*p == ' ' || *p == '\t') p++;
-		end = p + strcspn(p, "\r\n");
-		*end = '\0';
-		while (end > p && (end[-1] == ' ' || end[-1] == '\t')) *--end = '\0';
-		if (*p == '#' || !*p) continue;
-		if (!(eq = strchr(p, '='))) continue;
-		*eq = '\0';
-		/* Refused, not stored short. Half a map is a map nobody wrote, and
-		 * Diatom rejects a bad one whole - after the game is already up, where
-		 * the refusal is invisible. */
-		if (strlen(p) >= sizeof turbos[0].tag ||
-		    strlen(eq + 1) >= sizeof turbos[0].map) {
-			fprintf(stderr, "turbo.cfg: line too long, ignoring: %.32s...\n", p);
-			continue;
-		}
-		snprintf(turbos[nturbos].tag, sizeof turbos[0].tag, "%s", p);
-		snprintf(turbos[nturbos].map, sizeof turbos[0].map, "%s", eq + 1);
-		nturbos++;
-	}
-	fclose(f);
+	db_each_prefix(db_lib(), "turbo.", turbo_row, NULL);
 }
 
 /* The map for this system, or NULL for one that wants none. */

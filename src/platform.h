@@ -129,14 +129,14 @@ unsigned plat_resident_generation(void);
 /* Path from the most recent PREVIEW message, or "" - the menu's backdrop. */
 const char *plat_resident_last_preview(void);
 /* Core options the launcher wants applied to every game, read once from
- * coreopts.cfg. Diatom deliberately keeps no per-core knowledge (its ADR-0019
+ * the coreopt. namespace. Diatom keeps no per-core knowledge (its ADR-0019
  * and register section 12), so the per-core opinions live here. Each entry is
  * a whole "key=value" string; a core that does not declare the key ignores it.
  * Applied BEFORE the game loads, because options marked (Restart) are read at
  * retro_load_game and setting one afterwards does nothing until next launch. */
 int         plat_coreopt_count(const char *tag);
 const char *plat_coreopt(const char *tag, int i);
-/* The turbo map for this system from turbo.cfg, or NULL. Diatom's ADR-0028. */
+/* The turbo map for this system, or NULL. Diatom's ADR-0028, docs/turbo.md. */
 const char *plat_turbo_map(const char *tag);
 
 /* Where Diatom is actually drawing the game, from its DISPLAY message. False
