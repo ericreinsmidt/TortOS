@@ -10,7 +10,7 @@ SSH := sshpass -p 'tina' ssh -o StrictHostKeyChecking=no root@$(BRICK)
         adb adb-elf adb-res adb-vendor adb-restart adb-run adb-log \
         check check-cheevos check-hare check-httpd check-idle check-rahash \
         check-raset check-xfer check-menus check-artscrape check-audioout \
-        check-backlog hooks storeprobe deploy restart logs
+        check-db check-backlog hooks storeprobe deploy restart logs
 
 all: build/tortos.elf
 
@@ -20,7 +20,7 @@ all: build/tortos.elf
 # exist, and check-menus was about to join eight others in that state.
 CHECKS = check-cheevos check-hare check-httpd check-idle check-rahash \
          check-raset check-xfer check-menus check-artscrape check-audioout \
-         check-backlog
+         check-db check-backlog
 
 check:
 	@fail=0; for c in $(CHECKS); do \
@@ -262,6 +262,24 @@ hooks:
 #
 # The file is gitignored, so this skips cleanly when it is absent rather than
 # failing a worktree over a file a worktree cannot have.
+# Fourteen config files became two databases, so properties that used to be
+# obvious from looking at a text file now need asserting - chiefly that a
+# shipped default never overwrites a choice, which is a bug this project
+# already shipped once.
+#
+# Exit 77 means no libsqlite3 on this machine. That fails rather than skips:
+# the launcher needs it too, so a machine without it cannot run TortOS at all.
+check-db: build-native/db-check
+	@./build-native/db-check; s=$$?; \
+	if [ $$s -eq 77 ]; then \
+		echo "  install sqlite3 - the launcher needs it, not just this check" >&2; \
+	fi; exit $$s
+
+build-native/db-check: tools/db-check.c src/db.c src/db.h FORCE
+	@mkdir -p build-native
+	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
+	      -o $@ tools/db-check.c src/db.c
+
 check-backlog:
 	@python3 tools/backlog-check.py
 
