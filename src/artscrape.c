@@ -53,23 +53,46 @@
  * missing from here is REPORTED, not skipped quietly - systems.cfg gains
  * entries over time, and a system silently passed over looks exactly like a
  * system whose art is already complete. */
-static const struct { const char *folder, *remote; } MAP[] = {
-	{ "NES",              "Nintendo - Nintendo Entertainment System" },
-	{ "SNES",             "Nintendo - Super Nintendo Entertainment System" },
-	{ "Game Boy",         "Nintendo - Game Boy" },
-	{ "Game Boy Color",   "Nintendo - Game Boy Color" },
-	{ "Game Boy Advance", "Nintendo - Game Boy Advance" },
-	{ "Genesis",          "Sega - Mega Drive - Genesis" },
-	{ "Master System",    "Sega - Master System - Mark III" },
-	{ "Game Gear",        "Sega - Game Gear" },
-	{ "TurboGrafx-16",    "NEC - PC Engine - TurboGrafx 16" },
+/* A shelf can map to MORE THAN ONE collection, because libretro files a
+ * machine's disc games separately from its cartridges. TurboGrafx-16 is the
+ * case that exposed it: the card had 27 games with no art and 23 of them were
+ * sitting in "NEC - PC Engine CD - TurboGrafx-CD", 946 entries this scraper
+ * had never looked at. Reported as missing art for months; it was a missing
+ * lookup. Sega CD is the same shape.
+ *
+ * The second collection is only fetched if the first left something unmatched,
+ * so a cartridge-only shelf costs exactly what it did before. */
+static const struct { const char *folder, *remote, *remote2; } MAP[] = {
+	{ "NES",              "Nintendo - Nintendo Entertainment System",
+	                      "Nintendo - Family Computer Disk System" },
+	{ "SNES",             "Nintendo - Super Nintendo Entertainment System", NULL },
+	{ "Game Boy",         "Nintendo - Game Boy", NULL },
+	{ "Game Boy Color",   "Nintendo - Game Boy Color", NULL },
+	{ "Game Boy Advance", "Nintendo - Game Boy Advance", NULL },
+	{ "Genesis",          "Sega - Mega Drive - Genesis",
+	                      "Sega - Mega-CD - Sega CD" },
+	{ "Master System",    "Sega - Master System - Mark III", NULL },
+	{ "Game Gear",        "Sega - Game Gear", NULL },
+	{ "TurboGrafx-16",    "NEC - PC Engine - TurboGrafx 16",
+	                      "NEC - PC Engine CD - TurboGrafx-CD" },
 	/* Two machines, two catalogs. The mono Pocket's art is NOT in the Color
 	 * repo - checked, it 404s - which is the whole reason they are separate
 	 * shelves rather than one mixed one. */
-	{ "Neo Geo Pocket",       "SNK - Neo Geo Pocket" },
-	{ "Neo Geo Pocket Color", "SNK - Neo Geo Pocket Color" },
+	{ "Neo Geo Pocket",       "SNK - Neo Geo Pocket", NULL },
+	{ "Neo Geo Pocket Color", "SNK - Neo Geo Pocket Color", NULL },
 };
 #define MAP_N ((int)(sizeof MAP / sizeof MAP[0]))
+
+/* The nth collection for a shelf, or NULL when it has no more. */
+static const char *remote_nth(const char *folder, int n)
+{
+	int i;
+
+	for (i = 0; i < MAP_N; i++)
+		if (!strcmp(MAP[i].folder, folder))
+			return n == 0 ? MAP[i].remote : n == 1 ? MAP[i].remote2 : NULL;
+	return NULL;
+}
 
 static const char *remote_for(const char *folder)
 {
@@ -349,6 +372,12 @@ static char g_pending[ARTPATH_MAX];       /* the image being fetched */
 static int  g_retry[ENTRIES_MAX];
 static int  g_nretry, g_qi;
 
+/* What one collection could not name, carried to the next one. A game is only
+ * counted missing once every collection for its shelf has been tried. */
+static int  g_left[ENTRIES_MAX];
+static int  g_nleft;
+static int  g_rem;              /* which collection, 0 or 1 */
+
 static int  g_si;               /* which system */
 static int  g_ri;               /* which ROM inside it */
 static bool g_running;
@@ -537,6 +566,7 @@ void art_begin(const systems_cfg *sys, const char *roms_dir)
 	memset(&g_st, 0, sizeof g_st);
 	g_si = g_ri = 0;
 	g_nretry = g_qi = 0;
+	g_nleft = g_rem = 0;
 	g_phase = P_SYSTEM;
 	g_nsys = 0;
 	snprintf(g_romdir, sizeof g_romdir, "%s", roms_dir ? roms_dir : "");
@@ -589,11 +619,11 @@ static bool art_paths(const char *dir, const char *stem,
 /* Ask for one image by the name libretro would file it under. Used by both
  * passes: pass one guesses the card's own name, pass two passes the name the
  * catalog gave. */
-static bool start_image(const char *folder, const char *name, const char *dest)
+static bool start_image(const char *remote, const char *name, const char *dest)
 {
 	char url[ARTURL_MAX], er[384], en[NAME_MAX_ * 3 + 1];
 
-	urlenc(remote_for(folder), er, sizeof er);
+	urlenc(remote, er, sizeof er);
 	urlenc(name, en, sizeof en);
 	snprintf(url, sizeof url, BASE "/%s/Named_Boxarts/%s.png", er, en);
 	snprintf(g_pending, sizeof g_pending, "%s", dest);
@@ -640,6 +670,8 @@ int art_step(void)
 		/* Loudly. systems.cfg gains entries over time, and a system silently
 		 * passed over looks exactly like one whose art is already complete. */
 		if (!remote) return next_system("not in the table");
+		g_rem = 0;
+		g_nleft = 0;
 		read_roms(dir, g_sys[g_si].exts);
 		if (g_nroms == 0) return next_system("no ROMs");
 
@@ -685,7 +717,7 @@ int art_step(void)
 
 		snprintf(g_st.now, sizeof g_st.now, "%s", g_roms[g_ri]);
 		mkdir(media, 0777);
-		if (!start_image(g_sys[g_si].folder, g_roms[g_ri], dest)) {
+		if (!start_image(remote_nth(g_sys[g_si].folder, 0), g_roms[g_ri], dest)) {
 			g_retry[g_nretry++] = g_ri;
 			g_ri++;
 			return 1;
@@ -711,7 +743,7 @@ int art_step(void)
 	case P_INDEX:
 		snprintf(g_st.now, sizeof g_st.now, "%s catalog",
 		         g_sys[g_si].folder);
-		if (!start_index(remote_for(g_sys[g_si].folder)))
+		if (!start_index(remote_nth(g_sys[g_si].folder, g_rem)))
 			return next_system("could not start curl");
 		g_phase = P_INDEX_WAIT;
 		return 1;
@@ -734,7 +766,23 @@ int art_step(void)
 	}
 
 	case P_FUZZY:
-		if (g_qi >= g_nretry) return next_system(NULL);
+		if (g_qi >= g_nretry) {
+			/* Another collection for this shelf, and something still unnamed?
+			 * Try it before calling anything missing. A game is only missing
+			 * once every catalog its machine has has been asked. */
+			if (g_nleft > 0 && remote_nth(g_sys[g_si].folder, g_rem + 1)) {
+				memcpy(g_retry, g_left, (size_t)g_nleft * sizeof g_left[0]);
+				g_nretry = g_nleft;
+				g_nleft = 0;
+				g_qi = 0;
+				g_rem++;
+				g_phase = P_INDEX;
+				return 1;
+			}
+			g_st.missing += g_nleft;
+			g_nleft = 0;
+			return next_system(NULL);
+		}
 		if (!art_paths(dir, g_roms[g_retry[g_qi]], media, sizeof media,
 		               dest, sizeof dest)) {
 			g_st.missing++;
@@ -742,7 +790,7 @@ int art_step(void)
 			return 1;
 		}
 		if (!match(g_roms[g_retry[g_qi]], hitbuf, sizeof hitbuf)) {
-			g_st.missing++;
+			g_left[g_nleft++] = g_retry[g_qi];
 			snprintf(g_st.now, sizeof g_st.now, "no art for %s",
 			         g_roms[g_retry[g_qi]]);
 			g_qi++;
@@ -750,8 +798,8 @@ int art_step(void)
 		}
 		snprintf(g_st.now, sizeof g_st.now, "%s", g_roms[g_retry[g_qi]]);
 		mkdir(media, 0777);
-		if (!start_image(g_sys[g_si].folder, hitbuf, dest)) {
-			g_st.missing++;
+		if (!start_image(remote_nth(g_sys[g_si].folder, g_rem), hitbuf, dest)) {
+			g_left[g_nleft++] = g_retry[g_qi];
 			g_qi++;
 			return 1;
 		}
@@ -763,7 +811,7 @@ int art_step(void)
 
 		if (r == 0) return 1;
 		if (r > 0) g_st.found++;
-		else       g_st.missing++;
+		else       g_left[g_nleft++] = g_retry[g_qi];
 		g_qi++;
 		g_phase = P_FUZZY;
 		return 1;

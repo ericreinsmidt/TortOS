@@ -44,15 +44,28 @@ UA = "TortOS/1.0 (+box art fetch)"
 # names onto libretro's, which is a fact about someone else's server and has
 # no business in a config the device reads.
 LIBRETRO = {
-    "NES": "Nintendo - Nintendo Entertainment System",
-    "SNES": "Nintendo - Super Nintendo Entertainment System",
-    "Game Boy": "Nintendo - Game Boy",
-    "Game Boy Color": "Nintendo - Game Boy Color",
-    "Game Boy Advance": "Nintendo - Game Boy Advance",
-    "Genesis": "Sega - Mega Drive - Genesis",
-    "Master System": "Sega - Master System - Mark III",
-    "Game Gear": "Sega - Game Gear",
-    "TurboGrafx-16": "NEC - PC Engine - TurboGrafx 16",
+    # A shelf can map to MORE THAN ONE collection: libretro files a machine's
+    # disc games separately from its cartridges. TurboGrafx-16 is the case that
+    # exposed it - 23 of one card's 27 missing covers were sitting in
+    # "NEC - PC Engine CD - TurboGrafx-CD", 946 entries neither scraper had
+    # ever looked at. Sega CD and the Famicom Disk System are the same shape.
+    "NES": ["Nintendo - Nintendo Entertainment System",
+            "Nintendo - Family Computer Disk System"],
+    "SNES": ["Nintendo - Super Nintendo Entertainment System"],
+    "Game Boy": ["Nintendo - Game Boy"],
+    "Game Boy Color": ["Nintendo - Game Boy Color"],
+    "Game Boy Advance": ["Nintendo - Game Boy Advance"],
+    "Genesis": ["Sega - Mega Drive - Genesis",
+                "Sega - Mega-CD - Sega CD"],
+    "Master System": ["Sega - Master System - Mark III"],
+    "Game Gear": ["Sega - Game Gear"],
+    "TurboGrafx-16": ["NEC - PC Engine - TurboGrafx 16",
+                      "NEC - PC Engine CD - TurboGrafx-CD"],
+    # The two Pocket shelves, which this tool never had at all while the C port
+    # did. Two machines, two catalogs: the mono Pocket's art is NOT in the
+    # Color repo - checked, it 404s.
+    "Neo Geo Pocket": ["SNK - Neo Geo Pocket"],
+    "Neo Geo Pocket Color": ["SNK - Neo Geo Pocket Color"],
 }
 
 
@@ -138,8 +151,8 @@ def main():
         d = os.path.join(a.roms, folder)
         if not os.path.isdir(d):
             continue
-        remote = LIBRETRO.get(folder)
-        if not remote:
+        remotes = LIBRETRO.get(folder)
+        if not remotes:
             # Loudly. A system silently skipped looks exactly like a system
             # with complete art, and systems.cfg gains entries over time.
             unmapped.append(folder)
@@ -156,13 +169,27 @@ def main():
         if not roms:
             continue
 
-        try:
-            names = index(remote)
-        except (urllib.error.URLError, OSError) as e:
-            # Distinguished on purpose: a TLS or network failure is not "this
-            # game has no art", and reporting it as one is how a certificate
-            # change gets mistaken for a missing game.
-            print(f"  {folder:<20} INDEX FAILED: {e}")
+        # Every collection for this shelf, merged, remembering which one each
+        # name came from so the download asks the right catalog. The C port
+        # fetches the second only when the first left something unmatched;
+        # here they are always fetched, because one extra index on a host is
+        # not worth a second pass to avoid.
+        names, origin = [], {}
+        failed = False
+        for remote in remotes:
+            try:
+                got = index(remote)
+            except (urllib.error.URLError, OSError) as e:
+                # Distinguished on purpose: a TLS or network failure is not
+                # "this game has no art", and reporting it as one is how a
+                # certificate change gets mistaken for a missing game.
+                print(f"  {folder:<20} INDEX FAILED ({remote}): {e}")
+                failed = True
+                break
+            for n in got:
+                origin.setdefault(n, remote)
+            names.extend(got)
+        if failed:
             continue
 
         exact = set(names)
@@ -187,7 +214,7 @@ def main():
                 continue
             try:
                 os.makedirs(media, exist_ok=True)
-                fetch(remote, hit, dest)
+                fetch(origin[hit], hit, dest)
                 n_got += 1
             except Exception as e:
                 n_miss += 1
