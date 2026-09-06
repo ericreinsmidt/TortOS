@@ -344,6 +344,11 @@ bool bt_connect(const char *mac, char *err, size_t n)
 	return false;
 }
 
+bool bt_connected(const char *mac)
+{
+	return info_says(mac, "Connected: yes");
+}
+
 bool bt_disconnect(const char *mac)
 {
 	char out[512];
@@ -393,6 +398,7 @@ int  bt_visible(bt_device *out, int max) { (void)out; (void)max; return 0; }
 bool bt_scan(int secs) { (void)secs; return false; }
 bool bt_pair(const char *m, char *e, size_t n) { (void)m; if (e && n) e[0] = 0; return false; }
 bool bt_connect(const char *m, char *e, size_t n) { (void)m; if (e && n) e[0] = 0; return false; }
+bool bt_connected(const char *m) { (void)m; return false; }
 bool bt_disconnect(const char *m) { (void)m; return false; }
 bool bt_forget(const char *m) { (void)m; return false; }
 bool bt_asoundrc(const char *d) { (void)d; return false; }

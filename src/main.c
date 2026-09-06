@@ -3064,6 +3064,13 @@ static void bt_screen(app *a)
 		if (next_refresh == 0 || now >= next_refresh) {
 			st = bt_status();
 			n = st == BT_READY ? bt_visible(dev, BT_MAX) : 0;
+			/* The row under the cursor is asked directly. bt_visible infers
+			 * connections from the sink file, which launch.sh writes on a
+			 * twenty-second poll and which therefore says nothing about a
+			 * connect this screen made a moment ago. One fork every two
+			 * seconds for the row that matters, rather than one per row. */
+			if (n > 0 && cursor < n)
+				dev[cursor].connected = bt_connected(dev[cursor].mac);
 			next_refresh = now + 2000;
 			if (cursor >= n) cursor = n > 0 ? n - 1 : 0;
 			if (cursor < top) top = cursor;
@@ -3131,7 +3138,8 @@ static void bt_screen(app *a)
 
 			if (dev[cursor].connected) {
 				wait_panel(a, "Bluetooth", "Disconnecting...");
-				bt_disconnect(dev[cursor].mac);
+				if (bt_disconnect(dev[cursor].mac))
+					dev[cursor].connected = false;
 				snprintf(note, sizeof note, "Disconnected");
 			} else {
 				if (!dev[cursor].bonded) {
@@ -3148,9 +3156,14 @@ static void bt_screen(app *a)
 					bt_asoundrc(P_USERDATA);
 				}
 				wait_panel(a, "Bluetooth", "Connecting...");
-				if (bt_connect(dev[cursor].mac, err, sizeof err))
+				if (bt_connect(dev[cursor].mac, err, sizeof err)) {
+					/* Marked here as well as on the next refresh, so the row
+					 * changes in the same frame the message appears rather
+					 * than up to two seconds later. */
+					dev[cursor].connected = true;
 					snprintf(note, sizeof note,
 					         "Connected. Game audio from the next launch");
+				}
 				else
 					snprintf(note, sizeof note, "%s", err);
 			}

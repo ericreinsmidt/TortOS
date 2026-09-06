@@ -74,6 +74,17 @@ bool bt_scan(int secs);
 /* Each of these forks once and blocks. `err` takes something worth showing. */
 bool bt_pair(const char *mac, char *err, size_t n);
 bool bt_connect(const char *mac, char *err, size_t n);
+/* Is this one connected, asked of BlueZ rather than inferred. One fork, so
+ * the caller decides how often - the screen asks only about the row under the
+ * cursor.
+ *
+ * bt_visible marks connections from /tmp/tortos_btsink, which launch.sh writes
+ * on a twenty-second poll. That is fine for a headset that reconnected on its
+ * own and useless right after the UI connects one: the file has not caught up,
+ * so the row redraws saying "paired" and the screen looks like it did nothing.
+ * Seen on the device 2026-09-06. */
+bool bt_connected(const char *mac);
+
 bool bt_disconnect(const char *mac);
 bool bt_forget(const char *mac);
 
