@@ -570,9 +570,15 @@ Two things, each for a reason:
 Everything else is in one of the two databases. Favorites are rows keyed
 `fav.<tag>\t<file>` in the library, earned achievements are `chv.<game>.<id>`,
 and the RetroAchievements account is `ra.user` and `ra.token` in the device
-database - **which is `0600` for that reason**, sidecars included, since a
-`-wal` holding the same token at `0644` would be the same secret in a
-different file.
+database.
+
+That database asks for `0600`, sidecars included. **On the card that has no
+effect**: `/mnt/SDCARD` is exfat mounted `fmask=0022`, exfat carries no Unix
+permissions, and a file chmod'ed 600 reads back `0755`. `ra.cfg` was never
+private either, for its whole life. The mode is still requested because it is
+honored on ext4 and on a development host, but **anyone holding the card can
+read the session token**, and no file mode can change that while the card is
+exfat.
 
 ---
 

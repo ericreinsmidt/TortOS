@@ -21,9 +21,10 @@
 #define RA_TOKEN_MAX 64
 #define RA_USER_MAX  64
 
-/* Read and write the account in the device database, which is 0600 because
- * of the token this puts in it. Per-device rather than per-card: a card moved
- * to another handheld must not carry a session token with it. */
+/* Read and write the account in the device database. Per-device rather than
+ * per-card: a card moved to another handheld must not carry a session token
+ * with it. The database asks for 0600 because of this token, which the card's
+ * exfat mount ignores - see db.c. */
 bool ra_creds_load(void);
 bool ra_creds_save(void);
 void ra_creds_clear(void);

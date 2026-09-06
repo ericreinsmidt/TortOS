@@ -26,8 +26,13 @@
  *     fprintf(f, ...);
  *     return atomic_commit(f, path);
  *
- * `mode` matters for ra.cfg, which holds an account token and must be 0600
- * from the moment it exists rather than chmod'ed afterwards.
+ * `mode` is applied at creation rather than chmod'ed afterwards, so a file
+ * that should be private is never briefly readable. Worth knowing what that
+ * buys on the target and what it does not: /mnt/SDCARD is exfat mounted
+ * fmask=0022, and exfat carries no Unix permissions, so every file on the card
+ * reads back 0755 whatever mode was asked for. Measured 2026-09-06 - a fresh
+ * file chmod 600 came back -rwxr-xr-x. The mode is honored on ext4 and on a
+ * development host, which is why it is still passed.
  */
 FILE *atomic_open(const char *path, int mode);
 

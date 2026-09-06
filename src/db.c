@@ -170,13 +170,21 @@ db *db_open(const char *path, db_scope scope)
 	}
 	if (!run(d, SCHEMA)) { db_close(d); return NULL; }
 
-	/* The device database holds the RetroAchievements session token, so it is
-	 * 0600 - which is the mode ra.cfg carried before it moved in here. After
-	 * the schema, not before: journal_mode=WAL creates the sidecars, and
-	 * sqlite gives those the permissions the database has AT THAT MOMENT. Do
-	 * this first and the -wal would be created 0600 from a 0600 file; do it
-	 * without the sidecars and the token's pages sit in a 0644 -wal, which is
-	 * the same secret in a different file. */
+	/* The device database holds the RetroAchievements session token, so it
+	 * asks for 0600. Sidecars included: a -wal holding the same pages at 0644
+	 * would be the same secret in a different file. After the schema and not
+	 * before, because journal_mode=WAL is what creates them.
+	 *
+	 * ON THE DEVICE THIS ACHIEVES NOTHING, and saying so beats implying a
+	 * protection that is not there. /mnt/SDCARD is exfat mounted fmask=0022;
+	 * exfat has no Unix permissions, so everything on the card reads back
+	 * 0755 whatever was asked for. Measured 2026-09-06. ra.cfg was never 0600
+	 * either, for its whole life, while a comment said it must be.
+	 *
+	 * Kept because it is free and it is honored everywhere else - ext4, a
+	 * development host, any card that is not exfat. The token is unprotected
+	 * on this card and cannot be protected this way; that is a backlog item,
+	 * not something a chmod fixes. */
 	if (scope == DB_DEVICE) {
 		char side[1100];
 		chmod(path, 0600);
