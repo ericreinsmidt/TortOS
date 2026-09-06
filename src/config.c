@@ -60,35 +60,3 @@ bool cfg_load_systems(const char *path, systems_cfg *out)
 	fclose(f);
 	return out->count > 0;
 }
-
-void cfg_load_tortos(const char *path, tortos_cfg *out)
-{
-	memset(out, 0, sizeof *out);
-	out->volume = -1;
-	out->brightness = -1;
-	out->font_scale = 1.0f;
-	FILE *f = fopen(path, "r");
-	if (!f) return;
-	char line[1024];
-	while (fgets(line, sizeof line, f)) {
-		strip(line);
-		if (!line[0] || line[0] == '#') continue;
-		char *eq = strchr(line, '=');
-		if (!eq) continue;
-		*eq = '\0';
-		char *key = line, *val = eq + 1;
-		strip(key); strip(val);
-		if (strcmp(key, "volume") == 0) out->volume = atoi(val);
-		else if (strcmp(key, "brightness") == 0) out->brightness = atoi(val);
-		/* A bad or absent font_scale has to leave the UI readable rather than
-		 * unreadable, so anything that does not parse stays at 1.0 and the
-		 * clamp is ui_set_font_scale's, in one place. */
-		else if (strcmp(key, "font_scale") == 0) {
-			float v = (float)atof(val);
-			if (v > 0.0f) out->font_scale = v;
-		}
-		else if (strcmp(key, "startup_system") == 0)
-			snprintf(out->startup_system, CFG_STR, "%s", val);
-	}
-	fclose(f);
-}

@@ -22,7 +22,10 @@ mkdir -p "$P/cards" "$P/cores" "$P/res/web" \
 cp "$ROOT/build/tortos.elf" "$P/"
 cp "$ROOT/build/setbright" "$P/"          # brightness before the boot animation
 cp "$ROOT/sd/tortos/launch.sh" "$P/"
-cp "$ROOT/config/systems.cfg" "$ROOT/config/tortos.cfg" \
+# tortos.cfg is gone: its four values are compiled into the launcher and seed
+# the settings database on first run, so there is no file to ship and none to
+# drift from the code that reads it.
+cp "$ROOT/config/systems.cfg" \
    "$ROOT/config/coreopts.cfg" "$ROOT/config/turbo.cfg" "$P/"
 cp "$ROOT/res/cards/"*.png "$P/cards/"
 cp "$ROOT/res/fonts/menu.ttf" "$P/"       # the UI face, and the in-game menu's

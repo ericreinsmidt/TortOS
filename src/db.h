@@ -71,4 +71,31 @@ void db_dump(db *d, FILE *out);
 typedef struct { const char *key; const char *value; } db_default;
 const db_default *db_defaults(db_scope scope, size_t *count);
 
+/* --- the two open handles -------------------------------------------------
+ * Paths are passed in rather than read from platform.h, so this file stays
+ * SDL-free and the check can link it without a window. */
+bool db_init(const char *device_path, const char *library_path,
+             const char *boot_env_path);
+void db_shutdown(void);
+db  *db_dev(void);      /* per handheld  */
+db  *db_lib(void);      /* per card      */
+
+/* --- boot.env -------------------------------------------------------------
+ * launch.sh needs five values before tortos.elf exists: the panel brightness
+ * for before the boot animation, the timezone, and whether each radio should
+ * come up. It is POSIX shell with busybox sed, and there is no sqlite3 binary
+ * on the device, so it cannot read a database.
+ *
+ * So the launcher exports what the shell needs. The database stays
+ * authoritative and this file is derived - deleting it costs nothing but a
+ * boot at the shipped defaults, and the next settings change rewrites it.
+ *
+ * It is also FASTER than what it replaces. launch.sh used to run six seds
+ * across four files, each one a fork; this is a single `.` of one file.
+ *
+ * Rewritten whenever one of the five changes, not at shutdown: a handheld is
+ * switched off by holding a button or by running the battery flat, and neither
+ * is a chance to save anything. */
+bool db_write_boot_env(void);
+
 #endif

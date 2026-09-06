@@ -275,10 +275,10 @@ check-db: build-native/db-check
 		echo "  install sqlite3 - the launcher needs it, not just this check" >&2; \
 	fi; exit $$s
 
-build-native/db-check: tools/db-check.c src/db.c src/db.h FORCE
+build-native/db-check: tools/db-check.c src/db.c src/db.h src/atomic.c FORCE
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
-	      -o $@ tools/db-check.c src/db.c
+	      -o $@ tools/db-check.c src/db.c src/atomic.c
 
 check-backlog:
 	@python3 tools/backlog-check.py

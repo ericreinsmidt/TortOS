@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "atomic.h"
 #include "db.h"
 
 /* --- libsqlite3, declared rather than included ---------------------------
@@ -78,17 +79,21 @@ bool db_available(void)
  * second artifact to drift from this code and a deleted database self-heals
  * into a working one. These values are what config/tortos.cfg shipped. */
 static const db_default device_defaults[] = {
-	{ "volume",     "40" },    /* percent; the launcher converts to a rung */
+	/* A RUNG, 0..PLAT_VOL_MAX, which is what a nudge stores. config/tortos.cfg
+	 * shipped 40 percent and the launcher converted; keeping the percentage
+	 * here would put two units under one key, and 15 percent would then be
+	 * indistinguishable from rung 15. (40 * 20 + 50) / 100 = 8. */
+	{ "volume",     "8"  },
 	{ "brightness", "7"  },
 	{ "audioout",   "auto" },  /* auto | speaker - see src/audioout.h */
 	{ "autooff",    "0"  },    /* seconds without input, 0 is off */
 	{ "textsize",   "1.0" },
-	{ "wifi",       "0"  },
+	{ "wifi",       "0"  },    /* what THIS device was last doing, not the */
+	{ "bluetooth",  "0"  },    /* shipped default - seeding merges the two */
 };
 
 static const db_default library_defaults[] = {
 	{ "timezone",       "America/New_York" },
-	{ "bluetooth",      "0"   },
 	{ "startup_system", "NES" },
 };
 
@@ -263,4 +268,56 @@ void db_dump(db *d, FILE *out)
 		        v ? (const char *)v : "");
 	}
 	sq_finalize(st);
+}
+
+/* --- the two open handles ------------------------------------------------ */
+static db *g_dev, *g_lib;
+static char g_boot_env[1024];
+
+bool db_init(const char *device_path, const char *library_path,
+             const char *boot_env_path)
+{
+	db_shutdown();
+	g_dev = db_open(device_path, DB_DEVICE);
+	g_lib = db_open(library_path, DB_LIBRARY);
+	snprintf(g_boot_env, sizeof g_boot_env, "%s", boot_env_path ? boot_env_path : "");
+	return g_dev && g_lib;
+}
+
+void db_shutdown(void)
+{
+	db_close(g_dev); g_dev = NULL;
+	db_close(g_lib); g_lib = NULL;
+	g_boot_env[0] = '\0';
+}
+
+db *db_dev(void) { return g_dev; }
+db *db_lib(void) { return g_lib; }
+
+/* --- boot.env, see db.h -------------------------------------------------- */
+bool db_write_boot_env(void)
+{
+	FILE *f;
+	char tz[64];
+
+	if (!g_dev || !g_lib || !g_boot_env[0]) return false;
+	if (!(f = atomic_open(g_boot_env, 0644))) return false;
+
+	/* Shell-sourced, so every value is quoted and nothing is computed here.
+	 * The launcher already resolved "the player's choice, else the shipped
+	 * default" by seeding, which is why this is four lines and launch.sh no
+	 * longer needs a fallback for each one. */
+	fprintf(f, "# Written by TortOS from the settings database. Derived, not\n");
+	fprintf(f, "# authoritative: delete it and the next settings change\n");
+	fprintf(f, "# rewrites it. Sourced by launch.sh before tortos.elf runs.\n");
+	fprintf(f, "BRIGHTNESS='%d'\n", db_get_int(g_dev, "brightness", 7));
+	fprintf(f, "WIFI='%d'\n",       db_get_int(g_dev, "wifi", 0) ? 1 : 0);
+	fprintf(f, "BLUETOOTH='%d'\n",  db_get_int(g_dev, "bluetooth", 0) ? 1 : 0);
+	db_get_str(g_lib, "timezone", tz, sizeof tz, "America/New_York");
+	/* A single quote in a timezone name would break the shell that sources
+	 * this. None exist, and a value that could is dropped rather than
+	 * escaped, because a wrong TZ is cheaper than an unbootable launch.sh. */
+	fprintf(f, "TIMEZONE='%s'\n", strchr(tz, '\'') ? "UTC" : tz);
+
+	return atomic_commit(f, g_boot_env);
 }

@@ -34,8 +34,24 @@ export TORTOS_ANIM_FLAG
 mkdir -p "$BIOS_PATH" "$ROMS_PATH" "$SAVES_PATH" "$USERDATA_PATH" "$LOGS_PATH" \
          "$SHARED_USERDATA_PATH"
 
-CFG=$TORTOS_DIR/tortos.cfg
-getcfg() { [ -f "$CFG" ] && sed -n "s/^$1=//p" "$CFG" | tail -1; }
+# Settings live in a database now, and this script cannot read one: there is no
+# sqlite3 binary on the device. So the launcher exports the five values needed
+# before it exists, and this sources them. One read, no forks - it replaces six
+# seds across four files, so the boot path got shorter rather than longer.
+#
+# The defaults below are for the very first boot of a fresh card, before the
+# launcher has ever run. After that boot.env is rewritten on every start and
+# whenever one of these changes.
+#
+# Sourced rather than parsed because parsing costs a fork per value. That trusts
+# the file, which is the same trust this script already places in itself: both
+# are on the card, and anyone who can edit one can edit the other.
+BRIGHTNESS=7
+WIFI=0
+BLUETOOTH=0
+TIMEZONE=America/New_York
+BOOT_ENV=$USERDATA_PATH/boot.env
+[ -f "$BOOT_ENV" ] && . "$BOOT_ENV"
 
 # All LEDs off: TortOS shows no chrome, and the lights are pure battery drain.
 # A function, because trimui_inputd re-lights them when it starts.
@@ -54,11 +70,11 @@ leds_off() {
 # This ladder is TortOS's own and is shared verbatim with platform.c and with
 # the emulator: twelve geometric rungs, the first being the panel's measured
 # floor (0 and 1 are black on this display). A saved level in
-# .userdata/levels.cfg wins over the config default, because that is the
-# level the player last chose.
+# The level the player last chose, which the launcher already resolved against
+# the shipped default before exporting it - so there is one value here now
+# rather than a saved level and a fallback.
 brightness_raw() {
-	B=$(sed -n 's/^brightness=//p' "$USERDATA_PATH/levels.cfg" 2> /dev/null | head -1)
-	[ -n "$B" ] || B=$(getcfg brightness)
+	B=$BRIGHTNESS
 	case "$B" in
 		0) echo 2;;  1) echo 4;;   2) echo 8;;   3) echo 16;;
 		4) echo 32;; 5) echo 48;;  6) echo 72;;  7) echo 96;;
@@ -119,7 +135,7 @@ if [ -x "$TORTOS_DIR/setbright" ] && [ ! -f "$TORTOS_DIR/.brightboot_applied" ];
 	cp "$TORTOS_DIR/setbright" /usr/trimui/bin/setbright 2> /dev/null && chmod +x /usr/trimui/bin/setbright
 	cat > /usr/trimui/bin/tortos-bootbright.sh <<'BB'
 #!/bin/sh
-BR=$(sed -n 's/^brightness=//p' /mnt/SDCARD/TortOS/tortos.cfg 2> /dev/null | tail -1)
+BR=$(sed -n "s/^BRIGHTNESS='\\(.*\\)'$/\\1/p" /mnt/SDCARD/.userdata/tg3040/boot.env 2> /dev/null | tail -1)
 case "$BR" in
 	0) R=1;; 1) R=8;; 2) R=16;; 3) R=32;; 4) R=48;; 5) R=72;;
 	6) R=96;; 7) R=128;; 8) R=160;; 9) R=192;; 10) R=255;; *) R=160;;
@@ -182,7 +198,7 @@ echo -n 0 > /sys/class/gpio/gpio227/value 2> /dev/null
 # runs ntpd, which corrects the time within a minute of Wi-Fi connecting. That
 # is also why the device sat in 1970 until Wi-Fi worked - ntpd was running the
 # whole time with nothing to reach.
-TZNAME=$(getcfg timezone)
+TZNAME=$TIMEZONE
 if [ -n "$TZNAME" ] && [ -f "/usr/share/zoneinfo/$TZNAME" ]; then
 	ln -sf "/usr/share/zoneinfo/$TZNAME" /tmp/localtime
 	rm -f /tmp/TZ
@@ -194,7 +210,7 @@ fi
 # Radio silence. TortOS has nothing to talk to yet: no downloads, no pairing,
 # no achievements. Both radios are battery drain and boot time.
 #
-# `wifi=1` in tortos.cfg -- or a .devwifi marker -- keeps WiFi up so a
+# Wi-Fi on in the settings -- or a .devwifi marker -- keeps WiFi up so a
 # development unit stays reachable over ssh. Without it there is no way to
 # diagnose a problem on hardware except by pulling the card, which is a bad
 # place to be when something does not come up.
@@ -265,12 +281,9 @@ wifi_on() {
 	echo "wifi: no association after ${i}s" >> "$LOGS_PATH/tortos.log"
 }
 
-# The state the player left it in wins over the shipped default, the same way
-# a saved brightness level does. tortos.cfg says what a fresh card does;
-# .userdata/wifi.cfg says what THIS device was doing when it was last shut
-# down, which is what someone who turned wifi on expects to find.
-WIFI=$(sed -n 's/^wifi=//p' "$USERDATA_PATH/wifi.cfg" 2> /dev/null | head -1)
-[ -n "$WIFI" ] || WIFI=$(getcfg wifi)
+# What THIS device was doing when it was last shut down, which is what someone
+# who turned Wi-Fi on expects to find. The launcher resolved that against the
+# shipped default before exporting, so $WIFI is already the answer.
 if [ "$WIFI" = "1" ] || [ -f "$TORTOS_DIR/.devwifi" ]; then
 	wifi_on &
 else
@@ -394,7 +407,7 @@ bt_on() {
 # The bond is persistent (/etc/lib/bluetooth/<adapter>/<device>/), so every
 # headset that could connect is known now, without waiting for one to. A PCM
 # for a headset that is not connected simply fails to open, and the port falls
-# back to the speaker and says so - which is ADR-0029's behaviour anyway.
+# back to the speaker and says so - which is ADR-0029's behavior anyway.
 #
 # One per device rather than one reused name, so switching headsets needs no
 # restart. bt_pcm_name is the single place the naming is decided.
@@ -494,9 +507,7 @@ bt_reconnect() {
 	done
 }
 
-BT=$(sed -n 's/^bluetooth=//p' "$USERDATA_PATH/bt.cfg" 2> /dev/null | head -1)
-[ -n "$BT" ] || BT=$(getcfg bluetooth)
-if [ "$BT" = "1" ]; then
+if [ "$BLUETOOTH" = "1" ]; then
 	bt_on &
 else
 	bt_off &

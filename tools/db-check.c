@@ -51,7 +51,8 @@ static void opens_and_seeds(void)
 	ck(d != NULL, "it opens where nothing existed");
 	if (!d) return;
 
-	ck(db_get_int(d, "volume", -1) == 40, "volume seeded from config/tortos.cfg");
+	/* A rung, not the percentage config/tortos.cfg shipped: one key, one unit. */
+	ck(db_get_int(d, "volume", -1) == 8, "volume seeded as a rung");
 	ck(db_get_int(d, "brightness", -1) == 7, "brightness seeded");
 	db_get_str(d, "audioout", buf, sizeof buf, "");
 	ck(!strcmp(buf, "auto"), "audioout seeded to auto");
@@ -114,7 +115,7 @@ static void a_lost_database_self_heals(void)
 	scrub();
 	d = db_open(DEV, DB_DEVICE);
 	ck(d != NULL, "it reopens from nothing");
-	ck(db_get_int(d, "volume", -1) == 40, "with the shipped default, not an empty value");
+	ck(db_get_int(d, "volume", -1) == 8, "with the shipped default, not an empty value");
 	ck(!db_has(d, "probe.int"), "and nothing from the old file");
 	db_close(d);
 }
@@ -158,6 +159,76 @@ static void the_scopes_stay_apart(void)
 	db_close(lib);
 }
 
+/* boot.env is the one thing outside this process that depends on the schema,
+ * and it is sourced by the script that boots the device. A key it reads from
+ * the wrong scope silently exports the fallback forever - which is exactly the
+ * bug this caught while it was being written. */
+static void boot_env_says_what_the_shell_needs(void)
+{
+	const char *path = "/tmp/tortos-db-check-boot.env";
+	char line[256];
+	int seen_bright = 0, seen_wifi = 0, seen_bt = 0, seen_tz = 0;
+	FILE *f;
+
+	printf("boot.env carries the five values launch.sh reads:\n");
+	scrub();
+	unlink(path);
+	ck(db_init(DEV, LIB, path), "both databases open");
+
+	/* Values a shell must see, not the defaults, so a wrong scope shows up. */
+	db_set_int(db_dev(), "brightness", 3);
+	db_set_int(db_dev(), "wifi", 1);
+	db_set_int(db_dev(), "bluetooth", 1);
+	db_set_str(db_lib(), "timezone", "Europe/Berlin");
+
+	ck(db_write_boot_env(), "it writes");
+	f = fopen(path, "r");
+	ck(f != NULL, "and the file is there");
+	if (!f) { db_shutdown(); return; }
+	while (fgets(line, sizeof line, f)) {
+		if (!strcmp(line, "BRIGHTNESS='3'\n"))          seen_bright = 1;
+		if (!strcmp(line, "WIFI='1'\n"))                seen_wifi = 1;
+		if (!strcmp(line, "BLUETOOTH='1'\n"))           seen_bt = 1;
+		if (!strcmp(line, "TIMEZONE='Europe/Berlin'\n")) seen_tz = 1;
+	}
+	fclose(f);
+	ck(seen_bright, "brightness is the stored value, not the default");
+	ck(seen_wifi,   "wifi is the stored value");
+	ck(seen_bt,     "bluetooth is the stored value, from the device scope");
+	ck(seen_tz,     "timezone is the stored value, from the library scope");
+
+	/* The format is a contract with two readers written in another language:
+	 * launch.sh sources the file, and tortos-bootbright.sh - which runs from
+	 * the rootfs before launch.sh - seds one value out of it. A quoting change
+	 * here would break the boot, so both are exercised rather than eyeballed. */
+	{
+		char cmd[512];
+		FILE *r;
+		char got[128] = { 0 };
+
+		snprintf(cmd, sizeof cmd,
+		         "sh -c '. %s; printf \"%%s %%s\" \"$BRIGHTNESS\" \"$TIMEZONE\"'",
+		         path);
+		r = popen(cmd, "r");
+		if (r) { if (!fgets(got, sizeof got, r)) got[0] = '\0'; pclose(r); }
+		ck(!strcmp(got, "3 Europe/Berlin"), "a POSIX shell can source it");
+
+		snprintf(cmd, sizeof cmd,
+		         "sed -n \"s/^BRIGHTNESS='\\(.*\\)'$/\\1/p\" %s", path);
+		got[0] = '\0';
+		r = popen(cmd, "r");
+		if (r) { if (!fgets(got, sizeof got, r)) got[0] = '\0'; pclose(r); }
+		ck(!strcmp(got, "3\n"), "and bootbright's sed extracts the brightness");
+	}
+
+	/* Derived, not authoritative: losing it must cost nothing. */
+	unlink(path);
+	ck(db_write_boot_env(), "it rewrites after being deleted");
+	unlink(path);
+	db_shutdown();
+	ck(db_dev() == NULL && db_lib() == NULL, "shutdown clears both handles");
+}
+
 static void every_default_is_readable(void)
 {
 	db *d;
@@ -195,6 +266,7 @@ int main(void)
 	round_trips();
 	a_lost_database_self_heals();
 	the_scopes_stay_apart();
+	boot_env_says_what_the_shell_needs();
 	every_default_is_readable();
 	scrub();
 

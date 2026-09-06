@@ -13,6 +13,7 @@
 #include "atomic.h"
 #include "cheevos.h"
 #include "config.h"
+#include "db.h"
 #include "coverflow.h"
 #include "library.h"
 #include "platform.h"
@@ -95,7 +96,6 @@ static const struct { const char *name, *label; } DMODES[] = {
 
 typedef struct {
 	systems_cfg sys;
-	tortos_cfg cfg;
 
 	SDL_Texture *sys_tex[CFG_MAX_SYSTEMS];
 	int sys_w[CFG_MAX_SYSTEMS], sys_h[CFG_MAX_SYSTEMS];
@@ -374,6 +374,26 @@ static void state_path(app *a, int s, const game_entry *g, char *out, size_t n)
  * here once cost every preview on the card, silently, because writing to a
  * path in a directory that does not exist fails per-write and looks like
  * nothing happening. */
+/* Where the two databases live, and the directories they need. Both callers
+ * are in main(): --dump, which runs before video, and the boot path. Having
+ * one of them create the directory and the other not is how --dump failed on a
+ * fresh tree the first time it was tried. */
+static bool db_paths_ready(char *dev, size_t ndev, char *lib, size_t nlib,
+                           char *env, size_t nenv)
+{
+	char d[CFG_STR * 2];
+
+	mkdir(P_USERDATA, 0755);
+	mkdir(P_SHARED, 0755);
+	snprintf(d, sizeof d, "%s/.tortos", P_SHARED);
+	mkdir(d, 0755);
+
+	snprintf(dev, ndev, "%s/tortos.db", P_USERDATA);
+	snprintf(lib, nlib, "%s/.tortos/library.db", P_SHARED);
+	if (env) snprintf(env, nenv, "%s/boot.env", P_USERDATA);
+	return true;
+}
+
 static void persist_dir_ensure(app *a, int s)
 {
 	char d[LIB_PATH * 2];
@@ -515,7 +535,7 @@ static int text_scale_step(void)
 	int i, best = 0;
 	float bd = 1e9f;
 
-	/* Nearest, not equal: the value may have come from tortos.cfg, where
+	/* Nearest, not equal: the value may have come from a shipped default, where
 	 * anything in range is legal and 1.07 is as valid as 1.00. */
 	for (i = 0; i < TEXT_SCALE_COUNT; i++) {
 		float d = cur > TEXT_SCALES[i] ? cur - TEXT_SCALES[i] : TEXT_SCALES[i] - cur;
@@ -526,50 +546,38 @@ static int text_scale_step(void)
 
 static void text_scale_save(float scale)
 {
-	char p[CFG_STR * 2];
-	FILE *f;
-
-	snprintf(p, sizeof p, "%s/textsize.cfg", P_USERDATA);
-	f = atomic_open(p, 0644);
-	if (!f) return;
-	fprintf(f, "font_scale=%.2f\n", (double)scale);
-	atomic_commit(f, p);
+	char buf[32];
+	snprintf(buf, sizeof buf, "%.2f", (double)scale);
+	db_set_str(db_dev(), "textsize", buf);
 }
 
 static float text_scale_load(float fallback)
 {
-	char p[CFG_STR * 2];
-	FILE *f;
-	float v = 0.0f;
+	char buf[32];
+	float v;
 
-	snprintf(p, sizeof p, "%s/textsize.cfg", P_USERDATA);
-	f = fopen(p, "r");
-	if (!f) return fallback;
-	if (fscanf(f, "font_scale=%f", &v) != 1) v = 0.0f;
-	fclose(f);
+	if (!db_get_str(db_dev(), "textsize", buf, sizeof buf, NULL)) return fallback;
+	v = (float)atof(buf);
+	/* A scale that does not parse leaves the UI readable rather than
+	 * unreadable, which is why this falls back instead of clamping a zero. */
 	return v > 0.0f ? v : fallback;
 }
 
 /* Whether the radio should come up at boot.
  *
- * In .userdata rather than tortos.cfg, on the same split as brightness: the
- * shipped config says what a fresh card does, .userdata says what THIS device
- * was last doing. launch.sh reads this file first and falls back to the
- * config, so a card with no preference yet behaves as shipped.
+ * Per-device rather than per-card, on the same split as brightness: it is what
+ * THIS handheld was last doing. The shipped default seeds it once, so there is
+ * no fallback chain left for launch.sh to walk.
  *
  * Written the moment it changes rather than at shutdown, because a handheld
  * is switched off by holding a button or by running the battery flat, and
  * neither of those is a chance to save anything. */
 static void wifi_pref_save(bool on)
 {
-	char p[CFG_STR * 2];
-	FILE *f;
-
-	snprintf(p, sizeof p, "%s/wifi.cfg", P_USERDATA);
-	f = atomic_open(p, 0644);
-	if (!f) return;
-	fprintf(f, "wifi=%d\n", on ? 1 : 0);
-	atomic_commit(f, p);
+	db_set_int(db_dev(), "wifi", on ? 1 : 0);
+	/* launch.sh reads this one before the launcher exists, so the export has
+	 * to follow the write rather than wait for a tidy shutdown. */
+	db_write_boot_env();
 }
 
 /* Beside the save states and keyed like them, so a favorite travels with the
@@ -607,36 +615,15 @@ static void chv_active_path(char *out, size_t n)
 static const int AUTO_OFF[] = { 0, 30, 60, 120, 300, 600 };
 #define AUTO_OFF_COUNT ((int)(sizeof AUTO_OFF / sizeof AUTO_OFF[0]))
 
-static void auto_off_path(char *out, size_t n)
-{
-	snprintf(out, n, "%s/autooff.cfg", P_USERDATA);
-}
-
 static int auto_off_load(void)
 {
-	char p[CFG_STR * 2];
-	FILE *f;
-	int v = -1;
-
-	auto_off_path(p, sizeof p);
-	f = fopen(p, "r");
-	if (!f) return 120;                       /* the default: two minutes */
-	if (fscanf(f, "seconds=%d", &v) != 1) v = -1;
-	fclose(f);
-	if (v < 0) return 120;
-	return v;
+	int v = db_get_int(db_dev(), "autooff", -1);
+	return v >= 0 ? v : 120;                  /* the default: two minutes */
 }
 
 static void auto_off_save(int seconds)
 {
-	char p[CFG_STR * 2];
-	FILE *f;
-
-	auto_off_path(p, sizeof p);
-	f = atomic_open(p, 0644);
-	if (!f) return;
-	fprintf(f, "seconds=%d\n", seconds);
-	atomic_commit(f, p);
+	db_set_int(db_dev(), "autooff", seconds);
 }
 
 /* The account. Per-device rather than shared, because it holds a session
@@ -760,34 +747,17 @@ static char g_aout_sent[128];      /* the device Diatom was last told to use */
 static bool g_aout_ever;
 static unsigned g_aout_gen;        /* which connection it was told on */
 
-static void aout_path(char *out, size_t n)
-{
-	snprintf(out, n, "%s/audioout.cfg", P_USERDATA);
-}
-
 static aout_policy aout_load(void)
 {
-	char p[CFG_STR * 2], v[32] = { 0 };
-	FILE *f;
-
-	aout_path(p, sizeof p);
-	f = fopen(p, "r");
-	if (!f) return AOUT_AUTO;                 /* the default: follow the cable */
-	if (fscanf(f, "policy=%31s", v) != 1) v[0] = '\0';
-	fclose(f);
+	char v[32];
+	/* The default follows the cable; only an explicit "speaker" overrides. */
+	db_get_str(db_dev(), "audioout", v, sizeof v, "auto");
 	return !strcmp(v, "speaker") ? AOUT_SPEAKER : AOUT_AUTO;
 }
 
 static void aout_save(aout_policy p)
 {
-	char path[CFG_STR * 2];
-	FILE *f;
-
-	aout_path(path, sizeof path);
-	f = atomic_open(path, 0644);
-	if (!f) return;
-	fprintf(f, "policy=%s\n", p == AOUT_SPEAKER ? "speaker" : "auto");
-	atomic_commit(f, path);
+	db_set_str(db_dev(), "audioout", p == AOUT_SPEAKER ? "speaker" : "auto");
 }
 
 /* The connected sink, published by bt_reconnect in launch.sh.
@@ -4992,6 +4962,7 @@ int main(int argc, char *argv[])
 {
 	app a = { 0 };
 	char path[CFG_STR * 2];
+	char startup[CFG_STR];
 
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "--shot") && i + 1 < argc) shot_path = argv[++i];
@@ -5083,17 +5054,54 @@ int main(int argc, char *argv[])
 	signal(SIGTERM, on_sigterm);
 	signal(SIGINT, on_sigterm);
 
+	/* Nothing on the device can read a database - there is no sqlite3 binary -
+	 * so losing the ability to SEE a setting would be a real loss where losing
+	 * the ability to edit one is the point. Runs before video: it is a
+	 * question asked over adb, not a screen. */
+	if (argc > 1 && !strcmp(argv[1], "--dump")) {
+		char dev[CFG_STR * 2], lib[CFG_STR * 2];
+		paths_init();
+		db_paths_ready(dev, sizeof dev, lib, sizeof lib, NULL, 0);
+		if (!db_init(dev, lib, NULL)) {
+			fprintf(stderr, "cannot open the settings database\n");
+			return 1;
+		}
+		printf("device  %s\n", dev);
+		db_dump(db_dev(), stdout);
+		printf("library %s\n", lib);
+		db_dump(db_lib(), stdout);
+		db_shutdown();
+		return 0;
+	}
+
 	t_boot0 = plat_now_ms();
 	paths_init();
 	build_child_env();
+
+	/* Before anything reads a setting. Two databases, because the files this
+	 * replaced kept per-device and per-card data apart on purpose - see db.h.
+	 * A failure here is fatal rather than silently defaulted: every setting
+	 * the launcher has would be a fallback, and the player would find their
+	 * volume, brightness and account quietly reset with nothing said. */
+	{
+		char dev[CFG_STR * 2], lib[CFG_STR * 2], env[CFG_STR * 2];
+		db_paths_ready(dev, sizeof dev, lib, sizeof lib, env, sizeof env);
+		if (!db_init(dev, lib, env)) {
+			fprintf(stderr, "cannot open the settings database at %s\n", dev);
+			if (!db_available())
+				fprintf(stderr, "  libsqlite3 did not load\n");
+			return 1;
+		}
+		/* Rewritten at every boot, not only on change: it is derived, so a
+		 * card that lost it or never had one gets a correct one for free. */
+		db_write_boot_env();
+	}
 
 	snprintf(path, sizeof path, "%s/systems.cfg", P_ROOT);
 	if (!cfg_load_systems(path, &a.sys)) {
 		fprintf(stderr, "no usable %s\n", path);
 		return 1;
 	}
-	snprintf(path, sizeof path, "%s/tortos.cfg", P_ROOT);
-	cfg_load_tortos(path, &a.cfg);
 
 	/* Before the scan, because the scan builds the Favorites shelf out of
 	 * them and a shelf cannot be built from a list that has not been read. */
@@ -5143,11 +5151,12 @@ int main(int argc, char *argv[])
 	IMG_Init(IMG_INIT_PNG);
 	a.r = plat_renderer();
 	plat_input_init();
-	/* The config values are defaults handed to the settings code, which
-	 * prefers the player's saved levels over them. They are NOT reapplied
-	 * afterwards: doing that put tortos.cfg ahead of the level the player last
-	 * chose and undid every nudge on the next restart. */
-	plat_settings_init(a.cfg.volume, a.cfg.brightness);
+	/* Nothing is handed in any more. The two-tier lookup this replaces - a
+	 * shipped default and the player's saved level - is one key each in the
+	 * database, seeded once and overwritten by a nudge. That is also the end
+	 * of a bug it kept reintroducing: reapplying the config afterwards put
+	 * tortos.cfg ahead of the level the player last chose. */
+	plat_settings_init();
 	plat_leds_off();
 	t_mark("video+input");
 
@@ -5156,14 +5165,15 @@ int main(int argc, char *argv[])
 	/* The size the player chose beats the shipped default, the same way a
 	 * saved brightness does. Read before ui_init, which is when the scale is
 	 * applied. */
-	ui_set_font_scale(text_scale_load(a.cfg.font_scale));
+	ui_set_font_scale(text_scale_load(1.0f));
 	if (!ui_init(a.r, P_FONT)) fprintf(stderr, "font init failed\n");
 	t_mark("font+settings");
 
 	a.sys_cursor = 0;
-	if (a.cfg.startup_system[0])
+	db_get_str(db_lib(), "startup_system", startup, sizeof startup, "");
+	if (startup[0])
 		for (int i = 0; i < a.sys.count; i++)
-			if (strcasecmp(a.sys.systems[i].name, a.cfg.startup_system) == 0) {
+			if (strcasecmp(a.sys.systems[i].name, startup) == 0) {
 				a.sys_cursor = i;
 				break;
 			}

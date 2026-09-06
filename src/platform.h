@@ -163,14 +163,15 @@ void plat_leds_off(void);
 #define PLAT_VOL_MAX     20   /* 21 positions, 0..20 */
 #define PLAT_BRIGHT_MAX  11   /* a 12-rung geometric ladder, 0..11 */
 
-/* Levels come from .userdata/levels.cfg when the player has ever set one, and
- * from tortos.cfg otherwise: the saved level is a choice, the config value is
- * only a default. launch.sh applies the same precedence to the boot animation
- * before this process exists, so passing the config defaults in here keeps the
- * rule in one place instead of two that can disagree.
- * cfg_volume_pct is 0..100; cfg_brightness is a rung, 0..PLAT_BRIGHT_MAX.
- * Either may be negative for "not configured". */
-void plat_settings_init(int cfg_volume_pct, int cfg_brightness);
+/* Levels come from the settings database: seeded from the shipped defaults on
+ * first run, then overwritten by every nudge of the rocker. There is no longer
+ * a saved value and a fallback to reconcile, which is why this takes nothing -
+ * it used to be handed the config defaults so the precedence rule lived in one
+ * place, and now the precedence has nowhere to disagree with itself.
+ *
+ * launch.sh applies the same level to the boot animation before this process
+ * exists, from the boot.env the launcher exports. See src/db.h. */
+void plat_settings_init(void);
 int  plat_volume_get(void);
 int  plat_brightness_get(void);
 void plat_volume_nudge(int delta);

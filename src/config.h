@@ -32,16 +32,7 @@ typedef struct {
 	int count;
 } systems_cfg;
 
-typedef struct {
-	/* Defaults, not settings: the settings code prefers the level the player
-	 * last chose in levels.cfg and falls back to these. -1 = not configured. */
-	int volume;             /* 0..100 */
-	int brightness;         /* a rung, 0..PLAT_BRIGHT_MAX */
-	float font_scale;       /* multiplies the whole type scale; 1.0 = as designed */
-	char startup_system[CFG_STR];
-} tortos_cfg;
 
 bool cfg_load_systems(const char *path, systems_cfg *out);
-void cfg_load_tortos(const char *path, tortos_cfg *out);
 
 #endif
