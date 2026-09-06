@@ -58,6 +58,24 @@ void bt_pcm_name(const char *mac, char *out, size_t n)
 		if (out[i] == ':') out[i] = '_';
 }
 
+/* BlueZ prints an address as the name when it has none, in either punctuation.
+ * Returns false when the "name" is just the address again. */
+static bool name_is_address(const char *name, const char *mac)
+{
+	int i;
+
+	if (!name || !*name) return false;
+	for (i = 0; i < 17; i++) {
+		char a = name[i], b = mac[i];
+		if (!a) return true;                          /* shorter: a real name */
+		if (a == '-' && b == ':') continue;           /* AA-BB-.. for AA:BB:.. */
+		if (a >= 'a' && a <= 'z') a = (char)(a - 32);
+		if (b >= 'a' && b <= 'z') b = (char)(b - 32);
+		if (a != b) return true;
+	}
+	return name[17] != '\0';                          /* trailing text: a name */
+}
+
 /* "Device AA:BB:CC:DD:EE:FF Some Name" - one per line. */
 int bt_parse_devices(const char *text, bt_device *out, int max)
 {
@@ -75,10 +93,22 @@ int bt_parse_devices(const char *text, bt_device *out, int max)
 		if (strncmp(line, "Device ", 7)) continue;
 		if (!mac_ok_prefix(line + 7)) continue;
 		snprintf(out[n].mac, BT_MAC_MAX, "%.17s", line + 7);
+
+		/* NAMED ONLY. A scan in an ordinary room finds a dozen BLE beacons,
+		 * a television and somebody's phone, and BlueZ prints an address for
+		 * every one it has no name for - so the list filled with rows nobody
+		 * could identify or use, and the headset was somewhere off the bottom.
+		 *
+		 * "No name" has two spellings: the field is absent, or BlueZ has
+		 * substituted the address with dashes. Both are skipped. A device
+		 * that is BONDED is added back by bt_visible whatever its name, so
+		 * one that was paired before it had a name can still be forgotten. */
+		if (!line[24]) continue;
+		if (!name_is_address(line + 25, out[n].mac)) continue;
+
 		/* Truncated deliberately, and bounded so the device compiler can see
 		 * it is: a headset may advertise a name far longer than a menu row. */
-		snprintf(out[n].name, BT_NAME_MAX, "%.*s", BT_NAME_MAX - 1,
-		         line[24] ? line + 25 : out[n].mac);
+		snprintf(out[n].name, BT_NAME_MAX, "%.*s", BT_NAME_MAX - 1, line + 25);
 		out[n].bonded = false;
 		out[n].connected = false;
 		n++;

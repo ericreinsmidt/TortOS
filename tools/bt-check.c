@@ -70,9 +70,18 @@ static void device_lines(void)
 	ck(n == 0, "chatter that is not a device line");
 	n = bt_parse_devices("Device NOTAMAC Something\n", d, 8);
 	ck(n == 0, "a line whose address is not one");
+	/* A scan in an ordinary room finds a dozen BLE beacons and somebody's
+	 * phone, and BlueZ prints an address for everything it cannot name. Those
+	 * filled the list with rows nobody could identify, so they are skipped -
+	 * a bonded one is added back by bt_visible whatever it is called. */
 	n = bt_parse_devices("Device AA:BB:CC:DD:EE:FF\n", d, 8);
-	ck(n == 1 && !strcmp(d[0].name, "AA:BB:CC:DD:EE:FF"),
-	   "a device with no name falls back to its address");
+	ck(n == 0, "a device with no name at all is skipped");
+	n = bt_parse_devices("Device AA:BB:CC:DD:EE:FF AA-BB-CC-DD-EE-FF\n", d, 8);
+	ck(n == 0, "and so is one BlueZ named after its own address");
+	n = bt_parse_devices("Device aa:bb:cc:dd:ee:ff AA-BB-CC-DD-EE-FF\n", d, 8);
+	ck(n == 0, "whatever the case");
+	n = bt_parse_devices("Device AA:BB:CC:DD:EE:FF AA-BB-CC-DD-EE-FF Speaker\n", d, 8);
+	ck(n == 1, "but an address FOLLOWED by a name is a name");
 
 	/* A name is never handed to a command, so the only requirement is that a
 	 * hostile one is carried as data and does not break the parse. */
