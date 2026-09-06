@@ -189,18 +189,20 @@ The TortOS menu is the firmware's own, and opens from the systems row:
 | | |
 |---|---|
 | **Wi-Fi** | the network's name when connected, or why it is not |
-| **Bluetooth** | stated, not yet a setting - pairing is still done over a shell |
+| **Bluetooth** | the connected headset, or `not connected` - pair, connect and forget |
 | **Audio Output** | `Auto` or `Speaker`, and where Auto landed - see **Audio** below |
 | **Over The Hare** | the file server; needs Wi-Fi and says so when there is none |
-| **Cheevos** | the RetroAchievements account, or `sign in` |
-| **Box Art** | fetch what the whole library is missing |
-| **Text Size** | left/right; reopens every font, so the whole UI is rebuilt |
+| **Play Time** | how long each game has been played, most played first |
 | **Auto Off** | how long without a button before the device powers itself down |
+| **Text Size** | left/right; reopens every font, so the whole UI is rebuilt |
+| **Box Art** | fetch what the whole library is missing |
+| **Cheevos** | the RetroAchievements account, or `sign in` |
 | **About TortOS** | version, address, battery, uptime |
 
 Over The Hare and Box Art need a network, and go quiet without one rather than
 disappearing - a row that vanishes teaches nobody why. Cheevos stays reachable
-either way, because signing in is the thing you go there to do.
+either way, because signing in is the thing you go there to do, and Bluetooth
+and Play Time need no network at all.
 
 On the Wi-Fi screen, **Y** rescans and **X** forgets the network under the
 cursor, behind a confirm. Forgetting the one you are connected through is
@@ -276,11 +278,28 @@ plugging in mid-game does not arrive at nine decibels louder than you left it.
 A paired headset reconnects by itself at boot and mid-session, and game audio
 follows it without relaunching anything. The bond survives a reboot.
 
-**Pairing is not in the UI yet.** It is done once over `bluetoothctl` on the
-device, and the one thing that matters there is the agent: headsets pair
-"Just Works" and need `agent NoInputNoOutput`. With the default agent every
-attempt fails with an authentication error that looks like a broken key, a
-broken chip, or broken headphones, and is none of them.
+**Pairing is on the Bluetooth screen.** Put the headset in pairing mode, press
+**Y** to search, **A** to pair and connect, **X** to forget. The toggle at the
+top turns the radio on and off.
+
+Only devices that advertise a name are listed. A scan in an ordinary room finds
+a dozen BLE beacons and somebody's television, and BlueZ names everything it
+cannot identify after its own address - so the list would otherwise be
+unusable. A device you have already paired is always shown, named or not.
+
+**Forget means forget.** The bond, the ALSA PCM and BlueZ's cached copy of the
+device all go. Scanning leaves a cache entry for everything in range, so
+leaving the screen sweeps the ones you never paired with.
+
+The one thing that matters underneath is the agent: headsets pair "Just Works"
+and need `NoInputNoOutput`. With the default agent every attempt fails with an
+authentication error that looks like a broken key, a broken chip, or broken
+headphones, and is none of them.
+
+**A headset paired now carries game audio from the next launch**, not the
+session already running. alsa-lib reads its configuration once per process, so
+the PCM written when you pair arrives too late for an emulator that opened
+audio at boot. The screen says so when it connects.
 
 Two things behave differently on a Bluetooth sink and are not bugs:
 
@@ -618,6 +637,10 @@ exists because something once broke in a way nothing noticed:
 | `check-hare` | nothing on the file server is reachable without the PIN |
 | `check-httpd` | request parsing, including the malformed ones |
 | `check-xfer` | upload paths cannot escape the directory they were aimed at |
+| `check-db` | a shipped default never overwrites a choice, and the two scopes stay apart |
+| `check-stats` | play time is recorded, and a LAUNCH still writes nothing |
+| `check-bt` | a device name from the air is only ever data; an address is validated |
+| `check-backlog` | the backlog still says what is left, and has been swept recently |
 
 They are offline and need no device. A screen's rows are a pure function of
 its state precisely so the first two can exist - see `docs/decisions/`.
