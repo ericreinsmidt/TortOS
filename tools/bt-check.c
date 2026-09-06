@@ -193,8 +193,10 @@ static void rows_are_shaped_like_the_others(void)
 
 	printf("the footer follows the cursor:\n");
 	u.cursor = -1;
-	ck(strstr(bt_menu_footer(&u), "turn Bluetooth off") != NULL,
-	   "on the toggle it offers the toggle");
+	/* "turn off", not "turn Bluetooth off" - the heading and the row it sits
+	 * under both say Bluetooth, so the footer repeating it is noise. */
+	ck(!strcmp(bt_menu_footer(&u), "A: turn off   Y: search"),
+	   "on the toggle it offers the toggle, without repeating the word");
 	u.cursor = 0;
 	ck(!strcmp(bt_menu_footer(&u), "A: connect   Y: search   X: forget"),
 	   "on a bonded device, connect and forget");
@@ -220,7 +222,7 @@ static void rows_are_shaped_like_the_others(void)
 	u.n = 0;
 	n = bt_menu_build(&u, r, 16, 7);
 	ck(!strcmp(r[0].value, "off"), "the toggle says off");
-	ck(strstr(bt_menu_footer(&u), "turn Bluetooth on") != NULL,
+	ck(!strcmp(bt_menu_footer(&u), "A: turn on"),
 	   "and the footer says how to fix it");
 }
 

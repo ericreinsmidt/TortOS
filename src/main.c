@@ -1946,27 +1946,34 @@ static int menu_build(app *a, screen_id screen, int sys,
 		u.audio_policy = ao.policy;
 		u.audio_dest   = aout_actual(&ao);
 
-		/* The connected headset's name, from the bonds and the sink file the
-		 * shell writes - no fork. This is built for every menu frame, so a
-		 * bluetoothctl call here would be the thing menu_wifi exists to
-		 * prevent. */
+		/* The connected headset's name.
+		 *
+		 * Cached for two seconds, the same way the Wi-Fi row is and for the
+		 * same reason: this is rebuilt every menu frame and the answer costs
+		 * a fork. The first version read /tmp/tortos_btsink to avoid that,
+		 * which is what made this row say "not connected" while the Bluetooth
+		 * screen said the opposite - launch.sh writes that file on a
+		 * twenty-second poll. One source for both now. */
 		{
 			static char btname[BT_NAME_MAX];
-			bt_device bd[BT_MAX];
-			int nb = bt_bonded(bd, BT_MAX), i;
-			char sink[160] = "";
-			FILE *sf = fopen("/tmp/tortos_btsink", "r");
+			static unsigned next_bt;
+			unsigned now = plat_now_ms();
 
-			btname[0] = '\0';
-			if (sf) {
-				if (!fgets(sink, sizeof sink, sf)) sink[0] = '\0';
-				fclose(sf);
-			}
-			for (i = 0; i < nb; i++)
-				if (sink[0] && strstr(sink, bd[i].mac)) {
-					snprintf(btname, sizeof btname, "%s", bd[i].name);
-					break;
+			if (next_bt == 0 || now >= next_bt) {
+				bt_device bd[BT_MAX];
+				int nb = bt_bonded(bd, BT_MAX), i;
+
+				next_bt = now + 2000;
+				btname[0] = '\0';
+				if (nb > 0 && bt_status() == BT_READY) {
+					bt_mark_connected_now(bd, nb);
+					for (i = 0; i < nb; i++)
+						if (bd[i].connected) {
+							snprintf(btname, sizeof btname, "%s", bd[i].name);
+							break;
+						}
 				}
+			}
 			u.bt_name = btname[0] ? btname : NULL;
 		}
 	}

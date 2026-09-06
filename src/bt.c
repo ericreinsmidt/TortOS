@@ -187,6 +187,17 @@ static int btctl(char *out, size_t cap, const char *a, const char *b)
 	return run(argv, out, cap);
 }
 
+/* One call for all of them. See bt.h for the two cheaper-looking sources this
+ * replaced and why each was wrong. */
+int bt_mark_connected_now(bt_device *list, int n)
+{
+	char con[2048];
+	char *argv[] = { (char *)"/usr/bin/hcitool", (char *)"con", NULL };
+
+	if (run(argv, con, sizeof con) != 0) return 0;
+	return bt_mark_connected(con, list, n);
+}
+
 bt_state bt_status(void)
 {
 	char out[512];
@@ -275,13 +286,7 @@ int bt_visible(bt_device *out, int max)
 				break;
 			}
 
-	/* Which are CONNECTED, in one call for all of them. See bt.h for the two
-	 * cheaper-looking sources this replaced and why each was wrong. */
-	{
-		char con[2048];
-		char *argv[] = { (char *)"/usr/bin/hcitool", (char *)"con", NULL };
-		if (run(argv, con, sizeof con) == 0) bt_mark_connected(con, out, n);
-	}
+	bt_mark_connected_now(out, n);
 
 	/* A bonded device out of range does not appear in `devices` at all, and
 	 * leaving it out would make forgetting one impossible. */
@@ -420,6 +425,7 @@ int  bt_visible(bt_device *out, int max) { (void)out; (void)max; return 0; }
 bool bt_scan(int secs) { (void)secs; return false; }
 bool bt_pair(const char *m, char *e, size_t n) { (void)m; if (e && n) e[0] = 0; return false; }
 bool bt_connect(const char *m, char *e, size_t n) { (void)m; if (e && n) e[0] = 0; return false; }
+int  bt_mark_connected_now(bt_device *l, int n) { (void)l; (void)n; return 0; }
 bool bt_power(bool on) { (void)on; return false; }
 bool bt_disconnect(const char *m) { (void)m; return false; }
 bool bt_forget(const char *m) { (void)m; return false; }

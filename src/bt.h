@@ -72,6 +72,11 @@ int bt_mark_connected(const char *hcitool_con, bt_device *list, int n);
  * anything happened. wifi_label learned that the hard way. */
 void bt_label(const bt_device *d, char *out, size_t n);
 
+/* Run hcitool once and mark `list`. The one place that knows how the answer is
+ * obtained, so the menu row and the screen cannot disagree about it - which
+ * they did, when each had its own source. */
+int bt_mark_connected_now(bt_device *list, int n);
+
 bt_state bt_status(void);
 
 /* Bonded devices, read from the bond directories - no fork. */

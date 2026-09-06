@@ -10,11 +10,13 @@ const char *bt_menu_footer(const bt_ui *u)
 	if (!u) return "";
 	if (u->note[0]) return u->note;
 	if (u->state == BT_NO_ADAPTER)  return "No Bluetooth adapter";
-	if (u->state == BT_POWERED_OFF) return "A: turn Bluetooth on";
+	if (u->state == BT_POWERED_OFF) return "A: turn on";
 	if (u->scanning)                return "Searching...";
 	if (u->n == 0)                  return "Y: search";
 	/* On the toggle row rather than a device. */
-	if (u->cursor < 0) return "A: turn Bluetooth off   Y: search";
+	/* Not "turn Bluetooth off": the heading and the row it is under both
+	 * say Bluetooth already, and a footer repeating it is noise. */
+	if (u->cursor < 0) return "A: turn off   Y: search";
 	if (u->cursor >= u->n) return "Y: search";
 	if (u->dev[u->cursor].connected)
 		return "A: disconnect   Y: search   X: forget";
