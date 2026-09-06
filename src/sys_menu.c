@@ -83,17 +83,17 @@ int sys_menu_build(const sys_ui *u, menu_row *out, menu_bufs *b,
 	 * Directly under Wi-Fi because it is useless without it, and reads as an
 	 * answer to the row above rather than a separate idea. */
 	out[PM_XFER]         = (menu_row){ "Over The Hare", NEEDS_WIFI(net), net };
-	out[PM_ACHIEVEMENTS] = (menu_row){ "Cheevos",
-	                                   u->ra_in ? u->ra_name : "sign in",
-	                                   true };
-	out[PM_SCRAPE]       = (menu_row){ "Box Art",   NEEDS_WIFI(net), net };
+	out[PM_STATS]        = (menu_row){ "Play Time",  NULL,      true  };
+	out[PM_SLEEP]        = (menu_row){ "Auto Off",  b->c,      true  };
 	out[PM_TEXT]         = (menu_row){ "Text Size", u->text_size, true };
 	/* Not "Sleep". The device has no suspend and is not getting one - see the
 	 * backlog. This powers off, and resume-into-game brings you back where you
 	 * were, which is what sleep would have been for. */
 	sys_menu_auto_off_label(u->auto_off, b->c, sizeof b->c);
-	out[PM_SLEEP]        = (menu_row){ "Auto Off",  b->c,      true  };
-	out[PM_STATS]        = (menu_row){ "Play Time",  NULL,      true  };
+	out[PM_SCRAPE]       = (menu_row){ "Box Art",   NEEDS_WIFI(net), net };
+	out[PM_ACHIEVEMENTS] = (menu_row){ "Cheevos",
+	                                   u->ra_in ? u->ra_name : "sign in",
+	                                   true };
 	out[PM_ABOUT]        = (menu_row){ "About TortOS", NULL,   true  };
 	return PM_ROWS;
 }

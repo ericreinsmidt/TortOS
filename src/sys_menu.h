@@ -25,8 +25,8 @@
 
 /* The TortOS menu. */
 typedef enum {
-	PM_WIFI, PM_BT, PM_AUDIO, PM_XFER, PM_ACHIEVEMENTS, PM_SCRAPE,
-	PM_TEXT, PM_SLEEP, PM_STATS, PM_ABOUT, PM_ROWS
+	PM_WIFI, PM_BT, PM_AUDIO, PM_XFER, PM_STATS,
+	PM_SLEEP, PM_TEXT, PM_SCRAPE, PM_ACHIEVEMENTS, PM_ABOUT, PM_ROWS
 } pm_row;
 
 /* The system menu. Games and Core carry real values rather than invented ones,
