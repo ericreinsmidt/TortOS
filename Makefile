@@ -301,10 +301,10 @@ build-native/stats-check: tools/stats-check.c src/stats.c src/stats.h src/db.c s
 check-bt: build-native/bt-check
 	@./build-native/bt-check
 
-build-native/bt-check: tools/bt-check.c src/bt.c src/bt.h FORCE
+build-native/bt-check: tools/bt-check.c src/bt.c src/bt.h src/bt_menu.c src/bt_menu.h FORCE
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
-	      -o $@ tools/bt-check.c src/bt.c
+	      -o $@ tools/bt-check.c src/bt.c src/bt_menu.c
 
 check-backlog:
 	@python3 tools/backlog-check.py

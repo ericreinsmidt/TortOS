@@ -83,6 +83,12 @@ bool bt_connect(const char *mac, char *err, size_t n);
  * own and useless right after the UI connects one: the file has not caught up,
  * so the row redraws saying "paired" and the screen looks like it did nothing.
  * Seen on the device 2026-09-06. */
+/* Power the adapter. This is the immediate half of the toggle and it only
+ * works when the stack is already up - hciattach, bluetoothd and bluealsa are
+ * started by launch.sh from the stored preference, so turning Bluetooth on
+ * from a cold boot that had it off takes effect at the next boot. */
+bool bt_power(bool on);
+
 bool bt_connected(const char *mac);
 
 bool bt_disconnect(const char *mac);

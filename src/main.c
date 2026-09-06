@@ -14,6 +14,7 @@
 #include "cheevos.h"
 #include "config.h"
 #include "bt.h"
+#include "bt_menu.h"
 #include "db.h"
 #include "stats.h"
 #include "coverflow.h"
@@ -3047,141 +3048,121 @@ void info_preview(app *a, bool net)
 
 static void bt_screen(app *a)
 {
-	bt_device dev[BT_MAX];
-	char vals[BT_VISIBLE][32], labels[BT_VISIBLE][BT_NAME_MAX];
-	char hint[64];
-	menu_row rows[BT_VISIBLE + 1];       /* +1 for the footer note */
-	char note[96] = "";
+	bt_ui u = { 0 };
+	menu_row rows[BT_VISIBLE + 4];
 	unsigned next_refresh = 0, scan_until = 0;
-	int n = 0, cursor = 0, top = 0;
+	int sel = 0;                  /* ROW space: 0 is the toggle, then devices */
 	bool done = false;
 
 	while (!done && !want_quit && a->running) {
 		unsigned now = plat_now_ms();
-		int shown = 0, i;
-		bt_state st = BT_READY;
+		int nrows, i;
 
 		if (next_refresh == 0 || now >= next_refresh) {
-			st = bt_status();
-			n = st == BT_READY ? bt_visible(dev, BT_MAX) : 0;
-			/* The row under the cursor is asked directly. bt_visible infers
-			 * connections from the sink file, which launch.sh writes on a
-			 * twenty-second poll and which therefore says nothing about a
-			 * connect this screen made a moment ago. One fork every two
-			 * seconds for the row that matters, rather than one per row. */
-			if (n > 0 && cursor < n)
-				dev[cursor].connected = bt_connected(dev[cursor].mac);
+			u.state = bt_status();
+			u.n = u.state == BT_READY ? bt_visible(u.dev, BT_MAX) : 0;
+			/* The row under the cursor is asked of BlueZ directly: bt_visible
+			 * infers connections from the sink file, which launch.sh writes on
+			 * a twenty-second poll and which says nothing about a connect this
+			 * screen just made. One fork for the row that matters. */
+			if (u.cursor >= 0 && u.cursor < u.n)
+				u.dev[u.cursor].connected = bt_connected(u.dev[u.cursor].mac);
+			for (i = 0; i < u.n; i++)
+				bt_label(&u.dev[i], u.vals[i], sizeof u.vals[0]);
 			next_refresh = now + 2000;
-			if (cursor >= n) cursor = n > 0 ? n - 1 : 0;
-			if (cursor < top) top = cursor;
 		}
-		if (scan_until && now >= scan_until) { scan_until = 0; note[0] = '\0'; }
+		if (scan_until && now >= scan_until) { scan_until = 0; u.note[0] = '\0'; }
+		u.scanning = scan_until != 0;
 
-		for (i = top; i < n && shown < BT_VISIBLE; i++) {
-			snprintf(labels[shown], sizeof labels[0], "%s", dev[i].name);
-			bt_label(&dev[i], vals[shown], sizeof vals[0]);
-			rows[shown] = (menu_row){ labels[shown], vals[shown], i == cursor };
-			shown++;
-		}
-		if (n == 0) {
-			const char *why =
-				st == BT_NO_ADAPTER  ? "No Bluetooth adapter" :
-				st == BT_POWERED_OFF ? "Bluetooth is off" :
-				scan_until           ? "Searching..." : "Nothing found";
-			snprintf(labels[0], sizeof labels[0], "%s", why);
-			rows[0] = (menu_row){ labels[0], NULL, false };
-			shown = 1;
-		}
-
-		/* The footer, the same shape the Wi-Fi screen uses. Three actions with
-		 * no hint for any of them is three actions nobody finds - and what the
-		 * buttons DO depends on the row, so the hint has to as well: A pairs a
-		 * device that is only in range and connects one that is already
-		 * bonded, and X has nothing to forget until it is. */
-		if (note[0]) {
-			snprintf(hint, sizeof hint, "%s", note);
-		} else if (scan_until) {
-			snprintf(hint, sizeof hint, "Searching...");
-		} else if (n == 0) {
-			snprintf(hint, sizeof hint, "Y: search");
-		} else if (dev[cursor].connected) {
-			snprintf(hint, sizeof hint, "A: disconnect   Y: search   X: forget");
-		} else if (dev[cursor].bonded) {
-			snprintf(hint, sizeof hint, "A: connect   Y: search   X: forget");
-		} else {
-			snprintf(hint, sizeof hint, "A: pair   Y: search");
-		}
-		rows[shown++] = MENU_NOTE(hint);
+		if (sel > u.n) sel = u.n;
+		if (sel < 0) sel = 0;
+		u.cursor = sel == 0 ? -1 : u.top + sel - 1;
+		if (u.cursor >= u.n) u.cursor = u.n - 1;
+		nrows = bt_menu_build(&u, rows, (int)(sizeof rows / sizeof rows[0]),
+		                      BT_VISIBLE);
 
 		plat_input_poll(&a->in);
 		if (a->in.quit_requested) { a->running = false; return; }
 		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); return; }
 		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = true;
 
-		if (n > 0) {
-			if (in_repeat(&a->in, IN_DOWN) && cursor < n - 1) cursor++;
-			if (in_repeat(&a->in, IN_UP)   && cursor > 0)     cursor--;
-			if (cursor < top) top = cursor;
-			if (cursor >= top + BT_VISIBLE) top = cursor - BT_VISIBLE + 1;
+		if (in_repeat(&a->in, IN_DOWN) && sel < u.n) sel++;
+		if (in_repeat(&a->in, IN_UP)   && sel > 0)   sel--;
+		/* The window follows the cursor, so a long list scrolls a row at a
+		 * time from either end. */
+		if (u.cursor >= 0) {
+			if (u.cursor < u.top) u.top = u.cursor;
+			if (u.cursor >= u.top + BT_VISIBLE) u.top = u.cursor - BT_VISIBLE + 1;
 		}
 
-		if (a->in.pressed[IN_Y] && st == BT_READY) {
-			/* Put the headset in pairing mode first - this only listens. */
-			bt_scan(10);
+		if (a->in.pressed[IN_Y] && u.state == BT_READY) {
+			bt_scan(10);                    /* put the headset in pairing mode */
 			scan_until = now + 10000;
 			next_refresh = now + 1500;
-			snprintf(note, sizeof note, "Searching for 10 seconds");
+			u.note[0] = '\0';
 		}
 
-		if (a->in.pressed[IN_ACCEPT] && n > 0) {
+		if (a->in.pressed[IN_ACCEPT]) {
 			char err[64];
 
-			if (dev[cursor].connected) {
-				wait_panel(a, "Bluetooth", "Disconnecting...");
-				if (bt_disconnect(dev[cursor].mac))
-					dev[cursor].connected = false;
-				snprintf(note, sizeof note, "Disconnected");
-			} else {
-				if (!dev[cursor].bonded) {
-					wait_panel(a, "Bluetooth", "Pairing...");
-					if (!bt_pair(dev[cursor].mac, err, sizeof err)) {
-						snprintf(note, sizeof note, "%s", err);
-						next_refresh = 0;
-						goto drawn;
+			if (u.cursor < 0) {
+				/* The toggle. The preference is what launch.sh reads at the
+				 * next boot; powering the adapter is what changes anything
+				 * now, and only works when the stack is already up. */
+				bool want = u.state != BT_READY;
+				wait_panel(a, "Bluetooth", want ? "Turning on..." : "Turning off...");
+				db_set_int(db_dev(), "bluetooth", want ? 1 : 0);
+				db_write_boot_env();
+				bt_power(want);
+				snprintf(u.note, sizeof u.note, "%s",
+				         want ? "On" : "Off");
+				next_refresh = 0;
+			} else if (u.cursor < u.n) {
+				bt_device *d = &u.dev[u.cursor];
+
+				if (d->connected) {
+					wait_panel(a, "Bluetooth", "Disconnecting...");
+					if (bt_disconnect(d->mac)) d->connected = false;
+					snprintf(u.note, sizeof u.note, "Disconnected");
+				} else {
+					bool ok = true;
+
+					if (!d->bonded) {
+						wait_panel(a, "Bluetooth", "Pairing...");
+						ok = bt_pair(d->mac, err, sizeof err);
+						if (!ok) snprintf(u.note, sizeof u.note, "%s", err);
+						/* A PCM for the new bond, so the NEXT emulator start
+						 * can reach it. It cannot help the one already
+						 * running: alsa-lib reads its config once. See bt.h. */
+						else bt_asoundrc(P_USERDATA);
 					}
-					/* A PCM for the new bond, so the NEXT emulator start can
-					 * reach it. It cannot help the one already running:
-					 * alsa-lib reads its config once and never notices a file
-					 * written afterwards - measured, see bt.h. */
-					bt_asoundrc(P_USERDATA);
+					if (ok) {
+						wait_panel(a, "Bluetooth", "Connecting...");
+						if (bt_connect(d->mac, err, sizeof err)) {
+							d->connected = true;
+							snprintf(u.note, sizeof u.note,
+							         "Connected. Game audio from the next launch");
+						} else {
+							snprintf(u.note, sizeof u.note, "%s", err);
+						}
+					}
 				}
-				wait_panel(a, "Bluetooth", "Connecting...");
-				if (bt_connect(dev[cursor].mac, err, sizeof err)) {
-					/* Marked here as well as on the next refresh, so the row
-					 * changes in the same frame the message appears rather
-					 * than up to two seconds later. */
-					dev[cursor].connected = true;
-					snprintf(note, sizeof note,
-					         "Connected. Game audio from the next launch");
-				}
-				else
-					snprintf(note, sizeof note, "%s", err);
+				next_refresh = 0;
 			}
-			next_refresh = 0;
 		}
 
-		if (a->in.pressed[IN_X] && n > 0 && dev[cursor].bonded) {
+		if (a->in.pressed[IN_X] && u.cursor >= 0 && u.cursor < u.n &&
+		    u.dev[u.cursor].bonded) {
 			wait_panel(a, "Bluetooth", "Forgetting...");
-			if (bt_forget(dev[cursor].mac)) {
+			if (bt_forget(u.dev[u.cursor].mac)) {
 				bt_asoundrc(P_USERDATA);
-				snprintf(note, sizeof note, "Forgotten");
+				snprintf(u.note, sizeof u.note, "Forgotten");
 			} else {
-				snprintf(note, sizeof note, "It would not unpair");
+				snprintf(u.note, sizeof u.note, "It would not unpair");
 			}
 			next_refresh = 0;
 		}
 
-	drawn:
 		if (in_repeat(&a->in, IN_VOLUP))    plat_volume_nudge(+1);
 		if (in_repeat(&a->in, IN_VOLDN))    plat_volume_nudge(-1);
 		if (in_repeat(&a->in, IN_BRIGHTUP)) plat_brightness_nudge(+1);
@@ -3192,7 +3173,7 @@ static void bt_screen(app *a)
 		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
 		SDL_RenderFillRect(a->r, NULL);
-		menu_draw(a, "Bluetooth", rows, shown, -1, 0, MENU_ACCENT);
+		menu_draw(a, "Bluetooth", rows, nrows, sel, 0, MENU_ACCENT);
 		plat_draw_osd(a->r);
 		SDL_RenderPresent(a->r);
 		SDL_Delay(8);
@@ -3245,7 +3226,10 @@ static void stats_screen(app *a)
 			len = dot && dot != file ? (int)(dot - file) : (int)strlen(file);
 			snprintf(labels[shown], sizeof labels[0], "%.*s", len, file);
 			stats_format(secs, vals[shown], sizeof vals[0]);
-			rows[shown] = (menu_row){ labels[shown], vals[shown], i == cursor };
+			/* live, not selected. The selection is menu_draw's `sel`
+			 * argument; passing it here instead drew every other row
+			 * quiet and highlighted none of them. */
+			rows[shown] = (menu_row){ labels[shown], vals[shown], true };
 			shown++;
 		}
 
@@ -3279,7 +3263,9 @@ static void stats_screen(app *a)
 		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
 		SDL_RenderFillRect(a->r, NULL);
-		menu_draw(a, "Play Time", rows, shown, -1, 0, MENU_ACCENT);
+		/* +1 because the total is row 0 and the games start under it. */
+		menu_draw(a, "Play Time", rows, shown,
+		          ngames ? cursor - top + 1 : -1, 0, MENU_ACCENT);
 		plat_draw_osd(a->r);
 		SDL_RenderPresent(a->r);
 		SDL_Delay(8);

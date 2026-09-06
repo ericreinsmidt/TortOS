@@ -14,6 +14,7 @@
  * Links src/bt.c and NOT SDL.
  */
 #include "../src/bt.h"
+#include "../src/bt_menu.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -121,12 +122,80 @@ static void pcm_names(void)
 	ck(!strcmp(pcm, "bt_a0_b1_c2_d3_e4_f5"), "case is left alone, as tr leaves it");
 }
 
+/* The rows themselves. This is why bt_menu.c exists as its own SDL-free file:
+ * the first version of this screen built its rows inside main.c, where nothing
+ * could reach them. ADR-0001 says a build function has to be callable with no
+ * renderer and no device. */
+static void rows_are_shaped_like_the_others(void)
+{
+	bt_ui u = { 0 };
+	menu_row r[16];
+	int n;
+
+	printf("the row layout, which follows the Wi-Fi screen:\n");
+	u.state = BT_READY;
+	u.n = 2;
+	snprintf(u.dev[0].name, BT_NAME_MAX, "Shokz");
+	snprintf(u.dev[1].name, BT_NAME_MAX, "JBL");
+	u.dev[0].bonded = true;
+	u.cursor = 0;
+
+	n = bt_menu_build(&u, r, 16, 7);
+	ck(n == 5, "toggle, two devices, a rule and a note");
+	ck(!strcmp(r[0].label, "Bluetooth") && !strcmp(r[0].value, "on"),
+	   "the toggle leads, the way Wi-Fi's does");
+	ck(!strcmp(r[1].label, "Shokz"), "then the devices");
+
+	/* A footer says something about the list rather than offering anything,
+	 * so it sits under a rule - the same reason the key legend does. */
+	ck(r[n - 2].label == NULL && r[n - 2].value == NULL, "a rule before the footer");
+	ck(ROW_IS_NOTE(r[n - 1]), "and the footer is a note, not a row");
+
+	printf("every row that can be chosen is live:\n");
+	/* `live` is selectable, not selected - passing the cursor here drew every
+	 * other row quiet and highlighted none of them, on both new screens. */
+	ck(r[1].live && r[2].live, "both devices, not just the one under the cursor");
+
+	printf("the footer follows the cursor:\n");
+	u.cursor = -1;
+	ck(strstr(bt_menu_footer(&u), "turn Bluetooth off") != NULL,
+	   "on the toggle it offers the toggle");
+	u.cursor = 0;
+	ck(!strcmp(bt_menu_footer(&u), "A: connect   Y: search   X: forget"),
+	   "on a bonded device, connect and forget");
+	u.cursor = 1;
+	ck(!strcmp(bt_menu_footer(&u), "A: pair   Y: search"),
+	   "on one merely in range, pair and nothing to forget");
+	u.dev[1].connected = true;
+	ck(strstr(bt_menu_footer(&u), "A: disconnect") != NULL,
+	   "and connected offers disconnect");
+
+	snprintf(u.note, sizeof u.note, "Forgotten");
+	ck(!strcmp(bt_menu_footer(&u), "Forgotten"),
+	   "a message about what just happened takes the same slot");
+	u.note[0] = '\0';
+
+	printf("the list is bounded:\n");
+	u.n = BT_MAX;
+	n = bt_menu_build(&u, r, 16, 7);
+	ck(n <= 16, "it never writes past the array it was given");
+	ck(ROW_IS_NOTE(r[n - 1]), "and the footer still lands");
+
+	u.state = BT_POWERED_OFF;
+	u.n = 0;
+	n = bt_menu_build(&u, r, 16, 7);
+	ck(!strcmp(r[0].value, "off"), "the toggle says off");
+	ck(strstr(bt_menu_footer(&u), "turn Bluetooth on") != NULL,
+	   "and the footer says how to fix it");
+}
+
 int main(void)
 {
 	addresses();
 	device_lines();
 	labels();
 	pcm_names();
+	rows_are_shaped_like_the_others();
 	if (fails) { printf("\n%d FAILED\n", fails); return 1; }
 	printf("\nok: addresses are validated and names are only ever data\n");
 	return 0;
