@@ -3823,10 +3823,6 @@ static int slot_strip(app *a, SDL_Texture *bg, int saving)
 	sysview *v = &a->view[a->sys_cursor];
 	game_entry *g = &v->list.items[v->cursor];
 	int i, sel = -1, chosen = 0, done = 0;
-	/* Kept so Save can land on the OLDEST when every slot is taken. The
-	 * timestamp string beside each card is built from the same mtime, but it
-	 * is a string by then and no use for comparing. */
-	time_t age[GM_SLOTS + 1] = { 0 };
 	bool   have_b[GM_SLOTS + 1] = { false };
 	char pth[LIB_PATH * 2];
 
@@ -3837,7 +3833,6 @@ static int slot_strip(app *a, SDL_Texture *bg, int saving)
 		slot_state_path(a, a->sys_cursor, g, slot, pth, sizeof pth);
 		sv.have[i] = (stat(pth, &st) == 0 && st.st_size > 0);
 		if (sv.have[i]) {
-			age[i] = st.st_mtime;
 			have_b[i] = true;
 			/* The state's own mtime: when this moment was captured. The
 			 * device clock is only as good as the device clock, and showing
@@ -3872,10 +3867,10 @@ static int slot_strip(app *a, SDL_Texture *bg, int saving)
 		if (sel < 0 && !saving && sv.have[i]) sel = i;
 	}
 
-	/* Save lands on the first empty slot, or the oldest when there is none -
+	/* Save lands on the first empty slot, or the last one when there is none -
 	 * the rule and its reasoning are in game_menu.h, where a check can reach
 	 * them. */
-	if (saving) sel = gm_save_slot(have_b, age);
+	if (saving) sel = gm_save_slot(have_b);
 
 	for (i = 0; i <= GM_SLOTS; i++) {
 		int tw = 0, th = 0;

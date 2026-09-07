@@ -10,7 +10,6 @@
 #define GAME_MENU_H
 
 #include <stdbool.h>
-#include <time.h>
 
 #include "menu.h"
 #include "library.h"
@@ -35,29 +34,34 @@ static inline int gm_slot_at(int carousel_index)
 	return carousel_index == 0 ? SLOT_AUTO : carousel_index;
 }
 
-/* Which slot the Save carousel opens on: the first EMPTY one, or the oldest
+/* Which slot the Save carousel opens on: the first EMPTY one, or the LAST slot
  * when every slot is taken.
  *
  * The menu is A to open Save and A to choose, so a double-tap used to
  * overwrite slot 1 every time - the one press people make without looking,
  * aimed at the slot most likely to hold something they wanted.
  *
- * Falling back to slot 1 when full would put that risk straight back, and
- * worse: safe most of the time teaches you to stop checking. The oldest is the
- * defensible thing to lose, and slot 1 is still one press to the left for
- * anyone deliberately keeping a rolling checkpoint there.
+ * The full case landed on the OLDEST save first, on the reasoning that least
+ * recent means least wanted. That is backwards. A save is often old BECAUSE it
+ * is deliberately kept - the finished playthrough, the one before a point of
+ * no return, the thing you set aside and stopped touching. Recency measures
+ * activity, not value, and position measures intent: people put what matters
+ * in a low slot and let scratch pile up in high ones.
  *
- * `have` and `age` are indexed 1..GM_SLOTS; index 0 is the Auto slot and Save
- * cannot aim at it. Pure, so tools/menu-check.c can enumerate the cases. */
-static inline int gm_save_slot(const bool *have, const time_t *age)
+ * The last slot is also PREDICTABLE, which the oldest never is. "When full it
+ * reuses the last slot" is a rule you can learn and plan around; "it reuses
+ * whichever is oldest" moves the target and can land on the one save you were
+ * protecting. Slot 1 stays five presses away and never chosen by accident.
+ *
+ * `have` is indexed 1..GM_SLOTS; index 0 is the Auto slot and Save cannot aim
+ * at it. Pure, so tools/menu-check.c can enumerate the cases. */
+static inline int gm_save_slot(const bool *have)
 {
-	int i, sel = -1;
+	int i;
 
 	for (i = 1; i <= GM_SLOTS; i++)
 		if (!have[i]) return i;
-	for (i = 1; i <= GM_SLOTS; i++)
-		if (sel < 0 || age[i] < age[sel]) sel = i;
-	return sel;
+	return GM_SLOTS;
 }
 
 /* What the info screen offers to do, beyond telling you things. */
