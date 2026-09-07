@@ -248,9 +248,18 @@ bool plat_video_init(void)
 		return false;
 	}
 	SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+	/* Whether vsync was GRANTED, not whether it was asked for. PRESENTVSYNC
+	 * is a request the driver may decline in silence, and the shelf loop has
+	 * no delay in it - so a declined request is not a slower animation, it is
+	 * an uncapped loop presenting mid-scanout. This line existed and read
+	 * info.name only, which is how the request came to be talked about as if
+	 * it were the result. */
 	SDL_RendererInfo info;
 	if (SDL_GetRendererInfo(ren, &info) == 0)
-		fprintf(stderr, "renderer: %s, driver: %s\n", info.name, SDL_GetCurrentVideoDriver());
+		fprintf(stderr, "renderer: %s, driver: %s, vsync %s\n",
+		        info.name, SDL_GetCurrentVideoDriver(),
+		        (info.flags & SDL_RENDERER_PRESENTVSYNC) ? "granted"
+		                                                 : "DECLINED (requested)");
 	return true;
 }
 

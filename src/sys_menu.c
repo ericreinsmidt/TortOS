@@ -88,6 +88,9 @@ int sys_menu_build(const sys_ui *u, menu_row *out, menu_bufs *b,
 	out[PM_STATS]        = (menu_row){ "Play Time",  NULL,      true  };
 	out[PM_SLEEP]        = (menu_row){ "Auto Off",  b->c,      true  };
 	out[PM_TEXT]         = (menu_row){ "Text Size", u->text_size, true };
+	/* Under Text Size because both are the same kind of row: they change how
+	 * the shelf looks and nothing about what is on it. */
+	out[PM_THEME]        = (menu_row){ "UI Theme",  u->cards,     true };
 	/* Not "Sleep". The device has no suspend and is not getting one - see the
 	 * backlog. This powers off, and resume-into-game brings you back where you
 	 * were, which is what sleep would have been for. */

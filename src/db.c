@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "cards.h"
 #include "db.h"
 
 /* --- libsqlite3, declared rather than included ---------------------------
@@ -90,7 +91,8 @@ static const db_default device_defaults[] = {
 	{ "autooff",    "120" },   /* seconds without input, 0 is off */
 	{ "textsize",   "1.0" },
 	{ "wifi",       "0"  },    /* what THIS device was last doing, not the */
-	{ "bluetooth",  "0"  },    /* shipped default - seeding merges the two */
+	{ "bluetooth",  "0"  },
+	{ "cards",      CARDS_DEFAULT },    /* shipped default - seeding merges the two */
 };
 
 static const db_default library_defaults[] = {

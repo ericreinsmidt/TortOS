@@ -27,6 +27,9 @@ typedef struct {
 
 extern const cf_layout CF_LAYOUT_SYSTEMS;
 extern const cf_layout CF_LAYOUT_GAMES;
+/* The systems row again, one at a time and flat. Systems only: box art keeps
+ * the angled row. */
+extern const cf_layout CF_LAYOUT_SINGLE;
 
 /* Where the focused card sits on screen, so the caller can put a glow behind
  * it and lay text out against it without duplicating the geometry. */

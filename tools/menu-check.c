@@ -11,6 +11,7 @@
  */
 #include "../src/wifi_menu.h"
 #include "../src/sys_menu.h"
+#include "../src/cards.h"
 #include "../src/game_menu.h"
 
 #include <stdio.h>
@@ -180,6 +181,7 @@ static void tortos_menu_offline(void)
 	memset(&u, 0, sizeof u);
 	u.wifi = WIFI_OFF;
 	u.text_size = "100%";
+	u.cards = "Classic";
 	u.auto_off = 120;
 	n = sys_menu_build(&u, rows, &b, &heading);
 
@@ -195,6 +197,8 @@ static void tortos_menu_offline(void)
 	ck(rows[PM_ACHIEVEMENTS].live, "Cheevos is reachable signed out");
 	ck(!strcmp(val(&rows[PM_SLEEP]), "2m"), "120s reads as 2m");
 	ck(!strcmp(val(&rows[PM_TEXT]), "100%"), "text size is passed through");
+	ck(!strcmp(val(&rows[PM_THEME]), "Classic"), "the card set names itself");
+	ck(rows[PM_THEME].live, "UI Theme is reachable offline, being a look and not a service");
 	/* Live since 2026-09-06, when the pairing screen landed. The row used to
 	 * be dead and read "not yet", which was true of the screen and false of
 	 * the feature - game audio had been going to a headset for three days. */
@@ -601,6 +605,74 @@ static void save_slot(void)
 	ck(SLOT_AUTO > GM_SLOTS, "so the resume slot stays with the exit funnel");
 }
 
+/* Card sets. The rules are in cards.h so they can be checked without a
+ * renderer, a device or a directory to read. */
+static void card_sets(void)
+{
+	int i, j, ok;
+
+	printf("card sets:\n");
+	ck(CARD_SET_COUNT >= 2, "there is something to switch between");
+	ck(!strcmp(CARD_SETS[0].id, CARDS_DEFAULT),
+	   "the first set is the default one");
+	/* Anything that falls back lands on the default set, so that set is the one
+	 * that must never leave a card unnamed. */
+	ck(CARD_SETS[0].labeled, "the default set's art names its systems");
+
+	for (i = 0, ok = 1; i < CARD_SET_COUNT; i++) {
+		if (!CARD_SETS[i].id[0] || !CARD_SETS[i].dir[0] || !CARD_SETS[i].name[0])
+			ok = 0;
+		/* The directory goes into a path. A separator in it would build a
+		 * path nobody meant. */
+		if (strchr(CARD_SETS[i].dir, '/') || strchr(CARD_SETS[i].dir, '\\')) ok = 0;
+	}
+	ck(ok, "every set has a non-empty id, dir and name, and no separators");
+
+	/* Ids and names must be unique - one is what gets written down and the
+	 * other is what gets read off the row. Directories must NOT have to be:
+	 * a preset is art and presentation together, so two of them drawing the
+	 * same folder a different way is the point, not a mistake. */
+	for (i = 0, ok = 1; i < CARD_SET_COUNT; i++)
+		for (j = 0; j < i; j++) {
+			if (!strcmp(CARD_SETS[i].id, CARD_SETS[j].id)) ok = 0;
+			if (!strcmp(CARD_SETS[i].name, CARD_SETS[j].name)) ok = 0;
+		}
+	ck(ok, "no two sets share an id or a name");
+
+	for (i = 0, ok = 0; i < CARD_SET_COUNT; i++)
+		for (j = 0; j < i; j++)
+			if (!strcmp(CARD_SETS[i].dir, CARD_SETS[j].dir)) ok = 1;
+	ck(ok, "and sharing a directory is allowed, which is what Slide does");
+
+	printf("choosing one by id:\n");
+	ck(cards_index("fancy") == 2, "a known id selects its set");
+	ck(cards_index("classic") == 0, "so does the default");
+	ck(cards_index("slide") == 1, "and so does the one sharing a directory");
+	ck(strcmp(CARD_SETS[cards_index("slide")].dir,
+	          CARD_SETS[cards_index("fancy")].dir) == 0,
+	   "which is the same art as the set it shares with");
+	ck(CARD_SETS[cards_index("slide")].single &&
+	   !CARD_SETS[cards_index("fancy")].single,
+	   "and differs from it only in how that art is presented");
+
+	/* The setting outlives the directory. A set that is removed, or a card
+	 * written by a build that had one more, must not leave the shelf blank. */
+	ck(cards_index("no-such-set") == 0, "an unknown id falls back to the default");
+	ck(cards_index("") == 0, "so does an empty one");
+	ck(cards_index(NULL) == 0, "and so does none at all");
+	ck(!CARD_SETS[0].single, "the fallback is the ordinary row, never Slide");
+
+	printf("stepping through them:\n");
+	ck(cards_step(0, 1) == 1, "forward");
+	ck(cards_step(CARD_SET_COUNT - 1, 1) == 0, "and wraps at the end");
+	ck(cards_step(0, -1) == CARD_SET_COUNT - 1, "back wraps too");
+	for (i = 0, ok = 1; i < CARD_SET_COUNT; i++) {
+		int k = cards_step(i, 1);
+		if (k < 0 || k >= CARD_SET_COUNT || k == i) ok = 0;
+	}
+	ck(ok, "a step always lands on a different, real set");
+}
+
 int main(void)
 {
 	off_state();
@@ -616,6 +688,7 @@ int main(void)
 	cursor_reaches();
 	slots();
 	save_slot();
+	card_sets();
 	step_terminates();
 	info_rows();
 	ingame_rows();

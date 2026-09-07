@@ -33,6 +33,7 @@
 #include "audioout.h"
 #include "menu.h"
 #include "sys_menu.h"
+#include "cards.h"
 #include "game_menu.h"
 #include "ui.h"
 #include "wifi_menu.h"
@@ -245,13 +246,30 @@ static SDL_Texture *load_image(SDL_Renderer *r, const char *path, int *w, int *h
 	return t;
 }
 
+/* Which set is showing. Read once at boot and kept here, because sys_get_tex
+ * runs per card per frame and the shelf should not ask the database how to
+ * draw itself. */
+static int g_cards;
+
 static SDL_Texture *sys_get_tex(void *ctx, int i, int *w, int *h)
 {
 	app *a = ctx;
 	if (!a->sys_tex[i]) {
 		char path[CFG_STR * 2];
-		snprintf(path, sizeof path, "%s/cards/%s", P_ROOT, a->sys.systems[i].card);
+
+		snprintf(path, sizeof path, "%s/cards/%s/%s", P_ROOT,
+		         CARD_SETS[g_cards].dir, a->sys.systems[i].card);
 		a->sys_tex[i] = load_image(a->r, path, &a->sys_w[i], &a->sys_h[i]);
+		/* A set may be incomplete and still be worth showing. Favorites is
+		 * the standing example: it is a shelf, not a console, so a set of
+		 * hardware photographs has nothing to put there and borrows the
+		 * default's card rather than falling all the way through to the
+		 * generated one. */
+		if (!a->sys_tex[i] && g_cards != 0) {
+			snprintf(path, sizeof path, "%s/cards/%s/%s", P_ROOT,
+			         CARDS_DEFAULT, a->sys.systems[i].card);
+			a->sys_tex[i] = load_image(a->r, path, &a->sys_w[i], &a->sys_h[i]);
+		}
 		if (!a->sys_tex[i])
 			a->sys_tex[i] = ui_make_card(a->r, a->sys.systems[i].name,
 			                             a->sys.systems[i].accent,
@@ -1270,15 +1288,39 @@ static void draw_systems(app *a)
 	const system_cfg *s = &a->sys.systems[a->sys_cursor];
 	char line[128];
 
-	cf_focus_rect(&CF_LAYOUT_SYSTEMS, TORTOS_SCREEN_W, TORTOS_SCREEN_H, &focus);
+	/* Systems only. The games shelf keeps the angled row whatever this says:
+	 * box art is a wall of many, and one cover per screen would turn picking
+	 * a game into paging through a catalog. */
+	const cf_layout *lay = CARD_SETS[g_cards].single ? &CF_LAYOUT_SINGLE
+	                                                 : &CF_LAYOUT_SYSTEMS;
+
+	cf_focus_rect(lay, TORTOS_SCREEN_W, TORTOS_SCREEN_H, &focus);
 	ui_glow(a->r, &focus, s->accent, 110, 2.4f);
 	cf_draw(&a->cf_sys, a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, a->sys.count,
-	        sys_get_tex, a, &CF_LAYOUT_SYSTEMS);
+	        sys_get_tex, a, lay);
 
-	if (a->view[a->sys_cursor].list.count > 0)
-		snprintf(line, sizeof line, "%d games", a->view[a->sys_cursor].list.count);
-	else
-		snprintf(line, sizeof line, "no games in Roms/%s", s->folder);
+	/* Art that does not name itself gets named here, in the gap between the
+	 * card and the count, which is where the classic cards carry it. */
+	if (!CARD_SETS[g_cards].labeled) {
+		char nfit[192];
+
+		ui_fit_text(ui_font(UI_F_TITLE), s->name, nfit, sizeof nfit,
+		            TORTOS_SCREEN_W - 48);
+		ui_text(a->r, ui_font(UI_F_TITLE), nfit, TORTOS_SCREEN_W / 2, 618, 0,
+		        UI_TEXT);
+	}
+
+	{
+		int gc = a->view[a->sys_cursor].list.count;
+
+		/* A shelf of one read "1 games". Favorites hits it first because it
+		 * starts empty and grows one at a time, but any system with a single
+		 * ROM has always said it. */
+		if (gc > 0)
+			snprintf(line, sizeof line, "%d game%s", gc, gc == 1 ? "" : "s");
+		else
+			snprintf(line, sizeof line, "no games in Roms/%s", s->folder);
+	}
 	ui_text(a->r, ui_font(UI_F_META), line, TORTOS_SCREEN_W / 2, 690, 0, UI_TEXT_DIM);
 	ui_rail(a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, a->sys_cursor, a->sys.count,
 	        s->accent);
@@ -1961,6 +2003,7 @@ static int menu_build(app *a, screen_id screen, int sys,
 		u.ra_in     = ra_signed_in();
 		u.ra_name   = u.ra_in ? ra_user() : NULL;
 		u.text_size = TEXT_NAMES[text_scale_step()];
+		u.cards     = CARD_SETS[g_cards].name;
 		u.auto_off  = a->auto_off;
 		u.audio_policy = ao.policy;
 		u.audio_dest   = aout_actual(&ao);
@@ -3567,6 +3610,26 @@ static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
 		return MENU_STAY;
 	}
 
+	/* The UI theme. Cheaper than text size - no font is reopened, so only the
+	 * card textures are dropped - but the same shape: change it, throw away
+	 * what was drawn from the old value, draw it again. A steps as well as
+	 * left and right, so the row can be cycled without leaving the thumb.
+	 *
+	 * Themes the systems shelf today. The name is deliberately wider than
+	 * that, so menu colors or the accent rule can join without the row having
+	 * to be renamed a second time. */
+	if (sel == PM_THEME && (d || key == IN_ACCEPT)) {
+		int k = cards_step(g_cards, d ? d : 1);
+
+		if (k != g_cards) {
+			g_cards = k;
+			free_all_textures(a);
+			prime_sys_window(a);
+			db_set_str(db_dev(), "cards", CARD_SETS[g_cards].id);
+		}
+		return MENU_STAY;
+	}
+
 	/* Two positions, so left and right and A all do the same thing: there is
 	 * nothing to step through, only something to turn off and on. */
 	if (sel == PM_AUDIO && (d || key == IN_ACCEPT)) {
@@ -4905,7 +4968,7 @@ static void build_favorites_shelf(app *a)
 		return;
 	}
 	a->sys.count++;
-	fprintf(stderr, "scan: %-16s %d games\n", "Favorites", n);
+	fprintf(stderr, "scan: %-16s %d game%s\n", "Favorites", n, n == 1 ? "" : "s");
 }
 
 static bool fav_shelf_present(app *a)
@@ -5007,8 +5070,8 @@ static void scan_all(app *a)
 				lib_free(&v->list);
 			}
 		}
-		fprintf(stderr, "scan: %-16s %d games\n", a->sys.systems[i].folder,
-		        v->list.count);
+		fprintf(stderr, "scan: %-16s %d game%s\n", a->sys.systems[i].folder,
+		        v->list.count, v->list.count == 1 ? "" : "s");
 	}
 	hide_empty_systems(a);
 	build_favorites_shelf(a);
@@ -5559,6 +5622,11 @@ int main(int argc, char *argv[])
 	 * applied. */
 	ui_set_font_scale(text_scale_load(1.0f));
 	if (!ui_init(a.r, P_FONT)) fprintf(stderr, "font init failed\n");
+	{
+		char set[CFG_STR];
+		db_get_str(db_dev(), "cards", set, sizeof set, CARDS_DEFAULT);
+		g_cards = cards_index(set);
+	}
 	t_mark("font+settings");
 
 	a.sys_cursor = 0;

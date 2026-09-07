@@ -16,6 +16,30 @@ const cf_layout CF_LAYOUT_SYSTEMS = {
 	.side_alpha = 140, .strips = 16,
 };
 
+/* One system filling the screen, flat, sliding in from off the edge.
+ *
+ * Every difference from the row above is a number here: no yaw, no shrinking
+ * or fading of the neighbors, and a step wide enough to put them past the
+ * bezel. Nothing in cf_draw knows this mode exists.
+ *
+ * side_scale and side_alpha are 1.0 and 255 because they are NOT unused just
+ * because the neighbors are off screen: during a move the incoming card is
+ * partly on screen at a fractional distance, and any other values would have
+ * it slide in shrunken and translucent and grow into place.
+ *
+ * aspect is square because this mode is paired with the photographs. Art of
+ * another shape still fits - draw_card contains it - it just leaves the frame
+ * unfilled on two sides.
+ *
+ * step 1.8 puts a neighbor's near edge about 130px past the screen at this
+ * size, so nothing peeks in at rest, and the extra distance is what makes the
+ * slide read as coming from outside rather than from just off the edge. */
+const cf_layout CF_LAYOUT_SINGLE = {
+	.size = 0.70f, .aspect = 1.00f, .step = 1.80f, .side_scale = 1.00f,
+	.center_y = 0.40f, .tilt = 0.0f, .reflect = 1.15f,
+	.side_alpha = 255, .strips = 16,
+};
+
 /* The games row: box art, so the cards are taller and there are more of them
  * in view. The title is drawn above the row, which is why it sits slightly
  * lower than the systems row. */
