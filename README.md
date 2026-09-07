@@ -303,8 +303,14 @@ audio at boot. The screen says so when it connects.
 
 Two things behave differently on a Bluetooth sink and are not bugs:
 
-- **the volume keys do nothing.** Volume lives on the headset, so the device's
-  own control is not in the path. Reachable, and not done yet.
+- **the volume keys do nothing, on purpose.** Volume lives on the headset. The
+  device's own control drives the codec, which a Bluetooth sink does not pass
+  through, so there is nothing for it to turn.
+
+  Making it work would mean a second volume in series with the headset's own,
+  with neither aware of the other - and "the sound is quiet" would then have
+  two possible causes and no way to tell them apart from the screen. One
+  control, one thing to check. That is the decision, not a gap.
 - **there is roughly 100-150 ms of latency**, from SBC, the radio and the
   headset's own buffer. That is what Bluetooth audio costs on any device and
   nothing here can tune it away.
