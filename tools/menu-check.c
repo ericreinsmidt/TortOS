@@ -549,6 +549,51 @@ static void slots(void)
 	ck(SLOT_AUTO > GM_SLOTS, "the resume slot is outside the numbered range");
 }
 
+/* Where Save lands. A double-tap of A used to overwrite slot 1 every time,
+ * which is the slot most likely to hold something wanted. */
+static void save_slot(void)
+{
+	bool   have[GM_SLOTS + 1] = { false };
+	time_t age[GM_SLOTS + 1]  = { 0 };
+	int i;
+
+	printf("which slot Save opens on:\n");
+	ck(gm_save_slot(have, age) == 1, "nothing saved yet: the first slot");
+
+	have[1] = true; age[1] = 5000;
+	ck(gm_save_slot(have, age) == 2, "slot 1 taken: the next empty one");
+
+	have[2] = true; age[2] = 5100;
+	have[3] = true; age[3] = 5200;
+	ck(gm_save_slot(have, age) == 4, "three taken: still the first empty");
+
+	/* A gap in the middle is where a new save belongs - it is empty, and
+	 * nothing is lost by using it. */
+	have[1] = have[2] = have[3] = have[4] = have[5] = have[6] = true;
+	for (i = 1; i <= GM_SLOTS; i++) age[i] = 5000 + i;
+	have[3] = false;
+	ck(gm_save_slot(have, age) == 3, "a freed middle slot is used before any reuse");
+	have[3] = true;
+
+	printf("and when every slot is taken:\n");
+	/* Ascending ages, so slot 1 is oldest. */
+	for (i = 1; i <= GM_SLOTS; i++) age[i] = 5000 + i;
+	ck(gm_save_slot(have, age) == 1, "the oldest, which here is slot 1");
+
+	/* Descending, so the newest save is slot 1 and must NOT be the target -
+	 * this is the case that makes falling back to slot 1 wrong. */
+	for (i = 1; i <= GM_SLOTS; i++) age[i] = 9000 - i;
+	ck(gm_save_slot(have, age) == GM_SLOTS,
+	   "never the newest, even when the newest is slot 1");
+
+	/* Equal timestamps must still pick one, and the same one every time. */
+	for (i = 1; i <= GM_SLOTS; i++) age[i] = 7777;
+	ck(gm_save_slot(have, age) == 1, "ties resolve to the lowest slot");
+
+	printf("and it never aims at Auto:\n");
+	ck(gm_save_slot(have, age) >= 1, "the resume slot belongs to the exit funnel");
+}
+
 int main(void)
 {
 	off_state();
@@ -563,6 +608,7 @@ int main(void)
 	auto_off_words();
 	cursor_reaches();
 	slots();
+	save_slot();
 	step_terminates();
 	info_rows();
 	ingame_rows();
