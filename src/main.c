@@ -3052,6 +3052,7 @@ void info_preview(app *a, bool net)
  * the Wi-Fi row uses, for the same reason.
  */
 #define BT_VISIBLE 7
+#define BT_SCAN_S  20
 
 static void bt_screen(app *a)
 {
@@ -3102,8 +3103,18 @@ static void bt_screen(app *a)
 		}
 
 		if (a->in.pressed[IN_Y] && u.state == BT_READY) {
-			bt_scan(10);                    /* put the headset in pairing mode */
-			scan_until = now + 10000;
+			/* TWENTY seconds, not ten. Classic inquiry runs in cycles of
+			 * about 10.24 s and a device answers probabilistically within
+			 * one, so a single cycle misses devices that are plainly there:
+			 * measured 2026-09-06 with an OpenRun Pro in pairing mode, ten
+			 * seconds found nothing twice and twenty found it first try.
+			 *
+			 * It costs nothing to wait. The list refreshes every two seconds
+			 * while the scan runs, so results appear as they arrive rather
+			 * than at the end - a longer window only means it keeps
+			 * filling. */
+			bt_scan(BT_SCAN_S);
+			scan_until = now + BT_SCAN_S * 1000;
 			next_refresh = now + 1500;
 			u.note[0] = '\0';
 			note_until = 0;
