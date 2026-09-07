@@ -130,6 +130,17 @@ static void connections(void)
 	ck(bt_mark_connected("\t> SCO A8:F5:E1:4A:93:71 handle 5 state 1\n", d, 3) == 0,
 	   "a SCO link is not an audio connection");
 
+	/* A link being SET UP is listed too, and says state 5 with no AUTH or
+	 * ENCRYPT. Anything that only looks for the address calls that connected;
+	 * the device did exactly that while the headset was still held by a
+	 * phone, and bluetoothctl said Connected: no at the same moment. */
+	ck(bt_mark_connected(
+	       "\t< ACL A8:F5:E1:4A:93:71 handle 0 state 5 lm MASTER \n", d, 3) == 0,
+	   "a half-open link is not a connection");
+	ck(bt_mark_connected(
+	       "\t> ACL A8:F5:E1:4A:93:71 handle 128 state 1 lm MASTER AUTH ENCRYPT \n",
+	       d, 3) == 1, "but an established one is");
+
 	ck(bt_mark_connected("", d, 3) == 0, "empty output");
 	ck(bt_mark_connected(NULL, d, 3) == 0, "no output at all");
 }

@@ -151,6 +151,26 @@ int bt_mark_connected(const char *text, bt_device *list, int n)
 		 * nothing about whether audio is going out to it. */
 		if (!(acl = strstr(line, "ACL "))) continue;
 		if (!mac_ok_prefix(acl + 4)) continue;
+
+		/* AND ESTABLISHED. A link being set up is listed too, and reads
+		 * exactly like a working one to anything that only looks for the
+		 * address:
+		 *
+		 *   working    > ACL <mac> handle 128 state 1 lm MASTER AUTH ENCRYPT
+		 *   half-open  < ACL <mac> handle 0   state 5 lm MASTER
+		 *
+		 * Seen on the device 2026-09-06 with the headset still held by a
+		 * phone: bluetoothctl said Connected: no while this said yes. Which
+		 * is the same wrong-status bug as the sink file and the per-cursor
+		 * query, in a third disguise - so state is checked rather than
+		 * assumed. */
+		{
+			const char *st = strstr(line, "state ");
+			/* The NUMBER, not a substring. Matching "state 1 " with a
+			 * trailing space looked fine and broke on a line where state was
+			 * the last field - which the check caught immediately. */
+			if (!st || atoi(st + 6) != 1) continue;
+		}
 		for (i = 0; i < n; i++)
 			if (!strncasecmp(list[i].mac, acl + 4, 17)) {
 				list[i].connected = true;
