@@ -97,14 +97,16 @@ static const db_default library_defaults[] = {
 	{ "timezone",       "America/New_York" },
 	{ "startup_system", "NES" },
 
-	/* Turbo, per system tag, from config/turbo.cfg. `x:a~3,y:b~3` says X is a
-	 * turbo A and Y a turbo B, three frames pressed and three released - about
-	 * ten presses a second at 60 Hz. Listed only where X and Y are SPARE: nine
-	 * of the eleven consoles had two face buttons, but a Genesis six-button
-	 * pad and a SNES pad use X and Y for real, so MD and SFC are absent on
-	 * purpose rather than by oversight. The full reasoning, including why PC
-	 * Engine is here despite its core having a turbo of its own, is in
-	 * docs/turbo.md. */
+	/* Turbo, per system tag. `x:a~3,y:b~3` says X is a turbo A and Y a turbo
+	 * B, three frames pressed and three released - about ten presses a second
+	 * at 60 Hz.
+	 *
+	 * Listed only where BOTH of those are spare. X is the north button and Y
+	 * is the west one; a two-button console uses south and east and leaves
+	 * them both. A three-button Genesis takes west for its A - measured
+	 * 2026-09-06 with Streets of Rage 2 - so it has one free button where
+	 * turbo needs two, and SNES uses all four. MD and SFC are absent for that
+	 * reason and not by oversight. docs/turbo.md has the table. */
 	{ "turbo.NES",  "x:a~3,y:b~3" },
 	{ "turbo.SMS",  "x:a~3,y:b~3" },
 	{ "turbo.PCE",  "x:a~3,y:b~3" },

@@ -19,10 +19,32 @@ first run. `tortos.elf --dump` prints them.
 
 ## Why only nine
 
-**Listed only where X and Y are spare.** Nine of the eleven consoles had two
-face buttons, but a Genesis six-button pad and a SNES pad use X and Y for real,
-so MD and SFC are absent on purpose rather than by oversight. Turbo there would
-take away buttons games need.
+**Turbo needs two spare face buttons, and Genesis and SNES leave fewer.**
+
+The Brick has four face buttons, and their printed labels are what matters
+here - the evdev names on this shell are crossed, and reasoning from those has
+produced a wrong answer twice (see the note above the button table in
+`src/platform.c`).
+
+| physical | printed | free on a two-button console | free on Genesis |
+|---|---|---|---|
+| west  | Y | yes - turbo B | **no**, it is Genesis A |
+| south | B | no, the console's B | no, Genesis B |
+| east  | A | no, the console's A | no, Genesis C |
+| north | X | yes - turbo A | yes, and it is the only one |
+
+Turbo maps `x:a~3,y:b~3`, so it wants north AND west. A two-button console -
+NES, Game Boy, Master System and the rest - uses south and east and leaves both
+of those spare. **A three-button Genesis already takes west**, leaving one free
+button where turbo needs two. SNES uses all four.
+
+Measured on the device 2026-09-06 with Streets of Rage 2: west is Genesis A
+(special), south is B (attack), east is C (jump), and north does nothing.
+
+This page previously said the exclusion was because "a Genesis six-button pad
+and a SNES pad use X and Y for real". True of a six-button pad, but not the
+binding constraint - the core presents three buttons, and three is already one
+too many.
 
 ## Why PC Engine is on the list anyway
 
