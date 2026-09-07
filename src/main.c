@@ -5703,5 +5703,21 @@ done:
 	plat_input_quit();
 	plat_video_quit();
 	SDL_Quit();
+
+	/* Close the databases, which is what checkpoints their WAL and removes
+	 * it. Without this the launcher never called sqlite3_close on a normal
+	 * exit, so a checkpoint only ever happened when SQLite's own 1000-page
+	 * autocheckpoint fired mid-write. tortos.db had crossed that and held 20
+	 * keys; library.db had not, and its .db file was one empty page with the
+	 * schema and every row living in library.db-wal. Measured 2026-09-07.
+	 *
+	 * That is not a growth problem - the WAL sits at its high-water mark
+	 * either way. It is a portability one: a .db that means nothing without
+	 * its sidecar is lost by any backup, card swap or cleanup that treats a
+	 * -wal as scratch, and it reseeds silently rather than failing. Closing
+	 * here leaves a complete file behind on every clean exit.
+	 *
+	 * A battery pull still leaves a WAL, which is what WAL recovery is for. */
+	db_shutdown();
 	return 0;
 }
