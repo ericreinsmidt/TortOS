@@ -82,6 +82,9 @@ typedef struct {
 	 * same duration spent on the two is not the same thing to look at. */
 	float anim_ms;
 	cf_ease ease;
+	/* Whether to skip ahead rather than queue when told to move again while
+	 * already moving. See cf_set_cursor_dir. */
+	bool chase;
 } coverflow;
 
 /* Texture for item index; w/h receive its pixel size. May return NULL. */

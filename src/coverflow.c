@@ -159,6 +159,26 @@ void cf_set_cursor_dir(coverflow *cf, int cursor, int count, int dir)
 	cf->last_cursor = cursor;
 
 	cf->target += (float)raw;
+	/* Never more than one step behind the destination.
+	 *
+	 * Every press adds to `target` whether it came from a key repeat or from
+	 * a fast thumb, so a shelf whose animation is slower than the input can
+	 * be given work it will still be playing out long after the button is
+	 * released - measured at 13 items behind on the cube. Rate-limiting the
+	 * repeat does not help, because nothing stops a person pressing faster
+	 * than the limit.
+	 *
+	 * So the animation does not queue: it goes where it has been told and
+	 * animates the last step of getting there. The cursor stays exact, the
+	 * turn shown is always the one that matters, and `pos` stays beside
+	 * `cursor` - which also keeps the art that is being drawn inside the
+	 * window warmed around the cursor rather than decoding on the render
+	 * path. Only shelves that ask for it: a card row is fast enough to keep
+	 * up, and skipping there would lose the glide. */
+	if (cf->chase) {
+		if (cf->target - cf->pos > 1.0f)  cf->pos = cf->target - 1.0f;
+		if (cf->target - cf->pos < -1.0f) cf->pos = cf->target + 1.0f;
+	}
 	/* Start the tween from where the cards ARE, not from where the last one
 	 * was headed. Holding a direction retargets every key repeat, and taking
 	 * the live position each time is what makes that one continuous glide

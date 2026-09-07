@@ -543,10 +543,65 @@ static void prime_sys_window(app *a)
 	}
 }
 
+/* The two faces only change when the turn crosses into the next item: through
+ * a whole 450ms turn, i0 and i1 are fixed and only the angle moves. They were
+ * being redrawn every frame regardless, which is about 27 full-screen renders
+ * to offscreen targets per turn where one would do, and it cost half the
+ * frame rate: 30-42fps while holding a direction, against the 60.2 this shelf
+ * held before the cube existed. Measured 2026-09-07.
+ *
+ * Invalidated at rest rather than tracked in detail. Anything that changes
+ * what a face shows - a favorite toggled, a theme changed, a different system
+ * entered - happens while nothing is turning, so making the next turn redraw
+ * is both correct and free. Guessing at a longer list of things to watch for
+ * would be the same work done less reliably. */
+static struct { int kind, sys, i0, i1; } g_face_key = { -1, -1, -1, -1 };
+
+static void faces_stale(void)
+{
+	g_face_key.kind = -1;
+}
+
+/* What actually has to be redrawn. A step of one leaves one of the two faces
+ * already rendered - stepping forward, the face that was arriving is the one
+ * now being left - so it is a pointer swap and a single render rather than
+ * two. After the chase clamp every step is exactly one, so this halves the
+ * work on every frame that redraws at all.
+ *
+ * Compared by index rather than by direction, which makes a wrap around the
+ * end of the shelf just another step of one. */
+enum { FACES_BOTH, FACES_NONE, FACES_NEAR_ONLY, FACES_FAR_ONLY };
+
+static int faces_plan(int kind, int sys, int i0, int i1)
+{
+	int plan = FACES_BOTH;
+
+	if (g_face_key.kind == kind && g_face_key.sys == sys) {
+		if (g_face_key.i0 == i0 && g_face_key.i1 == i1) plan = FACES_NONE;
+		else if (g_face_key.i1 == i0)                   plan = FACES_FAR_ONLY;
+		else if (g_face_key.i0 == i1)                   plan = FACES_NEAR_ONLY;
+	}
+	g_face_key.kind = kind; g_face_key.sys = sys;
+	g_face_key.i0 = i0; g_face_key.i1 = i1;
+	return plan;
+}
+
+/* The kept face is in the wrong slot after a step, so the two trade places. */
+static void faces_swap(SDL_Texture **fa, SDL_Texture **fb)
+{
+	SDL_Texture *t = g_face[0];
+
+	g_face[0] = g_face[1];
+	g_face[1] = t;
+	*fa = g_face[0];
+	*fb = g_face[1];
+}
+
 static void free_all_textures(app *a)
 {
 	for (int i = 0; i < 2; i++)
 		if (g_face[i]) { SDL_DestroyTexture(g_face[i]); g_face[i] = NULL; }
+	faces_stale();
 	for (int i = 0; i < a->sys.count; i++) {
 		if (a->sys_tex[i]) { SDL_DestroyTexture(a->sys_tex[i]); a->sys_tex[i] = NULL; }
 		for (int k = 0; k < a->view[i].list.count; k++)
@@ -1343,9 +1398,11 @@ static void shelf_pacing(coverflow *cf)
 	if (CARD_DIRS[g_dir].vertical) {
 		cf->anim_ms = 450.0f;
 		cf->ease = CF_EASE_SMOOTH;
+		cf->chase = true;
 	} else {
 		cf->anim_ms = 0.0f;
 		cf->ease = CF_EASE_OUT_CUBIC;
+		cf->chase = false;
 	}
 }
 
@@ -1412,24 +1469,33 @@ static void draw_systems_cube(app *a)
 	/* At rest there is no turn to draw, so the face goes straight to the
 	 * screen and no render target is touched. That is most frames. */
 	if (frac < 0.002f || n < 2) {
+		faces_stale();
 		draw_sys_face(a, i0);
 	} else {
 		SDL_Texture *fa = face_tex(a, 0), *fb = face_tex(a, 1);
 
 		if (fa && fb) {
+			int plan = faces_plan(0, 0, i0, i1);
+
 			/* Both binds, and a flush before each switch. The bind for
 			 * the first face was once missing here, so that face was
-			 * drawn to the screen and fa kept whatever it last held -
-			 * which is the other shelf's art, because both shelves share
-			 * these two textures. A face that is never written does not
-			 * look empty, it looks like something else entirely. */
-			SDL_SetRenderTarget(a->r, fa);
-			draw_sys_face(a, i0);
-			SDL_RenderFlush(a->r);
-			SDL_SetRenderTarget(a->r, fb);
-			draw_sys_face(a, i1);
-			SDL_RenderFlush(a->r);
-			SDL_SetRenderTarget(a->r, NULL);
+			 * drawn to the screen and its texture kept whatever it last
+			 * held - the other shelf's art, because both shelves share
+			 * these two. A face that is never written does not look
+			 * empty, it looks like something else entirely. */
+			if (plan == FACES_NEAR_ONLY || plan == FACES_FAR_ONLY)
+				faces_swap(&fa, &fb);
+			if (plan == FACES_BOTH || plan == FACES_NEAR_ONLY) {
+				SDL_SetRenderTarget(a->r, fa);
+				draw_sys_face(a, i0);
+				SDL_RenderFlush(a->r);
+			}
+			if (plan == FACES_BOTH || plan == FACES_FAR_ONLY) {
+				SDL_SetRenderTarget(a->r, fb);
+				draw_sys_face(a, i1);
+				SDL_RenderFlush(a->r);
+			}
+			if (plan != FACES_NONE) SDL_SetRenderTarget(a->r, NULL);
 			cf_draw_cube(a->r, fa, fb, frac,
 			             TORTOS_SCREEN_W, TORTOS_SCREEN_H);
 		} else {
@@ -1664,23 +1730,33 @@ static void draw_games_cube(app *a)
 	i1 = n > 1 ? (i0 + 1) % n : i0;
 
 	if (frac < 0.002f || n < 2) {
+		faces_stale();
 		draw_games_face(a, v, s, i0);
 	} else {
 		SDL_Texture *fa = face_tex(a, 0), *fb = face_tex(a, 1);
 
 		if (fa && fb) {
-			SDL_SetRenderTarget(a->r, fa);
-			/* Flushed before each switch rather than trusting the
-			 * switch to do it, which is cheap insurance on a path where
-			 * a face that fails to be written shows the last thing
-			 * anything drew instead of showing nothing. */
-			SDL_SetRenderTarget(a->r, fa);
-			draw_games_face(a, v, s, i0);
-			SDL_RenderFlush(a->r);
-			SDL_SetRenderTarget(a->r, fb);
-			draw_games_face(a, v, s, i1);
-			SDL_RenderFlush(a->r);
-			SDL_SetRenderTarget(a->r, NULL);
+			int plan = faces_plan(1, a->sys_cursor, i0, i1);
+
+			/* Both binds, and a flush before each switch. The bind for
+			 * the first face was once missing here, so that face was
+			 * drawn to the screen and its texture kept whatever it last
+			 * held - the other shelf's art, because both shelves share
+			 * these two. A face that is never written does not look
+			 * empty, it looks like something else entirely. */
+			if (plan == FACES_NEAR_ONLY || plan == FACES_FAR_ONLY)
+				faces_swap(&fa, &fb);
+			if (plan == FACES_BOTH || plan == FACES_NEAR_ONLY) {
+				SDL_SetRenderTarget(a->r, fa);
+				draw_games_face(a, v, s, i0);
+				SDL_RenderFlush(a->r);
+			}
+			if (plan == FACES_BOTH || plan == FACES_FAR_ONLY) {
+				SDL_SetRenderTarget(a->r, fb);
+				draw_games_face(a, v, s, i1);
+				SDL_RenderFlush(a->r);
+			}
+			if (plan != FACES_NONE) SDL_SetRenderTarget(a->r, NULL);
 			cf_draw_cube(a->r, fa, fb, frac,
 			             TORTOS_SCREEN_W, TORTOS_SCREEN_H);
 		} else {
