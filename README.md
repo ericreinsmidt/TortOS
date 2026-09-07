@@ -166,8 +166,9 @@ matters to you - a card is the one part of this that gets reformatted.
 
 | | |
 |---|---|
-| **Left / Right** | move along the row |
-| **Up / Down** | jump to the previous / next initial (games) |
+| **Left / Right** | move along the row, when the shelf runs horizontally |
+| **Up / Down** | move along the shelf when it runs vertically - **up advances** |
+| **the other axis** | jump to the previous / next initial (games) |
 | **L1 / R1** | jump a screenful (games) |
 | **A** | open a system, or start a game |
 | **B** | back to the systems row |
@@ -195,6 +196,8 @@ The TortOS menu is the firmware's own, and opens from the systems row:
 | **Play Time** | how long each game has been played, most played first |
 | **Auto Off** | how long without a button before the device powers itself down |
 | **Text Size** | left/right; reopens every font, so the whole UI is rebuilt |
+| **UI Theme** | `Classic` or `Fancy Pants` - which art the shelves wear |
+| **UI Direction** | `Horizontal` or `Vertical` - which way both shelves run |
 | **Box Art** | fetch what the whole library is missing |
 | **Cheevos** | the RetroAchievements account, or `sign in` |
 | **About TortOS** | version, address, battery, uptime |
@@ -407,6 +410,28 @@ A single row of cards in perspective, with reflections - Cover Flow, carried
 over from an earlier project by the same author and retuned. The focused card
 sits in a soft glow tinted with its system's color, and the whole background
 carries a wash of that color that eases as you move between systems.
+
+Two things about that are yours to choose, and they are independent.
+
+**UI Theme** picks the art. `Classic` is a drawn card per system, with the
+name on it. `Fancy Pants` is a photograph of the console itself, background
+removed, and because a photograph does not name itself the shelf writes the
+name underneath. A theme is a directory under `res/cards/`, so adding one is
+dropping in a folder - no code and no configuration.
+
+**UI Direction** picks which way both shelves run. `Horizontal` is the row
+above. `Vertical` makes the whole screen one face of a cube: advancing rolls
+the face you are leaving up and off the top while the next swings in from
+below, carrying its art, its glow, its text and its reflection with it,
+because a face is just a shelf drawn with one thing on it.
+
+Vertically the shelf runs **A at the bottom to Z at the top**, and up
+advances. The origin is the bottom left and the index grows with x and with
+y, which is the same rule the horizontal row has always followed; a list that
+numbers downward is the screen's convention, not this one's. The position
+rail moves to the left edge and runs bottom-up with it, and on the games
+shelf the `n / total` sits in the bottom left beside it, stationary, rather
+than turning away with the face.
 
 Card art comes from, in order:
 

@@ -1563,9 +1563,17 @@ static void draw_game_text(app *a, sysview *v, const system_cfg *s, int idx)
 			                phase, UI_TEXT);
 		else
 			ui_text(a->r, ft2, g->title, tx, 40, 0, UI_TEXT);
-		snprintf(count, sizeof count, "%d / %d", idx + 1, v->list.count);
-		ui_text(a->r, ui_font(UI_F_META), count, TORTOS_SCREEN_W / 2, 690, 0,
-		        UI_TEXT_DIM);
+		/* Where you are in the list, not what this game is - the same kind
+		 * of thing the rail says. Vertically the rail is stationary and this
+		 * is drawn with it, by the caller, after the cube; baked into a face
+		 * it would turn away mid-move and you would see two of them at once,
+		 * one per face, disagreeing by one. Horizontally there is no face to
+		 * be stuck to and centred under the row is right where it was. */
+		if (!CARD_DIRS[g_dir].vertical) {
+			snprintf(count, sizeof count, "%d / %d", idx + 1, v->list.count);
+			ui_text(a->r, ui_font(UI_F_META), count, TORTOS_SCREEN_W / 2, 690,
+			        0, UI_TEXT_DIM);
+		}
 	} else {
 		char nfit[192];
 
@@ -1674,6 +1682,15 @@ static void draw_games_cube(app *a)
 rail:
 	ui_rail_v(a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, v->cursor, v->list.count,
 	          s->accent);
+	/* Under the rail's track, which ends at 678, and aligned to its left edge
+	 * so the two read as one cluster. The cursor's number rather than either
+	 * face's, which is what the rail is already showing. */
+	if (v->list.count > 0) {
+		char pos[64];
+
+		snprintf(pos, sizeof pos, "%d / %d", v->cursor + 1, v->list.count);
+		ui_text(a->r, ui_font(UI_F_META), pos, 23, 700, -1, UI_TEXT_DIM);
+	}
 }
 
 static void draw_games(app *a)
