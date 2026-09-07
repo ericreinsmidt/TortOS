@@ -1324,6 +1324,31 @@ static void draw_background(app *a)
 	}
 }
 
+/* How fast a shelf animates, written every frame from what is about to be
+ * drawn rather than left behind by whatever drew last.
+ *
+ * These live on the coverflow so step_anim can read them without knowing
+ * which mode is running, and that means they PERSIST. Only the cube set them,
+ * nothing set them back, and a horizontal row kept the cube's slower, gentler
+ * turn for the rest of the session after a single visit to vertical. State
+ * that one of two paths writes is state the other path has to write too.
+ *
+ * The cube gets 450ms and a curve that starts from rest: it turns a right
+ * angle of whole screen, and at the row's 240ms of cubic ease-out the first
+ * frame alone covers 17.5 of the 90 degrees, which does not read as turning.
+ * The row keeps its own 240ms - anim_ms of 0 means the default - because a
+ * card step should feel immediate and 17.5 degrees has no meaning for it. */
+static void shelf_pacing(coverflow *cf)
+{
+	if (CARD_DIRS[g_dir].vertical) {
+		cf->anim_ms = 450.0f;
+		cf->ease = CF_EASE_SMOOTH;
+	} else {
+		cf->anim_ms = 0.0f;
+		cf->ease = CF_EASE_OUT_CUBIC;
+	}
+}
+
 /* One system filling the screen: what a cube face carries. Drawn straight to
  * the screen when nothing is turning and into an offscreen texture when
  * something is, which is why it clears rather than assuming draw_shelf did.
@@ -1369,14 +1394,6 @@ static void draw_systems_cube(app *a)
 	int n = a->sys.count, i0, i1;
 	float pos, frac;
 
-	{ coverflow *cf = &a->cf_sys;
-	/* A right angle of whole screen, so it gets longer than a card step and a
-	 * curve that starts from rest. At the default 240ms of cubic ease-out the
-	 * first frame alone covers 17.5 of the 90 degrees, and a solid that moves
-	 * that far between two frames has not turned, it has cut. */
-	cf->anim_ms = 450.0f;
-	cf->ease = CF_EASE_SMOOTH;
-	}
 	{
 		int k;
 
@@ -1426,6 +1443,7 @@ static void draw_systems_cube(app *a)
 
 static void draw_systems(app *a)
 {
+	shelf_pacing(&a->cf_sys);
 	if (CARD_DIRS[g_dir].vertical) { draw_systems_cube(a); return; }
 
 	SDL_Rect focus;
@@ -1616,14 +1634,6 @@ static void draw_games_cube(app *a)
 
 	if (n <= 0) { draw_games_face(a, v, s, 0); goto rail; }
 
-	{ coverflow *cf = &v->cf;
-	/* A right angle of whole screen, so it gets longer than a card step and a
-	 * curve that starts from rest. At the default 240ms of cubic ease-out the
-	 * first frame alone covers 17.5 of the 90 degrees, and a solid that moves
-	 * that far between two frames has not turned, it has cut. */
-	cf->anim_ms = 450.0f;
-	cf->ease = CF_EASE_SMOOTH;
-	}
 	/* Warm every texture the turn will need BEFORE a render target is bound.
 	 *
 	 * Two reasons, and the second is the one that bites. A row asks cf_draw
@@ -1695,6 +1705,7 @@ rail:
 
 static void draw_games(app *a)
 {
+	shelf_pacing(&a->view[a->sys_cursor].cf);
 	if (CARD_DIRS[g_dir].vertical) { draw_games_cube(a); return; }
 
 	sysview *v = &a->view[a->sys_cursor];
