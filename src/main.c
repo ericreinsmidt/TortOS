@@ -304,6 +304,25 @@ static void preview_path(app *a, int s, const game_entry *g, char *out, size_t n
 	         P_SHARED, a->sys.systems[s].folder, base, slot_name(SLOT_AUTO));
 }
 
+/* Where Diatom writes the frame it hands over, which is NOT the Auto card's
+ * picture.
+ *
+ * Diatom writes its preview twice: before PAUSED, so the launcher has a frame
+ * to dim and draw the menu over, and again at exit beside the state. Pointing
+ * both at <rom>.auto.bmp meant every menu open overwrote the Auto card with
+ * the current moment, while the card's timestamp still came from the state -
+ * so the card contradicted itself and the picture was the convincing half.
+ * Reported 2026-09-07: died in Contra, opened the menu, and the Auto card
+ * showed the death while loading it went back two levels.
+ *
+ * One scratch file for the whole device rather than one per game: nothing
+ * reads it after the launch that wrote it, and a per-game copy would leave
+ * litter beside every save. */
+static void pause_preview_path(char *out, size_t n)
+{
+	snprintf(out, n, "%s/pause.bmp", P_USERDATA);
+}
+
 /* The Diatom transport takes explicit paths rather than a slot number, so the
  * state lives beside the preview it belongs to, named the same way.
  *
@@ -3663,15 +3682,26 @@ static void draw_paused_frame(app *a, SDL_Texture *bg)
  * show what is inside each slot. The pause preview IS the frame the save
  * serializes - Diatom wrote it on the way into the menu - so a straight copy
  * is the truthful thumbnail, no protocol round trip needed. */
+/* The SOURCE is opened first, and the destination only if that worked.
+ *
+ * Opening both up front truncates the destination whenever the source is
+ * missing - so a copy that cannot happen destroys the file it was going to
+ * replace. Harmless while the only caller copied a preview a pause had just
+ * written; not harmless once the Auto card is written this way, where the
+ * thing being overwritten is the last good picture of a save. */
 static void copy_file(const char *from, const char *to)
 {
-	FILE *a = fopen(from, "rb"), *b = to ? fopen(to, "wb") : NULL;
+	FILE *a, *b;
 	char buf[16384];
 	size_t n;
 
-	if (a && b) while ((n = fread(buf, 1, sizeof buf, a)) > 0) fwrite(buf, 1, n, b);
-	if (a) fclose(a);
-	if (b) fclose(b);
+	if (!from || !*from || !to || !*to) return;
+	if (!(a = fopen(from, "rb"))) return;
+	if (!(b = fopen(to, "wb"))) { fclose(a); return; }
+
+	while ((n = fread(buf, 1, sizeof buf, a)) > 0) fwrite(buf, 1, n, b);
+	fclose(a);
+	fclose(b);
 }
 
 /* The slot carousel: Auto plus the manual slots for Load, the manual slots for
@@ -4242,7 +4272,7 @@ static void launch(app *a)
 	int o = shelf_owner(a, a->sys_cursor, v->cursor);
 	const system_cfg *s = &a->sys.systems[o];
 	char core[CFG_STR * 2], elf[CFG_STR * 2], rom[LIB_PATH * 2];
-	char st[LIB_PATH * 2], pv[LIB_PATH * 2];
+	char st[LIB_PATH * 2], pv[LIB_PATH * 2], apv[LIB_PATH * 2];
 	char save[CFG_STR * 2], bios[CFG_STR * 2];
 	char active[LIB_PATH * 2] = "";
 	char set[LIB_PATH * 2];
@@ -4301,7 +4331,9 @@ static void launch(app *a)
 	 * preview live beside each other, the launch hands both over, and a game
 	 * always comes up where it was left. */
 	state_path(a, o, &v->list.items[v->cursor], st, sizeof st);
-	preview_path(a, a->sys_cursor, &v->list.items[v->cursor], pv, sizeof pv);
+	/* The scratch, not the Auto card - see pause_preview_path. The card is
+	 * written from this only when the game actually ends, below. */
+	pause_preview_path(pv, sizeof pv);
 	persist_dir_ensure(a, a->sys_cursor);
 
 	/* Achievements, if this game has any. Most of a library does not, and that
@@ -4443,6 +4475,18 @@ static void launch(app *a)
 			}
 			resident = (r == RES_EXIT);
 
+			/* The Auto card's picture, written ONLY here - at the same moment
+			 * Diatom wrote the state it belongs to, so the two cannot drift.
+			 * Between exits the card keeps the previous session's frame, which
+			 * is exactly what resuming would give you. */
+			if (resident) {
+				char ap[LIB_PATH * 2];
+
+				preview_path(a, a->sys_cursor, &v->list.items[v->cursor],
+				             ap, sizeof ap);
+				copy_file(plat_resident_last_preview(), ap);
+			}
+
 			/* The game is over, so this is the one write that is synced -
 			 * on the path where the player is waiting for the shelf rather
 			 * than for a game to start. */
@@ -4490,7 +4534,13 @@ static void launch(app *a)
 		argv[n++] = (char *)"--display";         argv[n++] = (char *)DMODES[v->dmode].name;
 		argv[n++] = (char *)"--load-state";      argv[n++] = st;
 		argv[n++] = (char *)"--state-on-exit";   argv[n++] = st;
-		argv[n++] = (char *)"--preview-on-exit"; argv[n++] = pv;
+		/* The Auto card's own path here, not the scratch the resident mode
+		 * uses. Standalone has no in-game menu - the launcher is torn down -
+		 * so nothing can overwrite it mid-session, and it is written once at
+		 * exit beside the state. The resident path needs the indirection
+		 * because a pause writes the preview too; this one does not. */
+		preview_path(a, a->sys_cursor, &v->list.items[v->cursor], apv, sizeof apv);
+		argv[n++] = (char *)"--preview-on-exit"; argv[n++] = apv;
 		/* Same opinions as the resident path gets over SETOPT, so a game plays
 		 * the same whether the resident was up or the fallback ran it. */
 		{
