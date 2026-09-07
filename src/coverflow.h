@@ -30,6 +30,20 @@ extern const cf_layout CF_LAYOUT_GAMES;
 /* The systems row again, one at a time and flat. Systems only: box art keeps
  * the angled row. */
 extern const cf_layout CF_LAYOUT_SINGLE;
+/* The same idea for the games shelf, whose text sits differently. */
+extern const cf_layout CF_LAYOUT_GAME_FACE;
+
+/* Turn two full-screen faces of a cube about a horizontal axis.
+ *
+ * `frac` is how far between them, 0 to 1: at 0 the near face is square on and
+ * the far one is edge-on and invisible, at 1 they have swapped. The faces are
+ * whole screens rendered offscreen, so whatever is on them - art, name, count,
+ * reflection - turns together without any of it needing to know.
+ *
+ * Faces darken as they turn away. A cube whose sides stay evenly lit reads as
+ * two flat pictures sliding past each other rather than as one solid. */
+void cf_draw_cube(SDL_Renderer *r, SDL_Texture *near_face, SDL_Texture *far_face,
+                  float frac, int screen_w, int screen_h);
 
 /* Where the focused card sits on screen, so the caller can put a glow behind
  * it and lay text out against it without duplicating the geometry. */
@@ -39,6 +53,16 @@ void cf_focus_rect(const cf_layout *lay, int screen_w, int screen_h, SDL_Rect *o
  * rather than an ease toward a moving target. Distance changes the speed, not
  * the time: crossing the whole shelf takes exactly as long as stepping one
  * card, so the row never feels further away than it is. */
+/* How a move is spread over its time. OUT_CUBIC peaks on the first frame and
+ * decelerates, which is what makes a card step feel immediate. SMOOTH starts
+ * and ends at rest and peaks at half again the average - slower to leave, but
+ * a solid object that reaches full speed between two frames does not read as
+ * turning, it reads as having cut. */
+typedef enum {
+	CF_EASE_OUT_CUBIC = 0,
+	CF_EASE_SMOOTH
+} cf_ease;
+
 typedef struct {
 	float pos;      /* continuous position, interpolated from -> target */
 	float from;     /* where the move in flight started */
@@ -52,6 +76,12 @@ typedef struct {
 	 * away, so which side it rests on is a genuine tie and the direction of
 	 * travel is the only thing that can settle it sensibly. */
 	int last_dir;
+	/* Per-shelf timing. Zero means the default, which is what a card row
+	 * wants; the cube sets its own because it turns a whole screen through a
+	 * right angle rather than sliding a card a few hundred pixels, and the
+	 * same duration spent on the two is not the same thing to look at. */
+	float anim_ms;
+	cf_ease ease;
 } coverflow;
 
 /* Texture for item index; w/h receive its pixel size. May return NULL. */
@@ -64,6 +94,13 @@ void cf_set_cursor(coverflow *cf, int cursor, int count);
  * two has both neighbors one step away, so it is the only size where the
  * shortest-path arithmetic cannot work out which way to turn. */
 void cf_set_cursor_dir(coverflow *cf, int cursor, int count, int dir);
+/* Advance the animation without drawing anything.
+ *
+ * The vertical shelves turn a cube instead of laying out a row, so they never
+ * call cf_draw and would otherwise leave `pos` frozen. Same clock, same
+ * easing, same wrap handling - only the drawing differs. */
+void cf_tick(coverflow *cf, int count);
+
 /* Step animation and draw. Returns true while still animating. */
 bool cf_draw(coverflow *cf, SDL_Renderer *r, int screen_w, int screen_h,
              int count, cf_tex_fn get_tex, void *ctx, const cf_layout *lay);

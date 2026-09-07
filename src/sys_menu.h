@@ -26,7 +26,7 @@
 /* The TortOS menu. */
 typedef enum {
 	PM_WIFI, PM_BT, PM_AUDIO, PM_XFER, PM_STATS,
-	PM_SLEEP, PM_TEXT, PM_THEME, PM_SCRAPE, PM_ACHIEVEMENTS, PM_ABOUT, PM_ROWS
+	PM_SLEEP, PM_TEXT, PM_THEME, PM_DIR, PM_SCRAPE, PM_ACHIEVEMENTS, PM_ABOUT, PM_ROWS
 } pm_row;
 
 /* The system menu. Games and Core carry real values rather than invented ones,
@@ -61,6 +61,7 @@ typedef struct {
 	const char *ra_name;     /* only read when ra_in */
 	const char *text_size;   /* "100%" - the caller owns the scale table */
 	const char *cards;       /* the showing card set's name, from CARD_SETS */
+	const char *cards_dir;   /* which way the shelves run, from CARD_DIRS */
 	int         auto_off;    /* seconds, 0 for off */
 	/* Where sound goes: the policy the player set, and where it actually ends
 	 * up under that policy. Both, because the row has to name a place - "Auto"

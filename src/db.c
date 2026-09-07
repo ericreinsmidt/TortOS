@@ -91,8 +91,9 @@ static const db_default device_defaults[] = {
 	{ "autooff",    "120" },   /* seconds without input, 0 is off */
 	{ "textsize",   "1.0" },
 	{ "wifi",       "0"  },    /* what THIS device was last doing, not the */
-	{ "bluetooth",  "0"  },
-	{ "cards",      CARDS_DEFAULT },    /* shipped default - seeding merges the two */
+	{ "bluetooth",  "0"  },    /* shipped default - seeding merges the two */
+	{ "cards",      CARDS_DEFAULT },
+	{ "cards_dir",  CARDS_DIR_DEFAULT },
 };
 
 static const db_default library_defaults[] = {

@@ -260,6 +260,12 @@ bool plat_video_init(void)
 		        info.name, SDL_GetCurrentVideoDriver(),
 		        (info.flags & SDL_RENDERER_PRESENTVSYNC) ? "granted"
 		                                                 : "DECLINED (requested)");
+	/* The cube turns two offscreen faces, so this is load-bearing rather than
+	 * informational: without it the vertical shelves have nothing to draw. */
+	if (SDL_GetRendererInfo(ren, &info) == 0)
+		fprintf(stderr, "renderer: render-to-texture %s\n",
+		        (info.flags & SDL_RENDERER_TARGETTEXTURE) ? "available"
+		                                                  : "MISSING");
 	return true;
 }
 

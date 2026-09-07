@@ -239,9 +239,32 @@ static void display_save(app *a)
 
 /* ---------- textures ----------------------------------------------------- */
 
+/* Every card texture ends up with an alpha channel, whatever the file had.
+ *
+ * IMG_LoadTexture keeps the source format, so art saved as PNG color type 2 -
+ * RGB, no alpha - becomes an RGB texture. Drawn straight to the screen that is
+ * fine, which is why nothing was ever wrong with the shelves. Drawn through
+ * SDL_RenderGeometry into an RGBA render target it is wrong on this driver:
+ * cards came out missing entirely on a cube face, and system art came out
+ * garbled. Measured 2026-09-07 against Toy Story and Uncharted Waters, which
+ * carry alpha and drew correctly, and Dr. Franken and Donkey Kong Land III,
+ * which do not and did not.
+ *
+ * Converted here rather than at the call sites: there is one loader, the cost
+ * is one format conversion per card at load time, and a texture whose behavior
+ * depends on what a scraper happened to save is a trap for whatever gets drawn
+ * next. */
 static SDL_Texture *load_image(SDL_Renderer *r, const char *path, int *w, int *h)
 {
-	SDL_Texture *t = IMG_LoadTexture(r, path);
+	SDL_Surface *raw = IMG_Load(path), *conv;
+	SDL_Texture *t;
+
+	if (!raw) return NULL;
+	conv = SDL_ConvertSurfaceFormat(raw, SDL_PIXELFORMAT_ARGB8888, 0);
+	SDL_FreeSurface(raw);
+	if (!conv) return NULL;
+	t = SDL_CreateTextureFromSurface(r, conv);
+	SDL_FreeSurface(conv);
 	if (t) SDL_QueryTexture(t, NULL, NULL, w, h);
 	return t;
 }
@@ -250,6 +273,23 @@ static SDL_Texture *load_image(SDL_Renderer *r, const char *path, int *w, int *h
  * runs per card per frame and the shelf should not ask the database how to
  * draw itself. */
 static int g_cards;
+static int g_dir;
+
+/* The two faces a turn needs. Kept rather than made per frame: they are a
+ * screen each, and a cube turns for a fifth of a second at a time. */
+static SDL_Texture *g_face[2];
+
+static SDL_Texture *face_tex(app *a, int i)
+{
+	if (!g_face[i]) {
+		g_face[i] = SDL_CreateTexture(a->r, SDL_PIXELFORMAT_RGBA8888,
+		                              SDL_TEXTUREACCESS_TARGET,
+		                              TORTOS_SCREEN_W, TORTOS_SCREEN_H);
+		if (!g_face[i])
+			fprintf(stderr, "cube: face %d not created: %s\n", i, SDL_GetError());
+	}
+	return g_face[i];
+}
 
 static SDL_Texture *sys_get_tex(void *ctx, int i, int *w, int *h)
 {
@@ -505,6 +545,8 @@ static void prime_sys_window(app *a)
 
 static void free_all_textures(app *a)
 {
+	for (int i = 0; i < 2; i++)
+		if (g_face[i]) { SDL_DestroyTexture(g_face[i]); g_face[i] = NULL; }
 	for (int i = 0; i < a->sys.count; i++) {
 		if (a->sys_tex[i]) { SDL_DestroyTexture(a->sys_tex[i]); a->sys_tex[i] = NULL; }
 		for (int k = 0; k < a->view[i].list.count; k++)
@@ -1282,8 +1324,110 @@ static void draw_background(app *a)
 	}
 }
 
+/* One system filling the screen: what a cube face carries. Drawn straight to
+ * the screen when nothing is turning and into an offscreen texture when
+ * something is, which is why it clears rather than assuming draw_shelf did.
+ *
+ * It draws itself with CF_LAYOUT_SINGLE, so the art, the reflection, the glow
+ * and the text are all already on the face and turn with it. Nothing here
+ * knows it is on a cube. */
+static void draw_sys_face(app *a, int idx)
+{
+	const system_cfg *s = &a->sys.systems[idx];
+	SDL_Rect focus;
+	coverflow one;
+	char line[128];
+	int gc;
+
+	SDL_SetRenderDrawColor(a->r, 0, 0, 0, 255);
+	SDL_RenderClear(a->r);
+	draw_background(a);
+
+	cf_focus_rect(&CF_LAYOUT_SINGLE, TORTOS_SCREEN_W, TORTOS_SCREEN_H, &focus);
+	ui_glow(a->r, &focus, s->accent, 110, 2.4f);
+	cf_reset(&one, idx);
+	cf_draw(&one, a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, a->sys.count,
+	        sys_get_tex, a, &CF_LAYOUT_SINGLE);
+
+	if (!CARD_SETS[g_cards].labeled) {
+		char nfit[192];
+
+		ui_fit_text(ui_font(UI_F_TITLE), s->name, nfit, sizeof nfit,
+		            TORTOS_SCREEN_W - 48);
+		ui_text(a->r, ui_font(UI_F_TITLE), nfit, TORTOS_SCREEN_W / 2, 618, 0,
+		        UI_TEXT);
+	}
+	gc = a->view[idx].list.count;
+	if (gc > 0) snprintf(line, sizeof line, "%d game%s", gc, gc == 1 ? "" : "s");
+	else        snprintf(line, sizeof line, "no games in Roms/%s", s->folder);
+	ui_text(a->r, ui_font(UI_F_META), line, TORTOS_SCREEN_W / 2, 690, 0,
+	        UI_TEXT_DIM);
+}
+
+static void draw_systems_cube(app *a)
+{
+	int n = a->sys.count, i0, i1;
+	float pos, frac;
+
+	{ coverflow *cf = &a->cf_sys;
+	/* A right angle of whole screen, so it gets longer than a card step and a
+	 * curve that starts from rest. At the default 240ms of cubic ease-out the
+	 * first frame alone covers 17.5 of the 90 degrees, and a solid that moves
+	 * that far between two frames has not turned, it has cut. */
+	cf->anim_ms = 450.0f;
+	cf->ease = CF_EASE_SMOOTH;
+	}
+	{
+		int k;
+
+		for (k = 0; k < n; k++) {
+			int tw = 0, th = 0;
+			sys_get_tex(a, k, &tw, &th);
+		}
+	}
+	cf_tick(&a->cf_sys, n);
+	pos = a->cf_sys.pos;
+	i0 = (int)floorf(pos);
+	frac = pos - (float)i0;
+	i0 = ((i0 % n) + n) % n;
+	i1 = n > 1 ? (i0 + 1) % n : i0;
+
+	/* At rest there is no turn to draw, so the face goes straight to the
+	 * screen and no render target is touched. That is most frames. */
+	if (frac < 0.002f || n < 2) {
+		draw_sys_face(a, i0);
+	} else {
+		SDL_Texture *fa = face_tex(a, 0), *fb = face_tex(a, 1);
+
+		if (fa && fb) {
+			/* Both binds, and a flush before each switch. The bind for
+			 * the first face was once missing here, so that face was
+			 * drawn to the screen and fa kept whatever it last held -
+			 * which is the other shelf's art, because both shelves share
+			 * these two textures. A face that is never written does not
+			 * look empty, it looks like something else entirely. */
+			SDL_SetRenderTarget(a->r, fa);
+			draw_sys_face(a, i0);
+			SDL_RenderFlush(a->r);
+			SDL_SetRenderTarget(a->r, fb);
+			draw_sys_face(a, i1);
+			SDL_RenderFlush(a->r);
+			SDL_SetRenderTarget(a->r, NULL);
+			cf_draw_cube(a->r, fa, fb, frac,
+			             TORTOS_SCREEN_W, TORTOS_SCREEN_H);
+		} else {
+			draw_sys_face(a, i0);   /* no targets: still usable, just flat */
+		}
+	}
+
+	ui_rail_v(a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, a->sys_cursor,
+	          a->sys.count, a->sys.systems[a->sys_cursor].accent);
+}
+
 static void draw_systems(app *a)
 {
+	if (CARD_DIRS[g_dir].vertical) { draw_systems_cube(a); return; }
+
 	SDL_Rect focus;
 	const system_cfg *s = &a->sys.systems[a->sys_cursor];
 	char line[128];
@@ -1291,13 +1435,10 @@ static void draw_systems(app *a)
 	/* Systems only. The games shelf keeps the angled row whatever this says:
 	 * box art is a wall of many, and one cover per screen would turn picking
 	 * a game into paging through a catalog. */
-	const cf_layout *lay = CARD_SETS[g_cards].single ? &CF_LAYOUT_SINGLE
-	                                                 : &CF_LAYOUT_SYSTEMS;
-
-	cf_focus_rect(lay, TORTOS_SCREEN_W, TORTOS_SCREEN_H, &focus);
+	cf_focus_rect(&CF_LAYOUT_SYSTEMS, TORTOS_SCREEN_W, TORTOS_SCREEN_H, &focus);
 	ui_glow(a->r, &focus, s->accent, 110, 2.4f);
 	cf_draw(&a->cf_sys, a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, a->sys.count,
-	        sys_get_tex, a, lay);
+	        sys_get_tex, a, &CF_LAYOUT_SYSTEMS);
 
 	/* Art that does not name itself gets named here, in the gap between the
 	 * card and the count, which is where the classic cards carry it. */
@@ -1322,8 +1463,9 @@ static void draw_systems(app *a)
 			snprintf(line, sizeof line, "no games in Roms/%s", s->folder);
 	}
 	ui_text(a->r, ui_font(UI_F_META), line, TORTOS_SCREEN_W / 2, 690, 0, UI_TEXT_DIM);
-	ui_rail(a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, a->sys_cursor, a->sys.count,
-	        s->accent);
+	(CARD_DIRS[g_dir].vertical ? ui_rail_v : ui_rail)
+		(a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, a->sys_cursor, a->sys.count,
+		 s->accent);
 }
 
 /* Milliseconds since the focused game last changed.
@@ -1352,25 +1494,18 @@ static unsigned title_phase(app *a)
 	return now - since;
 }
 
-static void draw_games(app *a)
+/* Everything a games shelf says about one game: its title, its favorite mark
+ * and its place in the list. Split out so a cube face draws the same thing the
+ * row does - the marquee's seat, the heart's fixed position and the reasoning
+ * behind both are delicate enough that a second copy would drift. */
+static void draw_game_text(app *a, sysview *v, const system_cfg *s, int idx)
 {
-	sysview *v = &a->view[a->sys_cursor];
-	const system_cfg *s = &a->sys.systems[a->sys_cursor];
-	/* On Favorites the focused game's own system, so its accent, its state
-	 * and its favorite key all come from the console it belongs to. */
 	const system_cfg *gs = &a->sys.systems[
-		shelf_owner(a, a->sys_cursor, v->cursor)];
-	SDL_Rect focus;
+		shelf_owner(a, a->sys_cursor, idx)];
 	char count[64];
 
-	cf_focus_rect(&CF_LAYOUT_GAMES, TORTOS_SCREEN_W, TORTOS_SCREEN_H, &focus);
-	ui_glow(a->r, &focus, s->accent, 100, 2.3f);
-	cf_draw(&v->cf, a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, v->list.count,
-	        game_get_tex, a, &CF_LAYOUT_GAMES);
-	evict_far(v, TEX_KEEP_NEAR);
-
 	if (v->list.count > 0) {
-		game_entry *g = &v->list.items[v->cursor];
+		game_entry *g = &v->list.items[idx];
 		/* A title that fits is centered, as before. One that does not slides,
 		 * because truncating it destroys the rest of the name permanently and
 		 * sliding it only delays it - see ui_text_marquee.
@@ -1428,7 +1563,7 @@ static void draw_games(app *a)
 			                phase, UI_TEXT);
 		else
 			ui_text(a->r, ft2, g->title, tx, 40, 0, UI_TEXT);
-		snprintf(count, sizeof count, "%d / %d", v->cursor + 1, v->list.count);
+		snprintf(count, sizeof count, "%d / %d", idx + 1, v->list.count);
 		ui_text(a->r, ui_font(UI_F_META), count, TORTOS_SCREEN_W / 2, 690, 0,
 		        UI_TEXT_DIM);
 	} else {
@@ -1439,8 +1574,126 @@ static void draw_games(app *a)
 		ui_text(a->r, ui_font(UI_F_TITLE), nfit, TORTOS_SCREEN_W / 2, 40, 0,
 		        UI_TEXT);
 	}
-	ui_rail(a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, v->cursor, v->list.count,
-	        s->accent);
+}
+
+/* One game filling the screen, for a cube face. The counterpart to
+ * draw_sys_face, and the same idea: CF_LAYOUT_SINGLE draws the art and
+ * draw_game_text draws everything said about it, so the face is complete and
+ * turns as one. */
+static void draw_games_face(app *a, sysview *v, const system_cfg *s, int idx)
+{
+	SDL_Rect focus;
+	coverflow one;
+
+	SDL_SetRenderDrawColor(a->r, 0, 0, 0, 255);
+	SDL_RenderClear(a->r);
+	draw_background(a);
+
+	cf_focus_rect(&CF_LAYOUT_GAME_FACE, TORTOS_SCREEN_W, TORTOS_SCREEN_H, &focus);
+	ui_glow(a->r, &focus, s->accent, 100, 2.3f);
+	if (v->list.count > 0) {
+		cf_reset(&one, idx);
+		cf_draw(&one, a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, v->list.count,
+		        game_get_tex, a, &CF_LAYOUT_GAME_FACE);
+	}
+	draw_game_text(a, v, s, idx);
+}
+
+static void draw_games_cube(app *a)
+{
+	sysview *v = &a->view[a->sys_cursor];
+	const system_cfg *s = &a->sys.systems[a->sys_cursor];
+	int n = v->list.count, i0, i1;
+	float pos, frac;
+
+	if (n <= 0) { draw_games_face(a, v, s, 0); goto rail; }
+
+	{ coverflow *cf = &v->cf;
+	/* A right angle of whole screen, so it gets longer than a card step and a
+	 * curve that starts from rest. At the default 240ms of cubic ease-out the
+	 * first frame alone covers 17.5 of the 90 degrees, and a solid that moves
+	 * that far between two frames has not turned, it has cut. */
+	cf->anim_ms = 450.0f;
+	cf->ease = CF_EASE_SMOOTH;
+	}
+	/* Warm every texture the turn will need BEFORE a render target is bound.
+	 *
+	 * Two reasons, and the second is the one that bites. A row asks cf_draw
+	 * for CF_WINDOW slots every frame, so art is decoded several items before
+	 * it is looked at; the cube draws two faces and warms nothing, which is
+	 * the pop. And creating a texture while an offscreen target is bound is
+	 * asking the GLES2 backend to juggle the framebuffer mid-load, which is
+	 * why loaded box art came out blank on a face while the generated cards
+	 * for games without any came out fine. Load first, draw second.
+	 *
+	 * Cached after the first frame, so at rest this costs nothing and a move
+	 * costs the one item newly inside the span. Well within TEX_KEEP_NEAR, so
+	 * eviction does not undo it on the next frame. */
+	if (n > 1) {
+		int k;
+
+		for (k = -CF_HALF_WINDOW; k <= CF_HALF_WINDOW; k++) {
+			int tw = 0, th = 0;
+			game_get_tex(a, ((v->cursor + k) % n + n) % n, &tw, &th);
+		}
+	}
+
+	cf_tick(&v->cf, n);
+	pos = v->cf.pos;
+	i0 = (int)floorf(pos);
+	frac = pos - (float)i0;
+	i0 = ((i0 % n) + n) % n;
+	i1 = n > 1 ? (i0 + 1) % n : i0;
+
+	if (frac < 0.002f || n < 2) {
+		draw_games_face(a, v, s, i0);
+	} else {
+		SDL_Texture *fa = face_tex(a, 0), *fb = face_tex(a, 1);
+
+		if (fa && fb) {
+			SDL_SetRenderTarget(a->r, fa);
+			/* Flushed before each switch rather than trusting the
+			 * switch to do it, which is cheap insurance on a path where
+			 * a face that fails to be written shows the last thing
+			 * anything drew instead of showing nothing. */
+			SDL_SetRenderTarget(a->r, fa);
+			draw_games_face(a, v, s, i0);
+			SDL_RenderFlush(a->r);
+			SDL_SetRenderTarget(a->r, fb);
+			draw_games_face(a, v, s, i1);
+			SDL_RenderFlush(a->r);
+			SDL_SetRenderTarget(a->r, NULL);
+			cf_draw_cube(a->r, fa, fb, frac,
+			             TORTOS_SCREEN_W, TORTOS_SCREEN_H);
+		} else {
+			draw_games_face(a, v, s, i0);
+		}
+	}
+	evict_far(v, TEX_KEEP_NEAR);
+
+rail:
+	ui_rail_v(a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, v->cursor, v->list.count,
+	          s->accent);
+}
+
+static void draw_games(app *a)
+{
+	if (CARD_DIRS[g_dir].vertical) { draw_games_cube(a); return; }
+
+	sysview *v = &a->view[a->sys_cursor];
+	const system_cfg *s = &a->sys.systems[a->sys_cursor];
+	SDL_Rect focus;
+
+	cf_focus_rect(&CF_LAYOUT_GAMES, TORTOS_SCREEN_W, TORTOS_SCREEN_H, &focus);
+	ui_glow(a->r, &focus, s->accent, 100, 2.3f);
+	cf_draw(&v->cf, a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, v->list.count,
+	        game_get_tex, a, &CF_LAYOUT_GAMES);
+	evict_far(v, TEX_KEEP_NEAR);
+
+	draw_game_text(a, v, s, v->cursor);
+	(CARD_DIRS[g_dir].vertical ? ui_rail_v : ui_rail)
+		(a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, v->cursor, v->list.count,
+		 s->accent);
 }
 
 /* The shelf, without presenting it: the options menu draws over a live one, so
@@ -2004,6 +2257,7 @@ static int menu_build(app *a, screen_id screen, int sys,
 		u.ra_name   = u.ra_in ? ra_user() : NULL;
 		u.text_size = TEXT_NAMES[text_scale_step()];
 		u.cards     = CARD_SETS[g_cards].name;
+		u.cards_dir = CARD_DIRS[g_dir].name;
 		u.auto_off  = a->auto_off;
 		u.audio_policy = ao.policy;
 		u.audio_dest   = aout_actual(&ao);
@@ -3630,6 +3884,14 @@ static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
 		return MENU_STAY;
 	}
 
+	/* Which way both shelves run. Only the cards' positions change, not the
+	 * textures, so nothing is dropped and there is nothing to rebuild. */
+	if (sel == PM_DIR && (d || key == IN_ACCEPT)) {
+		g_dir = cards_dir_step(g_dir, d ? d : 1);
+		db_set_str(db_dev(), "cards_dir", CARD_DIRS[g_dir].id);
+		return MENU_STAY;
+	}
+
 	/* Two positions, so left and right and A all do the same thing: there is
 	 * nothing to step through, only something to turn off and on. */
 	if (sel == PM_AUDIO && (d || key == IN_ACCEPT)) {
@@ -4710,9 +4972,14 @@ static void update_systems(app *a)
 	/* The direction is carried through, not inferred from the cursor: on a
 	 * shelf of two, moving from either card to the other is one step in BOTH
 	 * directions, and only the press says which. */
+	/* The d-pad axis follows the shelf. Pressing left on a stack that runs
+	 * downward is asking the row to do something it does not do. */
+	in_button back = CARD_DIRS[g_dir].vertical ? IN_UP : IN_LEFT;
+	in_button fwd  = CARD_DIRS[g_dir].vertical ? IN_DOWN : IN_RIGHT;
 	int dir = 0;
-	if (in_repeat(&a->in, IN_LEFT))  { a->sys_cursor = (a->sys_cursor - 1 + n) % n; dir = -1; }
-	if (in_repeat(&a->in, IN_RIGHT)) { a->sys_cursor = (a->sys_cursor + 1) % n; dir = +1; }
+
+	if (in_repeat(&a->in, back)) { a->sys_cursor = (a->sys_cursor - 1 + n) % n; dir = -1; }
+	if (in_repeat(&a->in, fwd))  { a->sys_cursor = (a->sys_cursor + 1) % n; dir = +1; }
 	if (a->in.pressed[IN_ACCEPT])    enter_system(a);
 	cf_set_cursor_dir(&a->cf_sys, a->sys_cursor, n, dir);
 }
@@ -4782,11 +5049,19 @@ static void update_games(app *a)
 	sysview *v = &a->view[a->sys_cursor];
 	int n = v->list.count;
 	if (n <= 0) { a->screen = SCREEN_SYSTEMS; return; }
+	/* The two axes trade roles with the shelf rather than one of them being
+	 * reassigned onto the other: stepping always runs along the row, and the
+	 * letter jump always runs across it. Turning the shelf turns the d-pad
+	 * with it and nothing is left doing two jobs. */
+	bool vert = CARD_DIRS[g_dir].vertical;
+	in_button back = vert ? IN_UP : IN_LEFT, fwd = vert ? IN_DOWN : IN_RIGHT;
+	in_button jup = vert ? IN_LEFT : IN_UP, jdn = vert ? IN_RIGHT : IN_DOWN;
 	int dir = 0;
-	if (in_repeat(&a->in, IN_LEFT))  { v->cursor = (v->cursor - 1 + n) % n; dir = -1; }
-	if (in_repeat(&a->in, IN_RIGHT)) { v->cursor = (v->cursor + 1) % n; dir = +1; }
-	if (in_repeat(&a->in, IN_DOWN))  v->cursor = shelf_letter_jump(v, +1);
-	if (in_repeat(&a->in, IN_UP))    v->cursor = shelf_letter_jump(v, -1);
+
+	if (in_repeat(&a->in, back)) { v->cursor = (v->cursor - 1 + n) % n; dir = -1; }
+	if (in_repeat(&a->in, fwd))  { v->cursor = (v->cursor + 1) % n; dir = +1; }
+	if (in_repeat(&a->in, jdn))  v->cursor = shelf_letter_jump(v, +1);
+	if (in_repeat(&a->in, jup))  v->cursor = shelf_letter_jump(v, -1);
 	/* L1/R1 jump a screenful, so a long shelf is crossable. Wrapped the long
 	 * way round on purpose: C's % truncates toward zero, so on a shelf of
 	 * three games the obvious `(cursor - CF_WINDOW + n*2) % n` lands on -1 and
@@ -5626,6 +5901,8 @@ int main(int argc, char *argv[])
 		char set[CFG_STR];
 		db_get_str(db_dev(), "cards", set, sizeof set, CARDS_DEFAULT);
 		g_cards = cards_index(set);
+		db_get_str(db_dev(), "cards_dir", set, sizeof set, CARDS_DIR_DEFAULT);
+		g_dir = cards_dir_index(set);
 	}
 	t_mark("font+settings");
 

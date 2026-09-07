@@ -36,17 +36,11 @@ typedef struct {
 	 * A property of the set, so a new one declares which kind it is rather
 	 * than the shelf special-casing a directory by name. */
 	bool labeled;
-	/* One image per screen, flat, sliding in from off the edge, instead of the
-	 * angled row. The whole difference is a cf_layout, which lives in
-	 * coverflow.c - a flag rather than a pointer to one so this header stays
-	 * free of SDL and a check can read it without linking the renderer. */
-	bool single;
 } card_set;
 
 static const card_set CARD_SETS[] = {
-	{ "classic", "classic", "Classic",     true,  false },
-	{ "slide",   "fancy",   "Slide",       false, true  },
-	{ "fancy",   "fancy",   "Fancy Pants", false, false },
+	{ "classic", "classic", "Classic",     true  },
+	{ "fancy",   "fancy",   "Fancy Pants", false },
 };
 #define CARD_SET_COUNT ((int)(sizeof CARD_SETS / sizeof CARD_SETS[0]))
 
@@ -68,6 +62,44 @@ static inline int cards_index(const char *id)
 static inline int cards_step(int i, int d)
 {
 	int n = CARD_SET_COUNT;
+
+	if (n <= 0) return 0;
+	i = (i + d) % n;
+	return i < 0 ? i + n : i;
+}
+
+/* Which way a shelf runs. Its own setting rather than more entries in the
+ * table above, because it is orthogonal to the art: all three themes read
+ * sensibly either way, so folding it in would mean six presets to name and
+ * keep consistent instead of three plus a direction. Applies to the games
+ * shelf as well as the systems one. */
+#define CARDS_DIR_DEFAULT "horizontal"
+
+typedef struct {
+	const char *id;
+	const char *name;
+	bool vertical;
+} card_dir;
+
+static const card_dir CARD_DIRS[] = {
+	{ "horizontal", "Horizontal", false },
+	{ "vertical",   "Vertical",   true  },
+};
+#define CARD_DIR_COUNT ((int)(sizeof CARD_DIRS / sizeof CARD_DIRS[0]))
+
+static inline int cards_dir_index(const char *id)
+{
+	int i;
+
+	if (id && *id)
+		for (i = 0; i < CARD_DIR_COUNT; i++)
+			if (!strcmp(CARD_DIRS[i].id, id)) return i;
+	return 0;
+}
+
+static inline int cards_dir_step(int i, int d)
+{
+	int n = CARD_DIR_COUNT;
 
 	if (n <= 0) return 0;
 	i = (i + d) % n;

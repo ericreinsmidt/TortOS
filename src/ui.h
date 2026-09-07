@@ -129,6 +129,11 @@ void ui_glow(SDL_Renderer *r, const SDL_Rect *rect, unsigned rgb, int alpha,
  * accent segment showing where the cursor sits in a list of `count`. */
 void ui_rail(SDL_Renderer *r, int screen_w, int screen_h, int index, int count,
              unsigned rgb);
+/* The same, down the left edge, for a row that runs vertically. A horizontal
+ * bar under a vertical stack says the wrong thing: the eye reads it as the
+ * axis the cards move along. */
+void ui_rail_v(SDL_Renderer *r, int screen_w, int screen_h, int index, int count,
+               unsigned rgb);
 
 /* A filled rounded rectangle. SDL has no such primitive; this is the middle as
  * one rect and the two caps as one inset row each, so a panel costs a few

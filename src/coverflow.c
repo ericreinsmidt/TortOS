@@ -40,6 +40,18 @@ const cf_layout CF_LAYOUT_SINGLE = {
 	.side_alpha = 255, .strips = 16,
 };
 
+/* One game filling a cube face. The GAMES proportions rather than the SINGLE
+ * ones, because the games shelf writes its title at y=40 and that clearance
+ * was measured against a card of this size and position. Borrowing the
+ * systems' face layout put the art's top edge at y=38 and the title landed on
+ * the box art. Only `step` differs from the row: wide enough that the
+ * neighbours a face must not show are off the screen entirely. */
+const cf_layout CF_LAYOUT_GAME_FACE = {
+	.size = 0.60f, .aspect = 0.72f, .step = 3.20f, .side_scale = 1.00f,
+	.center_y = 0.47f, .tilt = 0.0f, .reflect = 1.52f,
+	.side_alpha = 255, .strips = 16,
+};
+
 /* The games row: box art, so the cards are taller and there are more of them
  * in view. The title is drawn above the row, which is why it sits slightly
  * lower than the systems row. */
@@ -77,6 +89,17 @@ static float ease_out(float u)
 {
 	float k = 1.0f - u;
 	return 1.0f - k * k * k;
+}
+
+/* Smoothstep: zero velocity at both ends, peak 1.5x average in the middle. */
+static float ease_smooth(float u)
+{
+	return u * u * (3.0f - 2.0f * u);
+}
+
+static float ease_apply(cf_ease e, float u)
+{
+	return e == CF_EASE_SMOOTH ? ease_smooth(u) : ease_out(u);
 }
 
 static float clampf(float v, float lo, float hi)
@@ -161,13 +184,14 @@ static void step_anim(coverflow *cf, int count)
 	}
 	if (!cf->active) return;
 	{
-		float u = (float)(SDL_GetTicks() - cf->t0) / ANIM_MS;
+		float ms = cf->anim_ms > 0.0f ? cf->anim_ms : ANIM_MS;
+		float u = (float)(SDL_GetTicks() - cf->t0) / ms;
 		if (u >= 1.0f) {
 			cf->pos = cf->target;
 			cf->active = false;
 			return;
 		}
-		cf->pos = cf->from + (cf->target - cf->from) * ease_out(u);
+		cf->pos = cf->from + (cf->target - cf->from) * ease_apply(cf->ease, u);
 	}
 }
 
@@ -370,4 +394,92 @@ bool cf_draw(coverflow *cf, SDL_Renderer *r, int screen_w, int screen_h,
 void cf_set_cursor(coverflow *cf, int cursor, int count)
 {
 	cf_set_cursor_dir(cf, cursor, count, 0);
+}
+
+void cf_tick(coverflow *cf, int count)
+{
+	step_anim(cf, count);
+}
+
+/* One face of the cube. The face is a plane at radius R from a horizontal axis
+ * sitting R behind the screen, turned by `phi`; every point on it is rotated
+ * about that axis and then divided through by depth. Strips run down the face
+ * because that is the direction depth varies once it turns. */
+static void cube_face(SDL_Renderer *r, SDL_Texture *tex, float phi,
+                      int screen_w, int screen_h)
+{
+	const int N = 14;
+	float R = screen_h * 0.5f;
+	/* Distance from the eye to the screen plane, and the single number that
+	 * decides whether this reads as a turn or as a slide.
+	 *
+	 * It was 1.7x the screen height, which is nearly orthographic: the faces
+	 * translated without visibly foreshortening, so the eye saw two pictures
+	 * sliding past each other. 0.85x puts the eye about where it is for a
+	 * screen this size and doubles the effect - at 45 degrees through the
+	 * turn the leading edge magnifies 32% rather than 14%, and that growth is
+	 * the cue that says the edge is coming toward you. */
+	float F = screen_h * 0.85f;
+	float cx = screen_w * 0.5f, cy = screen_h * 0.5f;
+	float cs = cosf(phi), sn = sinf(phi);
+	float lit = 0.45f + 0.55f * cosf(phi);
+	Uint8 k;
+	int i;
+
+	if (cosf(phi) <= 0.0f) return;   /* turned past edge-on: facing away */
+	if (lit < 0.0f) lit = 0.0f;
+	k = (Uint8)(255.0f * lit);
+
+	for (i = 0; i < N; i++) {
+		float t0 = (float)i / N, t1 = (float)(i + 1) / N;
+		float y0 = -R + t0 * 2.0f * R, y1 = -R + t1 * 2.0f * R;
+		/* The face lies at z = -R from the axis, i.e. toward the viewer. */
+		float ry0 = y0 * cs + R * sn, rz0 = y0 * sn - R * cs;
+		float ry1 = y1 * cs + R * sn, rz1 = y1 * sn - R * cs;
+		float s0 = F / (F + R + rz0), s1 = F / (F + R + rz1);
+		float sy0 = cy + ry0 * s0, sy1 = cy + ry1 * s1;
+		float hw0 = screen_w * 0.5f * s0, hw1 = screen_w * 0.5f * s1;
+		float xy[8] = { cx - hw0, sy0, cx + hw0, sy0,
+		                cx + hw1, sy1, cx - hw1, sy1 };
+		float uv[8] = { 0, t0, 1, t0, 1, t1, 0, t1 };
+		SDL_Color col[4] = { { k, k, k, 255 }, { k, k, k, 255 },
+		                     { k, k, k, 255 }, { k, k, k, 255 } };
+
+		render_quad(r, tex, xy, uv, col);
+	}
+}
+
+void cf_draw_cube(SDL_Renderer *r, SDL_Texture *near_face, SDL_Texture *far_face,
+                  float frac, int screen_w, int screen_h)
+{
+	float q = 1.5707963f;   /* a quarter turn: the faces are at right angles */
+	/* Positive, so the face being left rolls DOWN and out: its top edge comes
+	 * toward the viewer and pulls the rest after it. The other sign is the
+	 * list convention - press down, the selection moves down, the content
+	 * scrolls up past it - and it reads as backwards on something solid,
+	 * because the button stops being a cursor key and becomes a push. */
+	float phi = frac * q;
+	/* MINUS a quarter, not plus. The face arriving is the one that was on TOP
+	 * of the cube, hinged along the shared top-front edge; plus a quarter is
+	 * the BOTTOM face, which puts both faces leaving by the same edge and
+	 * stops the pair reading as one solid at all. */
+	float far_phi = phi - q;
+	/* Centre depth of each, as a fraction of the cube's half-width: the face
+	 * more nearly square-on is the nearer one, and it has to be drawn last.
+	 * Fixed order is only right for half the turn. */
+	float dn = 1.0f - cosf(phi), df = 1.0f - cosf(far_phi);
+
+	/* Opaque. These are whole screens, one genuinely in front of the other,
+	 * and blending them lets the far face show through the near one wherever
+	 * the near one is dark - which is most of a face. */
+	if (near_face) SDL_SetTextureBlendMode(near_face, SDL_BLENDMODE_NONE);
+	if (far_face)  SDL_SetTextureBlendMode(far_face, SDL_BLENDMODE_NONE);
+
+	if (dn >= df) {
+		if (near_face) cube_face(r, near_face, phi, screen_w, screen_h);
+		if (far_face)  cube_face(r, far_face, far_phi, screen_w, screen_h);
+	} else {
+		if (far_face)  cube_face(r, far_face, far_phi, screen_w, screen_h);
+		if (near_face) cube_face(r, near_face, phi, screen_w, screen_h);
+	}
 }

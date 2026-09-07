@@ -182,6 +182,7 @@ static void tortos_menu_offline(void)
 	u.wifi = WIFI_OFF;
 	u.text_size = "100%";
 	u.cards = "Classic";
+	u.cards_dir = "Horizontal";
 	u.auto_off = 120;
 	n = sys_menu_build(&u, rows, &b, &heading);
 
@@ -198,6 +199,8 @@ static void tortos_menu_offline(void)
 	ck(!strcmp(val(&rows[PM_SLEEP]), "2m"), "120s reads as 2m");
 	ck(!strcmp(val(&rows[PM_TEXT]), "100%"), "text size is passed through");
 	ck(!strcmp(val(&rows[PM_THEME]), "Classic"), "the card set names itself");
+	ck(!strcmp(val(&rows[PM_DIR]), "Horizontal"), "and so does the direction");
+	ck(rows[PM_DIR].live, "UI Direction is reachable offline too");
 	ck(rows[PM_THEME].live, "UI Theme is reachable offline, being a look and not a service");
 	/* Live since 2026-09-06, when the pairing screen landed. The row used to
 	 * be dead and read "not yet", which was true of the screen and false of
@@ -639,28 +642,28 @@ static void card_sets(void)
 		}
 	ck(ok, "no two sets share an id or a name");
 
-	for (i = 0, ok = 0; i < CARD_SET_COUNT; i++)
-		for (j = 0; j < i; j++)
-			if (!strcmp(CARD_SETS[i].dir, CARD_SETS[j].dir)) ok = 1;
-	ck(ok, "and sharing a directory is allowed, which is what Slide does");
-
 	printf("choosing one by id:\n");
-	ck(cards_index("fancy") == 2, "a known id selects its set");
+	ck(cards_index("fancy") == 1, "a known id selects its set");
 	ck(cards_index("classic") == 0, "so does the default");
-	ck(cards_index("slide") == 1, "and so does the one sharing a directory");
-	ck(strcmp(CARD_SETS[cards_index("slide")].dir,
-	          CARD_SETS[cards_index("fancy")].dir) == 0,
-	   "which is the same art as the set it shares with");
-	ck(CARD_SETS[cards_index("slide")].single &&
-	   !CARD_SETS[cards_index("fancy")].single,
-	   "and differs from it only in how that art is presented");
 
 	/* The setting outlives the directory. A set that is removed, or a card
 	 * written by a build that had one more, must not leave the shelf blank. */
 	ck(cards_index("no-such-set") == 0, "an unknown id falls back to the default");
 	ck(cards_index("") == 0, "so does an empty one");
 	ck(cards_index(NULL) == 0, "and so does none at all");
-	ck(!CARD_SETS[0].single, "the fallback is the ordinary row, never Slide");
+
+	printf("which way the shelves run:\n");
+	ck(CARD_DIR_COUNT == 2, "two directions and no third");
+	ck(!strcmp(CARD_DIRS[0].id, CARDS_DIR_DEFAULT),
+	   "the first is the default one");
+	ck(!CARD_DIRS[0].vertical, "which is the horizontal row the shelf has always been");
+	ck(CARD_DIRS[1].vertical, "and the other one actually differs");
+	ck(cards_dir_index("vertical") == 1, "a known id selects its direction");
+	/* Same rule as the themes: the setting outlives what it names. */
+	ck(cards_dir_index("sideways") == 0, "an unknown id falls back to horizontal");
+	ck(cards_dir_index(NULL) == 0, "and so does none at all");
+	ck(cards_dir_step(0, 1) == 1 && cards_dir_step(1, 1) == 0, "stepping wraps");
+	ck(cards_dir_step(0, -1) == 1, "in both directions");
 
 	printf("stepping through them:\n");
 	ck(cards_step(0, 1) == 1, "forward");

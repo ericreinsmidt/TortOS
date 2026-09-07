@@ -351,6 +351,26 @@ void ui_rail(SDL_Renderer *r, int screen_w, int screen_h, int index, int count,
 	SDL_RenderFillRect(r, &(SDL_Rect){ seg_x, y, seg_w, h });
 }
 
+void ui_rail_v(SDL_Renderer *r, int screen_w, int screen_h, int index, int count,
+               unsigned rgb)
+{
+	int w = UI_BAR_H, x = 23;
+	int track_y = 90, track_h = screen_h - track_y * 2;
+	int seg_h, seg_y;
+
+	(void)screen_w;
+	if (count <= 1) return;
+	seg_h = track_h / count;
+	if (seg_h < 18) seg_h = 18;
+	seg_y = track_y + (int)((float)index / (float)(count - 1) * (track_h - seg_h));
+
+	SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+	SDL_SetRenderDrawColor(r, 255, 255, 255, 16);
+	SDL_RenderFillRect(r, &(SDL_Rect){ x, track_y, w, track_h });
+	SDL_SetRenderDrawColor(r, (Uint8)(rgb >> 16), (Uint8)(rgb >> 8), (Uint8)rgb, 235);
+	SDL_RenderFillRect(r, &(SDL_Rect){ x, seg_y, w, seg_h });
+}
+
 void ui_round_rect(SDL_Renderer *r, const SDL_Rect *q, int radius, SDL_Color col)
 {
 	int y;
