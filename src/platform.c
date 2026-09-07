@@ -711,12 +711,24 @@ static void (*d_on_tick)(void);
 
 void plat_resident_on_tick(void (*fn)(void)) { d_on_tick = fn; }
 
+/* Has THIS GAME reported RUNNING yet?
+ *
+ * A session-long fact, so it cannot live in diatom_wait: the launcher calls
+ * that in a loop, returning to it after every in-game menu, and a local reset
+ * to 0 on each re-entry made a running game look like one that never started.
+ * The cost was not cosmetic - see the ERROR arm in diatom_wait. */
+static int d_got_running;
+
 bool plat_resident_send(const char *tag, const char *core, const char *rom,
                         const char *resume, const char *exit_state,
                         const char *preview,
                         int console, const char *cheevos)
 {
 	run_power_pressed = false;
+	/* A new game has not reported RUNNING yet. Cleared HERE rather than in
+	 * diatom_wait, because the launcher re-enters that after every in-game
+	 * menu and the answer must survive those. */
+	d_got_running = 0;
 
 	{
 		char *l;
@@ -943,7 +955,7 @@ static void d_apply_levels(void)
 
 static int diatom_wait(void)
 {
-	int got_running = 0, sent_stop = 0;
+	int sent_stop = 0;
 	unsigned stop_at = 0, start = plat_now_ms();
 	int autostop_s = getenv("TORTOS_AUTOSTOP_S") ? atoi(getenv("TORTOS_AUTOSTOP_S")) : 0;
 
@@ -960,7 +972,7 @@ static int diatom_wait(void)
 
 		if (dsock < 0) return RES_DEAD;
 		while ((l = dline(100))) {
-			if      (strncmp(l, "RUNNING", 7) == 0) got_running = 1;
+			if      (strncmp(l, "RUNNING", 7) == 0) d_got_running = 1;
 			else if (strncmp(l, "PAUSED", 6) == 0)  return RES_PAUSED;
 			else if (strncmp(l, "PREVIEW\tpath=", 13) == 0)
 				snprintf(d_preview, sizeof d_preview, "%s", l + 13);
@@ -983,8 +995,18 @@ static int diatom_wait(void)
 				fprintf(stderr, "diatom: %s\n", l);
 				/* Before RUNNING it means the game never started and the
 				 * display is still ours. After, it is a failed menu op the
-				 * menu already showed; the game is still going. */
-				if (!got_running) return RES_DEAD;
+				 * menu already showed; the game is still going.
+				 *
+				 * Getting this wrong is expensive, which is why the flag is
+				 * no longer a local. Reported 2026-09-06: Load -> Auto asked
+				 * for a state that could not exist, the ERROR arrived on a
+				 * re-entry where the local had reset, and a failed menu
+				 * operation was read as a dead emulator. The launcher then
+				 * started a SECOND emulator while the first still held the
+				 * framebuffer - two presenters, which wedges the display
+				 * engine in-kernel, and the supervisor powered the device
+				 * off. */
+				if (!d_got_running) return RES_DEAD;
 			}
 		}
 		if (dsock < 0) return RES_DEAD;            /* EOF mid-game */

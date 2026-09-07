@@ -524,6 +524,31 @@ static void ingame_rows(void)
 	   "the rows either side of it still work");
 }
 
+/* The save slots, and the one constant that survived a rename by being written
+ * out as a number.
+ *
+ * The carousel's Auto entry mapped to a hardcoded 9 - MinUI's number for the
+ * resume slot. When it was renamed to "auto" on 2026-08-27 every use of the
+ * CONSTANT was updated and the literal was missed, so Load -> Auto asked for a
+ * `.9.state` that could not exist. Ten days later that turned into a wedged
+ * device, because the rejection it caused was misread as a dead emulator.
+ *
+ * Cheap to assert, and it is the assertion that was missing. */
+static void slots(void)
+{
+	int i;
+
+	printf("save slots:\n");
+	ck(gm_slot_at(0) == SLOT_AUTO, "the carousel's first entry is the resume slot");
+	ck(gm_slot_at(0) != 9, "and is not MinUI's number for it");
+	for (i = 1; i <= GM_SLOTS; i++)
+		ck(gm_slot_at(i) == i, "a numbered slot maps to itself");
+
+	/* The resume slot must not collide with one the player can pick, or a
+	 * save to the last slot would overwrite the state the exit funnel owns. */
+	ck(SLOT_AUTO > GM_SLOTS, "the resume slot is outside the numbered range");
+}
+
 int main(void)
 {
 	off_state();
@@ -537,6 +562,7 @@ int main(void)
 	system_menu();
 	auto_off_words();
 	cursor_reaches();
+	slots();
 	step_terminates();
 	info_rows();
 	ingame_rows();

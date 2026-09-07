@@ -284,9 +284,9 @@ static SDL_Texture *sys_get_tex(void *ctx, int i, int *w, int *h)
  * The resume slot is named rather than numbered on disk: `<game>.auto.state`
  * explains itself, where a number needs a reader to already know which slot
  * means auto. Its value is only an internal sentinel and must not collide with
- * 1..GM_SLOTS, so it is derived rather than picked. */
-#define GM_SLOTS  6
-#define SLOT_AUTO (GM_SLOTS + 1)
+ * 1..GM_SLOTS, so it is derived rather than picked. Both live in game_menu.h
+ * now, with the carousel mapping beside them, so a check can reach all three.
+ */
 
 static const char *slot_name(int slot)
 {
@@ -3785,7 +3785,7 @@ static int slot_strip(app *a, SDL_Texture *bg, int saving)
 	char pth[LIB_PATH * 2];
 
 	for (i = 0; i <= GM_SLOTS; i++) {
-		int slot = i == 0 ? SLOT_AUTO : i;
+		int slot = gm_slot_at(i);
 		struct stat st;
 
 		slot_state_path(a, a->sys_cursor, g, slot, pth, sizeof pth);
@@ -3845,7 +3845,13 @@ static int slot_strip(app *a, SDL_Texture *bg, int saving)
 			sel = next;
 		}
 		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = -1;
-		if (a->in.pressed[IN_ACCEPT]) { chosen = sel == 0 ? 9 : sel; done = 1; }
+		/* SLOT_AUTO, not 9. Commit 4208619 renamed the resume slot from
+		 * MinUI's number to `auto` and replaced it everywhere the constant
+		 * was used - but here the old number was written out rather than
+		 * referenced, so it survived the rename. Loading Auto from the menu
+		 * has asked for a `.9.state` that has not existed since 2026-08-27,
+		 * and every one of those was a state_rejected. */
+		if (a->in.pressed[IN_ACCEPT]) { chosen = gm_slot_at(sel); done = 1; }
 		/* This screen used to ignore the power button outright - the one
 		 * screen in the launcher that did. Stop the game and close with
 		 * nothing chosen; game_menu sees the flag and closes behind us. */

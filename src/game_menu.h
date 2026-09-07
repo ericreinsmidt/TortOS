@@ -14,6 +14,26 @@
 #include "menu.h"
 #include "library.h"
 
+/* Save slots. Six the player picks from, plus the resume slot the exit funnel
+ * owns - which is NAMED "auto" and is not one of the numbered ones.
+ *
+ * Here rather than in main.c so a check can see it. The carousel used to map
+ * its Auto entry to a hardcoded 9, MinUI's number for the same idea, and when
+ * the resume slot was renamed on 2026-08-27 every use of the CONSTANT was
+ * updated and that literal was not. Loading Auto from the in-game menu asked
+ * for a `.9.state` for ten days, and the state_rejected that came back was
+ * misread as a dead emulator - which started a second one over the top of the
+ * first and wedged the display. A number nothing could test. */
+#define GM_SLOTS  6
+#define SLOT_AUTO (GM_SLOTS + 1)
+
+/* The carousel shows Auto first, then the numbered slots. This is the only
+ * place that mapping is written down. */
+static inline int gm_slot_at(int carousel_index)
+{
+	return carousel_index == 0 ? SLOT_AUTO : carousel_index;
+}
+
 /* What the info screen offers to do, beyond telling you things. */
 typedef enum { GI_ART, GI_FAV, GI_ROWS } gi_row;
 
