@@ -362,7 +362,11 @@ void ui_rail_v(SDL_Renderer *r, int screen_w, int screen_h, int index, int count
 	if (count <= 1) return;
 	seg_h = track_h / count;
 	if (seg_h < 18) seg_h = 18;
-	seg_y = track_y + (int)((float)index / (float)(count - 1) * (track_h - seg_h));
+	/* Inverted: the first item sits at the BOTTOM and the last at the top, so
+	 * the indicator travels the same way the shelf does. A rail that runs
+	 * top-down under a shelf that runs bottom-up moves opposite the thumb. */
+	seg_y = track_y + (int)((1.0f - (float)index / (float)(count - 1))
+	                        * (track_h - seg_h));
 
 	SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
 	SDL_SetRenderDrawColor(r, 255, 255, 255, 16);

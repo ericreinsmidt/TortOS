@@ -453,17 +453,20 @@ void cf_draw_cube(SDL_Renderer *r, SDL_Texture *near_face, SDL_Texture *far_face
                   float frac, int screen_w, int screen_h)
 {
 	float q = 1.5707963f;   /* a quarter turn: the faces are at right angles */
-	/* Positive, so the face being left rolls DOWN and out: its top edge comes
-	 * toward the viewer and pulls the rest after it. The other sign is the
-	 * list convention - press down, the selection moves down, the content
-	 * scrolls up past it - and it reads as backwards on something solid,
-	 * because the button stops being a cursor key and becomes a push. */
-	float phi = frac * q;
-	/* MINUS a quarter, not plus. The face arriving is the one that was on TOP
-	 * of the cube, hinged along the shared top-front edge; plus a quarter is
-	 * the BOTTOM face, which puts both faces leaving by the same edge and
+	/* Negative, so advancing rolls the face being left UP and out: its bottom
+	 * edge comes toward the viewer and pulls the rest after it.
+	 *
+	 * This follows from the shelf running A at the bottom to Z at the top and
+	 * UP advancing through it. Press up and everything goes up together - the
+	 * rail indicator toward Z, the old face off the top, the new one in from
+	 * below. The button pushes the solid the way it points, which is the same
+	 * rule as before; what changed is which way the list runs. */
+	float phi = -frac * q;
+	/* PLUS a quarter: the face arriving is the one that was on the BOTTOM of
+	 * the cube, hinged along the shared bottom-front edge. Minus a quarter is
+	 * the top face, which would have both faces leaving by the same edge and
 	 * stops the pair reading as one solid at all. */
-	float far_phi = phi - q;
+	float far_phi = phi + q;
 	/* Centre depth of each, as a fraction of the cube's half-width: the face
 	 * more nearly square-on is the nearer one, and it has to be drawn last.
 	 * Fixed order is only right for half the turn. */

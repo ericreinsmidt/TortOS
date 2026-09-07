@@ -68,7 +68,20 @@ static inline int cards_step(int i, int d)
 	return i < 0 ? i + n : i;
 }
 
-/* Which way a shelf runs. Its own setting rather than more entries in the
+/* THE ORIGIN IS THE BOTTOM LEFT, and the index grows with x and with y.
+ *
+ * Screens number rows downward, so the vertical shelf looks inverted to
+ * anyone who assumes that: the first item is at the BOTTOM, the last at the
+ * top, and up advances. It is not inverted, it is Cartesian, and it is the
+ * same rule the horizontal shelf has always followed - index 0 at the left,
+ * growing rightward, in cf_draw and in the rail alike.
+ *
+ * Written down because it is worth more as one rule than as two conventions
+ * that happen to agree. Anything that reads as backwards in one direction
+ * should be checked against this before being corrected: ui_rail_v inverts
+ * its position on purpose, and so does cf_draw_cube's rotation sign.
+ *
+ * Which way a shelf runs. Its own setting rather than more entries in the
  * table above, because it is orthogonal to the art: all three themes read
  * sensibly either way, so folding it in would mean six presets to name and
  * keep consistent instead of three plus a direction. Applies to the games
