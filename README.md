@@ -32,7 +32,13 @@ time a game needs it and is never unloaded, so going from a Game Boy game to a
 SNES game costs exactly what starting another Game Boy game costs. Nothing is
 preloaded, and there is no core list to configure anywhere.
 
-Every number in this file was measured on the device.
+Every number in this file was measured on the device rather than estimated,
+but they were not all measured on the same day. The boot profile below and the
+975 MB were re-taken 2026-09-07. The launch timings and the core footprint date
+from when the resident emulator landed and have not been re-checked since, so
+read them as the shape of the thing rather than today's reading - and the
+method matters as much as the figure, which is why the boot profile now says
+cold or warm, on which card, with how many games.
 
 ---
 
@@ -88,15 +94,16 @@ Then put ROMs in:
 ```
 Roms/NES/                     .nes .fds .unf .unif .zip
 Roms/Master System/           .sms .zip
-Roms/Genesis/                 .md .gen .bin .smd .zip
 Roms/Game Boy/                .gb .dmg .zip
+Roms/Genesis/                 .md .gen .bin .smd .zip
 Roms/TurboGrafx-16/           .pce .sgx .cue .ccd .chd .toc .m3u .zip
 Roms/Game Gear/               .gg .zip
 Roms/SNES/                    .sfc .smc .zip
-Roms/Game Boy Color/          .gbc .cgb .zip
 Roms/Neo Geo Pocket/          .ngp .ngc .ngpc .npc .zip
+Roms/Game Boy Color/          .gbc .cgb .zip
 Roms/Neo Geo Pocket Color/    .ngp .ngc .ngpc .npc .zip
 Roms/Game Boy Advance/        .gba .agb .zip
+
 Roms/<system>/.media/<name>.png     box art, optional
 ```
 
@@ -388,14 +395,24 @@ cannot hang the boot.
 The same idle seconds pull the emulator, the cores and their libraries into the
 page cache. Cold reads of that set measure ~190ms against ~30ms warm.
 
-Startup phases are logged rather than guessed at:
+Startup phases are logged rather than guessed at. Both columns below are from
+one device boot on the main card - 1708 games across eleven systems - measured
+2026-09-07. Cold is the first launcher of that boot; warm is the same launcher
+restarted with the page cache already hot. The figures are cumulative from
+process start, not per phase:
 
 ```
-boot: scan               64 ms
-boot: video+input       904 ms
-boot: font+settings    1209 ms
-boot: card assets      1499 ms
+                        cold      warm
+boot: scan              164 ms     57 ms
+boot: video+input       845 ms    415 ms
+boot: font+settings     921 ms    421 ms
+boot: card assets      1401 ms    706 ms
 ```
+
+`scan` is the one that will keep moving: it was 64 ms when this file first
+recorded it and the shelf has grown a long way since. The rest is fixed cost,
+which is why warm is roughly half of cold across the board and none of it is
+the library.
 
 ### The launcher never goes away
 
@@ -496,9 +513,10 @@ across games and cards.
 **The evaluation is Diatom's, and that is not a delegation of convenience.**
 Conditions compare against the *previous frame* - `0xH06f0<d0xH06f0` is "this
 byte is lower than it was last frame" - and the launcher only sees the socket
-every 100ms against a core running at 60Hz. Six frames in seven would be
-invisible to it, so unlocks would be missed silently. The launcher declares
-which console the game is and hands over the set; Diatom watches every frame
+every 100ms against a core running at 60Hz. That is six frames per poll, so
+five of every six are invisible to it and unlocks would be missed silently.
+The launcher declares which console the game is and hands over the set, and
+Diatom watches every frame
 (its ADR-0025 and ADR-0026).
 
 **The device does the normal thing.** Sign in once under `MENU` ->
