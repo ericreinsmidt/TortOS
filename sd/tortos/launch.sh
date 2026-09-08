@@ -159,7 +159,7 @@ fi
 # An animation that adds its own length to the boot is just a delay with a
 # picture on it. This one plays while the launcher does its entire startup --
 # card scan, GL init, font and card decode -- and while the resident emulator
-# builds its GL context and opens three cores.
+# builds its GL context and maps every core on the card.
 #
 # ffmpeg and the launcher both write to /dev/fb0, so they must never draw at
 # the same time: last writer wins, and they would fight at 30fps against 60.
@@ -175,10 +175,19 @@ if [ -f "$TORTOS_DIR/tortos-boot.mp4" ]; then
 	) &
 
 	# Free seconds: pull what the first launch needs off the card and into the
-	# page cache while nothing else is using the disk. Cold reads of the
-	# emulator, the cores and their libraries measure ~190ms against ~30ms warm.
+	# page cache while nothing else is using the disk.
+	#
+	# The CORES are no longer read here. Diatom maps them itself at startup
+	# with --cores, which is the same work for less: measured 2026-09-08,
+	# reading all six through cost 480ms cold where mapping them costs 382ms,
+	# because dlopen takes what it needs rather than every byte - and mapping
+	# also pays the dynamic linker, which reading never did. A first launch
+	# used to pay that: 179ms of cold dlopen for genesis_plus_gx alone.
+	#
+	# The emulator binary is still read here. Diatom cannot warm the file it
+	# is about to be executed from.
 	(
-		cat "$TORTOS_DIR/diatom" "$TORTOS_DIR/cores/"*.so > /dev/null 2>&1
+		cat "$TORTOS_DIR/diatom" > /dev/null 2>&1
 	) &
 fi
 
@@ -440,6 +449,7 @@ start_resident() {
 	rm -f "$TORTOS_DIATOM_SOCKET"
 	LD_LIBRARY_PATH=/usr/trimui/lib \
 		"$TORTOS_DIR/diatom" --socket "$TORTOS_DIATOM_SOCKET" \
+		--cores "$CORES_PATH" \
 		--save "$SDCARD/Saves" --system "$SDCARD/Bios" >> "$LOG" 2>&1 &
 	echo $! > /tmp/diatom.pid
 }
@@ -533,7 +543,7 @@ LOG=$LOGS_PATH/tortos.log
 [ -f "$LOG" ] && mv -f "$LOG" "$LOG.1"
 : > "$LOG"
 
-# The resident emulator. It holds the GL context and all three cores between
+# The resident emulator. It holds the GL context and every core between
 # games, which takes a launch from ~1100ms to ~200ms. Started here so its ~1s
 # of setup happens during the boot animation alongside the launcher's own --
 # and so the clearing it does while creating its context is hidden under the
