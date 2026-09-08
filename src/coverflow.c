@@ -421,25 +421,30 @@ void cf_tick(coverflow *cf, int count)
 	step_anim(cf, count);
 }
 
-/* One face of the cube. The face is a plane at radius R from a horizontal axis
- * sitting R behind the screen, turned by `phi`; every point on it is rotated
- * about that axis and then divided through by depth. Strips run down the face
- * because that is the direction depth varies once it turns. */
+/* One face of the cube.
+ *
+ * The face is a plane at radius R from an axis sitting R behind the screen,
+ * turned by `phi`; every point is rotated about that axis and divided through
+ * by depth. Strips run across the face along whichever direction depth varies
+ * once it turns, so a pitched face is sliced into bands and a yawed one into
+ * columns. The two are the same arithmetic with the axes swapped, which is
+ * why it is one function: a second copy would drift the moment either is
+ * retuned.
+ *
+ * The cube is as deep as the screen is long on the turning axis - a pitch
+ * turns a screen-height cube, a yaw a screen-width one - so a face arrives
+ * square on with nothing left over. */
 static void cube_face(SDL_Renderer *r, SDL_Texture *tex, float phi,
-                      int screen_w, int screen_h)
+                      int screen_w, int screen_h, bool yaw)
 {
 	const int N = 14;
-	float R = screen_h * 0.5f;
-	/* Distance from the eye to the screen plane, and the single number that
-	 * decides whether this reads as a turn or as a slide.
-	 *
-	 * It was 1.7x the screen height, which is nearly orthographic: the faces
-	 * translated without visibly foreshortening, so the eye saw two pictures
-	 * sliding past each other. 0.85x puts the eye about where it is for a
-	 * screen this size and doubles the effect - at 45 degrees through the
-	 * turn the leading edge magnifies 32% rather than 14%, and that growth is
-	 * the cue that says the edge is coming toward you. */
-	float F = screen_h * 0.85f;
+	float span = yaw ? (float)screen_w : (float)screen_h;
+	float R = span * 0.5f;
+	/* The single number that decides whether this reads as a turn or a
+	 * slide. At 1.7x the screen it is near enough orthographic that faces
+	 * translate without foreshortening. */
+	float F = span * 0.85f;
+	float still = (yaw ? (float)screen_h : (float)screen_w) * 0.5f;
 	float cx = screen_w * 0.5f, cy = screen_h * 0.5f;
 	float cs = cosf(phi), sn = sinf(phi);
 	float lit = 0.45f + 0.55f * cosf(phi);
@@ -452,57 +457,64 @@ static void cube_face(SDL_Renderer *r, SDL_Texture *tex, float phi,
 
 	for (i = 0; i < N; i++) {
 		float t0 = (float)i / N, t1 = (float)(i + 1) / N;
-		float y0 = -R + t0 * 2.0f * R, y1 = -R + t1 * 2.0f * R;
-		/* The face lies at z = -R from the axis, i.e. toward the viewer. */
-		float ry0 = y0 * cs + R * sn, rz0 = y0 * sn - R * cs;
-		float ry1 = y1 * cs + R * sn, rz1 = y1 * sn - R * cs;
+		float a0 = -R + t0 * 2.0f * R, a1 = -R + t1 * 2.0f * R;
+		/* The face lies at -R from the axis, i.e. toward the viewer. */
+		float ra0 = a0 * cs + R * sn, rz0 = a0 * sn - R * cs;
+		float ra1 = a1 * cs + R * sn, rz1 = a1 * sn - R * cs;
 		float s0 = F / (F + R + rz0), s1 = F / (F + R + rz1);
-		float sy0 = cy + ry0 * s0, sy1 = cy + ry1 * s1;
-		float hw0 = screen_w * 0.5f * s0, hw1 = screen_w * 0.5f * s1;
-		float xy[8] = { cx - hw0, sy0, cx + hw0, sy0,
-		                cx + hw1, sy1, cx - hw1, sy1 };
-		float uv[8] = { 0, t0, 1, t0, 1, t1, 0, t1 };
+		float p0 = (yaw ? cx : cy) + ra0 * s0;
+		float p1 = (yaw ? cx : cy) + ra1 * s1;
+		float q0 = still * s0, q1 = still * s1;
+		float xy[8], uv[8];
 		SDL_Color col[4] = { { k, k, k, 255 }, { k, k, k, 255 },
 		                     { k, k, k, 255 }, { k, k, k, 255 } };
 
+		if (yaw) {
+			/* Columns: the strip spans the full height at two x. */
+			xy[0] = p0; xy[1] = cy - q0;
+			xy[2] = p1; xy[3] = cy - q1;
+			xy[4] = p1; xy[5] = cy + q1;
+			xy[6] = p0; xy[7] = cy + q0;
+			uv[0] = t0; uv[1] = 0; uv[2] = t1; uv[3] = 0;
+			uv[4] = t1; uv[5] = 1; uv[6] = t0; uv[7] = 1;
+		} else {
+			/* Bands: the strip spans the full width at two y. */
+			xy[0] = cx - q0; xy[1] = p0;
+			xy[2] = cx + q0; xy[3] = p0;
+			xy[4] = cx + q1; xy[5] = p1;
+			xy[6] = cx - q1; xy[7] = p1;
+			uv[0] = 0; uv[1] = t0; uv[2] = 1; uv[3] = t0;
+			uv[4] = 1; uv[5] = t1; uv[6] = 0; uv[7] = t1;
+		}
 		render_quad(r, tex, xy, uv, col);
 	}
 }
 
 void cf_draw_cube(SDL_Renderer *r, SDL_Texture *near_face, SDL_Texture *far_face,
-                  float frac, int screen_w, int screen_h)
+                  float frac, int screen_w, int screen_h, bool yaw)
 {
 	float q = 1.5707963f;   /* a quarter turn: the faces are at right angles */
-	/* Negative, so advancing rolls the face being left UP and out: its bottom
-	 * edge comes toward the viewer and pulls the rest after it.
-	 *
-	 * This follows from the shelf running A at the bottom to Z at the top and
-	 * UP advancing through it. Press up and everything goes up together - the
-	 * rail indicator toward Z, the old face off the top, the new one in from
-	 * below. The button pushes the solid the way it points, which is the same
-	 * rule as before; what changed is which way the list runs. */
-	float phi = -frac * q;
-	/* PLUS a quarter: the face arriving is the one that was on the BOTTOM of
-	 * the cube, hinged along the shared bottom-front edge. Minus a quarter is
-	 * the top face, which would have both faces leaving by the same edge and
-	 * stops the pair reading as one solid at all. */
-	float far_phi = phi + q;
-	/* Centre depth of each, as a fraction of the cube's half-width: the face
-	 * more nearly square-on is the nearer one, and it has to be drawn last.
-	 * Fixed order is only right for half the turn. */
+	/* Advancing rolls the face being left out the way the button points -
+	 * up for a pitch, right for a yaw - and brings the next in from the
+	 * opposite edge. Screen y runs down where Cartesian y runs up, which is
+	 * the whole reason the two signs differ. */
+	float phi = (yaw ? frac : -frac) * q;
+	float far_phi = yaw ? phi - q : phi + q;
+	/* Centre depth of each: the face more nearly square-on is the nearer
+	 * one, and has to be drawn last. Fixed order is right for half a turn. */
 	float dn = 1.0f - cosf(phi), df = 1.0f - cosf(far_phi);
 
 	/* Opaque. These are whole screens, one genuinely in front of the other,
-	 * and blending them lets the far face show through the near one wherever
-	 * the near one is dark - which is most of a face. */
+	 * and blending lets the far face show through the near one wherever the
+	 * near one is dark - which is most of a face. */
 	if (near_face) SDL_SetTextureBlendMode(near_face, SDL_BLENDMODE_NONE);
 	if (far_face)  SDL_SetTextureBlendMode(far_face, SDL_BLENDMODE_NONE);
 
 	if (dn >= df) {
-		if (near_face) cube_face(r, near_face, phi, screen_w, screen_h);
-		if (far_face)  cube_face(r, far_face, far_phi, screen_w, screen_h);
+		if (near_face) cube_face(r, near_face, phi, screen_w, screen_h, yaw);
+		if (far_face)  cube_face(r, far_face, far_phi, screen_w, screen_h, yaw);
 	} else {
-		if (far_face)  cube_face(r, far_face, far_phi, screen_w, screen_h);
-		if (near_face) cube_face(r, near_face, phi, screen_w, screen_h);
+		if (far_face)  cube_face(r, far_face, far_phi, screen_w, screen_h, yaw);
+		if (near_face) cube_face(r, near_face, phi, screen_w, screen_h, yaw);
 	}
 }

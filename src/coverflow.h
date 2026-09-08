@@ -43,7 +43,7 @@ extern const cf_layout CF_LAYOUT_GAME_FACE;
  * Faces darken as they turn away. A cube whose sides stay evenly lit reads as
  * two flat pictures sliding past each other rather than as one solid. */
 void cf_draw_cube(SDL_Renderer *r, SDL_Texture *near_face, SDL_Texture *far_face,
-                  float frac, int screen_w, int screen_h);
+                  float frac, int screen_w, int screen_h, bool yaw);
 
 /* Where the focused card sits on screen, so the caller can put a glow behind
  * it and lay text out against it without duplicating the geometry. */

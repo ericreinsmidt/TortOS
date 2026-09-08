@@ -1467,8 +1467,11 @@ static void draw_systems_cube(app *a)
 	i1 = n > 1 ? (i0 + 1) % n : i0;
 
 	/* At rest there is no turn to draw, so the face goes straight to the
-	 * screen and no render target is touched. That is most frames. */
-	if (frac < 0.002f || n < 2) {
+	 * screen and no render target is touched. That is most frames. Asks
+	 * whether a turn is in flight rather than whether it has moved yet: the
+	 * cursor changes a frame before `pos` does, and a frac test draws the
+	 * destination flat for that frame before the turn starts. */
+	if (!a->cf_sys.active || n < 2) {
 		faces_stale();
 		draw_sys_face(a, i0);
 	} else {
@@ -1497,7 +1500,7 @@ static void draw_systems_cube(app *a)
 			}
 			if (plan != FACES_NONE) SDL_SetRenderTarget(a->r, NULL);
 			cf_draw_cube(a->r, fa, fb, frac,
-			             TORTOS_SCREEN_W, TORTOS_SCREEN_H);
+			             TORTOS_SCREEN_W, TORTOS_SCREEN_H, false);
 		} else {
 			draw_sys_face(a, i0);   /* no targets: still usable, just flat */
 		}
@@ -1507,9 +1510,172 @@ static void draw_systems_cube(app *a)
 	          a->sys.count, a->sys.systems[a->sys_cursor].accent);
 }
 
+/* Both: one surface, two axes. Up and down turn to another system, left and
+ * right move through that system's games. There is no entering and no going
+ * back, because what you are looking at is already the thing you can act on.
+ *
+ * Every face is a game, on both axes. A vertical turn shows the game you were
+ * last on in the system you are leaving, turning into the game you were last
+ * on in the one arriving - sysview keeps a cursor per system, so that is free
+ * and it means glancing at another system costs you nothing. */
+static void draw_games_face(app *a, sysview *v, const system_cfg *s, int idx);
+
+/* Render another system's face.
+ *
+ * game_get_tex reads a->sys_cursor rather than the view it is handed, so a
+ * face drawn for a system that is not the current one would fetch its art
+ * from the wrong shelf. Swapped around the call, the way prime_window already
+ * does it, rather than rethreading the cursor through every getter. */
+static void draw_face_for(app *a, int sys)
+{
+	int save = a->sys_cursor;
+
+	a->sys_cursor = sys;
+	draw_games_face(a, &a->view[sys], &a->sys.systems[sys],
+	                a->view[sys].cursor);
+	a->sys_cursor = save;
+}
+
+static void draw_both(app *a)
+{
+	sysview *v = &a->view[a->sys_cursor];
+	const system_cfg *s = &a->sys.systems[a->sys_cursor];
+	int ns = a->sys.count, ng, plan;
+	SDL_Texture *fa, *fb;
+	float spos, sfrac;
+	int s0, s1;
+
+	if (ns <= 0) return;
+	ng = v->list.count;
+
+	/* Both coverflows, every frame, here rather than in the callers: this
+	 * screen drives two axes and the app still thinks it is on one shelf or
+	 * the other, so pacing applied by screen would leave whichever axis is
+	 * not "current" without its chase clamp and its curve. */
+	shelf_pacing(&a->cf_sys);
+	shelf_pacing(&v->cf);
+
+	/* A coverflow that has never been used jumps rather than animating the
+	 * first time it is told to move - cf_set_cursor_dir resets an unprimed
+	 * one and returns. Every system owns its own, and Both never enters a
+	 * system, so without this the first game move after each system switch
+	 * is a cut instead of a turn, and it fixes itself only once you have
+	 * visited them all. */
+	if (!v->cf.primed) cf_reset(&v->cf, v->cursor);
+
+	cf_tick(&a->cf_sys, ns);
+	if (ng > 0) cf_tick(&v->cf, ng);
+
+	spos = a->cf_sys.pos;
+	s0 = (int)floorf(spos);
+	sfrac = spos - (float)s0;
+	s0 = ((s0 % ns) + ns) % ns;
+	s1 = ns > 1 ? (s0 + 1) % ns : s0;
+
+	fa = face_tex(a, 0);
+	fb = face_tex(a, 1);
+
+	/* Asks whether a turn is IN FLIGHT, not whether it has visibly moved yet.
+	 * The cursor changes on the frame of the press but `pos` has not left
+	 * yet, so a frac test sends that first frame down the at-rest path and
+	 * draws the DESTINATION flat, one frame, before the turn starts - the
+	 * arriving item flashing up before the one being left rotates away. At
+	 * frac 0 the cube already draws the near face square on, which is the
+	 * item being left, so there is nothing special about the first frame. */
+	if (ns > 1 && a->cf_sys.active) {
+		if (!fa || !fb) { draw_face_for(a, s0); goto furniture; }
+		plan = faces_plan(2, 0, s0, s1);
+		if (plan == FACES_NEAR_ONLY || plan == FACES_FAR_ONLY)
+			faces_swap(&fa, &fb);
+		if (plan == FACES_BOTH || plan == FACES_NEAR_ONLY) {
+			SDL_SetRenderTarget(a->r, fa);
+			draw_face_for(a, s0);
+			SDL_RenderFlush(a->r);
+		}
+		if (plan == FACES_BOTH || plan == FACES_FAR_ONLY) {
+			SDL_SetRenderTarget(a->r, fb);
+			draw_face_for(a, s1);
+			SDL_RenderFlush(a->r);
+		}
+		if (plan != FACES_NONE) SDL_SetRenderTarget(a->r, NULL);
+		cf_draw_cube(a->r, fa, fb, sfrac, TORTOS_SCREEN_W, TORTOS_SCREEN_H,
+		             false);
+		goto furniture;
+	}
+
+	/* Otherwise the games axis: yaw. */
+	if (ng <= 0) { draw_games_face(a, v, s, 0); goto furniture; }
+	{
+		float gpos = v->cf.pos, gfrac;
+		int g0, g1, k;
+
+		g0 = (int)floorf(gpos);
+		gfrac = gpos - (float)g0;
+		g0 = ((g0 % ng) + ng) % ng;
+		g1 = ng > 1 ? (g0 + 1) % ng : g0;
+
+		for (k = -CF_HALF_WINDOW; k <= CF_HALF_WINDOW; k++) {
+			int tw = 0, th = 0;
+			game_get_tex(a, ((v->cursor + k) % ng + ng) % ng, &tw, &th);
+		}
+		if (!v->cf.active || ng < 2 || !fa || !fb) {
+			faces_stale();
+			draw_games_face(a, v, s, g0);
+		} else {
+			plan = faces_plan(3, a->sys_cursor, g0, g1);
+			if (plan == FACES_NEAR_ONLY || plan == FACES_FAR_ONLY)
+				faces_swap(&fa, &fb);
+			if (plan == FACES_BOTH || plan == FACES_NEAR_ONLY) {
+				SDL_SetRenderTarget(a->r, fa);
+				draw_games_face(a, v, s, g0);
+				SDL_RenderFlush(a->r);
+			}
+			if (plan == FACES_BOTH || plan == FACES_FAR_ONLY) {
+				SDL_SetRenderTarget(a->r, fb);
+				draw_games_face(a, v, s, g1);
+				SDL_RenderFlush(a->r);
+			}
+			if (plan != FACES_NONE) SDL_SetRenderTarget(a->r, NULL);
+			cf_draw_cube(a->r, fa, fb, gfrac, TORTOS_SCREEN_W,
+			             TORTOS_SCREEN_H, true);
+		}
+		evict_far(v, TEX_KEEP_NEAR);
+	}
+
+furniture:
+	/* Two rails, because there are two positions to be in. The system rail
+	 * runs down the left on its own axis; the game rail sits under the screen
+	 * where it always has. */
+	ui_rail_v(a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, a->sys_cursor,
+	          a->sys.count, s->accent);
+	if (ng > 1)
+		ui_rail(a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, v->cursor, ng,
+		        s->accent);
+	/* What system, and how much of it. Both are context rather than content:
+	 * left and right change neither, so neither rides a yawing face. Nothing
+	 * else names the system here - every face is a game - so the name is
+	 * always drawn, and the position sits opposite it because the pair reads
+	 * as one line about the shelf rather than two labels. It says the same
+	 * thing the game rail does, in numbers rather than as a length - the
+	 * rail is glanceable and the number is exact. */
+	{
+		char nfit[192], cnt[64];
+		int w;
+
+		snprintf(cnt, sizeof cnt, "%d / %d", ng > 0 ? v->cursor + 1 : 0, ng);
+		ui_text(a->r, ui_font(UI_F_META), cnt, 24, 700, -1, UI_TEXT_DIM);
+
+		ui_fit_text(ui_font(UI_F_META), s->name, nfit, sizeof nfit, 360);
+		w = ui_text_width(ui_font(UI_F_META), nfit);
+		ui_text(a->r, ui_font(UI_F_META), nfit,
+		        TORTOS_SCREEN_W - 24 - w, 700, -1, UI_TEXT_DIM);
+	}
+}
+
 static void draw_systems(app *a)
 {
 	shelf_pacing(&a->cf_sys);
+	if (CARD_DIRS[g_dir].both) { draw_both(a); return; }
 	if (CARD_DIRS[g_dir].vertical) { draw_systems_cube(a); return; }
 
 	SDL_Rect focus;
@@ -1729,7 +1895,7 @@ static void draw_games_cube(app *a)
 	i0 = ((i0 % n) + n) % n;
 	i1 = n > 1 ? (i0 + 1) % n : i0;
 
-	if (frac < 0.002f || n < 2) {
+	if (!v->cf.active || n < 2) {
 		faces_stale();
 		draw_games_face(a, v, s, i0);
 	} else {
@@ -1758,7 +1924,7 @@ static void draw_games_cube(app *a)
 			}
 			if (plan != FACES_NONE) SDL_SetRenderTarget(a->r, NULL);
 			cf_draw_cube(a->r, fa, fb, frac,
-			             TORTOS_SCREEN_W, TORTOS_SCREEN_H);
+			             TORTOS_SCREEN_W, TORTOS_SCREEN_H, false);
 		} else {
 			draw_games_face(a, v, s, i0);
 		}
@@ -1782,6 +1948,8 @@ rail:
 static void draw_games(app *a)
 {
 	shelf_pacing(&a->view[a->sys_cursor].cf);
+	shelf_pacing(&a->cf_sys);
+	if (CARD_DIRS[g_dir].both) { draw_both(a); return; }
 	if (CARD_DIRS[g_dir].vertical) { draw_games_cube(a); return; }
 
 	sysview *v = &a->view[a->sys_cursor];
@@ -3883,13 +4051,17 @@ static void tortos_menu_draw(app *a, int sel)
 typedef struct {
 	app      *a;
 	menu_bufs bufs;   /* the built rows point into this, so it outlives them */
+	/* Which of the two menus to build. Normally the screen you are on, but
+	 * Both has no screens to be on: there MENU means the firmware and B
+	 * means this system, and neither can be inferred from where you are. */
+	int       screen;
 } sysmenu_ctx;
 
 static int sysmenu_build(void *ctx, menu_row *rows, int max,
                          const char **heading)
 {
 	sysmenu_ctx *c = ctx;
-	int n = menu_build(c->a, c->a->screen, c->a->sys_cursor, rows, &c->bufs,
+	int n = menu_build(c->a, c->screen, c->a->sys_cursor, rows, &c->bufs,
 	                   heading);
 
 	return n > max ? max : n;
@@ -4023,12 +4195,13 @@ static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
 	return MENU_STAY;
 }
 
-static void tortos_menu(app *a)
+static void tortos_menu_for(app *a, int screen)
 {
 	sysmenu_ctx c;
 
 	memset(&c, 0, sizeof c);
 	c.a = a;
+	c.screen = screen;
 	menu_style st = {
 		/* Measured across every system and every display mode, so the panel
 		 * does not resize while Display Mode is being cycled on it. */
@@ -4036,10 +4209,15 @@ static void tortos_menu(app *a)
 		.accent      = MENU_ACCENT,
 		/* On a game shelf this menu is about THAT system, so it wears the
 		 * shelf's color - which tick_tint is still moving while it is open. */
-		.follow_tint = a->screen != SCREEN_SYSTEMS,
+		.follow_tint = screen != SCREEN_SYSTEMS,
 	};
 
 	menu_run(a, &st, sysmenu_build, sysmenu_key, &c);
+}
+
+static void tortos_menu(app *a)
+{
+	tortos_menu_for(a, a->screen);
 }
 
 /* ---------- launching ----------------------------------------------------- */
@@ -5061,6 +5239,55 @@ static void enter_system(app *a)
 	a->screen = SCREEN_GAMES;
 	cf_reset(&v->cf, v->cursor);
 	prime_window(a, a->sys_cursor);
+}
+
+/* Both: two axes, no entering and no going back.
+ *
+ * Up and down turn to another system, left and right move through its games.
+ * The game cursor is per system already - sysview keeps one each - so turning
+ * away and back returns you to where you were rather than to the top.
+ *
+ * MENU is the firmware's menu and B is this system's. Everywhere else those
+ * are the same button meaning different things depending on which shelf you
+ * are on; here there is one shelf, so they cannot be told apart that way and
+ * each gets its own button. B is free precisely because there is nothing to
+ * go back to. */
+static void update_both(app *a)
+{
+	sysview *v;
+	int ns = a->sys.count, ng, sdir = 0, gdir = 0;
+
+	if (ns <= 0) return;
+
+	if (a->in.pressed[IN_MENU]) { tortos_menu_for(a, SCREEN_SYSTEMS); return; }
+	if (a->in.pressed[IN_BACK]) { tortos_menu_for(a, SCREEN_GAMES); return; }
+
+	/* Up advances: the shelf runs A at the bottom to Z at the top. */
+	if (in_repeat(&a->in, IN_DOWN)) { a->sys_cursor = (a->sys_cursor - 1 + ns) % ns; sdir = -1; }
+	if (in_repeat(&a->in, IN_UP))   { a->sys_cursor = (a->sys_cursor + 1) % ns; sdir = +1; }
+	if (sdir) cf_set_cursor_dir(&a->cf_sys, a->sys_cursor, ns, sdir);
+
+	/* Re-read after a system turn: v, its list and its cursor all moved. */
+	v = &a->view[a->sys_cursor];
+	ng = v->list.count;
+	if (ng <= 0) return;
+	if (!v->cf.primed) cf_reset(&v->cf, v->cursor);
+
+	if (in_repeat(&a->in, IN_LEFT))  { v->cursor = (v->cursor - 1 + ng) % ng; gdir = -1; }
+	if (in_repeat(&a->in, IN_RIGHT)) { v->cursor = (v->cursor + 1) % ng; gdir = +1; }
+	if (in_repeat(&a->in, IN_L1))    { v->cursor = ((v->cursor - CF_WINDOW) % ng + ng) % ng; gdir = -1; }
+	if (in_repeat(&a->in, IN_R1))    { v->cursor = (v->cursor + CF_WINDOW) % ng; gdir = +1; }
+	if (gdir) cf_set_cursor_dir(&v->cf, v->cursor, ng, gdir);
+
+	if (a->in.pressed[IN_X]) { game_info_screen(a); return; }
+	if (a->in.pressed[IN_Y]) {
+		fav_toggle(a->sys.systems[shelf_owner(a, a->sys_cursor, v->cursor)].tag,
+		           v->list.items[v->cursor].file);
+		fav_save();
+		refresh_favorites_shelf(a);
+		return;
+	}
+	if (a->in.pressed[IN_ACCEPT]) { launch(a); return; }
 }
 
 static void update_systems(app *a)
@@ -6132,11 +6359,16 @@ int main(int argc, char *argv[])
 		if (in_repeat(&a.in, IN_BRIGHTDN)) plat_brightness_nudge(-1);
 
 		/* MENU on the shelf is TortOS's own menu, the counterpart to the one
-		 * MENU opens in a game. It draws over the shelf and returns here. */
-		if (a.in.pressed[IN_MENU]) { tortos_menu(&a); continue; }
-
-		if (a.screen == SCREEN_SYSTEMS) update_systems(&a);
-		else update_games(&a);
+		 * MENU opens in a game. It draws over the shelf and returns here.
+		 * Both handles its own, because there MENU and B mean two different
+		 * menus and the screen cannot say which. */
+		if (CARD_DIRS[g_dir].both) {
+			update_both(&a);
+		} else {
+			if (a.in.pressed[IN_MENU]) { tortos_menu(&a); continue; }
+			if (a.screen == SCREEN_SYSTEMS) update_systems(&a);
+			else update_games(&a);
+		}
 		if (!a.running) break;
 
 		tick_tint(&a);

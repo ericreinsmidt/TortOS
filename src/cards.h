@@ -92,11 +92,19 @@ typedef struct {
 	const char *id;
 	const char *name;
 	bool vertical;
+	/* One surface instead of two: up and down turn to another system, left
+	 * and right move through that system's games. There is no entering and
+	 * no going back, because what you are looking at is already the thing
+	 * you can act on. Implies `vertical` - the system axis is still the
+	 * vertical one - so anything asking "which way do systems run" keeps
+	 * working without knowing this mode exists. */
+	bool both;
 } card_dir;
 
 static const card_dir CARD_DIRS[] = {
-	{ "horizontal", "Horizontal", false },
-	{ "vertical",   "Vertical",   true  },
+	{ "horizontal", "Horizontal", false, false },
+	{ "vertical",   "Vertical",   true,  false },
+	{ "both",       "Both",       true,  true  },
 };
 #define CARD_DIR_COUNT ((int)(sizeof CARD_DIRS / sizeof CARD_DIRS[0]))
 
