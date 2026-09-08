@@ -90,4 +90,31 @@ case $WHAT in vendor)
 	echo "  + cores and runtime"
 esac
 $A shell sync
+# Does the card name a core it does not have?
+#
+# `vendor` is its own case and is NOT part of `all`, deliberately: 28MB of
+# cores do not belong in every deploy. The gap was that nothing checked, so
+# adding a system to systems.cfg and running `make adb` left a shelf that
+# scanned, counted its games and opened onto nothing - which looked like a
+# working system rather than a missing file.
+#
+# mk/payload.sh already refuses a card in this state; this is the same
+# question asked of the device, and it warns rather than failing because the
+# push has already happened by the time it can be asked.
+# Piped through cat ON THE DEVICE: busybox ls colorizes when it thinks it has
+# a terminal, and adb shell looks like one, so the names come back wrapped in
+# escape codes and every comparison fails. That reads as "no cores on the
+# card" - a warning that is always wrong is worse than no warning.
+have=$($A shell "ls $P/cores/ 2>/dev/null | cat" | tr -d '\r')
+missing=
+for core in $(awk -F'|' '$1=="sys"{gsub(/^[ \t]+|[ \t]+$/,"",$4); print $4}' \
+              "$ROOT/config/systems.cfg" | sort -u); do
+	echo "$have" | grep -qx "${core}_libretro.so" || missing="$missing $core"
+done
+if [ -n "$missing" ]; then
+	echo "!! the card's systems.cfg names cores it does not have:$missing"
+	echo "   those shelves will scan and count games and open onto nothing."
+	echo "   run: make adb-vendor"
+fi
+
 echo "deployed '$WHAT' to $SER"

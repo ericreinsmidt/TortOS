@@ -559,6 +559,27 @@ rm -f /tmp/tortos_poweroff
 # .asoundrc is not removed with it - it describes bonds, which outlive any
 # connection, and removing it here would undo the line above.
 
+# AppleDouble litter, swept in the background.
+#
+# Copying to the card from a Mac leaves ._name beside every file, and the
+# project's own install does the same: 76 of them from a 43-file payload on a
+# freshly formatted card, measured 2026-09-02. Harmless - lib_scan skips every
+# dot-prefixed name in all three of its readdir loops, so they never become
+# phantom games - but they double the directory entries on a FAT card and
+# "._Contra (USA).zip" sitting beside the real one is confusing to read.
+#
+# Backgrounded behind a sleep because it is housekeeping and not a
+# precondition: the scan already ignores them, so nothing waits on this. A
+# card-wide sweep measured 190ms against a boot of about 900, which is too
+# much to spend on the critical path and nothing at all once it is off it. The
+# sleep also keeps it clear of the library scan's own I/O.
+#
+# ONLY the ._ prefix. .media, .cheevos and .tortos are ours and the whole
+# library hangs off them. busybox find has no -delete, and -exec is used
+# rather than xargs because these names contain spaces.
+( sleep 8
+  find /mnt/SDCARD -name '._*' -exec rm -f {} \; ) >/dev/null 2>&1 &
+
 # Restart loop: only ever exits for a power-off.
 cd "$TORTOS_DIR"
 FAILS=0
