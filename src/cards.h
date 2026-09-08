@@ -36,11 +36,21 @@ typedef struct {
 	 * A property of the set, so a new one declares which kind it is rather
 	 * than the shelf special-casing a directory by name. */
 	bool labeled;
+	/* Clear air between the art and its reflection, as a fraction of the
+	 * card's half height - so it scales with the card rather than being a
+	 * fixed number of screen pixels, which would sit wrong on a side card
+	 * that is scaled and yawed.
+	 *
+	 * Zero for a drawn card, because a card IS a thing resting on a
+	 * reflective surface and contact is what that looks like. A photograph of
+	 * a console is an object above the surface, and the gap is what says so.
+	 * Applies to system art only: box art is card-like whatever the theme. */
+	float reflect_gap;
 } card_set;
 
 static const card_set CARD_SETS[] = {
-	{ "classic", "classic", "Classic",     true  },
-	{ "fancy",   "fancy",   "Fancy Pants", false },
+	{ "classic", "classic", "Classic",     true,  0.00f },
+	{ "fancy",   "fancy",   "Fancy Pants", false, 0.21f },   /* about 50px */
 };
 #define CARD_SET_COUNT ((int)(sizeof CARD_SETS / sizeof CARD_SETS[0]))
 

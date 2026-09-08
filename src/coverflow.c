@@ -13,7 +13,6 @@
 const cf_layout CF_LAYOUT_SYSTEMS = {
 	.size = 0.62f, .aspect = 0.78f, .step = 0.86f, .side_scale = 0.66f,
 	.center_y = 0.44f, .tilt = 0.72f, .reflect = 1.34f,
-	.reflect_gap = 0.105f,
 	.side_alpha = 140, .strips = 16,
 };
 
@@ -38,7 +37,6 @@ const cf_layout CF_LAYOUT_SYSTEMS = {
 const cf_layout CF_LAYOUT_SINGLE = {
 	.size = 0.70f, .aspect = 1.00f, .step = 1.80f, .side_scale = 1.00f,
 	.center_y = 0.40f, .tilt = 0.0f, .reflect = 1.15f,
-	.reflect_gap = 0.105f,
 	.side_alpha = 255, .strips = 16,
 };
 
@@ -51,7 +49,6 @@ const cf_layout CF_LAYOUT_SINGLE = {
 const cf_layout CF_LAYOUT_GAME_FACE = {
 	.size = 0.60f, .aspect = 0.72f, .step = 3.20f, .side_scale = 1.00f,
 	.center_y = 0.47f, .tilt = 0.0f, .reflect = 1.52f,
-	.reflect_gap = 0.105f,
 	.side_alpha = 255, .strips = 16,
 };
 
@@ -61,7 +58,6 @@ const cf_layout CF_LAYOUT_GAME_FACE = {
 const cf_layout CF_LAYOUT_GAMES = {
 	.size = 0.60f, .aspect = 0.72f, .step = 0.74f, .side_scale = 0.62f,
 	.center_y = 0.47f, .tilt = 0.82f, .reflect = 1.52f,
-	.reflect_gap = 0.105f,
 	.side_alpha = 150, .strips = 16,
 };
 

@@ -1441,6 +1441,20 @@ static void shelf_pacing(coverflow *cf)
 	}
 }
 
+/* A systems layout carrying the theme's reflection gap.
+ *
+ * The gap belongs to the art, not to the row: a drawn card rests on the
+ * reflective surface and a photographed console floats above it, and one
+ * layout draws both. Only system art gets it - box art is card-like whatever
+ * the theme is, so the games shelf sits flush. */
+static cf_layout sys_layout(const cf_layout *base)
+{
+	cf_layout lay = *base;
+
+	lay.reflect_gap = CARD_SETS[g_cards].reflect_gap;
+	return lay;
+}
+
 /* One system filling the screen: what a cube face carries. Drawn straight to
  * the screen when nothing is turning and into an offscreen texture when
  * something is, which is why it clears rather than assuming draw_shelf did.
@@ -1460,11 +1474,13 @@ static void draw_sys_face(app *a, int idx)
 	SDL_RenderClear(a->r);
 	draw_background(a);
 
-	cf_focus_rect(&CF_LAYOUT_SINGLE, TORTOS_SCREEN_W, TORTOS_SCREEN_H, &focus);
+	cf_layout lay = sys_layout(&CF_LAYOUT_SINGLE);
+
+	cf_focus_rect(&lay, TORTOS_SCREEN_W, TORTOS_SCREEN_H, &focus);
 	ui_glow(a->r, &focus, s->accent, 110, 2.4f);
 	cf_reset(&one, idx);
 	cf_draw(&one, a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, a->sys.count,
-	        sys_get_tex, a, &CF_LAYOUT_SINGLE);
+	        sys_get_tex, a, &lay);
 
 	if (!CARD_SETS[g_cards].labeled) {
 		char nfit[192];
@@ -1720,10 +1736,12 @@ static void draw_systems(app *a)
 	/* Systems only. The games shelf keeps the angled row whatever this says:
 	 * box art is a wall of many, and one cover per screen would turn picking
 	 * a game into paging through a catalog. */
-	cf_focus_rect(&CF_LAYOUT_SYSTEMS, TORTOS_SCREEN_W, TORTOS_SCREEN_H, &focus);
+	cf_layout lay = sys_layout(&CF_LAYOUT_SYSTEMS);
+
+	cf_focus_rect(&lay, TORTOS_SCREEN_W, TORTOS_SCREEN_H, &focus);
 	ui_glow(a->r, &focus, s->accent, 110, 2.4f);
 	cf_draw(&a->cf_sys, a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, a->sys.count,
-	        sys_get_tex, a, &CF_LAYOUT_SYSTEMS);
+	        sys_get_tex, a, &lay);
 
 	/* Art that does not name itself gets named here, in the gap between the
 	 * card and the count, which is where the classic cards carry it. */
