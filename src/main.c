@@ -128,6 +128,7 @@ typedef struct {
 static void refresh_favorites_shelf(app *a);
 /* Same reason: Over The Hare is a screen up here and the scan is down there. */
 static void rescan_all(app *a);
+static int  menu_std_width(app *a);
 
 static volatile sig_atomic_t want_quit;
 static void on_sigterm(int sig) { (void)sig; want_quit = 1; plat_terminate(); }
@@ -2215,6 +2216,10 @@ static void power_off(app *a)
  * between the two columns are all cut from it, so the whole panel scales with
  * the type rather than with a set of numbers that have to be retuned together. */
 static int menu_row_h(void) { return ui_font_line(UI_F_MENU) * 3 / 2; }
+/* The air between the panel edge and its content, on each side. menu_draw
+ * draws it and menu_std_width subtracts it, and a panel width means nothing
+ * unless both use the same number. */
+static int menu_pad(void)   { return menu_row_h() * 3 / 4; }
 
 /* `fixed_w` is the content width to use, or 0 to size to these rows. The shelf
  * menus pass a width measured across both of them so the panel never resizes;
@@ -2227,7 +2232,7 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 {
 	TTF_Font *fm = ui_font(UI_F_MENU), *fh = ui_font(UI_F_LABEL);
 	int row_h = menu_row_h();
-	int pad = row_h * 3 / 4;
+	int pad = menu_pad();
 	/* A rule is 2px of bar plus the gap the heading's rule gets below it, so
 	 * the footer sits off the list by the same amount the first row sits off
 	 * the heading. Giving it a whole row_h left it swimming.
@@ -3071,7 +3076,8 @@ static void wifi_screen(app *a)
 	w.on = wifi_status(NULL, 0, NULL, 0) != WIFI_OFF;
 	if (w.on) wifi_begin_scan(&w);
 
-	menu_run(a, &(menu_style){ .accent = MENU_ACCENT },
+	menu_run(a, &(menu_style){ .accent = MENU_ACCENT,
+	                           .fixed_w = menu_std_width(a) },
 	         wifi_build, wifi_key, &w);
 }
 
@@ -3214,7 +3220,7 @@ void hare_preview(app *a, const char *addr, const char *pin, const char *who,
 	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 	SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
 	SDL_RenderFillRect(a->r, NULL);
-	menu_draw(a, head, rows, n, -1, 0, MENU_ACCENT);
+	menu_draw(a, head, rows, n, -1, menu_std_width(a), MENU_ACCENT);
 }
 
 static void xfer_screen(app *a)
@@ -3318,7 +3324,7 @@ static void xfer_screen(app *a)
 		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
 		SDL_RenderFillRect(a->r, NULL);
-		menu_draw(a, head, rows, 3, -1, 0, MENU_ACCENT);
+		menu_draw(a, head, rows, 3, -1, menu_std_width(a), MENU_ACCENT);
 		plat_draw_osd(a->r);
 		SDL_RenderPresent(a->r);
 		/* Shorter than the usual 8ms: this loop is also the server's, and a
@@ -3399,7 +3405,7 @@ void art_preview(app *a, const char *now, const char *where,
 	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 	SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
 	SDL_RenderFillRect(a->r, NULL);
-	menu_draw(a, head, rows, n, -1, 0, MENU_ACCENT);
+	menu_draw(a, head, rows, n, -1, menu_std_width(a), MENU_ACCENT);
 }
 
 /* game_info, gi_row and gi_rows: src/game_menu.h */
@@ -3591,7 +3597,7 @@ static void art_screen(app *a, const char *only, const char *one,
 		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
 		SDL_RenderFillRect(a->r, NULL);
-		menu_draw(a, head, rows, nrows, -1, 0, accent);
+		menu_draw(a, head, rows, nrows, -1, menu_std_width(a), accent);
 		plat_draw_osd(a->r);
 		SDL_RenderPresent(a->r);
 		SDL_Delay(8);
@@ -3730,7 +3736,7 @@ void info_preview(app *a, bool net)
 	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 	SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
 	SDL_RenderFillRect(a->r, NULL);
-	menu_draw(a, v->list.items[v->cursor].title, rows, n, 5, 0,
+	menu_draw(a, v->list.items[v->cursor].title, rows, n, 5, menu_std_width(a),
 	          a->sys.systems[owner].accent);
 }
 
@@ -3904,7 +3910,7 @@ static void bt_screen(app *a)
 		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
 		SDL_RenderFillRect(a->r, NULL);
-		menu_draw(a, "Bluetooth", rows, nrows, sel, 0, MENU_ACCENT);
+		menu_draw(a, "Bluetooth", rows, nrows, sel, menu_std_width(a), MENU_ACCENT);
 		plat_draw_osd(a->r);
 		SDL_RenderPresent(a->r);
 		SDL_Delay(8);
@@ -4011,7 +4017,8 @@ static void stats_screen(app *a)
 		SDL_RenderFillRect(a->r, NULL);
 		/* +1 because the total is row 0 and the games start under it. */
 		menu_draw(a, "Play Time", rows, shown,
-		          ngames ? cursor - top + 1 : -1, 0, MENU_ACCENT);
+		          ngames ? cursor - top + 1 : -1, menu_std_width(a),
+		          MENU_ACCENT);
 		plat_draw_osd(a->r);
 		SDL_RenderPresent(a->r);
 		SDL_Delay(8);
@@ -4074,7 +4081,7 @@ static void about_screen(app *a)
 		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
 		SDL_RenderFillRect(a->r, NULL);
-		menu_draw(a, "About TortOS", rows, 4, -1, 0, MENU_ACCENT);
+		menu_draw(a, "About TortOS", rows, 4, -1, menu_std_width(a), MENU_ACCENT);
 		plat_draw_osd(a->r);
 		SDL_RenderPresent(a->r);
 		SDL_Delay(8);
@@ -4142,6 +4149,45 @@ static int menu_shelf_width(app *a)
 	}
 	a->menu_w = w;
 	return w;
+}
+
+/* The width every menu reached from the shelf uses.
+ *
+ * Menus sized themselves to their own rows, so the panel changed size on
+ * nearly every screen. Measured on the device 2026-09-08: the TortOS menu drew
+ * a 794px panel, Play Time 791, Bluetooth 737, Wi-Fi 640 - so opening Wi-Fi
+ * from the menu shrank the panel by 154px, about 15% of the display, and grew
+ * it again on the way out.
+ *
+ * Sizing to content was right while a label that did not fit was cut, because
+ * cutting a name is a loss. A long label scrolls now, so a panel no longer has
+ * to grow to hold one, and the trade is a little empty air in a narrow menu
+ * against a panel that stops jumping.
+ *
+ * 800px of PANEL, stated rather than measured, so it does not drift when a
+ * row's text changes. What menu_draw takes is the content width and it adds
+ * menu_pad() on each side, so the pad comes off here - by calling the same
+ * function menu_draw calls, because a hardcoded 48 would be right only at one
+ * text size.
+ *
+ * The floor is not decoration. menu_shelf_width is the widest row in the
+ * shelf menus, and a panel narrower than that sets one of them scrolling. It
+ * is "Bluetooth" and the paired headset's name today - a row that grows with
+ * a device nobody here chose the name of - measured at 699px against the 704
+ * of content 800 leaves. That it clears is not an estimate: the panel draws at
+ * exactly 800 on the device, and had the row been wider max() would have
+ * widened the panel rather than let it scroll. Five pixels is not much, and
+ * max() is the whole reason a longer name costs air instead of a cut.
+ *
+ * Not for the one-row notices - "Scanning...", "Could not start". Those are
+ * messages, and a message stretched to menu width reads as a menu that failed
+ * to load. Not for the in-game menu either, which sits over a paused game. */
+static int menu_std_width(app *a)
+{
+	int content = 800 - menu_pad() * 2;
+	int floor   = menu_shelf_width(a);
+
+	return floor > content ? floor : content;
 }
 
 static void tortos_menu_draw(app *a, int sel)
@@ -4321,7 +4367,7 @@ static void tortos_menu_for(app *a, int screen)
 	menu_style st = {
 		/* Measured across every system and every display mode, so the panel
 		 * does not resize while Display Mode is being cycled on it. */
-		.fixed_w     = menu_shelf_width(a),
+		.fixed_w     = menu_std_width(a),
 		.accent      = MENU_ACCENT,
 		/* On a game shelf this menu is about THAT system, so it wears the
 		 * shelf's color - which tick_tint is still moving while it is open. */
@@ -4747,7 +4793,7 @@ static void cheevos_screen(app *a, SDL_Texture *bg)
 		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 185);
 		SDL_RenderFillRect(a->r, NULL);
-		menu_draw(a, heading, rows, n, sel, 0, a->tint);
+		menu_draw(a, heading, rows, n, sel, menu_std_width(a), a->tint);
 		SDL_RenderPresent(a->r);
 		SDL_Delay(8);
 	}
