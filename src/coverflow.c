@@ -13,6 +13,7 @@
 const cf_layout CF_LAYOUT_SYSTEMS = {
 	.size = 0.62f, .aspect = 0.78f, .step = 0.86f, .side_scale = 0.66f,
 	.center_y = 0.44f, .tilt = 0.72f, .reflect = 1.34f,
+	.reflect_gap = 0.105f,
 	.side_alpha = 140, .strips = 16,
 };
 
@@ -37,6 +38,7 @@ const cf_layout CF_LAYOUT_SYSTEMS = {
 const cf_layout CF_LAYOUT_SINGLE = {
 	.size = 0.70f, .aspect = 1.00f, .step = 1.80f, .side_scale = 1.00f,
 	.center_y = 0.40f, .tilt = 0.0f, .reflect = 1.15f,
+	.reflect_gap = 0.105f,
 	.side_alpha = 255, .strips = 16,
 };
 
@@ -49,6 +51,7 @@ const cf_layout CF_LAYOUT_SINGLE = {
 const cf_layout CF_LAYOUT_GAME_FACE = {
 	.size = 0.60f, .aspect = 0.72f, .step = 3.20f, .side_scale = 1.00f,
 	.center_y = 0.47f, .tilt = 0.0f, .reflect = 1.52f,
+	.reflect_gap = 0.105f,
 	.side_alpha = 255, .strips = 16,
 };
 
@@ -58,6 +61,7 @@ const cf_layout CF_LAYOUT_GAME_FACE = {
 const cf_layout CF_LAYOUT_GAMES = {
 	.size = 0.60f, .aspect = 0.72f, .step = 0.74f, .side_scale = 0.62f,
 	.center_y = 0.47f, .tilt = 0.82f, .reflect = 1.52f,
+	.reflect_gap = 0.105f,
 	.side_alpha = 150, .strips = 16,
 };
 
@@ -282,7 +286,7 @@ static void draw_card(SDL_Renderer *r, SDL_Texture *tex, int tw, int th,
 	 * - a gap of about 196px on screen, against 10px for a Game Boy, which
 	 * fills its canvas. Same reflection setting, wildly different result.
 	 * Measured 2026-09-08. */
-	float y_cb = -ahh + cb * 2.0f * ahh;
+	float y_cb = -ahh + cb * 2.0f * ahh + lay->reflect_gap * hh;
 	/* How far past the mirror the reflection runs, as a fraction of the art's
 	 * full height, so that it still reaches the common baseline the layout
 	 * asks for however high the mirror sits. With cb = 1 this is exactly what
@@ -324,8 +328,13 @@ static void draw_card(SDL_Renderer *r, SDL_Texture *tex, int tw, int th,
 			 * which is exact: only x rotates into depth, so the depth scale
 			 * is constant across a strip's height and the interpolation is
 			 * linear. */
-			float mlx = tlx + cb * (blx - tlx), mly = tly + cb * (bly - tly);
-			float mrx = trx + cb * (brx - trx), mry = try_ + cb * (bry - try_);
+			/* Down cb of the strip to where the art stops, then the gap. The
+			 * texture still starts at cb: the reflection is displaced, not
+			 * cropped, so the first thing it shows is still the last thing
+			 * the art showed. */
+			float m = cb + lay->reflect_gap * hh / (2.0f * ahh);
+			float mlx = tlx + m * (blx - tlx), mly = tly + m * (bly - tly);
+			float mrx = trx + m * (brx - trx), mry = try_ + m * (bry - try_);
 			float rblx = mlx + f * (blx - tlx);
 			float rbly = mly + f * (bly - tly);
 			float rbrx = mrx + f * (brx - trx);

@@ -21,6 +21,12 @@ typedef struct {
 	float center_y;   /* card center y as a fraction of screen height */
 	float tilt;       /* max yaw in radians */
 	float reflect;    /* reflection height as a fraction of card height */
+	/* Clear air between the art and its reflection, as a fraction of the
+	 * card's half height - about 25px on a focused card, and it shrinks with
+	 * the side cards because it is in the card's own units rather than the
+	 * screen's. A reflection that touches reads as the object continuing;
+	 * a small gap reads as a surface it is standing on. */
+	float reflect_gap;
 	int side_alpha;   /* alpha of fully off-center cards (center is 255) */
 	int strips;       /* vertical subdivisions per card */
 } cf_layout;
