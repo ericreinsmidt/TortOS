@@ -23,9 +23,15 @@
 #include "wifi.h"
 #include "audioout.h"
 
-/* The TortOS menu. */
+/* The TortOS menu, in the order it is read.
+ *
+ * Play Time leads because it is the only row here anyone opens twice. Wi-Fi,
+ * Bluetooth and Audio Output are setup: you use them when something is wrong
+ * or new, and then never again. A menu ordered by what a device needs on its
+ * first day puts the thing you actually come back to five rows down. */
 typedef enum {
-	PM_WIFI, PM_BT, PM_AUDIO, PM_XFER, PM_STATS,
+	PM_STATS,
+	PM_WIFI, PM_BT, PM_AUDIO, PM_XFER,
 	PM_SLEEP, PM_TEXT, PM_THEME, PM_DIR, PM_SCRAPE, PM_ACHIEVEMENTS, PM_ABOUT, PM_ROWS
 } pm_row;
 

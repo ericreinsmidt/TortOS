@@ -2203,6 +2203,19 @@ static int menu_row_h(void) { return ui_font_line(UI_F_MENU) * 3 / 2; }
 /* `accent` is the panel's border and heading rule. The shelf's own menu passes
  * MENU_ACCENT because that menu is TortOS, not whichever card is under the
  * cursor; a menu that belongs to a system passes that system's color. */
+/* The marquee's clock for a menu row, restarted when the selection moves so a
+ * newly chosen name is read from its beginning rather than joined mid-scroll.
+ * One clock because one menu is up at a time. */
+static unsigned menu_phase(int sel)
+{
+	static int      last = -32768;
+	static unsigned t0;
+	unsigned now = plat_now_ms();
+
+	if (sel != last) { last = sel; t0 = now; }
+	return now - t0;
+}
+
 static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
                       int sel, int fixed_w, unsigned accent)
 {
@@ -2470,16 +2483,50 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 			ui_text(a->r, fm, note, cx, ty, 0, lc);
 		} else if (two_col) {
 			char lbl[192], val[192];
-			int lw, room;
+			int lw = ui_text_width(fm, rows[i].label);
+			int vw = rows[i].value ? ui_text_width(fm, rows[i].value) : 0;
+			int room;
 
-			ui_fit_text(fm, rows[i].label, lbl, sizeof lbl, content_w);
-			lw = ui_text_width(fm, lbl);
-			ui_text(a->r, fm, lbl, content_x, ty, -1, lc);
+			/* A label that fits keeps the old order: drawn first, the value
+			 * taking what is left. Labels are usually captions - "Wi-Fi",
+			 * "File" - and values are whatever the card happens to hold.
+			 *
+			 * A label that does NOT fit is content rather than a caption: a
+			 * game's name in the play-time list, an SSID. There the priority
+			 * inverts. The value is measured first and keeps its width,
+			 * because a duration or a signal is short and fixed where a name
+			 * is neither, and letting the label win pushed the number off the
+			 * row it exists to report. The selected one then scrolls rather
+			 * than being cut - the same ping-pong with faded edges the shelf
+			 * gives a long title. Only the selected one: every long name
+			 * moving at once is a page that will not sit still to be read. */
+			if (lw <= content_w - (vw ? vw + gap : 0)) {
+				ui_fit_text(fm, rows[i].label, lbl, sizeof lbl, content_w);
+				lw = ui_text_width(fm, lbl);
+				ui_text(a->r, fm, lbl, content_x, ty, -1, lc);
 
-			room = content_w - lw - gap;
-			if (rows[i].value && room > 0) {
-				ui_fit_text(fm, rows[i].value, val, sizeof val, room);
-				ui_text(a->r, fm, val, content_x + content_w, ty, 1, vc);
+				room = content_w - lw - gap;
+				if (rows[i].value && room > 0) {
+					ui_fit_text(fm, rows[i].value, val, sizeof val, room);
+					ui_text(a->r, fm, val, content_x + content_w, ty, 1, vc);
+				}
+			} else {
+				room = content_w - (vw ? vw + gap : 0);
+				if (rows[i].value) {
+					ui_fit_text(fm, rows[i].value, val, sizeof val, content_w);
+					ui_text(a->r, fm, val, content_x + content_w, ty, 1, vc);
+				}
+				if (room <= 0) {
+					/* Nothing left for a name. Better a cut label than none. */
+					ui_fit_text(fm, rows[i].label, lbl, sizeof lbl, content_w);
+					ui_text(a->r, fm, lbl, content_x, ty, -1, lc);
+				} else if (i == sel) {
+					ui_text_marquee(a->r, fm, rows[i].label, content_x, ty,
+					                room, menu_phase(sel), lc);
+				} else {
+					ui_fit_text(fm, rows[i].label, lbl, sizeof lbl, room);
+					ui_text(a->r, fm, lbl, content_x, ty, -1, lc);
+				}
 			}
 		} else {
 			char lbl[192];
@@ -3907,7 +3954,17 @@ static void stats_screen(app *a)
 			 * title with dots of its own keeps them. */
 			dot = strrchr(file, '.');
 			len = dot && dot != file ? (int)(dot - file) : (int)strlen(file);
-			snprintf(labels[shown], sizeof labels[0], "%.*s", len, file);
+			{
+				/* Extension off, then the same title rule the shelf uses, so
+				 * "Contra (USA).zip" reads as "Contra" here too. It was
+				 * printing the cataloging: a column of names where every one
+				 * ends in a region and a revision is a column you cannot
+				 * scan. */
+				char bare[LIB_NAME];
+
+				snprintf(bare, sizeof bare, "%.*s", len, file);
+				lib_title(bare, labels[shown], sizeof labels[0]);
+			}
 			stats_format(secs, vals[shown], sizeof vals[0]);
 			/* live, not selected. The selection is menu_draw's `sel`
 			 * argument; passing it here instead drew every other row
@@ -5603,6 +5660,7 @@ static void build_favorites_shelf(app *a)
 		a->view[i] = a->view[i - 1];
 		a->sys_tex[i] = a->sys_tex[i - 1];
 		a->sys_w[i] = a->sys_w[i - 1];
+		a->sys_cb[i] = a->sys_cb[i - 1];
 		a->sys_h[i] = a->sys_h[i - 1];
 	}
 	a->sys_tex[0] = NULL;
@@ -5622,7 +5680,11 @@ static void build_favorites_shelf(app *a)
 	a->view[0].tex = calloc((size_t)n, sizeof *a->view[0].tex);
 	a->view[0].tw  = calloc((size_t)n, sizeof *a->view[0].tw);
 	a->view[0].th  = calloc((size_t)n, sizeof *a->view[0].th);
-	if (!a->view[0].tex || !a->view[0].tw || !a->view[0].th) {
+	/* cb with the rest. The scan allocates these four together and this path
+	 * allocated three, so Favorites had a NULL where every other shelf had an
+	 * array - and game_get_tex writes to it on the first card it draws. */
+	a->view[0].cb  = calloc((size_t)n, sizeof *a->view[0].cb);
+	if (!a->view[0].tex || !a->view[0].tw || !a->view[0].th || !a->view[0].cb) {
 		free(a->view[0].tex); free(a->view[0].tw); free(a->view[0].th);
 		free(a->view[0].cb);
 		free(items); free(owner);
@@ -5632,6 +5694,7 @@ static void build_favorites_shelf(app *a)
 			a->view[i] = a->view[i + 1];
 			a->sys_tex[i] = a->sys_tex[i + 1];
 			a->sys_w[i] = a->sys_w[i + 1];
+			a->sys_cb[i] = a->sys_cb[i + 1];
 			a->sys_h[i] = a->sys_h[i + 1];
 		}
 		return;
@@ -5669,6 +5732,7 @@ static void drop_favorites_shelf(app *a)
 		a->view[i] = a->view[i + 1];
 		a->sys_tex[i] = a->sys_tex[i + 1];
 		a->sys_w[i] = a->sys_w[i + 1];
+		a->sys_cb[i] = a->sys_cb[i + 1];
 		a->sys_h[i] = a->sys_h[i + 1];
 	}
 	a->sys.count--;

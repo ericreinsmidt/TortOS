@@ -3,6 +3,7 @@
 #define TORTOS_LIBRARY_H
 
 #include <stdbool.h>
+#include <stddef.h>
 
 #define LIB_NAME 256
 #define LIB_PATH 544
@@ -39,5 +40,13 @@ bool lib_is_disc(const char *name);
 bool lib_scan(const char *roms_root, const char *folder, const char *exts,
               game_list *out);
 void lib_free(game_list *l);
+
+/* The display title for a ROM's name: everything up to the first bracketed
+ * group that follows a space, so "Contra (USA)" reads as "Contra". Exposed
+ * because the play-time screen shows names too and had been printing the
+ * cataloging with them - the rule belongs in one place, not two.
+ *
+ * Give it a name with no extension. `out` should take LIB_NAME bytes. */
+void lib_title(const char *name, char *out, size_t n);
 
 #endif

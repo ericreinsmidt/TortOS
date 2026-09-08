@@ -109,7 +109,7 @@ static int game_cmp(const void *pa, const void *pb)
  * Sorting and box-art lookup deliberately keep using `name`: two dumps of one
  * game share a title but not a filename, and collapsing them here would make
  * their order arbitrary and point both at the same .media file. */
-static void make_title(const char *name, char *out, size_t n)
+void lib_title(const char *name, char *out, size_t n)
 {
 	const char *cut = NULL, *p;
 
@@ -207,7 +207,7 @@ bool lib_scan(const char *roms_root, const char *folder, const char *exts,
 		snprintf(list[n].name, sizeof list[n].name, "%s", e->d_name);
 		dot = strrchr(list[n].name, '.');
 		if (dot && dot != list[n].name) *dot = '\0';
-		make_title(list[n].name, list[n].title, sizeof list[n].title);
+		lib_title(list[n].name, list[n].title, sizeof list[n].title);
 		n++;
 	}
 
@@ -239,7 +239,7 @@ bool lib_scan(const char *roms_root, const char *folder, const char *exts,
 		memset(&list[n], 0, sizeof list[n]);
 		snprintf(list[n].file, sizeof list[n].file, "%s/%s", e->d_name, inside);
 		snprintf(list[n].name, sizeof list[n].name, "%s", e->d_name);
-		make_title(list[n].name, list[n].title, sizeof list[n].title);
+		lib_title(list[n].name, list[n].title, sizeof list[n].title);
 		n++;
 	}
 	closedir(d);
