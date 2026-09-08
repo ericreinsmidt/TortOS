@@ -18,5 +18,7 @@ NES.png is an NES and not a Famicom, SNES.png a SNES, GENESIS.png a Genesis
 Model 2, PCE.png a TurboGrafx-16. They were imported under Japanese short
 codes (FC, SFC, MD) that describe the code, not the photograph.
 
-There is no FAVORITES.png. That shelf is not a console and has no hardware to
-photograph.
+FAVORITES.png is not one of these photographs, and nothing above applies to
+it. Favorites is a shelf rather than a console, so there is no hardware to
+photograph and it carries a heart instead. It was generated rather than shot,
+carries no attribution requirement, and no rights are claimed in it.
