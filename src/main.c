@@ -60,6 +60,7 @@ typedef struct {
 	game_list list;
 	SDL_Texture **tex;
 	int *tw, *th;
+	float *cb;      /* where each card's art stops, for its reflection */
 	int cursor;
 	/* Index into DMODES. Zero-initialized like the rest of this struct, so
 	 * whatever sits at index 0 is what an untouched card plays at - see the
@@ -103,6 +104,7 @@ typedef struct {
 
 	SDL_Texture *sys_tex[CFG_MAX_SYSTEMS];
 	int sys_w[CFG_MAX_SYSTEMS], sys_h[CFG_MAX_SYSTEMS];
+	float sys_cb[CFG_MAX_SYSTEMS];
 	sysview view[CFG_MAX_SYSTEMS];
 
 	screen_id screen;
@@ -254,15 +256,44 @@ static void display_save(app *a)
  * is one format conversion per card at load time, and a texture whose behavior
  * depends on what a scraper happened to save is a trap for whatever gets drawn
  * next. */
-static SDL_Texture *load_image(SDL_Renderer *r, const char *path, int *w, int *h)
+/* How far down the surface its opaque pixels reach, as a fraction of height.
+ *
+ * Art here is squared and centred, so a console photographed low in its frame
+ * carries a band of transparency underneath - 102 of 384 rows for the Genesis,
+ * against 10 for a Game Boy. Reflecting from the card's edge mirrors that
+ * emptiness too, which is why the same reflection setting produced a flush
+ * reflection on one card and a gap of about 196px on another.
+ *
+ * Scanned bottom-up and stopping at the first row with anything in it, so the
+ * cost is the padding rather than the image. Alpha over 8 rather than over 0:
+ * a PNG's fully transparent region is not always exactly zero. */
+static float content_bottom(SDL_Surface *s)
+{
+	int y, x;
+
+	if (!s || s->h <= 0 || s->format->BytesPerPixel != 4) return 1.0f;
+	for (y = s->h - 1; y >= 0; y--) {
+		const Uint32 *row = (const Uint32 *)((Uint8 *)s->pixels + y * s->pitch);
+
+		for (x = 0; x < s->w; x++)
+			if ((row[x] >> 24) > 8)
+				return (float)(y + 1) / (float)s->h;
+	}
+	return 1.0f;
+}
+
+static SDL_Texture *load_image(SDL_Renderer *r, const char *path, int *w, int *h,
+                               float *cb)
 {
 	SDL_Surface *raw = IMG_Load(path), *conv;
 	SDL_Texture *t;
 
+	if (cb) *cb = 1.0f;
 	if (!raw) return NULL;
 	conv = SDL_ConvertSurfaceFormat(raw, SDL_PIXELFORMAT_ARGB8888, 0);
 	SDL_FreeSurface(raw);
 	if (!conv) return NULL;
+	if (cb) *cb = content_bottom(conv);
 	t = SDL_CreateTextureFromSurface(r, conv);
 	SDL_FreeSurface(conv);
 	if (t) SDL_QueryTexture(t, NULL, NULL, w, h);
@@ -291,7 +322,7 @@ static SDL_Texture *face_tex(app *a, int i)
 	return g_face[i];
 }
 
-static SDL_Texture *sys_get_tex(void *ctx, int i, int *w, int *h)
+static SDL_Texture *sys_get_tex(void *ctx, int i, int *w, int *h, float *cb)
 {
 	app *a = ctx;
 	if (!a->sys_tex[i]) {
@@ -299,7 +330,8 @@ static SDL_Texture *sys_get_tex(void *ctx, int i, int *w, int *h)
 
 		snprintf(path, sizeof path, "%s/cards/%s/%s", P_ROOT,
 		         CARD_SETS[g_cards].dir, a->sys.systems[i].card);
-		a->sys_tex[i] = load_image(a->r, path, &a->sys_w[i], &a->sys_h[i]);
+		a->sys_tex[i] = load_image(a->r, path, &a->sys_w[i], &a->sys_h[i],
+		                           &a->sys_cb[i]);
 		/* A set may be incomplete and still be worth showing. Favorites is
 		 * the standing example: it is a shelf, not a console, so a set of
 		 * hardware photographs has nothing to put there and borrows the
@@ -308,7 +340,8 @@ static SDL_Texture *sys_get_tex(void *ctx, int i, int *w, int *h)
 		if (!a->sys_tex[i] && g_cards != 0) {
 			snprintf(path, sizeof path, "%s/cards/%s/%s", P_ROOT,
 			         CARDS_DEFAULT, a->sys.systems[i].card);
-			a->sys_tex[i] = load_image(a->r, path, &a->sys_w[i], &a->sys_h[i]);
+			a->sys_tex[i] = load_image(a->r, path, &a->sys_w[i], &a->sys_h[i],
+		                           &a->sys_cb[i]);
 		}
 		if (!a->sys_tex[i])
 			a->sys_tex[i] = ui_make_card(a->r, a->sys.systems[i].name,
@@ -317,6 +350,7 @@ static SDL_Texture *sys_get_tex(void *ctx, int i, int *w, int *h)
 	}
 	*w = a->sys_w[i];
 	*h = a->sys_h[i];
+	if (cb) *cb = a->sys_cb[i];
 	return a->sys_tex[i];
 }
 
@@ -471,7 +505,7 @@ static int shelf_owner(app *a, int sysidx, int item)
 	return sysidx;
 }
 
-static SDL_Texture *game_get_tex(void *ctx, int i, int *w, int *h)
+static SDL_Texture *game_get_tex(void *ctx, int i, int *w, int *h, float *cb)
 {
 	app *a = ctx;
 	int s = a->sys_cursor;
@@ -485,10 +519,10 @@ static SDL_Texture *game_get_tex(void *ctx, int i, int *w, int *h)
 		char path[LIB_PATH * 3];
 		snprintf(path, sizeof path, "%s/%s/.media/%s.png",
 		         P_ROMS, a->sys.systems[o].folder, v->list.items[i].name);
-		v->tex[i] = load_image(a->r, path, &v->tw[i], &v->th[i]);
+		v->tex[i] = load_image(a->r, path, &v->tw[i], &v->th[i], &v->cb[i]);
 		if (!v->tex[i]) {
 			preview_path(a, o, &v->list.items[i], path, sizeof path);
-			v->tex[i] = load_image(a->r, path, &v->tw[i], &v->th[i]);
+			v->tex[i] = load_image(a->r, path, &v->tw[i], &v->th[i], &v->cb[i]);
 		}
 		if (!v->tex[i])
 			v->tex[i] = ui_make_card(a->r, v->list.items[i].title,
@@ -497,6 +531,7 @@ static SDL_Texture *game_get_tex(void *ctx, int i, int *w, int *h)
 	}
 	*w = v->tw[i];
 	*h = v->th[i];
+	if (cb) *cb = v->cb[i];
 	return v->tex[i];
 }
 
@@ -530,7 +565,7 @@ static void prime_window(app *a, int s)
 		} else if (i < 0 || i >= v->list.count) {
 			continue;
 		}
-		game_get_tex(a, i, &w, &h);
+		game_get_tex(a, i, &w, &h, NULL);
 	}
 	a->sys_cursor = save;
 }
@@ -539,7 +574,7 @@ static void prime_sys_window(app *a)
 {
 	for (int i = 0; i < a->sys.count; i++) {
 		int w, h;
-		sys_get_tex(a, i, &w, &h);
+		sys_get_tex(a, i, &w, &h, NULL);
 	}
 }
 
@@ -1456,7 +1491,7 @@ static void draw_systems_cube(app *a)
 
 		for (k = 0; k < n; k++) {
 			int tw = 0, th = 0;
-			sys_get_tex(a, k, &tw, &th);
+			sys_get_tex(a, k, &tw, &th, NULL);
 		}
 	}
 	cf_tick(&a->cf_sys, n);
@@ -1616,7 +1651,7 @@ static void draw_both(app *a)
 
 		for (k = -CF_HALF_WINDOW; k <= CF_HALF_WINDOW; k++) {
 			int tw = 0, th = 0;
-			game_get_tex(a, ((v->cursor + k) % ng + ng) % ng, &tw, &th);
+			game_get_tex(a, ((v->cursor + k) % ng + ng) % ng, &tw, &th, NULL);
 		}
 		if (!v->cf.active || ng < 2 || !fa || !fb) {
 			faces_stale();
@@ -1884,7 +1919,7 @@ static void draw_games_cube(app *a)
 
 		for (k = -CF_HALF_WINDOW; k <= CF_HALF_WINDOW; k++) {
 			int tw = 0, th = 0;
-			game_get_tex(a, ((v->cursor + k) % n + n) % n, &tw, &th);
+			game_get_tex(a, ((v->cursor + k) % n + n) % n, &tw, &th, NULL);
 		}
 	}
 
@@ -2035,7 +2070,7 @@ static void anim_launch(app *a, unsigned ms)
 	SDL_Texture *card;
 
 	cf_focus_rect(&CF_LAYOUT_GAMES, TORTOS_SCREEN_W, TORTOS_SCREEN_H, &from);
-	card = v->list.count ? game_get_tex(a, v->cursor, &tw, &th) : NULL;
+	card = v->list.count ? game_get_tex(a, v->cursor, &tw, &th, NULL) : NULL;
 
 	while ((now = plat_now_ms()) - t0 < ms) {
 		float k = (float)(now - t0) / (float)ms;
@@ -5571,6 +5606,7 @@ static void build_favorites_shelf(app *a)
 	a->view[0].th  = calloc((size_t)n, sizeof *a->view[0].th);
 	if (!a->view[0].tex || !a->view[0].tw || !a->view[0].th) {
 		free(a->view[0].tex); free(a->view[0].tw); free(a->view[0].th);
+		free(a->view[0].cb);
 		free(items); free(owner);
 		memset(&a->view[0], 0, sizeof a->view[0]);
 		for (i = 0; i < a->sys.count; i++) {
@@ -5677,11 +5713,12 @@ static void scan_all(app *a)
 			v->tex = calloc((size_t)v->list.count, sizeof *v->tex);
 			v->tw = calloc((size_t)v->list.count, sizeof *v->tw);
 			v->th = calloc((size_t)v->list.count, sizeof *v->th);
+			v->cb = calloc((size_t)v->list.count, sizeof *v->cb);
 			/* A count with no array behind it would be dereferenced on the
 			 * next frame. An empty shelf is the honest answer. */
-			if (!v->tex || !v->tw || !v->th) {
-				free(v->tex); free(v->tw); free(v->th);
-				v->tex = NULL; v->tw = NULL; v->th = NULL;
+			if (!v->tex || !v->tw || !v->th || !v->cb) {
+				free(v->tex); free(v->tw); free(v->th); free(v->cb);
+				v->tex = NULL; v->tw = NULL; v->th = NULL; v->cb = NULL;
 				lib_free(&v->list);
 			}
 		}
@@ -5722,6 +5759,7 @@ static void rescan_all(app *a)
 	free_all_textures(a);
 	for (i = 0; i < a->sys.count; i++) {
 		free(a->view[i].tex); free(a->view[i].tw); free(a->view[i].th);
+		free(a->view[i].cb);
 		lib_free(&a->view[i].list);
 		memset(&a->view[i], 0, sizeof a->view[i]);
 	}

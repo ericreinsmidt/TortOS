@@ -250,7 +250,7 @@ static void render_quad(SDL_Renderer *r, SDL_Texture *tex,
 }
 
 static void draw_card(SDL_Renderer *r, SDL_Texture *tex, int tw, int th,
-                      float ox, float oy, float hw, float hh,
+                      float cb, float ox, float oy, float hw, float hh,
                       float ang, Uint8 alpha, const cf_layout *lay)
 {
 	/* CONTAIN-fit the texture inside the card frame */
@@ -275,15 +275,26 @@ static void draw_card(SDL_Renderer *r, SDL_Texture *tex, int tw, int th,
 	 * card center) no matter how tall the fitted art is: short art gets a
 	 * longer reflection so it reflects to the same depth as tall art. The
 	 * art itself stays vertically centered. */
+	/* Where the art's opaque pixels stop, in local units. Reflecting from the
+	 * card's bottom edge instead put the mirror below transparent padding: the
+	 * console art is squared and centred, so a Genesis carries 102 of its 384
+	 * rows empty underneath and its reflection began a further 102 away again
+	 * - a gap of about 196px on screen, against 10px for a Game Boy, which
+	 * fills its canvas. Same reflection setting, wildly different result.
+	 * Measured 2026-09-08. */
+	float y_cb = -ahh + cb * 2.0f * ahh;
+	/* How far past the mirror the reflection runs, as a fraction of the art's
+	 * full height, so that it still reaches the common baseline the layout
+	 * asks for however high the mirror sits. With cb = 1 this is exactly what
+	 * it was before: art that fills its canvas is unchanged. */
 	float f = lay->reflect;
 	if (ahh > 0.001f) {
-		f = (lay->reflect * hh - ahh) / (2.0f * ahh);
+		f = (lay->reflect * hh - y_cb) / (2.0f * ahh);
 		if (f < 0.02f) f = 0.02f;
-		/* Cap at a full mirror: f>1 makes the reflection's far texcoord
-		 * negative, which the Mali GLES driver drops (no reflection at all).
-		 * A full mirror of very short/wide art still reaches nearly the same
-		 * depth. */
-		if (f > 1.0f) f = 1.0f;
+		/* Cap at what is actually above the mirror: sampling past the top of
+		 * the texture gives a negative texcoord, which the Mali GLES driver
+		 * drops entirely - no reflection at all rather than a short one. */
+		if (f > cb) f = cb;
 	}
 	Uint8 ra = (Uint8)(alpha * 90 / 255);
 	SDL_Color body[4] = {
@@ -307,15 +318,21 @@ static void draw_card(SDL_Renderer *r, SDL_Texture *tex, int tw, int th,
 		render_quad(r, tex, xy, uv, body);
 
 		if (f > 0.0f) {
-			/* mirror the strip below its bottom edge, extended along the
-			 * card's own (already foreshortened) vertical direction */
-			float rblx = blx + f * (blx - tlx);
-			float rbly = bly + f * (bly - tly);
-			float rbrx = brx + f * (brx - trx);
-			float rbry = bry + f * (bry - try_);
-			float vb = 1.0f - f;
-			float rxy[8] = { blx, bly, brx, bry, rbrx, rbry, rblx, rbly };
-			float ruv[8] = { u0, 1, u1, 1, u1, vb, u0, vb };
+			/* Mirror from where the CONTENT ends, extended along the card's
+			 * own (already foreshortened) vertical direction. The mirror
+			 * corners are found by walking cb of the way down the strip,
+			 * which is exact: only x rotates into depth, so the depth scale
+			 * is constant across a strip's height and the interpolation is
+			 * linear. */
+			float mlx = tlx + cb * (blx - tlx), mly = tly + cb * (bly - tly);
+			float mrx = trx + cb * (brx - trx), mry = try_ + cb * (bry - try_);
+			float rblx = mlx + f * (blx - tlx);
+			float rbly = mly + f * (bly - tly);
+			float rbrx = mrx + f * (brx - trx);
+			float rbry = mry + f * (bry - try_);
+			float vb = cb - f;
+			float rxy[8] = { mlx, mly, mrx, mry, rbrx, rbry, rblx, rbly };
+			float ruv[8] = { u0, cb, u1, cb, u1, vb, u0, vb };
 			SDL_Color rcol[4] = {
 				{ 255, 255, 255, ra }, { 255, 255, 255, ra },
 				{ 255, 255, 255, 0 }, { 255, 255, 255, 0 },
@@ -401,9 +418,10 @@ bool cf_draw(coverflow *cf, SDL_Renderer *r, int screen_w, int screen_h,
 		float ang = -lay->tilt * clampf(d, -1.0f, 1.0f);
 		Uint8 alpha = (Uint8)(lay->side_alpha + (255 - lay->side_alpha) * c);
 		int tw = 0, th = 0;
-		SDL_Texture *tex = get_tex(ctx, slots[a].item, &tw, &th);
+		float cb = 1.0f;
+		SDL_Texture *tex = get_tex(ctx, slots[a].item, &tw, &th, &cb);
 		if (!tex) continue;
-		draw_card(r, tex, tw, th, cx + d * step, cy,
+		draw_card(r, tex, tw, th, cb, cx + d * step, cy,
 		          cw * 0.5f * scale, ch * 0.5f * scale, ang, alpha, lay);
 	}
 	return cf->active;

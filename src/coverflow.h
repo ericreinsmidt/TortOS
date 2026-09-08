@@ -87,8 +87,14 @@ typedef struct {
 	bool chase;
 } coverflow;
 
-/* Texture for item index; w/h receive its pixel size. May return NULL. */
-typedef SDL_Texture *(*cf_tex_fn)(void *ctx, int index, int *w, int *h);
+/* Texture for item index; w/h receive its pixel size. May return NULL.
+ *
+ * `content_bottom` receives how far down the texture its opaque pixels reach,
+ * as a fraction of height: 1.0 for art that fills its canvas, less for art
+ * padded with transparency below the subject. The reflection is drawn from
+ * there rather than from the card's edge - see draw_card. */
+typedef SDL_Texture *(*cf_tex_fn)(void *ctx, int index, int *w, int *h,
+                                  float *content_bottom);
 
 void cf_reset(coverflow *cf, int cursor);
 /* Move toward cursor (shortest path when wrapping). */
