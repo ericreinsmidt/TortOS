@@ -104,7 +104,10 @@ typedef struct {
 static const card_dir CARD_DIRS[] = {
 	{ "horizontal", "Horizontal", false, false },
 	{ "vertical",   "Vertical",   true,  false },
-	{ "both",       "Both",       true,  true  },
+	/* Stored as "both" and shown as "Cubic": the id and the field name say
+	 * what it does - two axes on one surface - and the label says what it
+	 * looks like, which is the thing a person is choosing between. */
+	{ "both",       "Cubic",      true,  true  },
 };
 #define CARD_DIR_COUNT ((int)(sizeof CARD_DIRS / sizeof CARD_DIRS[0]))
 

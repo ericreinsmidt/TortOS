@@ -166,18 +166,19 @@ matters to you - a card is the one part of this that gets reformatted.
 
 | | |
 |---|---|
-| **Left / Right** | move along the row, when the shelf runs horizontally |
-| **Up / Down** | move along the shelf when it runs vertically - **up advances** |
-| **the other axis** | jump to the previous / next initial (games) |
+| **Left / Right** | move along the row, when the shelf runs horizontally. In `Cubic`, always the games |
+| **Up / Down** | move along the shelf when it runs vertically - **up advances**. In `Cubic`, always the systems |
+| **the other axis** | jump to the previous / next initial (games). Not in `Cubic`, where both axes are taken |
 | **L1 / R1** | jump a screenful (games) |
-| **A** | open a system, or start a game |
-| **B** | back to the systems row |
+| **A** | open a system, or start a game. In `Cubic`, start it |
+| **B** | back to the systems row. In `Cubic`, this system's menu |
 | **X** | game info for the card under the cursor |
 | **Y** | favorite it - Favorites is a shelf of its own |
 | **Volume rocker** | volume, everywhere, including in game |
 | **F1 / F2** | brightness, everywhere, including in game |
 | **MENU** (on the systems row) | the TortOS menu - settings that are about the firmware |
 | **MENU** (inside a system) | that system's menu, below |
+| **MENU** (in `Cubic`) | always the TortOS menu; B is the system's |
 | **MENU** (in game) | the in-game menu: Continue, Save, Load, Display, Cheevos, Reset, Quit |
 | **POWER** | ends the game if one is running, otherwise powers off |
 
@@ -197,7 +198,7 @@ The TortOS menu is the firmware's own, and opens from the systems row:
 | **Auto Off** | how long without a button before the device powers itself down |
 | **Text Size** | left/right; reopens every font, so the whole UI is rebuilt |
 | **UI Theme** | `Classic` or `Fancy Pants` - which art the shelves wear |
-| **UI Direction** | `Horizontal` or `Vertical` - which way both shelves run |
+| **UI Direction** | `Horizontal`, `Vertical` or `Cubic` - see below |
 | **Box Art** | fetch what the whole library is missing |
 | **Cheevos** | the RetroAchievements account, or `sign in` |
 | **About TortOS** | version, address, battery, uptime |
@@ -419,11 +420,24 @@ removed, and because a photograph does not name itself the shelf writes the
 name underneath. A theme is a directory under `res/cards/`, so adding one is
 dropping in a folder - no code and no configuration.
 
-**UI Direction** picks which way both shelves run. `Horizontal` is the row
-above. `Vertical` makes the whole screen one face of a cube: advancing rolls
-the face you are leaving up and off the top while the next swings in from
-below, carrying its art, its glow, its text and its reflection with it,
-because a face is just a shelf drawn with one thing on it.
+**UI Direction** picks how you move. `Horizontal` is the row above.
+
+`Vertical` makes the whole screen one face of a cube: advancing rolls the face
+you are leaving up and off the top while the next swings in from below,
+carrying its art, its glow, its text and its reflection with it, because a
+face is just a shelf drawn with one thing on it.
+
+`Cubic` turns that cube both ways and merges the two shelves into one surface.
+**Up and down change system, left and right move through that system's
+games.** There is no entering and no going back, because what you are looking
+at is already the thing you can act on - so B, which has nothing to return to,
+opens the system's menu instead, and MENU is always the firmware's.
+
+Every face is a game. Turning to another system shows the game you were last
+on in it: each system keeps its own place, so glancing at one costs you
+nothing. Two rails, because there are two positions to be in - systems down
+the left, games along the bottom - with `n / total` and the system's name on
+the bottom line.
 
 Vertically the shelf runs **A at the bottom to Z at the top**, and up
 advances. The origin is the bottom left and the index grows with x and with

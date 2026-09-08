@@ -437,7 +437,18 @@ void cf_tick(coverflow *cf, int count)
 static void cube_face(SDL_Renderer *r, SDL_Texture *tex, float phi,
                       int screen_w, int screen_h, bool yaw)
 {
-	const int N = 14;
+	/* SDL_RenderGeometry maps a texture affinely across each triangle, so a
+	 * strongly foreshortened quad shears along its diagonal - the texture
+	 * slides against the geometry as the face turns away. Slicing into
+	 * strips keeps every triangle near planar and the shear disappears; the
+	 * only question is how many.
+	 *
+	 * 32 over a screen is about a 24px band, and it is nearly free: the fill
+	 * is the same however it is cut, and the cost of a turn is rendering the
+	 * two faces to their targets, not compositing them. Raise it if a slow
+	 * turn still crawls at the leading edge, which is where the divisor
+	 * changes fastest and the shear shows first. */
+	const int N = 32;
 	float span = yaw ? (float)screen_w : (float)screen_h;
 	float R = span * 0.5f;
 	/* The single number that decides whether this reads as a turn or a
