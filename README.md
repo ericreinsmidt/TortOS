@@ -358,11 +358,19 @@ and the card preview live, and reads back what actually happened: `RUNNING`,
 `EXIT reason=`, or an `ERROR code=` it can show.
 
 A warm launch - the process up, the core already mapped - is **~15 ms** to
-`RUNNING`. A core is mapped the first time a game needs it and never unloaded:
-six mapped plus one running measured **15.0 MB** against the device's 975, which
-is what makes holding all of them affordable rather than reckless. They are
-opened `RTLD_LOCAL`, so libraries exporting the same twenty `retro_*` symbols
-cannot see each other.
+`RUNNING`. Every core is mapped at startup, during the boot animation, and
+never unloaded, so no launch pays for opening one: six mapped plus one running
+measured **15.0 MB** against the device's 975, which is what makes holding all
+of them affordable rather than reckless. They are opened `RTLD_LOCAL`, so
+libraries exporting the same twenty `retro_*` symbols cannot see each other.
+
+Mapping them replaced reading them. The boot script used to pull the cores into
+the page cache with `cat`, which cost 480 ms cold and bought only the I/O;
+`dlopen` costs 382 ms, because it takes what it needs rather than every byte,
+and it pays the dynamic linker as well. That is what a first launch used to pay
+- and the `~170 ms` above is real, measured 179 ms for `genesis_plus_gx` cold,
+the largest core. It is now paid once, in idle seconds, instead of by whoever
+starts a Genesis game first. Measured 2026-09-08.
 
 The in-game menu is the launcher's own: MENU makes Diatom hand the display
 over with a preview of the paused frame, and Continue, Save, Load, Reset and
