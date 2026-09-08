@@ -1778,23 +1778,42 @@ static void draw_systems(app *a)
  * new subject and starts the wait again, which is what keeps a scan quiet. */
 static int shot_phase = -1;        /* --phase, for the shot harness only */
 
-static unsigned title_phase(app *a)
-{
-	static int last_sys = -1, last_cur = -1;
-	static unsigned since;
-	unsigned now = plat_now_ms();
-	int cur = a->view[a->sys_cursor].cursor;
+/* The marquee's clock. It restarts when the subject changes, so a newly chosen
+ * name is read from its beginning rather than joined halfway through a scroll.
+ *
+ * A SLOT PER SUBJECT, not one clock. A menu draws over a live shelf and the
+ * shelf asks for its phase every frame either way, so one shared clock would
+ * be reset twice a frame by two different subjects and nothing would ever
+ * move. Two keys because the shelf's subject is a pair - which system, and
+ * which game within it - and either changing is a new subject.
+ *
+ * shot_phase freezes it at a chosen moment. A still of a moving thing needs
+ * one; without it the only way to look at a marquee is to film it. That used
+ * to be here and not in the menu's copy of this, which is what having two
+ * copies costs. */
+enum { MQ_SHELF, MQ_MENU, MQ_SLOTS };
 
-	/* A still of a moving thing needs a chosen moment. Without this the only
-	 * way to look at a marquee is to film one. */
+static unsigned mq_phase(int who, int key_a, int key_b)
+{
+	static int      last_a[MQ_SLOTS], last_b[MQ_SLOTS];
+	static unsigned since[MQ_SLOTS];
+	static bool     primed[MQ_SLOTS];
+	unsigned now = plat_now_ms();
+
 	if (shot_phase >= 0) return (unsigned)shot_phase;
 
-	if (a->sys_cursor != last_sys || cur != last_cur) {
-		last_sys = a->sys_cursor;
-		last_cur = cur;
-		since = now;
+	if (!primed[who] || key_a != last_a[who] || key_b != last_b[who]) {
+		primed[who] = true;
+		last_a[who] = key_a;
+		last_b[who] = key_b;
+		since[who]  = now;
 	}
-	return now - since;
+	return now - since[who];
+}
+
+static unsigned title_phase(app *a)
+{
+	return mq_phase(MQ_SHELF, a->sys_cursor, a->view[a->sys_cursor].cursor);
 }
 
 /* Everything a games shelf says about one game: its title, its favorite mark
@@ -2203,19 +2222,6 @@ static int menu_row_h(void) { return ui_font_line(UI_F_MENU) * 3 / 2; }
 /* `accent` is the panel's border and heading rule. The shelf's own menu passes
  * MENU_ACCENT because that menu is TortOS, not whichever card is under the
  * cursor; a menu that belongs to a system passes that system's color. */
-/* The marquee's clock for a menu row, restarted when the selection moves so a
- * newly chosen name is read from its beginning rather than joined mid-scroll.
- * One clock because one menu is up at a time. */
-static unsigned menu_phase(int sel)
-{
-	static int      last = -32768;
-	static unsigned t0;
-	unsigned now = plat_now_ms();
-
-	if (sel != last) { last = sel; t0 = now; }
-	return now - t0;
-}
-
 static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
                       int sel, int fixed_w, unsigned accent)
 {
@@ -2522,7 +2528,7 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 					ui_text(a->r, fm, lbl, content_x, ty, -1, lc);
 				} else if (i == sel) {
 					ui_text_marquee(a->r, fm, rows[i].label, content_x, ty,
-					                room, menu_phase(sel), lc);
+					                room, mq_phase(MQ_MENU, sel, 0), lc);
 				} else {
 					ui_fit_text(fm, rows[i].label, lbl, sizeof lbl, room);
 					ui_text(a->r, fm, lbl, content_x, ty, -1, lc);
