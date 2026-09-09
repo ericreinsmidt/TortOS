@@ -1867,7 +1867,7 @@ static int shot_phase = -1;        /* --phase, for the shot harness only */
  * prevent, a step smaller: each would see the other's key every frame and
  * neither would ever get past the opening hold. */
 #define MQ_NOTES 2
-enum { MQ_SHELF, MQ_MENU, MQ_NOTE0, MQ_NOTE1, MQ_SLOTS };
+enum { MQ_SHELF, MQ_MENU, MQ_VALUE, MQ_NOTE0, MQ_NOTE1, MQ_SLOTS };
 
 static unsigned mq_phase(int who, int key_a, int key_b)
 {
@@ -2621,30 +2621,55 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 			int vw = rows[i].value ? ui_text_width(fm, rows[i].value) : 0;
 			int room;
 
-			/* A label that fits keeps the old order: drawn first, the value
-			 * taking what is left. Labels are usually captions - "Wi-Fi",
-			 * "File" - and values are whatever the card happens to hold.
+			/* WHICHEVER IS LONGER IS THE CONTENT, and the content is what
+			 * moves. The other one is a caption, and a caption keeps its
+			 * natural width.
 			 *
-			 * A label that does NOT fit is content rather than a caption: a
-			 * game's name in the play-time list, an SSID. There the priority
-			 * inverts. The value is measured first and keeps its width,
-			 * because a duration or a signal is short and fixed where a name
-			 * is neither, and letting the label win pushed the number off the
-			 * row it exists to report. The selected one then scrolls rather
-			 * than being cut - the same ping-pong with faded edges the shelf
-			 * gives a long title. Only the selected one: every long name
-			 * moving at once is a page that will not sit still to be read. */
-			if (lw <= content_w - (vw ? vw + gap : 0)) {
-				ui_fit_text(fm, rows[i].label, lbl, sizeof lbl, content_w);
-				lw = ui_text_width(fm, lbl);
-				ui_text(a->r, fm, lbl, content_x, ty, -1, lc);
+			 * On the play-time list the label is a game name and the value a
+			 * duration, so the name scrolls and the number stays put; a
+			 * duration pushed off the row it exists to report is no use to
+			 * anyone. On the game info screen it is the other way round -
+			 * "File" is the caption and the filename is the content - and
+			 * the same rule sends the filename to the marquee without
+			 * needing to know which screen it is on.
+			 *
+			 * The condition used to ask whether the label fit in what the
+			 * value left, which answers a different question: with a long
+			 * value that subtraction goes negative, so a two-letter label
+			 * failed it and took the long-LABEL path. The filename was then
+			 * drawn ellipsized across the full width with "File" printed on
+			 * top of it, which is what sent me looking.
+			 *
+			 * Only the selected row moves, OR one the cursor can never reach
+			 * - menu_run_body steps off any row whose `live` is false, so on
+			 * a screen of facts, waiting for selection waits forever. Rows
+			 * long enough to move are rare either way, and a page where
+			 * everything is moving will not sit still to be read. */
+			bool moves = (i == sel || !rows[i].live);
 
+			if (lw + (vw ? gap + vw : 0) <= content_w) {
+				ui_fit_text(fm, rows[i].label, lbl, sizeof lbl, content_w);
+				ui_text(a->r, fm, lbl, content_x, ty, -1, lc);
+				if (rows[i].value)
+					ui_text(a->r, fm, rows[i].value,
+					        content_x + content_w, ty, 1, vc);
+			} else if (vw > lw) {
+				/* The VALUE is the long one. The label keeps its width and
+				 * the value takes everything left of the right edge. */
+				ui_text(a->r, fm, rows[i].label, content_x, ty, -1, lc);
 				room = content_w - lw - gap;
-				if (rows[i].value && room > 0) {
+				if (room <= 0) {
+					/* No room for it at all; the label alone is the row. */
+				} else if (moves) {
+					ui_text_marquee(a->r, fm, rows[i].value,
+					                content_x + content_w - room, ty, room,
+					                mq_phase(MQ_VALUE, sel, i), vc);
+				} else {
 					ui_fit_text(fm, rows[i].value, val, sizeof val, room);
 					ui_text(a->r, fm, val, content_x + content_w, ty, 1, vc);
 				}
 			} else {
+				/* The LABEL is the long one: a game's name, an SSID. */
 				room = content_w - (vw ? vw + gap : 0);
 				if (rows[i].value) {
 					ui_fit_text(fm, rows[i].value, val, sizeof val, content_w);
@@ -2654,7 +2679,7 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 					/* Nothing left for a name. Better a cut label than none. */
 					ui_fit_text(fm, rows[i].label, lbl, sizeof lbl, content_w);
 					ui_text(a->r, fm, lbl, content_x, ty, -1, lc);
-				} else if (i == sel) {
+				} else if (moves) {
 					ui_text_marquee(a->r, fm, rows[i].label, content_x, ty,
 					                room, mq_phase(MQ_MENU, sel, 0), lc);
 				} else {
@@ -3543,32 +3568,28 @@ static void gi_gather(app *a, int owner, const game_entry *g, game_info *gi)
 
 	memset(gi, 0, sizeof *gi);
 
-	/* What the filename ADDS to the heading, not the filename.
+	/* The whole filename, exactly as it is on the card.
 	 *
-	 * The panel already says "Alex Kidd in Miracle World" in large type. The
-	 * row below it used to say "Alex Kidd in Miracle World (World) (Sega
-	 * Ages).zip" - the same words again, plus the only part that was news.
-	 * Measured over this library, 59 of 180 filenames were too wide for the
-	 * row and 13 of 180 titles are long on their own: most of that overflow
-	 * was the row repeating what was already on screen.
+	 * This row used to show only what the filename ADDED to the heading -
+	 * "(World) (Sega Ages).zip" under a panel already saying "Alex Kidd in
+	 * Miracle World" in large type - because 59 of 180 filenames in this
+	 * library were too wide for the row, and most of that width was the row
+	 * repeating what was already on screen. Trimming was the right answer
+	 * while the alternative was a hard ellipsis, since a cut filename answers
+	 * nothing and a trimmed one at least answers which dump it is.
 	 *
-	 * So show the tail. It answers the question someone opens this screen
-	 * with - which dump is this, and what is it in - and it is short enough
-	 * that nothing needs trimming.
+	 * It is not the right answer any more. An overlong value scrolls now, so
+	 * the choice is no longer between a shortened name and a cut one - it is
+	 * between a shortened name and the whole thing, and this row is the only
+	 * place in the UI that can say what a game is actually called. The title
+	 * is derived, the shelf shows the title, and the card art is named after
+	 * the file: when a scrape misses or a save does not appear, the exact
+	 * bytes of the name are the thing you need and the thing nothing else
+	 * would tell you.
 	 *
-	 * A game whose file does not begin with its title keeps the whole path:
-	 * a disc game's launch path is "<folder>/<disc>", where the prefix is a
-	 * directory rather than a repetition. */
-	{
-		size_t tn = strlen(g->title);
-		const char *tail = g->file;
-
-		if (tn && !strncmp(g->file, g->title, tn)) {
-			tail = g->file + tn;
-			while (*tail == ' ') tail++;
-		}
-		snprintf(gi->file, sizeof gi->file, "%s", tail);
-	}
+	 * The cost is real and accepted: the marquee scrolls through the title
+	 * before it reaches the part that was news. */
+	snprintf(gi->file, sizeof gi->file, "%s", g->file);
 
 	snprintf(p, sizeof p, "%s/%s/%s", P_ROMS, s->folder, g->file);
 	if (stat(p, &st) == 0) human_bytes(gi->size, sizeof gi->size,
@@ -3834,6 +3855,11 @@ static void game_info_screen(app *a)
 	c.g = &c.v->list.items[c.v->cursor];
 	gi_gather(a, c.owner, c.g, &c.gi);
 	c.st.accent = a->sys.systems[c.owner].accent;
+	/* Without this the panel sized itself to its own content, and its heading
+	 * is a GAME TITLE - so it drew 976px wide beside every other menu's 800.
+	 * info_preview next door was given the shared width and this was not,
+	 * which is the same one-of-two-paths miss as every other bug of the day. */
+	c.st.fixed_w = menu_std_width(a);
 
 	menu_run(a, &c.st, info_build, info_key, &c);
 
