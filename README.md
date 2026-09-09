@@ -193,7 +193,8 @@ MENU means three different menus depending on where you are, and each one is
 about the thing you are looking at: the firmware on the systems row, one
 console inside it, the running game in a game.
 
-The TortOS menu is the firmware's own, and opens from the systems row:
+The TortOS menu opens from the systems row and is about the device rather
+than any one console:
 
 | | |
 |---|---|
@@ -201,7 +202,7 @@ The TortOS menu is the firmware's own, and opens from the systems row:
 | **Bluetooth** | the connected headset, or `not connected` - pair, connect and forget |
 | **Audio Output** | `Auto` or `Speaker`, and where Auto landed - see **Audio** below |
 | **Over The Hare** | the file server; needs Wi-Fi and says so when there is none |
-| **Play Time** | how long each game has been played, most played first |
+| **Play Time** | per game or per system, by day, week, month, year or all time |
 | **Auto Off** | how long without a button before the device powers itself down |
 | **Text Size** | left/right; reopens every font, so the whole UI is rebuilt |
 | **UI Theme** | `Classic` or `Fancy Pants` - which art the shelves wear |
@@ -215,6 +216,13 @@ disappearing - a row that vanishes teaches nobody why. Cheevos stays reachable
 either way, because signing in is the thing you go there to do, and Bluetooth
 and Play Time need no network at all.
 
+On the Play Time screen, **left and right** change the window - all time, this
+year, this month, this week, today - and **Y** switches between one row per
+game and one per system. The row under the cursor gets its own line at the
+bottom: how many times it has been launched, its longest single session, when
+it was last played, and how many of those sessions ended in a flat battery or
+a crash rather than a quit. That last number only appears when it is not zero.
+
 On the Wi-Fi screen, **Y** rescans and **X** forgets the network under the
 cursor, behind a confirm. Forgetting the one you are connected through is
 allowed - refusing would leave a row that is visibly saved and visibly
@@ -226,7 +234,8 @@ The system menu opens on a shelf of games and applies to that system alone:
 |---|---|
 | **Games** | how many the shelf found |
 | **Core** | which libretro core runs them |
-| **Sort By**, **Show** | stated, not yet settings - `Name` and `All games` |
+| **Show** | stated, not yet a setting - `All games` |
+| **Sort By** | left/right; `Name`, `Play Time`, `Last Played` or `Recently Added` |
 | **Display Mode** | left/right cycles it; saved the moment it changes |
 | **Box Art** | fetch what this system is missing, and nothing else |
 | **Rescan Folder** | read the card again, for ROMs that arrived since boot |
@@ -236,6 +245,16 @@ same answer. Set here it applies from the next launch; the same row in the
 in-game menu changes the running game as you press it, which is the one to use
 when you want to see the difference rather than guess at it. Either way it is
 written the moment it changes - there is no confirm step to hang the save off.
+
+Sort By is per-system for the same reason. Alphabetical is the only sane way
+to find a title you can name, and no help at all when you are coming back to
+the two or three you are actually playing, which on a large shelf are
+scattered through the alphabet. Play Time and Last Played read the same
+session rows the Play Time screen does; Recently Added is the ROM's timestamp
+on the card. Whichever order you pick, games it knows nothing about sort to
+the bottom rather than into the middle, and two games it cannot tell apart
+fall back to name - a shelf that reshuffles itself when nothing has changed
+reads as broken even when the top of it is right.
 
 Rescan Folder is what makes a ROM that arrived after boot appear without a
 restart. Over The Hare already does it for you on the way out of the transfer
@@ -499,7 +518,8 @@ Pressing A on it does not start it, it continues it.
 
 States are keyed on the system's **`Roms/` folder**, and battery `.srm` files
 sit flat in `Saves/` named after the ROM. The **tag** in `systems.cfg` keys
-something else: the per-system display mode and the favorites list. This
+something else: the per-system display mode, the sort order, and the favorites
+list. This
 paragraph claimed for a while that saves and states hung off the tag; they do
 not, checked in the code on 2026-09-01.
 
@@ -710,6 +730,7 @@ exists because something once broke in a way nothing noticed:
 | `check-xfer` | upload paths cannot escape the directory they were aimed at |
 | `check-db` | a shipped default never overwrites a choice, and the two scopes stay apart |
 | `check-stats` | play time is recorded, and a LAUNCH still writes nothing |
+| `check-sort` | a shelf sorts the way it says it does, and the same shelf twice the same way |
 | `check-bt` | a device name from the air is only ever data; an address is validated |
 | `check-backlog` | the backlog still says what is left, and has been swept recently |
 
