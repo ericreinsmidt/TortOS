@@ -205,6 +205,12 @@ bool lib_scan(const char *roms_root, const char *folder, const char *exts,
 		memset(&list[n], 0, sizeof list[n]);
 		snprintf(list[n].file, sizeof list[n].file, "%s", e->d_name);
 		snprintf(list[n].name, sizeof list[n].name, "%s", e->d_name);
+		{   /* For the recently-added order. A file that cannot be statted
+		     * keeps 0 and sorts to the bottom of that order, which is where
+		     * "we do not know when this arrived" belongs. */
+			struct stat st;
+			if (stat(full, &st) == 0) list[n].added = (long)st.st_mtime;
+		}
 		dot = strrchr(list[n].name, '.');
 		if (dot && dot != list[n].name) *dot = '\0';
 		lib_title(list[n].name, list[n].title, sizeof list[n].title);
@@ -239,6 +245,14 @@ bool lib_scan(const char *roms_root, const char *folder, const char *exts,
 		memset(&list[n], 0, sizeof list[n]);
 		snprintf(list[n].file, sizeof list[n].file, "%s/%s", e->d_name, inside);
 		snprintf(list[n].name, sizeof list[n].name, "%s", e->d_name);
+		{   /* The FOLDER's mtime, not the disc image's. The folder is the
+		     * game here, and copying a disc into it touches the folder. */
+			struct stat st;
+			char dirfull[LIB_PATH * 3];
+
+			snprintf(dirfull, sizeof dirfull, "%s/%s", dirpath, e->d_name);
+			if (stat(dirfull, &st) == 0) list[n].added = (long)st.st_mtime;
+		}
 		lib_title(list[n].name, list[n].title, sizeof list[n].title);
 		n++;
 	}

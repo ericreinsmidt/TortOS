@@ -24,6 +24,21 @@ typedef struct {
 	 * would spend the whole boot animation on them. */
 	signed char state_known;
 	signed char has_state;
+	/* The ROM's mtime, for the recently-added sort order.
+	 *
+	 * The scan did not stat files before this - readdir's d_type answers the
+	 * only question it had - so this is real added work. Measured on the
+	 * device with the page cache dropped: a readdir sweep of all 3380 files
+	 * is 0.20s and a stat sweep is 0.23s, so about 30ms for the whole card.
+	 * exfat keeps the timestamps in the directory entry, which is why the
+	 * block is already read by the time the stat is asked for. */
+	long added;
+	/* Sort keys, filled by sort_apply just before a sort that needs them and
+	 * meaningless otherwise. They live here rather than in a parallel array
+	 * so the entries can be moved by qsort with their keys attached - which
+	 * is the whole reason the keys are precomputed. */
+	long play_secs;
+	long last_played;
 } game_entry;
 
 typedef struct {

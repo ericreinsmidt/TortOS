@@ -290,6 +290,19 @@ bool stats_at(int i, const char **tag, const char **file,
 	return true;
 }
 
+bool stats_lookup(const char *tag, const char *file,
+                  long *seconds, long *last)
+{
+	int i;
+
+	if (!tag || !file) return false;
+	i = find_row(tag, file);
+	if (i < 0) return false;
+	if (seconds) *seconds = g_rows[i].seconds;
+	if (last)    *last    = g_rows[i].last;
+	return true;
+}
+
 bool stats_extra(int i, long *longest, long *last, int *lost)
 {
 	if (i < 0 || i >= g_nrows) return false;

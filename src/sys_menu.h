@@ -41,7 +41,7 @@ typedef enum {
  * side - Diatom has per-system display modes and core-supplied button labels -
  * so these are hooks waiting to be wired, not wishes. */
 typedef enum {
-	SM_GAMES, SM_CORE, SM_SORT, SM_SHOW,
+	SM_GAMES, SM_CORE, SM_SHOW, SM_SORT,
 	SM_DISPLAY, /* SM_BUTTONS, */ SM_BOXART, SM_RESCAN, SM_ROWS
 } sm_row;
 
@@ -86,6 +86,10 @@ typedef struct {
 	const char *sys_core;
 	int         game_count;
 	const char *dmode;
+	/* The label of the shelf's sort order. A label rather than an index for
+	 * the same reason dmode is one: this file must not know the table, or a
+	 * check that links it would have to link the table too. */
+	const char *sort;
 } sys_ui;
 
 /* Seconds to the label a row shows. Pure, and here rather than in main.c so

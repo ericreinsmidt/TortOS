@@ -29,8 +29,9 @@ int sys_menu_build(const sys_ui *u, menu_row *out, menu_bufs *b,
 		*heading = u->sys_name;
 		out[SM_GAMES]   = (menu_row){ "Games",         b->a,        false };
 		out[SM_CORE]    = (menu_row){ "Core",          b->b,        false };
-		out[SM_SORT]    = (menu_row){ "Sort By",       "Name",      false };
 		out[SM_SHOW]    = (menu_row){ "Show",          "All games", false };
+		out[SM_SORT]    = (menu_row){ "Sort By",
+		                              u->sort ? u->sort : "Name", true  };
 		out[SM_DISPLAY] = (menu_row){ "Display Mode",  u->dmode,    true  };
 		/* Button Mapping is out until there is something behind it. Diatom
 		 * supplies core button labels, so the hook is real - but a dead row

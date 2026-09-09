@@ -10,7 +10,7 @@ SSH := sshpass -p 'tina' ssh -o StrictHostKeyChecking=no root@$(BRICK)
         adb adb-elf adb-res adb-vendor adb-restart adb-run adb-log \
         check check-cheevos check-hare check-httpd check-idle check-rahash \
         check-raset check-xfer check-menus check-artscrape check-audioout \
-        check-db check-stats check-bt check-backlog hooks storeprobe deploy restart logs
+        check-db check-stats check-sort check-bt check-backlog hooks storeprobe deploy restart logs
 
 all: build/tortos.elf
 
@@ -20,7 +20,7 @@ all: build/tortos.elf
 # exist, and check-menus was about to join eight others in that state.
 CHECKS = check-cheevos check-hare check-httpd check-idle check-rahash \
          check-raset check-xfer check-menus check-artscrape check-audioout \
-         check-db check-stats check-bt check-backlog
+         check-db check-stats check-sort check-bt check-backlog
 
 check:
 	@fail=0; for c in $(CHECKS); do \
@@ -293,6 +293,21 @@ build-native/stats-check: tools/stats-check.c src/stats.c src/stats.h src/db.c s
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
 	      -o $@ tools/stats-check.c src/stats.c src/db.c src/atomic.c
+
+# What order a shelf ends up in. Two of the four orders read the session rows,
+# so this links stats and the database - but not library.c: game_entry is a
+# struct in the header and nothing here scans a directory.
+check-sort: build-native/sort-check
+	@./build-native/sort-check; s=$$?; \
+	if [ $$s -eq 77 ]; then \
+		echo "  install sqlite3 - the launcher needs it, not just this check" >&2; \
+	fi; exit $$s
+
+build-native/sort-check: tools/sort-check.c src/sort.h src/library.h src/stats.c \
+                         src/stats.h src/db.c src/atomic.c FORCE
+	@mkdir -p build-native
+	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
+	      -o $@ tools/sort-check.c src/stats.c src/db.c src/atomic.c
 
 # Bluetooth. A device NAME is arbitrary bytes chosen by whoever owns the
 # headset, arriving over the air into a process running as root; an ADDRESS is

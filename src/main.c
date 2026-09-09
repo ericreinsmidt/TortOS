@@ -17,6 +17,7 @@
 #include "bt_menu.h"
 #include "db.h"
 #include "stats.h"
+#include "sort.h"
 #include "coverflow.h"
 #include "library.h"
 #include "platform.h"
@@ -66,6 +67,9 @@ typedef struct {
 	 * whatever sits at index 0 is what an untouched card plays at - see the
 	 * note on DMODES itself. */
 	int dmode;
+	/* Index into SORTS. Zero is by name, which is what every shelf was
+	 * before this existed and what an untouched one still is. */
+	int sort;
 	coverflow cf;
 	/* NULL on a real shelf, where every game belongs to the system whose
 	 * shelf it is. Favorites is a shelf of games drawn from many systems, so
@@ -238,6 +242,50 @@ static void display_save(app *a)
 		snprintf(key, sizeof key, "display.%s", a->sys.systems[i].tag);
 		db_set_str(db_dev(), key, DMODES[a->view[i].dmode].name);
 	}
+}
+
+/* ---------- per-system sort order ----------------------------------------- */
+
+/* Keyed on the tag for the same reason display.<TAG> is, and stored beside it.
+ * Loading does NOT re-sort: it runs before the scan on a rescan and after it
+ * at startup, and the shelf is put in order by sort_all once both are done. */
+static void sort_load(app *a)
+{
+	char key[CFG_STR + 16], name[CFG_STR];
+	int i;
+
+	for (i = 0; i < a->sys.count; i++) {
+		snprintf(key, sizeof key, "sort.%s", a->sys.systems[i].tag);
+		if (!db_get_str(db_dev(), key, name, sizeof name, NULL)) continue;
+		a->view[i].sort = sort_index(name);
+	}
+}
+
+static void sort_save(app *a)
+{
+	char key[CFG_STR + 16];
+	int i;
+
+	for (i = 0; i < a->sys.count; i++) {
+		snprintf(key, sizeof key, "sort.%s", a->sys.systems[i].tag);
+		db_set_str(db_dev(), key, SORTS[a->view[i].sort].name);
+	}
+}
+
+/* Put every shelf in its own order. One pass over the systems, and the
+ * session rows are folded once per system that needs them rather than once
+ * per game - which is why this is a loop here and not a call inside scan_all.
+ *
+ * The favorites shelf is built elsewhere and keeps its own order: it is a
+ * shelf of games from many systems and has no single tag to hang a setting
+ * off. */
+static void sort_all(app *a)
+{
+	int i;
+
+	for (i = 0; i < a->sys.count; i++)
+		sort_apply(a->view[i].list.items, a->view[i].list.count,
+		           a->view[i].sort, a->sys.systems[i].tag);
 }
 
 /* ---------- textures ----------------------------------------------------- */
@@ -631,6 +679,28 @@ static void faces_swap(SDL_Texture **fa, SDL_Texture **fb)
 	g_face[1] = t;
 	*fa = g_face[0];
 	*fb = g_face[1];
+}
+
+/* One shelf's card art, dropped.
+ *
+ * Every one of these arrays is indexed by POSITION in the list, so reordering
+ * the list moves the games and leaves the art behind - each card would wear
+ * the picture of whatever used to sit where it now sits. The cube's two cached
+ * faces are keyed by index as well, which is what faces_stale is for. */
+static void free_view_textures(sysview *v)
+{
+	int k;
+
+	for (k = 0; k < v->list.count; k++) {
+		if (v->tex && v->tex[k]) {
+			SDL_DestroyTexture(v->tex[k]);
+			v->tex[k] = NULL;
+		}
+		if (v->tw) v->tw[k] = 0;
+		if (v->th) v->th[k] = 0;
+		if (v->cb) v->cb[k] = 0.0f;
+	}
+	faces_stale();
 }
 
 static void free_all_textures(app *a)
@@ -2686,6 +2756,7 @@ static int menu_build(app *a, screen_id screen, int sys,
 		u.sys_core   = sc->core;
 		u.game_count = a->view[sys].list.count;
 		u.dmode      = DMODES[a->view[sys].dmode].label;
+		u.sort       = SORTS[a->view[sys].sort].label;
 	} else {
 		aout_state ao = aout_now();
 
@@ -4281,11 +4352,22 @@ static int menu_shelf_width(app *a)
 	n = menu_build(a, SCREEN_SYSTEMS, a->sys_cursor, rows, &bufs, &heading);
 	w = menu_measure(rows, n, heading);
 
+	/* Every value that can be cycled on this menu, at its widest, so the
+	 * panel does not resize under the row being cycled. Sort By joined
+	 * Display Mode in that category the moment it stopped being a
+	 * placeholder - "Recently Added" is 187px wider than "Name". */
 	for (i = 0; i < a->sys.count; i++) {
 		n = menu_build(a, SCREEN_GAMES, i, rows, &bufs, &heading);
 		for (k = 0; k < DMODE_COUNT; k++) {
 			int mw;
 			rows[SM_DISPLAY].value = DMODES[k].label;
+			mw = menu_measure(rows, n, heading);
+			if (mw > w) w = mw;
+		}
+		rows[SM_DISPLAY].value = DMODES[0].label;
+		for (k = 0; k < SORT_COUNT; k++) {
+			int mw;
+			rows[SM_SORT].value = SORTS[k].label;
 			mw = menu_measure(rows, n, heading);
 			if (mw > w) w = mw;
 		}
@@ -4388,6 +4470,40 @@ static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
 
 			v->dmode = (v->dmode + d + DMODE_COUNT) % DMODE_COUNT;
 			display_save(a);
+			return MENU_STAY;
+		}
+		/* Sort order, on the same left/right idiom.
+		 *
+		 * The cursor follows the GAME, not its index. Re-sorting under a
+		 * cursor left where it sat means closing the menu onto a different
+		 * game than the one that was selected when it opened - the shelf
+		 * would appear to have jumped on its own. Which game you were
+		 * looking at is the thing that survives a reorder; where it happened
+		 * to sit in the old order is not. */
+		if (d && sel == SM_SORT) {
+			sysview *v = &a->view[a->sys_cursor];
+			char keep[LIB_PATH];
+			int i;
+
+			keep[0] = '\0';
+			if (v->cursor >= 0 && v->cursor < v->list.count)
+				snprintf(keep, sizeof keep, "%s",
+				         v->list.items[v->cursor].file);
+
+			v->sort = sort_step(v->sort, d);
+			sort_apply(v->list.items, v->list.count, v->sort,
+			           a->sys.systems[a->sys_cursor].tag);
+			sort_save(a);
+
+			/* The textures are indexed by position, so they moved with
+			 * nothing. Dropping them lets the next frame fetch each card's
+			 * art for where it now sits. */
+			free_view_textures(v);
+
+			v->cursor = 0;
+			for (i = 0; i < v->list.count; i++)
+				if (!strcmp(v->list.items[i].file, keep)) { v->cursor = i; break; }
+			cf_reset(&v->cf, v->cursor);
 			return MENU_STAY;
 		}
 		if (key != IN_ACCEPT) return MENU_STAY;
@@ -6074,6 +6190,8 @@ static void rescan_all(app *a)
 
 	scan_all(a);
 	display_load(a);     /* indexes by tag, so it is safe to run again */
+	sort_load(a);
+	sort_all(a);
 
 	a->sys_cursor = 0;
 	for (i = 0; i < a->sys.count; i++)
@@ -6519,6 +6637,8 @@ int main(int argc, char *argv[])
 	/* After the scan, because it indexes by system, and before anything can
 	 * launch, because the mode has to reach Diatom with the first RUN. */
 	display_load(&a);
+	sort_load(&a);
+	sort_all(&a);
 	t_mark("scan");
 
 	/* BEFORE the first frame this process ever draws: if a previous launcher

@@ -109,6 +109,17 @@ bool stats_at(int i, const char **tag, const char **file,
  * than `quit`. */
 bool stats_extra(int i, long *longest, long *last, int *lost);
 
+/* One game's totals, for a caller that has a game rather than a row: the
+ * shelf sorting by play time asks this per entry. Reads whatever the last
+ * stats_summarize folded, so call that first - and note the folded rows are
+ * shared with the play-time screen, which re-folds them under its own window
+ * whenever it is opened. Both re-fold on entry, so neither reads the other's
+ * answer today; it is one set of rows, not two, and worth knowing.
+ *
+ * Returns false for a game with no sessions, leaving the outputs untouched. */
+bool stats_lookup(const char *tag, const char *file,
+                  long *seconds, long *last);
+
 long stats_total_seconds(void);
 int  stats_total_launches(void);
 

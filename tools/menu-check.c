@@ -410,8 +410,11 @@ static void cursor_reaches(void)
 	k = reachable(rows, n, got, MENU_MAX_ROWS);
 
 	printf("system menu, what the cursor can reach:\n");
-	ck(k == 3, "three rows, not seven");
+	ck(k == 4, "four rows, not seven");
 	ck(holds(got, k, SM_DISPLAY), "Display Mode");
+	/* Live since sorting stopped being alphabetical-only. It was a
+	 * placeholder for long enough that this check counted three. */
+	ck(holds(got, k, SM_SORT), "Sort By");
 	ck(holds(got, k, SM_BOXART), "Box Art");
 	ck(holds(got, k, SM_RESCAN), "Rescan Folder");
 	ck(!holds(got, k, SM_GAMES) && !holds(got, k, SM_CORE),
