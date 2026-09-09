@@ -17,6 +17,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 static int fails;
@@ -154,7 +155,8 @@ static void two_systems_can_hold_the_same_filename(void)
 	scrub();
 	stats_begin("GB", "Tetris.zip", 0);   stats_end("quit", 60000);
 	stats_begin("GBC", "Tetris.zip", 0);  stats_end("quit", 30000);
-	ck(stats_summarize() == 2, "two distinct games");
+	ck(stats_summarize(STATS_ALL, false, time(NULL)) == 2,
+	   "two distinct games");
 }
 
 static void summarize_folds_and_ranks(void)
@@ -172,7 +174,7 @@ static void summarize_folds_and_ranks(void)
 	stats_begin("NES", "Contra.zip", 1);       stats_end("quit", 120001);
 	stats_begin("SNES", "Metroid.zip", 0);     stats_end("quit", 600000);
 
-	ck(stats_summarize() == 2, "two games");
+	ck(stats_summarize(STATS_ALL, false, time(NULL)) == 2, "two games");
 	ck(stats_total_seconds() == 60 + 120 + 600, "total is every session");
 	ck(stats_total_launches() == 3, "three launches");
 
@@ -185,6 +187,119 @@ static void summarize_folds_and_ranks(void)
 	   "and the two Contra sessions folded into one row");
 
 	ck(!stats_at(2, NULL, NULL, NULL, NULL), "and there is no third");
+}
+
+/* A session at a chosen moment in the past.
+ *
+ * stats_begin reads the clock itself, and correctly so - a launch does no I/O
+ * and has nothing to ask - which leaves a window test no way to place a
+ * session anywhere but now. So it writes the row it wants to see. This is the
+ * only code outside stats.c that knows the key format, and if the two ever
+ * disagree, the tests below stop folding anything and say so loudly. */
+static void seed(long start, const char *tag, const char *file,
+                 long secs, const char *state)
+{
+	static unsigned uniq;
+	char k[STATS_TAG_MAX + STATS_FILE_MAX + 56], v[64];
+
+	snprintf(k, sizeof k, "sess.%ld.%u.%s\t%s", start, ++uniq, tag, file);
+	snprintf(v, sizeof v, "%ld\t%s", secs, state);
+	db_set_str(db_lib(), k, v);
+}
+
+/* The boundaries are asked of stats_window_start rather than computed here,
+ * because a check that recomputes them with the same arithmetic proves only
+ * that the arithmetic was copied correctly. What is asserted is the PROPERTY:
+ * a second before a boundary is outside the window and a second after is
+ * inside it. That holds in any timezone, which a hardcoded date would not. */
+static void windows_cut_on_a_boundary(void)
+{
+	long now = (long)time(NULL);
+	int w;
+
+	printf("what each window includes:\n");
+	ck(stats_window_start(STATS_ALL, now) == 0, "all time starts at zero");
+	ck(stats_window_start(STATS_TODAY, now) >= stats_window_start(STATS_WEEK, now),
+	   "today starts no earlier than this week");
+	ck(stats_window_start(STATS_WEEK, now) >= stats_window_start(STATS_MONTH, now),
+	   "this week starts no earlier than this month");
+	ck(stats_window_start(STATS_MONTH, now) >= stats_window_start(STATS_YEAR, now),
+	   "this month starts no earlier than this year");
+	ck(stats_window_start(STATS_YEAR, now) <= now, "this year has begun");
+
+	for (w = STATS_YEAR; w <= STATS_TODAY; w++) {
+		long edge = stats_window_start(w, now);
+
+		scrub();
+		seed(edge - 1, "NES", "Before.zip", 100, "quit");
+		seed(edge,     "NES", "On.zip",     200, "quit");
+		seed(now,      "NES", "After.zip",  300, "quit");
+		ck(stats_summarize(w, false, now) == 2,
+		   stats_window_name(w));
+		ck(stats_total_seconds() == 500,
+		   "the session before the boundary is not counted");
+		ck(stats_summarize(STATS_ALL, false, now) == 3,
+		   "and all time still has all three");
+	}
+}
+
+static void folding_by_system(void)
+{
+	const char *tag, *file;
+	long secs, now = (long)time(NULL);
+	int launches;
+
+	printf("by system rather than by game:\n");
+	scrub();
+	seed(now, "NES", "Contra.zip",  600, "quit");
+	seed(now, "NES", "Metroid.zip", 300, "quit");
+	seed(now, "GB",  "Tetris.zip",  100, "quit");
+
+	ck(stats_summarize(STATS_ALL, true, now) == 2, "three games, two systems");
+	ck(stats_at(0, &tag, &file, &secs, &launches), "the first row reads");
+	ck(!strcmp(tag, "NES"), "the busiest system first");
+	ck(secs == 900 && launches == 2, "both its games folded into it");
+	ck(!*file, "and a system row names no file");
+	ck(stats_summarize(STATS_ALL, false, now) == 3, "by game it is three again");
+}
+
+static void the_extras(void)
+{
+	long now = (long)time(NULL), longest = 0, last = 0;
+	int lost = 0;
+
+	printf("longest, last played and lost:\n");
+	scrub();
+	seed(now - 200000, "NES", "Contra.zip", 900, "quit");
+	seed(now - 100000, "NES", "Contra.zip", 300, "lost");
+	seed(now -  50000, "NES", "Contra.zip", 120, "quit");
+
+	ck(stats_summarize(STATS_ALL, false, now) == 1, "one game");
+	ck(stats_extra(0, &longest, &last, &lost), "its extras read");
+	ck(longest == 900, "the longest single session, not the total");
+	ck(last == now - 50000, "last played is the most recent start");
+	ck(lost == 1 && stats_total_lost() == 1, "one session never reached exit");
+
+	/* A row still marked open is a session this boot has not recovered. It
+	 * counts as lost for the same reason stats_recover will call it that. */
+	scrub();
+	seed(now, "NES", "Contra.zip", 60, "open");
+	ck(stats_summarize(STATS_ALL, false, now) == 1, "an open row still folds");
+	ck(stats_total_lost() == 1, "and counts as lost");
+}
+
+static void how_long_ago(void)
+{
+	long now = (long)time(NULL);
+	char b[16];
+
+	printf("how long ago it reads:\n");
+	stats_ago(0, now, b, sizeof b);       ck(!strcmp(b, "never"), "never played");
+	stats_ago(now, now, b, sizeof b);     ck(!strcmp(b, "today"), "today");
+	stats_ago(now - 86400 * 3, now, b, sizeof b);
+	ck(!strcmp(b, "3d ago"), "a few days");
+	stats_ago(now - 86400 * 21, now, b, sizeof b);
+	ck(!strcmp(b, "3w ago"), "a few weeks");
 }
 
 static void formatting(void)
@@ -210,7 +325,11 @@ int main(void)
 	the_clock_wrapping_is_not_a_49_day_session();
 	two_systems_can_hold_the_same_filename();
 	summarize_folds_and_ranks();
+	windows_cut_on_a_boundary();
+	folding_by_system();
+	the_extras();
 	formatting();
+	how_long_ago();
 	db_shutdown();
 	scrub();
 	db_shutdown();

@@ -1792,7 +1792,12 @@ static int shot_phase = -1;        /* --phase, for the shot harness only */
  * one; without it the only way to look at a marquee is to film it. That used
  * to be here and not in the menu's copy of this, which is what having two
  * copies costs. */
-enum { MQ_SHELF, MQ_MENU, MQ_SLOTS };
+/* Two note slots because a panel can carry two footer notes and both may be
+ * long enough to move. Sharing one would be the bug this enum exists to
+ * prevent, a step smaller: each would see the other's key every frame and
+ * neither would ever get past the opening hold. */
+#define MQ_NOTES 2
+enum { MQ_SHELF, MQ_MENU, MQ_NOTE0, MQ_NOTE1, MQ_SLOTS };
 
 static unsigned mq_phase(int who, int key_a, int key_b)
 {
@@ -2221,6 +2226,34 @@ static int menu_row_h(void) { return ui_font_line(UI_F_MENU) * 3 / 2; }
  * unless both use the same number. */
 static int menu_pad(void)   { return menu_row_h() * 3 / 4; }
 
+/* The air between the panel and the screen edge, on every side. */
+#define MENU_MARGIN 24
+
+/* How many row_h rows menu_draw can show beside `fixed` other full rows,
+ * `rules` rules and `notes` notes, before it starts windowing.
+ *
+ * It windows from the TOP of the list, which is right for a plain menu and
+ * wrong for a screen whose last rows are a footer: Play Time overflowed by
+ * 42px and menu_draw answered by scrolling the footer off the bottom, so the
+ * totals and the key legend were never on screen together. A screen that
+ * builds furniture around a list has to know how much list is left, and this
+ * is that arithmetic in one place rather than a constant tuned to one text
+ * size - Text Size is a setting, and at 125% a hardcoded row count is wrong
+ * again. */
+static int menu_list_fit(int fixed, int rules, int notes)
+{
+	int pad = menu_pad(), row_h = menu_row_h();
+	int head_h = ui_font_line(UI_F_LABEL) + pad;
+	int avail = TORTOS_SCREEN_H - MENU_MARGIN * 2
+	          - (head_h + pad / 2)          /* heading down to the first row */
+	          - pad;                        /* and the panel's bottom air */
+
+	avail -= fixed * row_h;
+	avail -= rules * (pad / 2 + 2);
+	avail -= notes * (ui_font_height(UI_F_MENU) + pad / 3);
+	return avail < row_h ? 1 : avail / row_h;
+}
+
 /* `fixed_w` is the content width to use, or 0 to size to these rows. The shelf
  * menus pass a width measured across both of them so the panel never resizes;
  * the in-game menu has no values to cycle and sizes to itself. */
@@ -2257,6 +2290,7 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 	 * the top - otherwise retuning the heading's size moves it off center,
 	 * which is exactly what happened when it grew. `content_off` is the panel
 	 * top to the first row, so a panel with no heading just pads instead. */
+	int notes_drawn = 0;   /* which marquee slot the next long note takes */
 	int line_head   = ui_font_line(UI_F_LABEL);
 	/* A heading may carry a second line, separated by a newline. Nothing else
 	 * passes one; the achievements screen does, because its heading is a game
@@ -2275,7 +2309,7 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 	 * up, and this menu is meant to gain rows - so the panel is capped to the
 	 * screen and the rows window around the selection when they do not all
 	 * fit. A menu that runs off the top is worse than one that scrolls. */
-	const int margin = 24;
+	const int margin = MENU_MARGIN;
 	int vis = n, first = 0;
 
 	for (i = 0; i < n; i++)
@@ -2417,6 +2451,7 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 		                                      content_w, 2 });
 	}
 
+	notes_drawn = 0;
 	for (k = 0, i = first; k < vis && i < n; k++, i++) {
 		int y = content_y;
 		int ty, j;
@@ -2490,8 +2525,26 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 		if (ROW_IS_NOTE(rows[i])) {
 			char note[192];
 
-			ui_fit_text(fm, rows[i].label, note, sizeof note, content_w);
-			ui_text(a->r, fm, note, cx, ty, 0, lc);
+			/* A note that fits is centered, which is what a caption wants.
+			 * One that does not SCROLLS rather than being cut: a note is a
+			 * sentence, and Play Time's footer lost the last of four facts
+			 * to an ellipsis - "longest 56m 30s · t..." - where the reader
+			 * cannot even tell which word went. Same ping-pong and the same
+			 * faded edges a long title gets on the shelf.
+			 *
+			 * Left-aligned in that case, not centered: the text is wider
+			 * than the box, so centering it has nothing left to center. */
+			if (ui_text_width(fm, rows[i].label) <= content_w) {
+				ui_fit_text(fm, rows[i].label, note, sizeof note, content_w);
+				ui_text(a->r, fm, note, cx, ty, 0, lc);
+			} else {
+				int slot = MQ_NOTE0 + (notes_drawn < MQ_NOTES - 1
+				                       ? notes_drawn : MQ_NOTES - 1);
+
+				ui_text_marquee(a->r, fm, rows[i].label, content_x, ty,
+				                content_w, mq_phase(slot, sel, i), lc);
+			}
+			notes_drawn++;
 		} else if (two_col) {
 			char lbl[192], val[192];
 			int lw = ui_text_width(fm, rows[i].label);
@@ -3928,18 +3981,31 @@ static void bt_screen(app *a)
  * session ever recorded, which measured 6.3 ms cold on the card - nothing at
  * all once, and a waste sixty times a second. Nothing here writes.
  */
+/* The most the list can ever be. The number actually shown is asked of
+ * menu_list_fit at entry, because the answer moves with Text Size. */
 #define STATS_VISIBLE 8
 
 static void stats_screen(app *a)
 {
 	char vals[STATS_VISIBLE + 1][32], labels[STATS_VISIBLE + 1][80];
-	menu_row rows[STATS_VISIBLE + 1];
+	/* +3: the total row above the list, then a rule and two notes below it. */
+	menu_row rows[STATS_VISIBLE + 4];
 	/* The total row says more than a duration, so it gets its own buffer
 	 * rather than borrowing a game's - which the device compiler caught as a
 	 * truncation the host compiler let through. */
-	char total[32], total_val[64];
-	int ngames = stats_summarize();
+	char total[32], total_val[64], detail[192];
+	stats_window win = STATS_ALL;
+	bool by_sys = false;
+	long now = (long)time(NULL);
+	int ngames = stats_summarize(win, by_sys, now);
 	int cursor = 0, top = 0;
+	/* The total above the list, then a rule and two notes below it. What is
+	 * left over is the list, and it is asked rather than assumed. */
+	int vis = menu_list_fit(1, 1, 2);
+
+	/* The buffers are fixed, so however much room the panel has, the list
+	 * stops where they do. */
+	if (vis > STATS_VISIBLE) vis = STATS_VISIBLE;
 	bool done = false;
 
 	stats_format(stats_total_seconds(), total, sizeof total);
@@ -3949,12 +4015,20 @@ static void stats_screen(app *a)
 
 		/* The total is a row rather than a heading, so it lines up with the
 		 * games under it and reads as one table. */
-		snprintf(labels[0], sizeof labels[0], "Total");
-		snprintf(total_val, sizeof total_val, "%s over %d launches",
-		         total, stats_total_launches());
+		/* The window's name IS the total's label. A row already sat here
+		 * saying "Total", and a heading that also said which slice would
+		 * have said the same thing twice in two type sizes. */
+		snprintf(labels[0], sizeof labels[0], "%s", stats_window_name(win));
+		/* "over" spelled out put "This Month  2h 16m over 143 launches" at
+		 * 764px against 704 of content, and menu_draw answered by cutting
+		 * the LABEL - so the row said "This Y...". The separator is the
+		 * cheapest 60px on the screen. */
+		snprintf(total_val, sizeof total_val, "%s · %d launch%s",
+		         total, stats_total_launches(),
+		         stats_total_launches() == 1 ? "" : "es");
 		rows[shown++] = (menu_row){ labels[0], total_val, false };
 
-		for (i = top; i < ngames && shown <= STATS_VISIBLE; i++) {
+		for (i = top; i < ngames && shown <= vis; i++) {
 			const char *tag, *file;
 			long secs;
 			int launches;
@@ -3962,6 +4036,23 @@ static void stats_screen(app *a)
 			int len;
 
 			if (!stats_at(i, &tag, &file, &secs, &launches)) break;
+			if (by_sys) {
+				/* stats.c knows the tag and nothing else - the display name
+				 * lives in systems.cfg, which is this side of the seam. A
+				 * system no longer on the card keeps its tag rather than
+				 * disappearing: the time was still spent. */
+				int k, found = 0;
+
+				for (k = 0; k < a->sys.count; k++)
+					if (!strcmp(a->sys.systems[k].tag, tag)) {
+						snprintf(labels[shown], sizeof labels[0], "%s",
+						         a->sys.systems[k].name);
+						found = 1;
+						break;
+					}
+				if (!found)
+					snprintf(labels[shown], sizeof labels[0], "%s", tag);
+			} else {
 			/* The extension is noise in a list of names. Last dot only, so a
 			 * title with dots of its own keeps them. */
 			dot = strrchr(file, '.');
@@ -3977,6 +4068,7 @@ static void stats_screen(app *a)
 				snprintf(bare, sizeof bare, "%.*s", len, file);
 				lib_title(bare, labels[shown], sizeof labels[0]);
 			}
+			}
 			stats_format(secs, vals[shown], sizeof vals[0]);
 			/* live, not selected. The selection is menu_draw's `sel`
 			 * argument; passing it here instead drew every other row
@@ -3989,12 +4081,63 @@ static void stats_screen(app *a)
 			snprintf(labels[1], sizeof labels[1], "Nothing played yet");
 			rows[1] = (menu_row){ labels[1], NULL, false };
 			shown = 2;
+			detail[0] = '\0';
+		} else {
+			/* What the selected row knows beyond its total. This is where
+			 * the extra columns went: three numbers beside a game name in
+			 * 704px reads as a spreadsheet nobody can scan, and only one row
+			 * is being looked at anyway. */
+			long longest = 0, last = 0, secs = 0;
+			int lost = 0, n = 0;
+			char lg[16], ag[16], tail[24];
+
+			stats_at(cursor, NULL, NULL, &secs, &n);
+			stats_extra(cursor, &longest, &last, &lost);
+			stats_format(longest, lg, sizeof lg);
+			stats_ago(last, now, ag, sizeof ag);
+			/* Only when it happened. A "0 lost" on every row would train the
+			 * eye to skip the one place the number matters. */
+			if (lost) snprintf(tail, sizeof tail, "  ·  %d lost", lost);
+			else      tail[0] = '\0';
+			/* Written in full and left long. Four facts do not fit 704px and
+			 * are not meant to: the note scrolls. */
+			snprintf(detail, sizeof detail,
+			         "%d launch%s  ·  longest %s  ·  %s%s",
+			         n, n == 1 ? "" : "es", lg, ag, tail);
 		}
+
+		if (detail[0]) {
+			rows[shown++] = MENU_RULE;
+			rows[shown++] = MENU_NOTE(detail);
+		}
+		rows[shown++] = MENU_NOTE(by_sys ? "Y: by game    L/R: window"
+		                                 : "Y: by system    L/R: window");
 
 		plat_input_poll(&a->in);
 		if (a->in.quit_requested) { a->running = false; return; }
 		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); return; }
 		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = true;
+
+		{	/* A view change re-folds the same rows under a new question, so
+			 * the cursor cannot survive it - row 3 of "This Week by system"
+			 * is not row 3 of anything else. */
+			bool changed = false;
+
+			if (in_repeat(&a->in, IN_RIGHT)) {
+				win = (win + 1) % STATS_WINDOWS; changed = true;
+			}
+			if (in_repeat(&a->in, IN_LEFT)) {
+				win = (win + STATS_WINDOWS - 1) % STATS_WINDOWS;
+				changed = true;
+			}
+			if (a->in.pressed[IN_Y]) { by_sys = !by_sys; changed = true; }
+			if (changed) {
+				now = (long)time(NULL);
+				ngames = stats_summarize(win, by_sys, now);
+				stats_format(stats_total_seconds(), total, sizeof total);
+				cursor = top = 0;
+			}
+		}
 
 		if (ngames > 0) {
 			if (in_repeat(&a->in, IN_DOWN) && cursor < ngames - 1) cursor++;
@@ -4002,7 +4145,7 @@ static void stats_screen(app *a)
 			/* The window follows the cursor rather than the other way round,
 			 * so a long list scrolls one row at a time from either end. */
 			if (cursor < top) top = cursor;
-			if (cursor >= top + STATS_VISIBLE) top = cursor - STATS_VISIBLE + 1;
+			if (cursor >= top + vis) top = cursor - vis + 1;
 		}
 
 		if (in_repeat(&a->in, IN_VOLUP))    plat_volume_nudge(+1);

@@ -70,6 +70,11 @@ TTF_Font *ui_font(ui_font_role role);
 /* Baseline-to-baseline distance for a role, the unit menu rows are laid out in. */
 int ui_font_line(ui_font_role role);
 
+/* The height of a line's box, which is not its line skip: menu_draw sizes a
+ * one-line note by this, and a screen that wants to know whether its rows fit
+ * has to ask the same question the same way. */
+int ui_font_height(ui_font_role role);
+
 /* Draw text with its top-left at (x,y). anchor: -1 left, 0 center, 1 right,
  * applied to x. Returns the drawn width. Rendering is cached per (font,
  * string), so redrawing the same title every frame costs one blit. */

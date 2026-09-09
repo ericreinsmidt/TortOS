@@ -68,15 +68,59 @@ void stats_recover(void);
 
 /* --- reading, for the menu ---------------------------------------------- */
 
-/* Fold every session into one row per game, most-played first. Returns the
- * number of distinct games. */
-int  stats_summarize(void);
+/* Which slice of history a summary covers.
+ *
+ * CALENDAR boundaries, not rolling ones: "this week" is the week you are in,
+ * not the last seven days. Someone asking what they played this week means
+ * the week, and a rolling window answers a question nobody asked - it also
+ * changes its own answer every hour, which makes a number impossible to
+ * check twice.
+ *
+ * Applied to the session's START, which is the key's first segment, so a
+ * session that ran across midnight belongs to the day it began on. */
+typedef enum {
+	STATS_ALL, STATS_YEAR, STATS_MONTH, STATS_WEEK, STATS_TODAY,
+	STATS_WINDOWS
+} stats_window;
+
+/* "All Time", "This Year", "This Month", "This Week", "Today". */
+const char *stats_window_name(stats_window w);
+
+/* The unix time a window opens at, or 0 for STATS_ALL. Exposed for the check,
+ * which has to be able to place a session on either side of a boundary. */
+long stats_window_start(stats_window w, long now);
+
+/* Fold the sessions inside `w` into one row per game - or one per SYSTEM when
+ * `by_system`, which is the "what do I actually play" question rather than
+ * "which game" - most-played first. `now` is passed in for the same reason
+ * now_ms is: a window boundary has to be drivable from a test.
+ *
+ * Returns the number of rows. Cheap enough to call on every view change: it
+ * is one pass over the session rows, and there are hundreds, not millions. */
+int  stats_summarize(stats_window w, bool by_system, long now);
+
+/* tag is the system, and file is the ROM - empty when the rows were folded
+ * by system, because a system is not one file. */
 bool stats_at(int i, const char **tag, const char **file,
               long *seconds, int *launches);
+
+/* The rest of what a row knows: the longest single session in it, the unix
+ * time it was last started, and how many of its sessions ended `lost` rather
+ * than `quit`. */
+bool stats_extra(int i, long *longest, long *last, int *lost);
+
 long stats_total_seconds(void);
 int  stats_total_launches(void);
 
+/* Sessions that never reached EXIT - a flat battery, a power cut, or a crash.
+ * A play statistic only by accident: it is the one number either project has
+ * that says a game DIED rather than was quit. */
+int  stats_total_lost(void);
+
 /* "12h 34m", "7m 12s", "never". `out` takes at least 16 bytes. */
 void stats_format(long seconds, char *out, size_t n);
+
+/* "3h ago", "2d ago", "today", "never". `out` takes at least 16 bytes. */
+void stats_ago(long then, long now, char *out, size_t n);
 
 #endif

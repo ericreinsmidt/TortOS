@@ -124,6 +124,12 @@ int ui_font_line(ui_font_role role)
 	return f ? TTF_FontLineSkip(f) : 0;
 }
 
+int ui_font_height(ui_font_role role)
+{
+	TTF_Font *f = ui_font(role);
+	return f ? TTF_FontHeight(f) : 0;
+}
+
 static struct text_entry *text_get(SDL_Renderer *r, TTF_Font *f, const char *s,
                                   SDL_Color col)
 {

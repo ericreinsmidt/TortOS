@@ -141,12 +141,24 @@ typedef struct {
 	char file[STATS_FILE_MAX];
 	long seconds;
 	int  launches;
+	long longest;      /* the longest single session folded into this row */
+	long last;         /* unix time that session started */
+	int  lost;         /* of those launches, how many never reached EXIT */
 } stats_row;
 
 static stats_row g_rows[STATS_MAX];
 static int  g_nrows;
 static long g_total;
 static int  g_launches;
+static int  g_lost;
+
+/* What one summarizing pass is filtering and grouping by. Passed through
+ * db_each_prefix's ctx rather than kept in a global, so the fold has no state
+ * of its own to get out of step with the call that started it. */
+typedef struct {
+	long cutoff;       /* sessions that started before this are not counted */
+	bool by_system;
+} fold_ctx;
 
 static int find_row(const char *tag, const char *file)
 {
@@ -157,36 +169,89 @@ static int find_row(const char *tag, const char *file)
 	return -1;
 }
 
+const char *stats_window_name(stats_window w)
+{
+	switch (w) {
+	case STATS_YEAR:  return "This Year";
+	case STATS_MONTH: return "This Month";
+	case STATS_WEEK:  return "This Week";
+	case STATS_TODAY: return "Today";
+	default:          return "All Time";
+	}
+}
+
+/* Midnight local, then back to the start of the week, month or year.
+ *
+ * mktime is what makes this correct rather than arithmetic on seconds: a day
+ * is not always 86400 seconds where daylight saving exists, and a month is
+ * never a fixed number of them. Filling in a struct tm and asking mktime what
+ * that instant was is the only way to get "the first of this month" right
+ * without owning a calendar. */
+long stats_window_start(stats_window w, long now)
+{
+	time_t t = (time_t)now;
+	struct tm tm;
+
+	if (w == STATS_ALL) return 0;
+	tm = *localtime(&t);
+	tm.tm_hour = tm.tm_min = tm.tm_sec = 0;
+	tm.tm_isdst = -1;              /* let mktime decide; -1, never 0 */
+	switch (w) {
+	case STATS_YEAR:  tm.tm_mon = 0;  /* fall through */
+	case STATS_MONTH: tm.tm_mday = 1; break;
+	/* Weeks start Sunday here because tm_wday does. Nothing in the UI names
+	 * the first day, so this is a convention, not a claim. */
+	case STATS_WEEK:  tm.tm_mday -= tm.tm_wday; break;
+	default: break;
+	}
+	return (long)mktime(&tm);
+}
+
 static bool fold(const char *key, const char *value, void *ctx)
 {
-	/* sess.<start>.<t0>.<tag>\t<file> - skip both numeric segments. */
+	/* sess.<start>.<t0>.<tag>\t<file>. The first segment was skipped along
+	 * with the second until the windows needed it: it is when the session
+	 * began, which is what "this week" is asked against. */
 	const char *rest = key + strlen("sess.");
 	const char *dot = strchr(rest, '.');
 	const char *tab, *sep = strchr(value, '\t');
+	const fold_ctx *f = ctx;
 	char tag[STATS_TAG_MAX];
-	long secs;
+	long secs, start;
 	int i;
 
-	(void)ctx;
 	if (!dot || !sep) return true;
+	start = strtol(rest, NULL, 10);
 	if (!(dot = strchr(dot + 1, '.'))) return true;
 	if (!(tab = strchr(dot + 1, '\t'))) return true;
 	if ((size_t)(tab - dot - 1) >= STATS_TAG_MAX) return true;
 	secs = strtol(value, NULL, 10);
 	if (secs < 0) return true;
+	if (start < f->cutoff) return true;      /* outside the window */
 
 	snprintf(tag, sizeof tag, "%.*s", (int)(tab - dot - 1), dot + 1);
-	i = find_row(tag, tab + 1);
+	/* By system, every session on a machine lands in one row, and the file
+	 * is empty because the row is not about a file. */
+	i = find_row(tag, f->by_system ? "" : tab + 1);
 	if (i < 0) {
 		if (g_nrows >= STATS_MAX) return false;
 		i = g_nrows++;
 		snprintf(g_rows[i].tag, STATS_TAG_MAX, "%s", tag);
-		snprintf(g_rows[i].file, STATS_FILE_MAX, "%s", tab + 1);
+		snprintf(g_rows[i].file, STATS_FILE_MAX, "%s",
+		         f->by_system ? "" : tab + 1);
 		g_rows[i].seconds = 0;
 		g_rows[i].launches = 0;
+		g_rows[i].longest = 0;
+		g_rows[i].last = 0;
+		g_rows[i].lost = 0;
 	}
 	g_rows[i].seconds += secs;
 	g_rows[i].launches++;
+	if (secs > g_rows[i].longest) g_rows[i].longest = secs;
+	if (start > g_rows[i].last)   g_rows[i].last = start;
+	/* "open" counts as lost too. A row still marked open during a summary is
+	 * a session this boot has not recovered, which is the same event. */
+	if (strcmp(sep + 1, "quit") != 0) { g_rows[i].lost++; g_lost++; }
 	g_total += secs;
 	g_launches++;
 	return true;
@@ -199,12 +264,17 @@ static int by_seconds(const void *a, const void *b)
 	return strcmp(x->file, y->file);      /* stable enough to read twice */
 }
 
-int stats_summarize(void)
+int stats_summarize(stats_window w, bool by_system, long now)
 {
+	fold_ctx f;
+
+	f.cutoff = stats_window_start(w, now);
+	f.by_system = by_system;
 	g_nrows = 0;
 	g_total = 0;
 	g_launches = 0;
-	db_each_prefix(db_lib(), "sess.", fold, NULL);
+	g_lost = 0;
+	db_each_prefix(db_lib(), "sess.", fold, &f);
 	qsort(g_rows, g_nrows, sizeof g_rows[0], by_seconds);
 	return g_nrows;
 }
@@ -220,8 +290,18 @@ bool stats_at(int i, const char **tag, const char **file,
 	return true;
 }
 
+bool stats_extra(int i, long *longest, long *last, int *lost)
+{
+	if (i < 0 || i >= g_nrows) return false;
+	if (longest) *longest = g_rows[i].longest;
+	if (last)    *last    = g_rows[i].last;
+	if (lost)    *lost    = g_rows[i].lost;
+	return true;
+}
+
 long stats_total_seconds(void) { return g_total; }
 int  stats_total_launches(void) { return g_launches; }
+int  stats_total_lost(void) { return g_lost; }
 
 void stats_format(long seconds, char *out, size_t n)
 {
@@ -232,4 +312,28 @@ void stats_format(long seconds, char *out, size_t n)
 		snprintf(out, n, "%ldm %lds", seconds / 60, seconds % 60);
 	else
 		snprintf(out, n, "%ldh %ldm", seconds / 3600, (seconds % 3600) / 60);
+}
+
+/* Days apart on the CALENDAR, not elapsed hours divided by 24: something
+ * played at 11pm was played yesterday when read at 1am, and "2h ago" would be
+ * a true sentence that answers the wrong question. */
+void stats_ago(long then, long now, char *out, size_t n)
+{
+	time_t a = (time_t)then, b = (time_t)now;
+	struct tm ta, tb;
+	long days;
+
+	if (!out || !n) return;
+	if (then <= 0) { snprintf(out, n, "never"); return; }
+	ta = *localtime(&a);
+	tb = *localtime(&b);
+	ta.tm_hour = ta.tm_min = ta.tm_sec = 0; ta.tm_isdst = -1;
+	tb.tm_hour = tb.tm_min = tb.tm_sec = 0; tb.tm_isdst = -1;
+	days = ((long)mktime(&tb) - (long)mktime(&ta) + 43200) / 86400;
+
+	if (days <= 0)     snprintf(out, n, "today");
+	else if (days == 1) snprintf(out, n, "yesterday");
+	else if (days < 7)  snprintf(out, n, "%ldd ago", days);
+	else if (days < 60) snprintf(out, n, "%ldw ago", days / 7);
+	else                snprintf(out, n, "%ldmo ago", days / 30);
 }
