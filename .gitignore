@@ -22,12 +22,16 @@ __pycache__/
 # BACKLOG.md are the working agreement and the running list, DEVICE-LOOP.md is
 # the accumulated sharp edges of developing against a live Brick, and
 # VOLUME-CURVE.md is one afternoon's measurements behind a constant that now
-# carries its own numbers in the comment above it. Nothing tracked may
-# reference any of them.
+# carries its own numbers in the comment above it, and MGBA-MBC2.md is a defect
+# in the pinned core, written up for upstream. Nothing tracked may reference
+# any of them.
 CLAUDE.md
 BACKLOG.md
 DEVICE-LOOP.md
 VOLUME-CURVE.md
+MGBA-MBC2.md
+MGBA-MBC2-issue.md
+MGBA-MBC2-body.md
 
 sysroot/
 
