@@ -1005,7 +1005,30 @@ static int diatom_wait(void)
 				stop_at = plat_now_ms();
 				dsend("STOP");
 			}
-			else if (strncmp(l, "EXIT", 4) == 0) { d_apply_levels(); return RES_EXIT; }
+			else if (strncmp(l, "EXIT", 4) == 0) {
+				/* A crash and a quit arrive on the SAME line, and only the
+				 * reason tells them apart. This threw the line away and
+				 * returned, so a game that died of SIGSEGV was logged as
+				 * "exit: back in 50 ms" - identical to backing out of a
+				 * game normally, and the only hint that anything was wrong
+				 * came later, from the resident being gone.
+				 *
+				 * Diatom has always sent it: on_crash emits
+				 * "EXIT reason=crash signal=SIGSEGV" from the signal
+				 * handler, and ADR-0009 makes `signal=` free to add because
+				 * unknown keys are ignored. It was reported and discarded,
+				 * which is worse than never having been sent - it looks
+				 * like a firmware with nothing to say about the failure.
+				 *
+				 * Only the ones that are not a clean quit. Logging every
+				 * EXIT would put a line in the log for every game anyone
+				 * ever finishes, and a log that says something on every
+				 * exit says nothing about the interesting ones. */
+				if (strncmp(l, "EXIT\treason=user", 16) != 0)
+					fprintf(stderr, "diatom: %s\n", l);
+				d_apply_levels();
+				return RES_EXIT;
+			}
 			else if (strncmp(l, "ERROR", 5) == 0) {
 				fprintf(stderr, "diatom: %s\n", l);
 				/* Before RUNNING it means the game never started and the
