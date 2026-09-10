@@ -132,6 +132,9 @@ typedef struct {
 static void refresh_favorites_shelf(app *a);
 /* Same reason: Over The Hare is a screen up here and the scan is down there. */
 static void rescan_all(app *a);
+/* And again: Play Time can send you to a game's shelf, which is the input
+ * loop's job and lives with it. */
+static void enter_system(app *a);
 static int  menu_std_width(app *a);
 
 static volatile sig_atomic_t want_quit;
@@ -4082,7 +4085,9 @@ static void bt_screen(app *a)
  * menu_list_fit at entry, because the answer moves with Text Size. */
 #define STATS_VISIBLE 8
 
-static void stats_screen(app *a)
+/* Returns true if it sent the player to a shelf, so the menu above it closes
+ * rather than redrawing over a screen that has moved on. */
+static bool stats_screen(app *a)
 {
 	char vals[STATS_VISIBLE + 1][32], labels[STATS_VISIBLE + 1][80];
 	/* +3: the total row above the list, then a rule and two notes below it. */
@@ -4207,13 +4212,49 @@ static void stats_screen(app *a)
 			rows[shown++] = MENU_RULE;
 			rows[shown++] = MENU_NOTE(detail);
 		}
-		rows[shown++] = MENU_NOTE(by_sys ? "Y: by game    L/R: window"
-		                                 : "Y: by system    L/R: window");
+		rows[shown++] = MENU_NOTE(by_sys ? "A: go    Y: by game    L/R: window"
+		                                 : "A: go    Y: by system    L/R: window");
 
 		plat_input_poll(&a->in);
-		if (a->in.quit_requested) { a->running = false; return; }
-		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); return; }
+		if (a->in.quit_requested) { a->running = false; return false; }
+		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); return false; }
 		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = true;
+
+		/* A goes to the row under the cursor: the game on its own shelf, or in
+		 * by-system mode that system's. Not a launch.
+		 *
+		 * This screen is a still of what has been played, and it knows a tag
+		 * and a file. That is not enough to start a game - the core, the
+		 * folder, the display mode and the save paths all hang off the shelf.
+		 * It could resolve every one of them, and then there would be a second
+		 * launch path to keep in step with the first. Landing on the shelf
+		 * costs one button and arrives where launching already works, with the
+		 * art, the autosave dot and the game's own menu.
+		 *
+		 * A row can outlive its ROM - these are keyed on tag and file and
+		 * survive the card changing - so a miss does nothing rather than
+		 * guessing, which is the answer the boot-resume path gives too. */
+		if (a->in.pressed[IN_ACCEPT] && ngames > 0) {
+			const char *tag = NULL, *file = NULL;
+			int si, gi;
+
+			if (stats_at(cursor, &tag, &file, NULL, NULL))
+				for (si = 0; si < a->sys.count; si++) {
+					if (strcmp(a->sys.systems[si].tag, tag) != 0) continue;
+					if (a->view[si].list.count == 0) break;
+					a->sys_cursor = si;
+					/* By system there is no file to look for, so the shelf
+					 * keeps whichever game it was already on. */
+					if (!by_sys)
+						for (gi = 0; gi < a->view[si].list.count; gi++)
+							if (!strcmp(a->view[si].list.items[gi].file, file)) {
+								a->view[si].cursor = gi;
+								break;
+							}
+					enter_system(a);
+					return true;
+				}
+		}
 
 		{	/* A view change re-folds the same rows under a new question, so
 			 * the cursor cannot survive it - row 3 of "This Week by system"
@@ -4263,6 +4304,7 @@ static void stats_screen(app *a)
 		SDL_RenderPresent(a->r);
 		SDL_Delay(8);
 	}
+	return false;
 }
 
 static void about_screen(app *a)
@@ -4635,7 +4677,7 @@ static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
 	case PM_SCRAPE:       art_screen(a, NULL, NULL, MENU_ACCENT); break;
 	case PM_ACHIEVEMENTS: ra_signin_screen(a); break;
 	case PM_BT:           bt_screen(a); break;
-	case PM_STATS:        stats_screen(a); break;
+	case PM_STATS:        if (stats_screen(a)) return MENU_DONE; break;
 	case PM_ABOUT:        about_screen(a); break;
 	default: break;
 	}
