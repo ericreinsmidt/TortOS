@@ -918,6 +918,9 @@ static void ra_flush_unlocks(const char *rom, const char *tag)
  * only way anyone can be told during a game - over Diatom's overlay. */
 static char g_pending_set[LIB_PATH * 2];
 static char g_pending_active[LIB_PATH * 2];
+/* The set path of the game actually running, so a fetch that lands during a
+ * DIFFERENT game can be recognized and dropped. Written at every launch. */
+static char g_game_set[LIB_PATH * 2];
 
 /* ---- where the system's sound goes (Diatom's ADR-0029) ------------------- */
 
@@ -1085,6 +1088,35 @@ static void on_game_tick(void)
 	rc = ra_fetch_step();
 	if (rc == 0) return;                        /* still working */
 	if (rc < 0) { g_pending_set[0] = '\0'; return; }  /* RA has never seen it */
+
+	/* A FETCH CAN OUTLIVE THE GAME IT WAS FOR, and handing over the wrong set
+	 * is not a cosmetic mistake. This runs on the game tick, so the game that
+	 * started the fetch may have ended and another may be running - and below,
+	 * SETCHEEVOS hands the set to Diatom mid-game, which ADR-0026 makes the
+	 * normal path precisely because a download can still be in flight.
+	 *
+	 * Nothing downstream would catch it. rcheevos would evaluate one game's
+	 * conditions against another game's memory, and a condition that matched
+	 * by coincidence would unlock an achievement the player never earned, in a
+	 * game they were not playing, and on_cheevo_unlocked would queue it for
+	 * submission to their account.
+	 *
+	 * Seen 2026-09-10: launching Advance Guardian Heroes drew the set notice
+	 * for A Boy and His Blob, an NES game fetched earlier the same evening.
+	 * The active set was not poisoned that time, which is luck, not a guard.
+	 *
+	 * Dropped rather than cancelled: there is no ra_fetch_abort, and
+	 * ra_fetch_step only runs while g_pending_set is set, so clearing it on
+	 * game end - the fix this looked like it wanted - would abandon a live
+	 * state machine with nobody to drive it. The fetch has already written the
+	 * set to its own cache by now, so the next launch of THAT game finds it
+	 * waiting. A stale fetch becomes a cache warm instead of a hazard. */
+	if (strcmp(g_pending_set, g_game_set) != 0) {
+		fprintf(stderr, "cheevos: set arrived for a game that is no longer "
+		                "running; cached, not applied\n");
+		g_pending_set[0] = '\0';
+		return;
+	}
 
 	if (!chv_load(g_pending_set)) { g_pending_set[0] = '\0'; return; }
 	ra_sync_begin(chv_game());        /* the account's answer, collected at exit */
@@ -5643,6 +5675,10 @@ static void launch(app *a)
 	{
 		chv_path(P_ROMS, s->folder, v->list.items[v->cursor].name,
 		         set, sizeof set);
+		/* Every launch, not just a first play: this is what a late fetch is
+		 * checked against, and it has to name the game on screen now rather
+		 * than the last one that went looking for a set. */
+		snprintf(g_game_set, sizeof g_game_set, "%s", set);
 
 		/* Fetch it if this game has never been played here. Only then: a
 		 * cached set costs nothing and this is the launch path, so the delay
