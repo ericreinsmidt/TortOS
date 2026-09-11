@@ -199,32 +199,43 @@ int ui_text_width(TTF_Font *f, const char *s)
 #define MQ_END_MS     900          /* stillness at the far end */
 #define MQ_SPEED_PXPS  70
 
+/* How far into a ping-pong a given phase has got: still at 0 for a beat, out
+ * to `over` at a walking pace, still again at the far end, then back.
+ *
+ * Shared rather than written twice. A long title scrolling sideways on the
+ * shelf and a long description scrolling down a card are the same gesture, and
+ * two copies of this arithmetic would drift the moment either was retuned. */
+int ui_pingpong(int over, unsigned phase)
+{
+	int travel = over * 1000 / MQ_SPEED_PXPS;
+	unsigned cycle, p;
+
+	if (over <= 0) return 0;
+	if (travel < 1) travel = 1;
+	cycle = (unsigned)(MQ_HOLD_MS + travel + MQ_END_MS + travel);
+	p     = phase % cycle;
+
+	if (p < MQ_HOLD_MS) return 0;
+	if (p < (unsigned)(MQ_HOLD_MS + travel))
+		return (int)((p - MQ_HOLD_MS) * (unsigned)over / (unsigned)travel);
+	if (p < (unsigned)(MQ_HOLD_MS + travel + MQ_END_MS)) return over;
+	return over - (int)((p - MQ_HOLD_MS - travel - MQ_END_MS)
+	                    * (unsigned)over / (unsigned)travel);
+}
+
 void ui_text_marquee(SDL_Renderer *r, TTF_Font *f, const char *s,
                      int x, int y, int w, unsigned phase, SDL_Color col)
 {
 	int tw = ui_text_width(f, s);
-	int over, travel, off, i;
-	unsigned cycle, p;
+	int over, off, i;
 	SDL_Rect clip, was;
 	SDL_bool had;
 
 	if (!f || !s || w <= 0) return;
 	if (tw <= w) { ui_text(r, f, s, x, y, -1, col); return; }
 
-	over   = tw - w;
-	travel = over * 1000 / MQ_SPEED_PXPS;
-	if (travel < 1) travel = 1;
-	cycle  = (unsigned)(MQ_HOLD_MS + travel + MQ_END_MS + travel);
-	p      = phase % cycle;
-
-	if      (p < MQ_HOLD_MS)                    off = 0;
-	else if (p < (unsigned)(MQ_HOLD_MS + travel))
-		off = (int)((p - MQ_HOLD_MS) * (unsigned)over / (unsigned)travel);
-	else if (p < (unsigned)(MQ_HOLD_MS + travel + MQ_END_MS))
-		off = over;
-	else
-		off = over - (int)((p - MQ_HOLD_MS - travel - MQ_END_MS)
-		                   * (unsigned)over / (unsigned)travel);
+	over = tw - w;
+	off  = ui_pingpong(over, phase);
 
 	/* Nested clips: the caller may already have one, and dropping it would
 	 * let this draw outside whatever panel it sits in. */

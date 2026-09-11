@@ -30,6 +30,18 @@
 #define UI_CYAN_G 214
 #define UI_CYAN_B 255
 
+/* An earned achievement, in the cheevos list and on its detail card.
+ *
+ * The TortOS cyan rather than the system accent, which is what this used to
+ * be. The accent only ever reached the SELECTED row's points, so every other
+ * earned row was separated from an unearned one by a single brightness step
+ * and the list could not be scanned at all. Worse on the dark accents - Game
+ * Boy 7E9B47, Master System C12216, NES C4443A - against a near-black panel.
+ * Cyan is the one hue none of the eleven accents occupies, so an earned row
+ * reads the same on every system. */
+#define UI_EARNED     ((SDL_Color){ UI_CYAN_R, UI_CYAN_G, UI_CYAN_B, 255 })
+#define UI_EARNED_RGB 0x3DD6FFu
+
 /* One thickness for every horizontal indicator: the settings line across the
  * top and the position rail across the bottom are the same bar in two places,
  * so they are the same weight. */
@@ -81,6 +93,11 @@ int ui_font_height(ui_font_role role);
 int ui_text(SDL_Renderer *r, TTF_Font *f, const char *s, int x, int y,
             int anchor, SDL_Color col);
 int ui_text_width(TTF_Font *f, const char *s);
+
+/* The ping-pong offset a marquee is at, in pixels, for `phase` ms into it.
+ * Exposed so a panel that scrolls itself vertically keeps the same timing as
+ * a title that scrolls sideways. */
+int ui_pingpong(int over, unsigned phase);
 
 /* Copy `src` into `dst`, shortened with an ellipsis until it fits `maxw`
  * pixels in `f`. Bytes are stepped back one at a time and then walked off any

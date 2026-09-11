@@ -27,7 +27,12 @@
 
 #define CHV_MAX     256    /* the largest measured is 203 - Mickey's Speedway USA */
 #define CHV_TITLE    96
-#define CHV_DESC    192
+/* 242 is the longest of the 3542 achievements on the card, measured
+ * 2026-09-10: Gain Ground on Genesis, "This Little Light of Mine", a paragraph
+ * of conditions. At 192 it was cut at parse time, mid-sentence and with no
+ * ellipsis, losing instructions rather than flavor - the reader was never told
+ * that "No Exit allowed. Special Mode okay." was part of the requirement. */
+#define CHV_DESC    256
 
 typedef struct {
 	int  id;

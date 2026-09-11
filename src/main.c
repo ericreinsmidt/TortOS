@@ -1867,7 +1867,7 @@ static int shot_phase = -1;        /* --phase, for the shot harness only */
  * prevent, a step smaller: each would see the other's key every frame and
  * neither would ever get past the opening hold. */
 #define MQ_NOTES 2
-enum { MQ_SHELF, MQ_MENU, MQ_VALUE, MQ_NOTE0, MQ_NOTE1, MQ_SLOTS };
+enum { MQ_SHELF, MQ_MENU, MQ_VALUE, MQ_NOTE0, MQ_NOTE1, MQ_VSCROLL, MQ_SLOTS };
 
 static unsigned mq_phase(int who, int key_a, int key_b)
 {
@@ -2330,8 +2330,14 @@ static int menu_list_fit(int fixed, int rules, int notes)
 /* `accent` is the panel's border and heading rule. The shelf's own menu passes
  * MENU_ACCENT because that menu is TortOS, not whichever card is under the
  * cursor; a menu that belongs to a system passes that system's color. */
-static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
-                      int sel, int fixed_w, unsigned accent)
+/* `vcolors` is an optional array parallel to `rows`: a nonzero entry is the
+ * 0xRRGGBB to draw that row's value in, whatever the cursor is doing. It is
+ * not a field on menu_row because exactly one screen has any use for it, and
+ * putting it there made all 69 initializers in the launcher declare that they
+ * do not care. NULL, which is what menu_draw passes, is the ordinary rule. */
+static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
+                         int n, int sel, int fixed_w, unsigned accent,
+                         const unsigned *vcolors)
 {
 	TTF_Font *fm = ui_font(UI_F_MENU), *fh = ui_font(UI_F_LABEL);
 	int row_h = menu_row_h();
@@ -2361,6 +2367,11 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 	 * which is exactly what happened when it grew. `content_off` is the panel
 	 * top to the first row, so a panel with no heading just pads instead. */
 	int notes_drawn = 0;   /* which marquee slot the next long note takes */
+	int scroll = 0;        /* pixels the body is lifted by, cursorless */
+	int scroll_h = 0;      /* the body viewport's height, 0 if nothing scrolls */
+	int scroll_span = 0;
+	int scroll_split = 0;  /* first pinned row: the rule, or n if there is none */
+	int scroll_foot = 0;   /* the pinned rows' total height */
 	int line_head   = ui_font_line(UI_F_LABEL);
 	/* A heading may carry a second line, separated by a newline. Nothing else
 	 * passes one; the achievements screen does, because its heading is a game
@@ -2421,12 +2432,43 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 		rows_h = sum;
 	}
 	if (content_off + rows_h + pad > TORTOS_SCREEN_H - margin * 2) {
-		vis = (TORTOS_SCREEN_H - margin * 2 - content_off - pad) / row_h;
-		if (vis < 1) vis = 1;
-		if (vis > n) vis = n;
-		first = sel - vis / 2;
-		if (first < 0) first = 0;
-		if (first > n - vis) first = n - vis;
+		int avail = TORTOS_SCREEN_H - margin * 2 - content_off - pad;
+
+		if (sel >= 0) {
+			vis = avail / row_h;
+			if (vis < 1) vis = 1;
+			if (vis > n) vis = n;
+			first = sel - vis / 2;
+			if (first < 0) first = 0;
+			if (first > n - vis) first = n - vis;
+		} else {
+			/* NO CURSOR MEANS NOTHING CAN SCROLL IT, so it scrolls itself.
+			 * Dropping rows off the bottom is what a cursor makes safe: you
+			 * can always walk down to them. A card has no walk, so the rows
+			 * all stay and the window moves over them instead, on the same
+			 * ping-pong a long title runs sideways.
+			 *
+			 * ONLY THE BODY MOVES. Past the rule is the footer, and on the
+			 * achievement card that is the points and whether it is earned -
+			 * the two facts a reader wants WHILE reading the description, not
+			 * after waiting out a scroll to reach them. The rule is already
+			 * where this menu divides a list from its footer, so it is the
+			 * split here too and nothing new has to be declared. */
+			int body = 0, j;
+
+			scroll_split = n;
+			for (j = 0; j < n; j++)
+				if (!rows[j].label) { scroll_split = j; break; }
+			for (j = scroll_split; j < n; j++) scroll_foot += ROW_H(rows[j]);
+			for (j = 0; j < scroll_split; j++) body += ROW_H(rows[j]);
+
+			scroll_h = avail - scroll_foot;
+			if (scroll_h < row_h) scroll_h = row_h;
+			scroll_span = body - scroll_h;
+			if (scroll_span < 0) scroll_span = 0;
+			scroll = ui_pingpong(scroll_span,
+			                     mq_phase(MQ_VSCROLL, n, rows_h));
+		}
 	}
 
 	panel.w = content_w + pad * 2;
@@ -2434,7 +2476,10 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 		int sum = 0, j, last = first + vis - 1;
 
 		for (j = first; j < first + vis && j < n; j++) sum += ROW_H(rows[j]);
-		panel.h = content_off + sum + pad;
+		/* A scrolling card is as tall as its viewport plus its pinned footer.
+		 * Summing the rows would size the panel to text that is deliberately
+		 * not all on it. */
+		panel.h = content_off + (scroll_h ? scroll_h + scroll_foot : sum) + pad;
 		/* A panel that ends in a footer gets a smaller bottom pad. The full
 		 * pad is there to keep list ITEMS off the border; a note is already
 		 * held off the list by its rule and is meant to sit low.
@@ -2443,7 +2488,8 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 		 * bottom pad is left. Set by eye on the device 2026-09-04, not derived:
 		 * the full pad gives 1.17 and floats, 0.50 is too tight, and 0.75 is
 		 * where Eric called it. 5/12 is the subtraction that leaves 0.75. */
-		if (last >= 0 && last < n && rows[last].label && ROW_IS_NOTE(rows[last]))
+		if (!scroll_h && last >= 0 && last < n && rows[last].label &&
+		    ROW_IS_NOTE(rows[last]))
 			panel.h -= pad * 5 / 12;
 	}
 	panel.x = (TORTOS_SCREEN_W - panel.w) / 2;
@@ -2522,12 +2568,24 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 	}
 
 	notes_drawn = 0;
+	if (scroll_h)
+		SDL_RenderSetClipRect(a->r, &(SDL_Rect){ panel.x, content_y,
+		                                         panel.w, scroll_h });
 	for (k = 0, i = first; k < vis && i < n; k++, i++) {
-		int y = content_y;
-		int ty, j;
+		int y, ty, j;
 		SDL_Color lc, vc;
 
-		for (j = first; j < i; j++) y += ROW_H(rows[j]);
+		if (scroll_h && i >= scroll_split) {
+			/* Pinned. Measured from the bottom of the viewport rather than
+			 * from the top of the rows, so the footer does not move when the
+			 * body does. The clip comes off here and stays off. */
+			if (i == scroll_split) SDL_RenderSetClipRect(a->r, NULL);
+			y = content_y + scroll_h;
+			for (j = scroll_split; j < i; j++) y += ROW_H(rows[j]);
+		} else {
+			y = content_y - scroll;
+			for (j = first; j < i; j++) y += ROW_H(rows[j]);
+		}
 		/* Centered in ITS OWN row, not in row_h: a note is shorter. */
 		ty = y + (ROW_H(rows[i]) - text_h) / 2 + ink_off;
 
@@ -2572,10 +2630,15 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 		 * live row in the TortOS menu made them diverge and drew a red value
 		 * inside a cyan panel. `accent` is already MENU_ACCENT for one menu
 		 * and the system tint for the other, which is the answer in both. */
-		vc = rows[i].live && i == sel
-		     ? (SDL_Color){ (Uint8)(accent >> 16), (Uint8)(accent >> 8),
-		                    (Uint8)accent, 255 }
-		     : UI_TEXT_DIM;
+		if (vcolors && vcolors[i])
+			vc = (SDL_Color){ (Uint8)(vcolors[i] >> 16),
+			                  (Uint8)(vcolors[i] >> 8),
+			                  (Uint8)vcolors[i], 255 };
+		else
+			vc = rows[i].live && i == sel
+			     ? (SDL_Color){ (Uint8)(accent >> 16), (Uint8)(accent >> 8),
+			                    (Uint8)accent, 255 }
+			     : UI_TEXT_DIM;
 
 		/* Trimmed to the panel, HERE, rather than by every caller.
 		 *
@@ -2694,12 +2757,43 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 			ui_text(a->r, fm, lbl, cx, ty, 0, lc);
 		}
 	}
+	if (scroll_h) {
+		/* Faded where the text runs out of viewport, and faded by laying the
+		 * PANEL'S OWN FILL over it, which is the opposite of what the shelf
+		 * does. There the background is a coverflow with a vignette, so a
+		 * gradient painted on top would show as a band and the glyphs have to
+		 * be faded instead. Here the surface under the text is one flat color,
+		 * ui_panel's 22,24,32, so the cheap way is also the right one.
+		 *
+		 * A side fades only while something is hidden on it, so a card sitting
+		 * at the top of its travel has a hard top edge and a soft bottom one,
+		 * and says by that which way it is about to move. */
+		const int fade = row_h;
+		int e;
+
+		SDL_RenderSetClipRect(a->r, NULL);
+		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+		for (e = 0; e < fade; e++) {
+			Uint8 al = (Uint8)(252 - 252 * e / fade);
+
+			SDL_SetRenderDrawColor(a->r, 22, 24, 32, al);
+			if (scroll > 0)
+				SDL_RenderFillRect(a->r, &(SDL_Rect){
+					panel.x + UI_PANEL_BORDER, content_y + e,
+					panel.w - UI_PANEL_BORDER * 2, 1 });
+			if (scroll < scroll_span)
+				SDL_RenderFillRect(a->r, &(SDL_Rect){
+					panel.x + UI_PANEL_BORDER, content_y + scroll_h - 1 - e,
+					panel.w - UI_PANEL_BORDER * 2, 1 });
+		}
+		SDL_RenderSetClipRect(a->r, NULL);
+	}
 
 	/* Three dim dots where the list carries on, in the same vocabulary the
 	 * slot carousel's rail uses. Hung just off the rows rather than centered in
 	 * the padding: with a heading above, the padding is already spoken for by
 	 * the separator, and the indicator belongs to the list in any case. */
-	if (vis < n) {
+	if (vis < n && !scroll_h) {
 		/* A triangle pointing the way the list continues, rather than three
 		 * dots that said "there is more" without saying which way. Drawn as
 		 * rows because there is no filled-triangle primitive and this needs
@@ -2720,6 +2814,12 @@ static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
 				                   content_y + vis * row_h + off + k, down_w, 1 });
 		}
 	}
+}
+
+static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
+                      int sel, int fixed_w, unsigned accent)
+{
+	menu_draw_ex(a, heading, rows, n, sel, fixed_w, accent, NULL);
 }
 
 /* The two menus behind MENU, their row indices and their buffers: src/sys_menu.h */
@@ -5012,17 +5112,138 @@ static int gm_build(app *a, menu_row *out, gm_bufs *b)
  * Earned rows are drawn live and unearned quiet - the same distinction
  * menu_draw makes for a placeholder, and it reads correctly here: what you
  * have is bright, what is still ahead of you is not. */
+/* 255 characters at ~30 to a line is nine, and a line of capitals is half
+ * that. Twelve is past the worst real description with room over; the card
+ * scrolls when the lines outrun the panel, so depth costs height rather
+ * than text. */
+#define CHV_WRAP_LINES 12
+#define CHV_WRAP_COLS  96
+
+/* Break `src` into lines no wider than `w`, at spaces. Returns how many.
+ *
+ * menu_draw marquees a note that does not fit, which is right for a footer
+ * carrying four facts and wrong for a sentence: the reader has to wait for the
+ * text to come back around to re-read a clause. Three still lines beat one
+ * moving one, so a description is wrapped here rather than handed over long.
+ *
+ * A word wider than the panel is cut instead of hunted for a space, because
+ * the alternative is a line that overflows and there is nowhere else for it to
+ * go. Measuring per prefix is quadratic in the line, which nobody will notice
+ * at 191 characters, once, when the card opens. */
+static int wrap_text(TTF_Font *f, const char *src, int w,
+                     char out[][CHV_WRAP_COLS], int max)
+{
+	int n = 0;
+
+	while (*src && n < max) {
+		char buf[CHV_WRAP_COLS];
+		int take = 0, i;
+
+		for (i = 1; src[i - 1]; i++) {
+			if (i >= (int)sizeof buf) break;
+			memcpy(buf, src, (size_t)i);
+			buf[i] = '\0';
+			if (ui_text_width(f, buf) > w) break;
+			if (src[i] == ' ' || src[i] == '\0') take = i;
+		}
+		if (!take) {                    /* one word longer than the panel */
+			take = i > 1 ? i - 1 : 1;
+			if (take >= (int)sizeof buf) take = sizeof buf - 1;
+		}
+		memcpy(out[n], src, (size_t)take);
+		out[n][take] = '\0';
+		n++;
+		src += take;
+		while (*src == ' ') src++;
+	}
+	return n;
+}
+
+/* One achievement, opened with A from the list.
+ *
+ * The list has room for a title and a number, and a title is a NAME RATHER
+ * THAN AN INSTRUCTION - it says which achievement, not what to do for it. The
+ * description that says has been in memory the whole time, parsed by chv_add
+ * beside the title and shown nowhere.
+ *
+ * Drawn with sel = -1, so nothing highlights. This is a card rather than a
+ * list: there is nothing here to choose between, and a cursor would invite
+ * pressing A on a row that does not answer.
+ *
+ * Returns true if the caller should close too, which is what MENU and power
+ * mean anywhere else in the launcher. */
+static bool cheevo_detail_screen(app *a, SDL_Texture *bg, const cheevo *c)
+{
+	char lines[CHV_WRAP_LINES][CHV_WRAP_COLS];
+	menu_row rows[CHV_WRAP_LINES + 3];
+	unsigned vcols[CHV_WRAP_LINES + 3] = { 0 };
+	char pts[24];
+	bool got = c->earned || c->earned_now;
+	int fixed = menu_std_width(a);
+	int n = 0, nl, i, done = 0;
+	bool close_all = false;
+
+	nl = wrap_text(ui_font(UI_F_MENU),
+	               c->desc[0] ? c->desc : "The set carries no description.",
+	               fixed, lines, CHV_WRAP_LINES);
+	/* Live, unlike an ordinary note. A caption under a setting is a caption;
+	 * here the description IS the content, and UI_TEXT_DIM is too quiet to be
+	 * the only thing on the card worth reading. */
+	for (i = 0; i < nl; i++)
+		rows[n++] = (menu_row){ lines[i], MENU_NOTE_MARK, true };
+	rows[n++] = MENU_RULE;
+	snprintf(pts, sizeof pts, "%d", c->points);
+	rows[n++] = (menu_row){ "Points", pts, true };
+	rows[n]   = (menu_row){ "Status", got ? "Earned" : "Not earned", true };
+	vcols[n]  = got ? UI_EARNED_RGB : 0u;
+	n++;
+
+	plat_input_flush();
+	memset(&a->in, 0, sizeof a->in);
+
+	while (!done && !want_quit) {
+		plat_input_poll(&a->in);
+
+		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_ACCEPT]) done = 1;
+		if (a->in.pressed[IN_MENU]) { done = 1; close_all = true; }
+		/* Same reasoning as the list below: this screen is not inside
+		 * plat_resident_wait, so nothing else is watching power for it. */
+		if (a->in.pressed[IN_POWER] || idle_due(a)) {
+			plat_note_power_pressed();
+			plat_resident_line("STOP");
+			done = 1;
+			close_all = true;
+		}
+
+		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 255);
+		SDL_RenderClear(a->r);
+		draw_paused_frame(a, bg);
+		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 185);
+		SDL_RenderFillRect(a->r, NULL);
+		menu_draw_ex(a, c->title, rows, n, -1, fixed, a->tint, vcols);
+		SDL_RenderPresent(a->r);
+		SDL_Delay(8);
+	}
+
+	plat_input_flush();
+	memset(&a->in, 0, sizeof a->in);
+	return close_all;
+}
+
 static void cheevos_screen(app *a, SDL_Texture *bg)
 {
 	int n = chv_count(), sel = 0, i, done = 0;
 	menu_row *rows;
+	unsigned *vcols;
 	char (*vals)[16];
 	char heading[192];
 
 	if (n <= 0) return;
-	rows = calloc((size_t)n, sizeof *rows);
-	vals = calloc((size_t)n, sizeof *vals);
-	if (!rows || !vals) { free(rows); free(vals); return; }
+	rows  = calloc((size_t)n, sizeof *rows);
+	vals  = calloc((size_t)n, sizeof *vals);
+	vcols = calloc((size_t)n, sizeof *vcols);
+	if (!rows || !vals || !vcols) { free(rows); free(vals); free(vcols); return; }
 
 	for (i = 0; i < n; i++) {
 		const cheevo *c = chv_at(i);
@@ -5031,6 +5252,10 @@ static void cheevos_screen(app *a, SDL_Texture *bg)
 		rows[i].label = c->title;
 		rows[i].value = vals[i];
 		rows[i].live  = c->earned || c->earned_now;
+		/* Said by color on EVERY earned row, not only the one under the
+		 * cursor. live already lifts the label one step, which alone was too
+		 * little to scan a hundred-entry set by. */
+		vcols[i] = rows[i].live ? UI_EARNED_RGB : 0u;
 	}
 	/* Two lines: the game on one, the counts on the other.
 	 *
@@ -5055,8 +5280,11 @@ static void cheevos_screen(app *a, SDL_Texture *bg)
 		 * page it the same way they page a shelf. */
 		if (in_repeat(&a->in, IN_L1))   sel = sel > 8 ? sel - 8 : 0;
 		if (in_repeat(&a->in, IN_R1))   sel = sel < n - 9 ? sel + 8 : n - 1;
-		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU] ||
-		    a->in.pressed[IN_ACCEPT])
+		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = 1;
+		/* A used to close this screen. It opens the achievement instead,
+		 * which is the only thing on it there was ever anything more to say
+		 * about; BACK and MENU still close, so nothing lost a way out. */
+		if (a->in.pressed[IN_ACCEPT] && cheevo_detail_screen(a, bg, chv_at(sel)))
 			done = 1;
 		/* Power still stops the game from in here. Not trapping it would
 		 * make this screen the one place in the launcher that ignores it.
@@ -5078,13 +5306,15 @@ static void cheevos_screen(app *a, SDL_Texture *bg)
 		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 185);
 		SDL_RenderFillRect(a->r, NULL);
-		menu_draw(a, heading, rows, n, sel, menu_std_width(a), a->tint);
+		menu_draw_ex(a, heading, rows, n, sel, menu_std_width(a), a->tint,
+		             vcols);
 		SDL_RenderPresent(a->r);
 		SDL_Delay(8);
 	}
 
 	free(rows);
 	free(vals);
+	free(vcols);
 	plat_input_flush();
 	memset(&a->in, 0, sizeof a->in);
 }
