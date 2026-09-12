@@ -180,16 +180,13 @@ db *db_open(const char *path, db_scope scope)
 	 * would be the same secret in a different file. After the schema and not
 	 * before, because journal_mode=WAL is what creates them.
 	 *
-	 * ON THE DEVICE THIS ACHIEVES NOTHING, and saying so beats implying a
-	 * protection that is not there. /mnt/SDCARD is exfat mounted fmask=0022;
-	 * exfat has no Unix permissions, so everything on the card reads back
-	 * 0755 whatever was asked for. Measured 2026-09-06. ra.cfg was never 0600
-	 * either, for its whole life, while a comment said it must be.
+	 * ON THE CARD THIS ACHIEVES NOTHING. /mnt/SDCARD is exfat mounted
+	 * fmask=0022; exfat has no Unix permissions, so everything on it reads
+	 * back 0755 whatever was asked for. Measured 2026-09-06.
 	 *
-	 * Kept because it is free and it is honored everywhere else - ext4, a
-	 * development host, any card that is not exfat. The token is unprotected
-	 * on this card and cannot be protected this way; that is a backlog item,
-	 * not something a chmod fixes. */
+	 * So do not delete this as dead, and do not trust it as protection. It is
+	 * honored on ext4, on a development host, and on any card that is not
+	 * exfat. */
 	if (scope == DB_DEVICE) {
 		char side[1100];
 		chmod(path, 0600);
