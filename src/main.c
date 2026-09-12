@@ -1536,10 +1536,32 @@ static void draw_background(app *a)
  * card step should feel immediate and 17.5 degrees has no meaning for it. */
 static void shelf_pacing(coverflow *cf)
 {
-	if (CARD_DIRS[g_dir].vertical) {
+	/* `.both`, not `.vertical`. Vertical lays out the same row Horizontal
+	 * does and wants the row's pacing; only Cubic still turns a cube, and the
+	 * slower smoothed chase is what a turning solid needs. The two share the
+	 * `.vertical` flag because they share an INPUT axis, which is a different
+	 * question from how they are drawn. */
+	if (CARD_DIRS[g_dir].both) {
 		cf->anim_ms = 450.0f;
 		cf->ease = CF_EASE_SMOOTH;
 		cf->chase = true;
+	} else if (CARD_DIRS[g_dir].vertical) {
+		/* THE DURATION IS FIXED BUT THE DISTANCE IS NOT. ANIM_MS is 240ms
+		 * whatever the travel, and Vertical shows one card at a time, so a
+		 * step moves 878px where the horizontal row moves 400. At the shared
+		 * default that is 2.2x the speed, which reads as too fast AND as
+		 * jerky - the frame rate is unchanged, so covering twice the ground
+		 * means half as many frames per pixel.
+		 *
+		 * 360ms is 2.4 px/ms against the horizontal row's 1.7 - deliberately
+		 * quicker than matching, because one card filling the screen carries
+		 * no neighbors to read on the way past and the travel is dead time.
+		 * 420 matched the row exactly and felt sluggish. Smooth rather than
+		 * out-cubic because out-cubic spends its speed at the start, and over
+		 * a throw this long that is a lurch before the settle. */
+		cf->anim_ms = 360.0f;
+		cf->ease = CF_EASE_SMOOTH;
+		cf->chase = false;
 	} else {
 		cf->anim_ms = 0.0f;
 		cf->ease = CF_EASE_OUT_CUBIC;
@@ -1561,111 +1583,6 @@ static cf_layout sys_layout(const cf_layout *base)
 	return lay;
 }
 
-/* One system filling the screen: what a cube face carries. Drawn straight to
- * the screen when nothing is turning and into an offscreen texture when
- * something is, which is why it clears rather than assuming draw_shelf did.
- *
- * It draws itself with CF_LAYOUT_SINGLE, so the art, the reflection, the glow
- * and the text are all already on the face and turn with it. Nothing here
- * knows it is on a cube. */
-static void draw_sys_face(app *a, int idx)
-{
-	const system_cfg *s = &a->sys.systems[idx];
-	SDL_Rect focus;
-	coverflow one;
-	char line[128];
-	int gc;
-
-	SDL_SetRenderDrawColor(a->r, 0, 0, 0, 255);
-	SDL_RenderClear(a->r);
-	draw_background(a);
-
-	cf_layout lay = sys_layout(&CF_LAYOUT_SINGLE);
-
-	cf_focus_rect(&lay, TORTOS_SCREEN_W, TORTOS_SCREEN_H, &focus);
-	ui_glow(a->r, &focus, s->accent, 110, 2.4f);
-	cf_reset(&one, idx);
-	cf_draw(&one, a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, a->sys.count,
-	        sys_get_tex, a, &lay);
-
-	if (!CARD_SETS[g_cards].labeled) {
-		char nfit[192];
-
-		ui_fit_text(ui_font(UI_F_TITLE), s->name, nfit, sizeof nfit,
-		            TORTOS_SCREEN_W - 48);
-		ui_text(a->r, ui_font(UI_F_TITLE), nfit, TORTOS_SCREEN_W / 2, 618, 0,
-		        UI_TEXT);
-	}
-	gc = a->view[idx].list.count;
-	if (gc > 0) snprintf(line, sizeof line, "%d game%s", gc, gc == 1 ? "" : "s");
-	else        snprintf(line, sizeof line, "no games in Roms/%s", s->folder);
-	ui_text(a->r, ui_font(UI_F_META), line, TORTOS_SCREEN_W / 2, 690, 0,
-	        UI_TEXT_DIM);
-}
-
-static void draw_systems_cube(app *a)
-{
-	int n = a->sys.count, i0, i1;
-	float pos, frac;
-
-	{
-		int k;
-
-		for (k = 0; k < n; k++) {
-			int tw = 0, th = 0;
-			sys_get_tex(a, k, &tw, &th, NULL);
-		}
-	}
-	cf_tick(&a->cf_sys, n);
-	pos = a->cf_sys.pos;
-	i0 = (int)floorf(pos);
-	frac = pos - (float)i0;
-	i0 = ((i0 % n) + n) % n;
-	i1 = n > 1 ? (i0 + 1) % n : i0;
-
-	/* At rest there is no turn to draw, so the face goes straight to the
-	 * screen and no render target is touched. That is most frames. Asks
-	 * whether a turn is in flight rather than whether it has moved yet: the
-	 * cursor changes a frame before `pos` does, and a frac test draws the
-	 * destination flat for that frame before the turn starts. */
-	if (!a->cf_sys.active || n < 2) {
-		faces_stale();
-		draw_sys_face(a, i0);
-	} else {
-		SDL_Texture *fa = face_tex(a, 0), *fb = face_tex(a, 1);
-
-		if (fa && fb) {
-			int plan = faces_plan(0, 0, i0, i1);
-
-			/* Both binds, and a flush before each switch. The bind for
-			 * the first face was once missing here, so that face was
-			 * drawn to the screen and its texture kept whatever it last
-			 * held - the other shelf's art, because both shelves share
-			 * these two. A face that is never written does not look
-			 * empty, it looks like something else entirely. */
-			if (plan == FACES_NEAR_ONLY || plan == FACES_FAR_ONLY)
-				faces_swap(&fa, &fb);
-			if (plan == FACES_BOTH || plan == FACES_NEAR_ONLY) {
-				SDL_SetRenderTarget(a->r, fa);
-				draw_sys_face(a, i0);
-				SDL_RenderFlush(a->r);
-			}
-			if (plan == FACES_BOTH || plan == FACES_FAR_ONLY) {
-				SDL_SetRenderTarget(a->r, fb);
-				draw_sys_face(a, i1);
-				SDL_RenderFlush(a->r);
-			}
-			if (plan != FACES_NONE) SDL_SetRenderTarget(a->r, NULL);
-			cf_draw_cube(a->r, fa, fb, frac,
-			             TORTOS_SCREEN_W, TORTOS_SCREEN_H, false);
-		} else {
-			draw_sys_face(a, i0);   /* no targets: still usable, just flat */
-		}
-	}
-
-	ui_rail_v(a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, a->sys_cursor,
-	          a->sys.count, a->sys.systems[a->sys_cursor].accent);
-}
 
 /* Both: one surface, two axes. Up and down turn to another system, left and
  * right move through that system's games. There is no entering and no going
@@ -1756,7 +1673,8 @@ static void draw_both(app *a)
 		}
 		if (plan != FACES_NONE) SDL_SetRenderTarget(a->r, NULL);
 		cf_draw_cube(a->r, fa, fb, sfrac, TORTOS_SCREEN_W, TORTOS_SCREEN_H,
-		             false);
+		             false, a->sys.systems[s0].accent,
+		             a->sys.systems[s1].accent);
 		goto furniture;
 	}
 
@@ -1794,7 +1712,9 @@ static void draw_both(app *a)
 			}
 			if (plan != FACES_NONE) SDL_SetRenderTarget(a->r, NULL);
 			cf_draw_cube(a->r, fa, fb, gfrac, TORTOS_SCREEN_W,
-			             TORTOS_SCREEN_H, true);
+			             TORTOS_SCREEN_H, true,
+			             a->sys.systems[a->sys_cursor].accent,
+			             a->sys.systems[a->sys_cursor].accent);
 		}
 		evict_far(v, TEX_KEEP_NEAR);
 	}
@@ -1833,7 +1753,6 @@ static void draw_systems(app *a)
 {
 	shelf_pacing(&a->cf_sys);
 	if (CARD_DIRS[g_dir].both) { draw_both(a); return; }
-	if (CARD_DIRS[g_dir].vertical) { draw_systems_cube(a); return; }
 
 	SDL_Rect focus;
 	const system_cfg *s = &a->sys.systems[a->sys_cursor];
@@ -1842,7 +1761,10 @@ static void draw_systems(app *a)
 	/* Systems only. The games shelf keeps the angled row whatever this says:
 	 * box art is a wall of many, and one cover per screen would turn picking
 	 * a game into paging through a catalog. */
-	cf_layout lay = sys_layout(&CF_LAYOUT_SYSTEMS);
+	/* Vertical stacks the same row down the screen. Cubic is excluded: it
+	 * does not draw this row at all. */
+	cf_layout lay = sys_layout(CARD_DIRS[g_dir].vertical
+	                           ? &CF_LAYOUT_SYSTEMS_V : &CF_LAYOUT_SYSTEMS);
 
 	cf_focus_rect(&lay, TORTOS_SCREEN_W, TORTOS_SCREEN_H, &focus);
 	ui_glow(a->r, &focus, s->accent, 110, 2.4f);
@@ -1856,6 +1778,10 @@ static void draw_systems(app *a)
 
 		ui_fit_text(ui_font(UI_F_TITLE), s->name, nfit, sizeof nfit,
 		            TORTOS_SCREEN_W - 48);
+		/* 618 is not arbitrary: the title renders 52px tall, so it ends at
+		 * 670 and leaves 20px before the count at 690. The card is sized to
+		 * fit ABOVE this rather than this being pushed down to suit the
+		 * card. */
 		ui_text(a->r, ui_font(UI_F_TITLE), nfit, TORTOS_SCREEN_W / 2, 618, 0,
 		        UI_TEXT);
 	}
@@ -2002,7 +1928,7 @@ static void draw_game_text(app *a, sysview *v, const system_cfg *s, int idx)
 		 * it would turn away mid-move and you would see two of them at once,
 		 * one per face, disagreeing by one. Horizontally there is no face to
 		 * be stuck to and centred under the row is right where it was. */
-		if (!CARD_DIRS[g_dir].vertical) {
+		if (!CARD_DIRS[g_dir].both) {
 			snprintf(count, sizeof count, "%d / %d", idx + 1, v->list.count);
 			ui_text(a->r, ui_font(UI_F_META), count, TORTOS_SCREEN_W / 2, 690,
 			        0, UI_TEXT_DIM);
@@ -2017,10 +1943,13 @@ static void draw_game_text(app *a, sysview *v, const system_cfg *s, int idx)
 	}
 }
 
-/* One game filling the screen, for a cube face. The counterpart to
- * draw_sys_face, and the same idea: CF_LAYOUT_SINGLE draws the art and
- * draw_game_text draws everything said about it, so the face is complete and
- * turns as one. */
+/* One game filling the screen, for a cube face. CF_LAYOUT_SINGLE draws the art
+ * and draw_game_text draws everything said about it, so the face is complete
+ * and turns as one.
+ *
+ * It had a counterpart, draw_sys_face, which went when Vertical stopped
+ * turning a cube: Cubic draws game faces on both axes, so a face carrying a
+ * SYSTEM no longer has anywhere to appear. */
 static void draw_games_face(app *a, sysview *v, const system_cfg *s, int idx)
 {
 	SDL_Rect focus;
@@ -2040,100 +1969,11 @@ static void draw_games_face(app *a, sysview *v, const system_cfg *s, int idx)
 	draw_game_text(a, v, s, idx);
 }
 
-static void draw_games_cube(app *a)
-{
-	sysview *v = &a->view[a->sys_cursor];
-	const system_cfg *s = &a->sys.systems[a->sys_cursor];
-	int n = v->list.count, i0, i1;
-	float pos, frac;
-
-	if (n <= 0) { draw_games_face(a, v, s, 0); goto rail; }
-
-	/* Warm every texture the turn will need BEFORE a render target is bound.
-	 *
-	 * Two reasons, and the second is the one that bites. A row asks cf_draw
-	 * for CF_WINDOW slots every frame, so art is decoded several items before
-	 * it is looked at; the cube draws two faces and warms nothing, which is
-	 * the pop. And creating a texture while an offscreen target is bound is
-	 * asking the GLES2 backend to juggle the framebuffer mid-load, which is
-	 * why loaded box art came out blank on a face while the generated cards
-	 * for games without any came out fine. Load first, draw second.
-	 *
-	 * Cached after the first frame, so at rest this costs nothing and a move
-	 * costs the one item newly inside the span. Well within TEX_KEEP_NEAR, so
-	 * eviction does not undo it on the next frame. */
-	if (n > 1) {
-		int k;
-
-		for (k = -CF_HALF_WINDOW; k <= CF_HALF_WINDOW; k++) {
-			int tw = 0, th = 0;
-			game_get_tex(a, ((v->cursor + k) % n + n) % n, &tw, &th, NULL);
-		}
-	}
-
-	cf_tick(&v->cf, n);
-	pos = v->cf.pos;
-	i0 = (int)floorf(pos);
-	frac = pos - (float)i0;
-	i0 = ((i0 % n) + n) % n;
-	i1 = n > 1 ? (i0 + 1) % n : i0;
-
-	if (!v->cf.active || n < 2) {
-		faces_stale();
-		draw_games_face(a, v, s, i0);
-	} else {
-		SDL_Texture *fa = face_tex(a, 0), *fb = face_tex(a, 1);
-
-		if (fa && fb) {
-			int plan = faces_plan(1, a->sys_cursor, i0, i1);
-
-			/* Both binds, and a flush before each switch. The bind for
-			 * the first face was once missing here, so that face was
-			 * drawn to the screen and its texture kept whatever it last
-			 * held - the other shelf's art, because both shelves share
-			 * these two. A face that is never written does not look
-			 * empty, it looks like something else entirely. */
-			if (plan == FACES_NEAR_ONLY || plan == FACES_FAR_ONLY)
-				faces_swap(&fa, &fb);
-			if (plan == FACES_BOTH || plan == FACES_NEAR_ONLY) {
-				SDL_SetRenderTarget(a->r, fa);
-				draw_games_face(a, v, s, i0);
-				SDL_RenderFlush(a->r);
-			}
-			if (plan == FACES_BOTH || plan == FACES_FAR_ONLY) {
-				SDL_SetRenderTarget(a->r, fb);
-				draw_games_face(a, v, s, i1);
-				SDL_RenderFlush(a->r);
-			}
-			if (plan != FACES_NONE) SDL_SetRenderTarget(a->r, NULL);
-			cf_draw_cube(a->r, fa, fb, frac,
-			             TORTOS_SCREEN_W, TORTOS_SCREEN_H, false);
-		} else {
-			draw_games_face(a, v, s, i0);
-		}
-	}
-	evict_far(v, TEX_KEEP_NEAR);
-
-rail:
-	ui_rail_v(a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, v->cursor, v->list.count,
-	          s->accent);
-	/* Under the rail's track, which ends at 678, and aligned to its left edge
-	 * so the two read as one cluster. The cursor's number rather than either
-	 * face's, which is what the rail is already showing. */
-	if (v->list.count > 0) {
-		char pos[64];
-
-		snprintf(pos, sizeof pos, "%d / %d", v->cursor + 1, v->list.count);
-		ui_text(a->r, ui_font(UI_F_META), pos, 23, 700, -1, UI_TEXT_DIM);
-	}
-}
-
 static void draw_games(app *a)
 {
 	shelf_pacing(&a->view[a->sys_cursor].cf);
 	shelf_pacing(&a->cf_sys);
 	if (CARD_DIRS[g_dir].both) { draw_both(a); return; }
-	if (CARD_DIRS[g_dir].vertical) { draw_games_cube(a); return; }
 
 	sysview *v = &a->view[a->sys_cursor];
 	const system_cfg *s = &a->sys.systems[a->sys_cursor];
@@ -2142,7 +1982,8 @@ static void draw_games(app *a)
 	cf_focus_rect(&CF_LAYOUT_GAMES, TORTOS_SCREEN_W, TORTOS_SCREEN_H, &focus);
 	ui_glow(a->r, &focus, s->accent, 100, 2.3f);
 	cf_draw(&v->cf, a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, v->list.count,
-	        game_get_tex, a, &CF_LAYOUT_GAMES);
+	        game_get_tex, a,
+	        CARD_DIRS[g_dir].vertical ? &CF_LAYOUT_GAMES_V : &CF_LAYOUT_GAMES);
 	evict_far(v, TEX_KEEP_NEAR);
 
 	draw_game_text(a, v, s, v->cursor);
@@ -6045,7 +5886,9 @@ static void update_both(app *a)
 	if (a->in.pressed[IN_MENU]) { tortos_menu_for(a, SCREEN_SYSTEMS); return; }
 	if (a->in.pressed[IN_BACK]) { tortos_menu_for(a, SCREEN_GAMES); return; }
 
-	/* Up advances: the shelf runs A at the bottom to Z at the top. */
+	/* Up advances: the shelf runs A at the bottom to Z at the top. Tried the
+	 * other way on 2026-09-11 and put back the same day - a stack is read from
+	 * the bottom, and every part of this agreeing did not make it look right. */
 	if (in_repeat(&a->in, IN_DOWN)) { a->sys_cursor = (a->sys_cursor - 1 + ns) % ns; sdir = -1; }
 	if (in_repeat(&a->in, IN_UP))   { a->sys_cursor = (a->sys_cursor + 1) % ns; sdir = +1; }
 	if (sdir) cf_set_cursor_dir(&a->cf_sys, a->sys_cursor, ns, sdir);

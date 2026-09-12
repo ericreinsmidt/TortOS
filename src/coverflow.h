@@ -27,11 +27,22 @@ typedef struct {
 	 * screen's. A reflection that touches reads as the object continuing;
 	 * a small gap reads as a surface it is standing on. */
 	float reflect_gap;
+	/* Lay the row down the screen instead of across it. The cards, the
+	 * scaling and the reflections are unchanged - only which axis the
+	 * neighbors are offset along, and `step` then counts card HEIGHTS rather
+	 * than widths, because that is the direction they are spaced in. */
+	bool vertical;
 	int side_alpha;   /* alpha of fully off-center cards (center is 255) */
 	int strips;       /* vertical subdivisions per card */
 } cf_layout;
 
 extern const cf_layout CF_LAYOUT_SYSTEMS;
+/* The same two rows stood on end, for the Vertical direction. Separate tables
+ * rather than a flag applied to the others: the screen is 1024x768, so a card
+ * sized to fill the width leaves no room above and below, and every number has
+ * to be chosen again rather than reused. */
+extern const cf_layout CF_LAYOUT_SYSTEMS_V;
+extern const cf_layout CF_LAYOUT_GAMES_V;
 extern const cf_layout CF_LAYOUT_GAMES;
 /* The systems row again, one at a time and flat. Systems only: box art keeps
  * the angled row. */
@@ -49,7 +60,8 @@ extern const cf_layout CF_LAYOUT_GAME_FACE;
  * Faces darken as they turn away. A cube whose sides stay evenly lit reads as
  * two flat pictures sliding past each other rather than as one solid. */
 void cf_draw_cube(SDL_Renderer *r, SDL_Texture *near_face, SDL_Texture *far_face,
-                  float frac, int screen_w, int screen_h, bool yaw);
+                  float frac, int screen_w, int screen_h, bool yaw,
+                  unsigned near_rgb, unsigned far_rgb);
 
 /* Where the focused card sits on screen, so the caller can put a glow behind
  * it and lay text out against it without duplicating the geometry. */
