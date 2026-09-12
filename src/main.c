@@ -2271,11 +2271,12 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 	 * animation to interrupt, only a distance that shrinks. */
 	float win_off = 0.0f;
 
-	/* How far the highlight has travelled, and which row it left. The text
-	 * colors ride on these rather than on `i == sel`, so a row does not light
-	 * up before its plate arrives. */
-	float plate_u = 1.0f;
-	int   plate_prev = -1;
+	/* Where the highlight actually is. The text colors are weighed by how
+	 * much of it covers each row rather than by `i == sel`, so a row lights
+	 * as the plate arrives and dims as it leaves, and the two rows either
+	 * side of a move cross over correctly without anyone tracking which row
+	 * was left. */
+	float plate_y = -1e9f, plate_h = 0.0f;
 	int line_head   = ui_font_line(UI_F_LABEL);
 	/* A heading may carry a second line, separated by a newline. Nothing else
 	 * passes one; the achievements screen does, because its heading is a game
@@ -2559,45 +2560,67 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 	}
 
 	if (sel >= 0 && sel < n && rows[sel].label) {
-		static int   pl_n = -1, pl_sel = -1, pl_was = -1;
-		static float pl_y, pl_h, pl_from_y, pl_from_h;
-		static unsigned pl_t0;
-		const float PLATE_MS = 150.0f;
+		static int   pl_n = -1, pl_sel = -1;
+		static float pl_y, pl_h, pl_my, pl_mh;
+		static unsigned pl_last;
+		/* A CHASE, NOT A TIMED SLIDE. REPEAT_RATE_MS is 90 and this used to
+		 * take 150, so holding the d-pad meant the plate never finished a
+		 * move: it trailed a row behind, and on the wrap - which snaps - it
+		 * jumped from halfway to the top. The last row before the wrap was
+		 * being selected and never visibly highlighted, which is what it
+		 * looked like from the outside.
+		 *
+		 * A chase has no duration to be interrupted. It closes whatever gap
+		 * exists, so under repeat it keeps up and after a single press it
+		 * eases. Two stages for the same reason the list uses two: one
+		 * exponential moves furthest on its first frame. */
+		/* 22ms, not 34. At 34 the plate is only 83% of the way across when
+		 * the next repeat arrives, so holding the d-pad it never quite
+		 * settles on a row - the last one before a wrap almost highlights and
+		 * then the wrap takes it. 22 puts it at 96% within one repeat, which
+		 * is the difference between a row being visited and a row being
+		 * seen. Its first frame is still only 14px of 48, so a single press
+		 * eases rather than snaps. */
+		const float TAU = 22.0f;
 		int ty_sel = content_y - scroll, jj;
-		float u;
+		unsigned nowp = plat_now_ms();
+		float dt = pl_last ? (float)(nowp - pl_last) : 0.0f;
+		float tgt_h = (float)ROW_H(rows[sel]);
 		SDL_Rect plate;
+
+		pl_last = nowp;
+		if (dt > 100.0f) dt = 100.0f;
 
 		for (jj = first; jj < sel && jj < n; jj++) ty_sel += ROW_H(rows[jj]);
 		ty_sel += (int)win_off;
-		if (scroll_h && sel >= scroll_split) {
-			ty_sel = content_y + scroll_h;
-			for (jj = scroll_split; jj < sel; jj++) ty_sel += ROW_H(rows[jj]);
-		}
 
 		if (pl_n != n) {                       /* another menu: no journey */
-			pl_y = (float)ty_sel; pl_h = (float)ROW_H(rows[sel]);
-			pl_from_y = pl_y; pl_from_h = pl_h; pl_t0 = 0;
-		} else if (pl_sel != sel) {            /* moved: start from here */
-			int hop = sel > pl_sel ? sel - pl_sel : pl_sel - sel;
+			pl_y = pl_my = (float)ty_sel; pl_h = pl_mh = tgt_h;
+		} else if (pl_sel != sel) {
+			/* A step is a move to the next SELECTABLE row, whatever its
+			 * index. Distance cannot tell a wrap from a step in a menu whose
+			 * top rows are placeholders - the cursor goes 6 to 3 there, and
+			 * a step past one placeholder goes 3 to 5. What separates them is
+			 * whether anything selectable lies between. */
+			int lo2 = sel < pl_sel ? sel : pl_sel;
+			int hi2 = sel < pl_sel ? pl_sel : sel;
+			bool jump = false;
+			int q;
 
-			if (hop > 2) {                 /* a wrap or a page: no journey */
-				pl_y = (float)ty_sel; pl_h = (float)ROW_H(rows[sel]);
-				pl_from_y = pl_y; pl_from_h = pl_h; pl_t0 = 0; pl_was = -1;
-			} else {
-				pl_from_y = pl_y; pl_from_h = pl_h;
-				pl_was = pl_sel;
-				pl_t0 = plat_now_ms();
-			}
+			for (q = lo2 + 1; q < hi2; q++)
+				if (rows[q].label && rows[q].live) { jump = true; break; }
+			if (jump) { pl_y = pl_my = (float)ty_sel; pl_h = pl_mh = tgt_h; }
 		}
 		pl_n = n; pl_sel = sel;
 
-		u = pl_t0 ? (float)(plat_now_ms() - pl_t0) / PLATE_MS : 1.0f;
-		if (u > 1.0f) u = 1.0f;
-		u = u * u * (3.0f - 2.0f * u);          /* smoothstep, as the window */
-		plate_u = u;
-		plate_prev = pl_was;
-		pl_y = pl_from_y + ((float)ty_sel - pl_from_y) * u;
-		pl_h = pl_from_h + ((float)ROW_H(rows[sel]) - pl_from_h) * u;
+		if (dt > 0.0f) {
+			float k = 1.0f - expf(-dt / TAU);
+
+			pl_my += ((float)ty_sel - pl_my) * k;
+			pl_mh += (tgt_h - pl_mh) * k;
+			pl_y  += (pl_my - pl_y) * k;
+			pl_h  += (pl_mh - pl_h) * k;
+		}
 
 		/* A soft white plate, not the system's color. The accent already
 		 * frames the panel; using it again for the cursor made the two
@@ -2614,6 +2637,9 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 		plate.w = panel.w - pad;
 		plate.h = (int)(pl_h + 0.5f);
 		ui_round_rect(a->r, &plate, row_h / 4, (SDL_Color){ 255, 255, 255, 34 });
+
+		plate_y = pl_y;
+		plate_h = pl_h;
 	}
 
 	notes_drawn = 0;
@@ -2673,8 +2699,14 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 		 * one the cursor points at: 1 once the plate has arrived, 0 before it
 		 * sets off, and the two rows crossfade past each other in between. */
 		{
-			float w = i == sel ? plate_u
-			        : (i == plate_prev ? 1.0f - plate_u : 0.0f);
+			/* How much of the plate is over this row, 0 to 1. */
+			float top = y > plate_y ? (float)y : plate_y;
+			float bot = (float)(y + ROW_H(rows[i])) < plate_y + plate_h
+			            ? (float)(y + ROW_H(rows[i])) : plate_y + plate_h;
+			float w = (bot - top) / (float)ROW_H(rows[i]);
+
+			if (w < 0.0f) w = 0.0f;
+			if (w > 1.0f) w = 1.0f;
 
 			lc = rows[i].live
 			     ? col_mix(UI_TEXT_SOFT, UI_TEXT, w)
