@@ -3,6 +3,14 @@
 Photographs of the console hardware, background removed to transparent alpha
 and renamed to the tags in `systems.cfg`. 384x384.
 
+Replaced 2026-09-11 with the SAME photographer's shots of the consoles ALONE.
+The previous set included controllers on some machines and not others, which
+made the silhouettes disagree down a shelf. These are trimmed to their own
+alpha, scaled so the longest side is 96% of the frame, and centred - the old
+set ranged from 89% to 98% and read as uneven for that reason rather than any
+other. The high-resolution originals they were cut from are kept outside the
+repository; `GENESIS.png` is the file that arrived as `MD.png`.
+
   Author:  Evan Amos
   Source:  Vanamo Online Game Museum / Wikimedia Commons
            https://commons.wikimedia.org/wiki/User:Evan-Amos
