@@ -2259,6 +2259,18 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 	int scroll_span = 0;
 	int scroll_split = 0;  /* first pinned row: the rule, or n if there is none */
 	int scroll_foot = 0;   /* the pinned rows' total height */
+	/* A SMALL, FAST GIVE WHEN THE WINDOW SCROLLS - not a full slide.
+	 *
+	 * REPEAT_RATE_MS is 90, so any animation long enough to watch is
+	 * interrupted before it lands; chasing the whole row's travel means
+	 * permanently lagging behind the cursor. This takes the hard edge off
+	 * instead: at most a third of a row of displacement, decaying fast, so it
+	 * is never far from where it belongs and a held button stays honest.
+	 *
+	 * A decay rather than a timed ease for the same reason - there is no
+	 * animation to interrupt, only a distance that shrinks. */
+	float win_off = 0.0f;
+
 	/* How far the highlight has travelled, and which row it left. The text
 	 * colors ride on these rather than on `i == sel`, so a row does not light
 	 * up before its plate arrives. */
@@ -2327,12 +2339,32 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 		int avail = TORTOS_SCREEN_H - margin * 2 - content_off - pad;
 
 		if (sel >= 0) {
+			/* THE WINDOW ONLY MOVES WHEN THE CURSOR WOULD LEAVE IT.
+			 *
+			 * It used to centre itself on the selection, which meant almost
+			 * every press scrolled the list: the highlight stayed put in the
+			 * middle of the panel and the rows jumped under it. That is the
+			 * wrong thing to move. The cursor is what the player is aiming,
+			 * so the cursor travels and the list holds still until it runs
+			 * out of window.
+			 *
+			 * Static, and keyed on `n` like the highlight's own state, since
+			 * menu_draw keeps nothing between frames and every screen shares
+			 * it. A different row count is a different menu and starts at the
+			 * top rather than inheriting someone else's scroll. */
+			static int win_n = -1, win_first;
+
 			vis = avail / row_h;
 			if (vis < 1) vis = 1;
 			if (vis > n) vis = n;
-			first = sel - vis / 2;
-			if (first < 0) first = 0;
-			if (first > n - vis) first = n - vis;
+
+			if (win_n != n) win_first = 0;
+			win_n = n;
+			if (sel < win_first)           win_first = sel;
+			if (sel > win_first + vis - 1) win_first = sel - vis + 1;
+			if (win_first > n - vis)       win_first = n - vis;
+			if (win_first < 0)             win_first = 0;
+			first = win_first;
 		} else {
 			/* NO CURSOR MEANS NOTHING CAN SCROLL IT, so it scrolls itself.
 			 * Dropping rows off the bottom is what a cursor makes safe: you
@@ -2472,6 +2504,60 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 	 * left it. Two menus of the SAME length in a row will slide between
 	 * themselves, which is wrong but invisible - both are lists of the same
 	 * shape and the plate is already close to where it should be. */
+	if (vis < n) {
+		static int      wn = -1, wfirst = -1;
+		static float    wcur, wmid;
+		static unsigned wlast;
+		/* Two chained decays, not one. A single exponential moves furthest on
+		 * its first frame and then crawls - 10.5px of a 16px give, then 6.8,
+		 * then 4.4 - which is the front-loading that reads as a jerk. Chained
+		 * gives an S: 1.8, 2.7, 2.9, 3.0, 2.6, near-equal steps through the
+		 * middle where the eye is tracking.
+		 *
+		 * 55ms and a third of a row would be smoother again at 70ms, but the
+		 * lag while a button is held grows with both: 0.28 of a row here,
+		 * 0.44 there, and past that the list visibly trails the cursor. */
+		const float TAU = 55.0f, CAP = (float)row_h * 0.55f;
+		unsigned nw = plat_now_ms();
+		float dt = wlast ? (float)(nw - wlast) : 0.0f;
+
+		wlast = nw;
+		if (dt > 100.0f) dt = 100.0f;
+		if (wn != n) wcur = wmid = 0.0f;
+		else if (wfirst != first) {
+			int a0 = first < wfirst ? first : wfirst;
+			int b0 = first < wfirst ? wfirst : first;
+			float d = 0.0f;
+			int j2;
+
+			/* A STEP GIVES, A JUMP DOES NOT. Wrapping from the last row to
+			 * the first moves the window the whole length of the list, and a
+			 * shoulder button pages it by eight; easing across either drags
+			 * rows in from the far end and reads as the list skipping. Only
+			 * a single row's move is softened. */
+			if (b0 - a0 > 1) {
+				wcur = wmid = 0.0f;
+			} else {
+				for (j2 = a0; j2 < b0 && j2 < n; j2++) d += ROW_H(rows[j2]);
+				wcur += (first > wfirst) ? d : -d;
+				wmid += (first > wfirst) ? d : -d;
+				if (wcur >  CAP) wcur =  CAP;
+				if (wcur < -CAP) wcur = -CAP;
+				if (wmid >  CAP) wmid =  CAP;
+				if (wmid < -CAP) wmid = -CAP;
+			}
+		}
+		wn = n; wfirst = first;
+		if (dt > 0.0f) {
+			float kk = 1.0f - expf(-dt / TAU);
+
+			wmid -= wmid * kk;
+			wcur += (wmid - wcur) * kk;
+		}
+		if (wcur < 0.5f && wcur > -0.5f) wcur = 0.0f;
+		win_off = wcur;
+	}
+
 	if (sel >= 0 && sel < n && rows[sel].label) {
 		static int   pl_n = -1, pl_sel = -1, pl_was = -1;
 		static float pl_y, pl_h, pl_from_y, pl_from_h;
@@ -2482,6 +2568,7 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 		SDL_Rect plate;
 
 		for (jj = first; jj < sel && jj < n; jj++) ty_sel += ROW_H(rows[jj]);
+		ty_sel += (int)win_off;
 		if (scroll_h && sel >= scroll_split) {
 			ty_sel = content_y + scroll_h;
 			for (jj = scroll_split; jj < sel; jj++) ty_sel += ROW_H(rows[jj]);
@@ -2491,9 +2578,16 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 			pl_y = (float)ty_sel; pl_h = (float)ROW_H(rows[sel]);
 			pl_from_y = pl_y; pl_from_h = pl_h; pl_t0 = 0;
 		} else if (pl_sel != sel) {            /* moved: start from here */
-			pl_from_y = pl_y; pl_from_h = pl_h;
-			pl_was = pl_sel;
-			pl_t0 = plat_now_ms();
+			int hop = sel > pl_sel ? sel - pl_sel : pl_sel - sel;
+
+			if (hop > 2) {                 /* a wrap or a page: no journey */
+				pl_y = (float)ty_sel; pl_h = (float)ROW_H(rows[sel]);
+				pl_from_y = pl_y; pl_from_h = pl_h; pl_t0 = 0; pl_was = -1;
+			} else {
+				pl_from_y = pl_y; pl_from_h = pl_h;
+				pl_was = pl_sel;
+				pl_t0 = plat_now_ms();
+			}
 		}
 		pl_n = n; pl_sel = sel;
 
@@ -2526,7 +2620,19 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 	if (scroll_h)
 		SDL_RenderSetClipRect(a->r, &(SDL_Rect){ panel.x, content_y,
 		                                         panel.w, scroll_h });
-	for (k = 0, i = first; k < vis && i < n; k++, i++) {
+	/* Clipped to the panel, and ONE ROW BEYOND THE WINDOW at each end.
+	 * Offsetting the rows opens a gap at one edge and pushes the far row past
+	 * the other; without the extra row the gap is empty, and without the clip
+	 * the overflow draws outside the panel. Leaving either out is what made
+	 * the first attempt at this look like the list was wrapping. */
+	if (vis < n) {
+		SDL_Rect rc = { panel.x + UI_PANEL_BORDER, content_y,
+		                panel.w - UI_PANEL_BORDER * 2,
+		                panel.y + panel.h - pad - content_y };
+		SDL_RenderSetClipRect(a->r, &rc);
+	}
+	for (k = 0, i = (first > 0 ? first - 1 : first);
+	     i < n && i <= first + vis; k++, i++) {
 		int y, ty, j;
 		float sel_w;
 		SDL_Color lc, vc;
@@ -2539,8 +2645,9 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 			y = content_y + scroll_h;
 			for (j = scroll_split; j < i; j++) y += ROW_H(rows[j]);
 		} else {
-			y = content_y - scroll;
-			for (j = first; j < i; j++) y += ROW_H(rows[j]);
+			y = content_y - scroll + (int)win_off;
+			if (i >= first) for (j = first; j < i; j++) y += ROW_H(rows[j]);
+			else            for (j = i; j < first; j++) y -= ROW_H(rows[j]);
 		}
 		/* Centered in ITS OWN row, not in row_h: a note is shorter. */
 		ty = y + (ROW_H(rows[i]) - text_h) / 2 + ink_off;
@@ -2709,6 +2816,8 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 			ui_text(a->r, fm, lbl, cx, ty, 0, lc);
 		}
 	}
+	if (vis < n) SDL_RenderSetClipRect(a->r, NULL);
+
 	if (scroll_h) {
 		/* Faded where the text runs out of viewport, and faded by laying the
 		 * PANEL'S OWN FILL over it, which is the opposite of what the shelf
