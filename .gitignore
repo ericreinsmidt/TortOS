@@ -52,3 +52,11 @@ sysroot/
 
 # A scratch harness for the box art scraper, not part of the build.
 /tools/art-try.c
+
+# Source photographs for the fancy cards, and the card set they replaced.
+# 100MB of Evan Amos originals at full resolution, which res/cards/fancy is cut
+# down from, plus a copy of the set that was there before 2026-09-11. Neither
+# belongs in the repo and neither has ever been in it - these lines exist so a
+# stray `git add -A` cannot change that.
+/system_images_original/
+/cards_backup_photos/
