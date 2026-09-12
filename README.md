@@ -354,7 +354,7 @@ does not wait for the launcher to notice the headset is gone.
 
 ## Where the time goes
 
-Starting a game on this hardware costs about **1100ms**, and almost none of it
+Starting a game on this hardware costs about **1100 ms**, and almost none of it
 is the game:
 
 | | |
@@ -420,7 +420,7 @@ the moment the animation clears it. Bounded at 8 seconds, so a stuck decoder
 cannot hang the boot.
 
 The same idle seconds pull the emulator, the cores and their libraries into the
-page cache. Cold reads of that set measure ~190ms against ~30ms warm.
+page cache. Cold reads of that set measure ~190 ms against ~30 ms warm.
 
 Startup phases are logged rather than guessed at. Both columns below are from
 one device boot on the main card - 1708 games across eleven systems - measured
@@ -466,10 +466,11 @@ dropping in a folder - no code and no configuration.
 
 **UI Direction** picks how you move. `Horizontal` is the row above.
 
-`Vertical` makes the whole screen one face of a cube: advancing rolls the face
-you are leaving up and off the top while the next swings in from below,
-carrying its art, its glow, its text and its reflection with it, because a
-face is just a shelf drawn with one thing on it.
+`Vertical` is that row stood on its end. The cards slide up and down instead
+of left and right, flat and unrotated and all one size, with the one under the
+cursor filling most of the screen and its neighbors pushed off the top and
+bottom edges. It is laid out the way `Horizontal` is and moves at the row's
+pace; only `Cubic` turns a solid.
 
 `Cubic` turns that cube both ways and merges the two shelves into one surface.
 **Up and down change system, left and right move through that system's
@@ -541,7 +542,7 @@ across games and cards.
 **The evaluation is Diatom's, and that is not a delegation of convenience.**
 Conditions compare against the *previous frame* - `0xH06f0<d0xH06f0` is "this
 byte is lower than it was last frame" - and the launcher only sees the socket
-every 100ms against a core running at 60Hz. That is six frames per poll, so
+every 100 ms against a core running at 60 Hz. That is six frames per poll, so
 five of every six are invisible to it and unlocks would be missed silently.
 The launcher declares which console the game is and hands over the set, and
 Diatom watches every frame
@@ -584,8 +585,6 @@ this client is not registered with them. It is dropped rather than shown - it
 is not an achievement, and recording it would put a row in the store that can
 never be displayed and might later be submitted as a duplicate of something
 that was never real.
-
----
 
 ---
 
@@ -695,12 +694,24 @@ Docker and (for regenerating art) Python with Pillow, plus ffmpeg.
 make toolchain  # the cross-compiler      -> tortos-toolchain   (once)
 mk/fetch-sysroot.sh  # the device's SDL2  -> sysroot/           (once, needs adb)
 make            # the launcher            -> build/tortos.elf
-make vendor     # the libretro cores      -> vendor/
+make vendor     # five libretro cores     -> vendor/
+mk/build-mgba-bridge.sh  # the sixth      -> vendor/            (see below)
 make payload    # the installable card    -> out/sd/ and out/TortOS-v1.0.zip
 make native     # host build of the launcher, for working on how it looks
 make boot       # regenerate the boot animation
 make check      # every check below, offline, in a second or two
 ```
+
+**mGBA is built rather than fetched, and is meant to stop being.** Every MBC2
+Game Boy cartridge segfaults on the buildbot core - Kirby's Pinball Land, Wave
+Race, Golf, X, both Final Fantasy Legends - a regression reported as
+mgba-emu/mgba#3859 and fixed upstream the same day, but in no downloadable core
+because libretro builds mGBA from a fork that has not synced.
+`mk/build-mgba-bridge.sh` builds that same pinned tree with only upstream's own
+fix applied, hardened to match the official build. Without it `make payload`
+refuses the card rather than shipping one whose Game Boy, Game Boy Color and
+Game Boy Advance shelves open onto nothing. Restore the fetch and delete the
+script the day that fork syncs.
 
 `make payload` needs a built Diatom binary (`DIATOM_ELF`, defaulting to a
 sibling checkout).
@@ -775,7 +786,8 @@ res/            the boot animation, the system cards, the font, Over The
 config/         systems.cfg as shipped; the rest is compiled in
 sd/             the boot hook and launch.sh as they land on the card
 sysroot/        fetched: the device's own SDL2, for linking (mk/fetch-sysroot.sh)
-vendor/         fetched: the libretro cores, hash-pinned
+vendor/         the libretro cores: five fetched and hash-pinned, mGBA
+                built by mk/build-mgba-bridge.sh
 ```
 
 ## License
