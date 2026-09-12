@@ -45,7 +45,10 @@ SWEPT = re.compile(r"\*\*Last swept:\s*(\d{4})-(\d{2})-(\d{2})", re.I)
 HEADING = re.compile(r"^## (.+?)\s*$", re.M)
 ROW = re.compile(r"^\|\s*\d+\s*\|\s*(.+?)\s*\|[^|]*\|[^|]*\|\s*$", re.M)
 PICKUP = "## What to pick up next"
-SETTLED = re.compile(r"\b(DONE|CLOSED|FIXED|RESOLVED|SUPERSEDED)\b", re.I)
+# A decision is a completion, even when nothing was built. Without DECIDED
+# here, a decided item counts as live and gets nagged for a pick-up row it
+# should not have, while the table still listing it goes unnoticed.
+SETTLED = re.compile(r"\b(DONE|CLOSED|DECIDED|FIXED|RESOLVED|SUPERSEDED)\b", re.I)
 
 # Headings that describe the file rather than an item of work.
 META = ("what to pick up next", "where diatom items live")
