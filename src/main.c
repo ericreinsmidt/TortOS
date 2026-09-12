@@ -2166,6 +2166,17 @@ static void power_off(app *a)
 /* The unit every menu measurement is in. Row height, padding and the gap
  * between the two columns are all cut from it, so the whole panel scales with
  * the type rather than with a set of numbers that have to be retuned together. */
+/* Two colors, `t` of the way from a to b. */
+static SDL_Color col_mix(SDL_Color a, SDL_Color b, float t)
+{
+	if (t <= 0.0f) return a;
+	if (t >= 1.0f) return b;
+	return (SDL_Color){ (Uint8)(a.r + (b.r - a.r) * t),
+	                    (Uint8)(a.g + (b.g - a.g) * t),
+	                    (Uint8)(a.b + (b.b - a.b) * t),
+	                    (Uint8)(a.a + (b.a - a.a) * t) };
+}
+
 static int menu_row_h(void) { return ui_font_line(UI_F_MENU) * 3 / 2; }
 /* The air between the panel edge and its content, on each side. menu_draw
  * draws it and menu_std_width subtracts it, and a panel width means nothing
@@ -2248,6 +2259,11 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 	int scroll_span = 0;
 	int scroll_split = 0;  /* first pinned row: the rule, or n if there is none */
 	int scroll_foot = 0;   /* the pinned rows' total height */
+	/* How far the highlight has travelled, and which row it left. The text
+	 * colors ride on these rather than on `i == sel`, so a row does not light
+	 * up before its plate arrives. */
+	float plate_u = 1.0f;
+	int   plate_prev = -1;
 	int line_head   = ui_font_line(UI_F_LABEL);
 	/* A heading may carry a second line, separated by a newline. Nothing else
 	 * passes one; the achievements screen does, because its heading is a game
@@ -2443,12 +2459,76 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 		                                      content_w, 2 });
 	}
 
+	/* THE HIGHLIGHT SLIDES. It used to be drawn inside the row loop at
+	 * i == sel, which put it wherever the cursor was that frame and made it
+	 * snap. Here it is a rect of its own, eased from where it was toward
+	 * where it belongs, and drawn BEFORE the rows so it stays under all of
+	 * them - inside the loop, a plate that had moved up would cover the text
+	 * of the row already drawn above it.
+	 *
+	 * The state is static because menu_draw has none and every screen shares
+	 * it. `n` is the key: a different row count is a different menu, and the
+	 * plate snaps rather than travelling across from wherever the last menu
+	 * left it. Two menus of the SAME length in a row will slide between
+	 * themselves, which is wrong but invisible - both are lists of the same
+	 * shape and the plate is already close to where it should be. */
+	if (sel >= 0 && sel < n && rows[sel].label) {
+		static int   pl_n = -1, pl_sel = -1, pl_was = -1;
+		static float pl_y, pl_h, pl_from_y, pl_from_h;
+		static unsigned pl_t0;
+		const float PLATE_MS = 150.0f;
+		int ty_sel = content_y - scroll, jj;
+		float u;
+		SDL_Rect plate;
+
+		for (jj = first; jj < sel && jj < n; jj++) ty_sel += ROW_H(rows[jj]);
+		if (scroll_h && sel >= scroll_split) {
+			ty_sel = content_y + scroll_h;
+			for (jj = scroll_split; jj < sel; jj++) ty_sel += ROW_H(rows[jj]);
+		}
+
+		if (pl_n != n) {                       /* another menu: no journey */
+			pl_y = (float)ty_sel; pl_h = (float)ROW_H(rows[sel]);
+			pl_from_y = pl_y; pl_from_h = pl_h; pl_t0 = 0;
+		} else if (pl_sel != sel) {            /* moved: start from here */
+			pl_from_y = pl_y; pl_from_h = pl_h;
+			pl_was = pl_sel;
+			pl_t0 = plat_now_ms();
+		}
+		pl_n = n; pl_sel = sel;
+
+		u = pl_t0 ? (float)(plat_now_ms() - pl_t0) / PLATE_MS : 1.0f;
+		if (u > 1.0f) u = 1.0f;
+		u = u * u * (3.0f - 2.0f * u);          /* smoothstep, as the window */
+		plate_u = u;
+		plate_prev = pl_was;
+		pl_y = pl_from_y + ((float)ty_sel - pl_from_y) * u;
+		pl_h = pl_from_h + ((float)ROW_H(rows[sel]) - pl_from_h) * u;
+
+		/* A soft white plate, not the system's color. The accent already
+		 * frames the panel; using it again for the cursor made the two
+		 * compete, and on a dark red system the plate read as a stain on the
+		 * row rather than a highlight under it. White is neutral against all
+		 * eleven accents.
+		 *
+		 * Flat, with no radial glow under it. The glow was brightest at the
+		 * row's midpoint and fell off toward both ends, which put a soft blob
+		 * behind the middle of every highlighted row and read as a smudge
+		 * rather than as a selection. */
+		plate.x = panel.x + pad / 2;
+		plate.y = (int)(pl_y + 0.5f);
+		plate.w = panel.w - pad;
+		plate.h = (int)(pl_h + 0.5f);
+		ui_round_rect(a->r, &plate, row_h / 4, (SDL_Color){ 255, 255, 255, 34 });
+	}
+
 	notes_drawn = 0;
 	if (scroll_h)
 		SDL_RenderSetClipRect(a->r, &(SDL_Rect){ panel.x, content_y,
 		                                         panel.w, scroll_h });
 	for (k = 0, i = first; k < vis && i < n; k++, i++) {
 		int y, ty, j;
+		float sel_w;
 		SDL_Color lc, vc;
 
 		if (scroll_h && i >= scroll_split) {
@@ -2477,29 +2557,23 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 			continue;
 		}
 
-		if (i == sel) {
-			/* A soft white plate, not the system's color. The accent already
-			 * frames the panel; using it again for the cursor made the two
-			 * compete, and on a dark red system the plate read as a stain on
-			 * the row rather than a highlight under it. White is neutral
-			 * against all eleven accents.
-			 *
-			 * A flat plate, with no radial glow under it. The glow was
-			 * brightest at the row's midpoint and fell off toward both ends,
-			 * which put a soft blob behind the middle of every highlighted
-			 * row and read as a smudge rather than as a selection. */
-			SDL_Rect plate = { panel.x + pad / 2, y, panel.w - pad, row_h };
-			ui_round_rect(a->r, &plate, row_h / 4,
-			              (SDL_Color){ 255, 255, 255, 34 });
-		}
-
 		/* A placeholder row still highlights - it is a real place on the list -
 		 * and stays one step quieter than a working row, which is the whole
 		 * signal that it does nothing yet. One step, though, not two: most of
 		 * this list is placeholders, and ranking them against an unselected
 		 * working row as well left the entire menu reading as grayed out. */
-		if (rows[i].live) lc = i == sel ? UI_TEXT      : UI_TEXT_SOFT;
-		else              lc = i == sel ? UI_TEXT_SOFT : UI_TEXT_DIM;
+		/* `w` is how selected this row is RIGHT NOW, not whether it is the
+		 * one the cursor points at: 1 once the plate has arrived, 0 before it
+		 * sets off, and the two rows crossfade past each other in between. */
+		{
+			float w = i == sel ? plate_u
+			        : (i == plate_prev ? 1.0f - plate_u : 0.0f);
+
+			lc = rows[i].live
+			     ? col_mix(UI_TEXT_SOFT, UI_TEXT, w)
+			     : col_mix(UI_TEXT_DIM, UI_TEXT_SOFT, w);
+			sel_w = w;
+		}
 		/* The panel's own accent, not a->tint. These were the same value for
 		 * as long as Display mode was the only live row, because that row is
 		 * in the SYSTEM menu where the accent IS the system tint. The first
@@ -2511,9 +2585,11 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 			                  (Uint8)(vcolors[i] >> 8),
 			                  (Uint8)vcolors[i], 255 };
 		else
-			vc = rows[i].live && i == sel
-			     ? (SDL_Color){ (Uint8)(accent >> 16), (Uint8)(accent >> 8),
-			                    (Uint8)accent, 255 }
+			vc = rows[i].live
+			     ? col_mix(UI_TEXT_DIM,
+			               (SDL_Color){ (Uint8)(accent >> 16),
+			                            (Uint8)(accent >> 8),
+			                            (Uint8)accent, 255 }, sel_w)
 			     : UI_TEXT_DIM;
 
 		/* Trimmed to the panel, HERE, rather than by every caller.
