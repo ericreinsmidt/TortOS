@@ -3,8 +3,17 @@
 # TrimUI's SDK. Build it once with `make toolchain`, and the sysroot once with
 # `mk/fetch-sysroot.sh` (needs the device on adb).
 IMAGE := tortos-toolchain
-BRICK ?= 192.168.1.101
-SSH := sshpass -p 'tina' ssh -o StrictHostKeyChecking=no root@$(BRICK)
+# The Brick is .100. The .101 this used to say is the address in the global
+# notes, and it is wrong - every SSH target needed BRICK= on the command line
+# to work at all.
+BRICK ?= 192.168.1.100
+# UserKnownHostsFile=/dev/null is not laziness: when the recorded host key does
+# not match, ssh DISABLES password authentication to protect the password, and
+# every SSH target here fails with "Permission denied (publickey,password)"
+# while the credential is perfectly correct. The device is on the LAN and gets
+# reflashed, so its key changes; there is nothing here worth pinning it for.
+SSH := sshpass -p 'tina' ssh -o StrictHostKeyChecking=no \
+       -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@$(BRICK)
 
 .PHONY: all clean native toolchain vendor boot checkmark payload release install-card \
         adb adb-elf adb-res adb-vendor adb-restart adb-run adb-log \
@@ -385,10 +394,35 @@ adb-log:
 	$(ADBSEL) shell 'tail -60 /mnt/SDCARD/.userdata/tg3040/logs/tortos.log 2>/dev/null'
 
 # --- Push to a running device over SSH. BRICK=<ip> to override.
+#
+# The card art rides along, because a set of system images that does not reach
+# the device is a change that silently does nothing - and the only sign is the
+# shelf looking exactly as it did before.
+#
+# THREE FAULTS LIVED IN HERE, all of them invisible because BRICK defaulted to
+# an address the device is not at, so this target was never once run:
+#
+#   - tortos.cfg was in the file list. It was deleted in 89ca6e5 when settings
+#     moved into the database.
+#   - the -C chain is RELATIVE AND CUMULATIVE. After `-C ../sd/tortos` the
+#     working directory is sd/tortos, so `-C ../res/fonts` resolved to
+#     sd/res/fonts and the font was never sent. It needs ../../ from there.
+#   - the card art was never included at all.
+#
+# The first two both surface at the far end as "tar: short read", which names
+# neither the file nor even which side failed. Run the sending tar on its own
+# if this ever breaks again; it says exactly what it could not find.
+#
+# NOT a match for `make adb all`, which also sends Over The Hare's web assets,
+# the boot video, the bootlogo and splash, the CA bundle and Diatom itself.
+# Those change rarely and two of them are applied once and guarded by markers;
+# this target is for the loop you are actually in, which is the launcher and
+# what it draws.
 deploy: all
-	tar -cf - -C build tortos.elf setbright -C ../config systems.cfg tortos.cfg \
-	    -C ../sd/tortos launch.sh -C ../res/fonts menu.ttf | \
+	tar -cf - -C build tortos.elf setbright -C ../config systems.cfg \
+	    -C ../sd/tortos launch.sh -C ../../res/fonts menu.ttf | \
 	    $(SSH) 'tar -xf - -C /mnt/SDCARD/TortOS'
+	tar -cf - -C res cards | $(SSH) 'tar -xf - -C /mnt/SDCARD/TortOS'
 
 restart:
 	$(SSH) 'killall -q tortos.elf; exit 0'
