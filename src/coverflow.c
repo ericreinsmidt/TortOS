@@ -101,9 +101,14 @@ const cf_layout CF_LAYOUT_SYSTEMS_V = {
 	.vertical = true, .side_alpha = 255, .strips = 16,
 };
 
+/* Box art at the SAME SIZE the horizontal row uses, unlike the systems row
+ * above. A console is one of eleven and can afford to dominate the screen; box
+ * art is one of hundreds, and blown up to match it just looks oversized. The
+ * step has to grow to compensate - it counts card heights, so a smaller card
+ * needs more of them to put the neighbors past a 768 screen. */
 const cf_layout CF_LAYOUT_GAMES_V = {
-	.size = 0.80f, .aspect = 0.72f, .step = 1.30f, .side_scale = 1.00f,
-	.center_y = 0.44f, .tilt = 0.0f, .reflect = 1.52f,
+	.size = 0.60f, .aspect = 0.72f, .step = 1.50f, .side_scale = 1.00f,
+	.center_y = 0.47f, .tilt = 0.0f, .reflect = 1.52f,
 	.vertical = true, .side_alpha = 255, .strips = 16,
 };
 
