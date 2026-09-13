@@ -55,6 +55,12 @@
 #define TEX_KEEP_NEAR   8   /* card textures kept around the cursor, in view  */
 #define TEX_KEEP_FAR    4   /* ...and around the cursor of a system you left  */
 
+/* The row is allowed to glide only across cards this policy keeps decoded. If
+ * TEX_KEEP_NEAR ever drops below it, a long move would animate over cold cards
+ * and stall exactly as it did before CF_WARM_CARDS existed. */
+_Static_assert(TEX_KEEP_NEAR >= CF_WARM_CARDS,
+               "the row glides across cards the texture policy must keep");
+
 typedef enum { SCREEN_SYSTEMS, SCREEN_GAMES } screen_id;
 
 typedef struct {
@@ -620,6 +626,35 @@ static void prime_window(app *a, int s)
 		game_get_tex(a, i, &w, &h, NULL);
 	}
 	a->sys_cursor = save;
+}
+
+/* Decode up to `budget` of the cards nearest `center`, nearest first.
+ *
+ * Budgeted because this runs on the render path and a card costs 7-27ms on
+ * this device against a 16.7ms frame, so more than one in a frame drops one.
+ * Nearest-first because on landing only the CENTER card has to be right: the
+ * neighbors arrive over the frames after it and nobody sees them do it, which
+ * is what lets a long move land without ever blocking. */
+static int prime_toward(app *a, int s, int center, int budget)
+{
+	sysview *v = &a->view[s];
+	int n = v->list.count, k, done = 0, save = a->sys_cursor;
+
+	if (n <= 0 || budget <= 0) return 0;
+	a->sys_cursor = s;
+	for (k = 0; k <= CF_HALF_WINDOW && done < budget; k++) {
+		int side;
+		for (side = (k ? -1 : 1); side <= 1 && done < budget; side += 2) {
+			int i = center + k * side, w, h;
+			i %= n;
+			if (i < 0) i += n;
+			if (v->tex[i]) continue;
+			game_get_tex(a, i, &w, &h, NULL);
+			done++;
+		}
+	}
+	a->sys_cursor = save;
+	return done;
 }
 
 static void prime_sys_window(app *a)
@@ -1545,6 +1580,7 @@ static void shelf_pacing(coverflow *cf)
 		cf->anim_ms = 450.0f;
 		cf->ease = CF_EASE_SMOOTH;
 		cf->chase = true;
+		cf->glide = 0.0f;      /* chase already holds pos within a step */
 	} else if (CARD_DIRS[g_dir].vertical) {
 		/* THE DURATION IS FIXED BUT THE DISTANCE IS NOT. ANIM_MS is 240ms
 		 * whatever the travel, and Vertical shows one card at a time, so a
@@ -1562,10 +1598,15 @@ static void shelf_pacing(coverflow *cf)
 		cf->anim_ms = 360.0f;
 		cf->ease = CF_EASE_SMOOTH;
 		cf->chase = false;
+		/* Two, not the row's eight. Vertical puts ONE card on the screen at a
+		 * time, so a card of travel is a whole screen of travel; eight would
+		 * be a full-screen blur rather than a departure. */
+		cf->glide = 2.0f;
 	} else {
 		cf->anim_ms = 0.0f;
 		cf->ease = CF_EASE_OUT_CUBIC;
 		cf->chase = false;
+		cf->glide = (float)CF_WARM_CARDS;
 	}
 }
 
@@ -1984,7 +2025,15 @@ static void draw_games(app *a)
 	cf_draw(&v->cf, a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, v->list.count,
 	        game_get_tex, a,
 	        CARD_DIRS[g_dir].vertical ? &CF_LAYOUT_GAMES_V : &CF_LAYOUT_GAMES);
-	evict_far(v, TEX_KEEP_NEAR);
+	/* Warm where the move is about to cut to, one card per frame, underneath
+	 * the departure that is still being drawn. Eviction waits: the cursor is
+	 * already at the destination and evict_far measures from the cursor, so
+	 * running it now would free the very cards the departure is drawing. */
+	{
+		int land = cf_landing(&v->cf, v->list.count);
+		if (land >= 0) prime_toward(a, a->sys_cursor, land, 1);
+	}
+	if (!cf_cutting(&v->cf)) evict_far(v, TEX_KEEP_NEAR);
 
 	draw_game_text(a, v, s, v->cursor);
 	(CARD_DIRS[g_dir].vertical ? ui_rail_v : ui_rail)

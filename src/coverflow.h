@@ -13,6 +13,15 @@
 #define CF_HALF_WINDOW 3
 #define CF_WINDOW (2 * CF_HALF_WINDOW + 1)
 
+/* How many cards either side of the cursor the CALLER guarantees are already
+ * decoded. This is a contract, not a preference: a move that crosses cold
+ * cards decodes them on the render path, and one card is 7-27ms on this
+ * device against a 16.7ms frame - measured 2026-09-12 on Game Boy art, which
+ * averages 327KB. Seven of those in one frame is why a long jump showed two
+ * still pictures and no motion. main.c's TEX_KEEP_NEAR is the guarantee and
+ * asserts it is not less than this. */
+#define CF_WARM_CARDS 8
+
 typedef struct {
 	float size;       /* card height as a fraction of screen height */
 	float aspect;     /* card width / card height */
@@ -103,7 +112,28 @@ typedef struct {
 	/* Whether to skip ahead rather than queue when told to move again while
 	 * already moving. See cf_set_cursor_dir. */
 	bool chase;
+	/* How far a move too long to draw may travel before it cuts, in cards.
+	 * Per-shelf because a card means different things on each: the row shows
+	 * seven at once, so eight of them read as travel, while Vertical shows
+	 * ONE filling the screen and eight would be a full-screen blur. Capped by
+	 * CF_WARM_CARDS however it is set - a glide is only free while the cards
+	 * it crosses are already decoded. Zero disables it. */
+	float glide;
+	/* A move longer than the warm window: the tween runs out through the warm
+	 * cards behind the cursor and then cuts to `land`. */
+	float land;
+	bool  cutting;
 } coverflow;
+
+/* The index a pending cut will land on, or -1 when none is pending. The caller
+ * uses it to decode that window while the departure is still being drawn, so
+ * the move lands on a card that is already there. */
+int cf_landing(const coverflow *cf, int count);
+
+/* Whether a cut is in flight. The caller holds off evicting while it is, or it
+ * would free the very cards the departure is still drawing: the cursor is
+ * already at the destination and eviction is measured from the cursor. */
+bool cf_cutting(const coverflow *cf);
 
 /* Texture for item index; w/h receive its pixel size. May return NULL.
  *

@@ -139,6 +139,15 @@ void cf_focus_rect(const cf_layout *lay, int screen_w, int screen_h, SDL_Rect *o
  * hide the worst of it. One duration removes the need for both. */
 #define ANIM_MS 240.0f
 
+/* Ease in, cubic: starts at rest and is at its fastest when it ends.
+ *
+ * That is backwards for a step and exactly right for a cut. The end of this
+ * move is where the discontinuity is, and a cut made while the eye is tracking
+ * fast motion is close to invisible - it is the ordinary cut on action -
+ * whereas one made at rest is the most visible cut available, because the eye
+ * has settled and has nothing left to do but notice it. */
+static float ease_in(float u) { return u * u * u; }
+
 /* Ease out, cubic: about seven eighths of the distance is covered in the first
  * half of the time, so a single-card step still reads as immediate even though
  * it formally takes as long as a forty-card one. */
@@ -241,9 +250,45 @@ void cf_set_cursor_dir(coverflow *cf, int cursor, int count, int dir)
 	 * the live position each time is what makes that one continuous glide
 	 * rather than a stutter back to the old start. */
 	cf->from = cf->pos;
+	/* A MOVE LONGER THAN THE WARM WINDOW CANNOT BE DRAWN. Every card past it
+	 * is cold, and decoding on the render path costs more than a frame each,
+	 * so the tween still runs and the device simply cannot produce frames for
+	 * it: a letter jump showed the card it started near, then the card it
+	 * landed on, and nothing in between.
+	 *
+	 * So such a move travels only through the cards already decoded BEHIND the
+	 * cursor and then cuts. The warm ones are all at the departure end - the
+	 * destination is by definition the cold half - so that is where the motion
+	 * has to live, accelerating rather than settling, and the cut happens at
+	 * full speed. Meanwhile the caller decodes the destination underneath it;
+	 * see cf_landing. A chase shelf keeps `pos` within one step already, so
+	 * none of this applies there. */
+	cf->cutting = false;
+	{
+		float span = cf->target - cf->from;
+		float g = cf->glide > (float)CF_WARM_CARDS ? (float)CF_WARM_CARDS
+		                                           : cf->glide;
+		if (!cf->chase && g > 0.0f && (span > (float)CF_WARM_CARDS ||
+		                               span < -(float)CF_WARM_CARDS)) {
+			cf->land = cf->target;
+			cf->cutting = true;
+			cf->target = cf->from + (span > 0.0f ? g : -g);
+		}
+	}
 	cf->t0 = SDL_GetTicks();
 	cf->active = true;
 }
+
+int cf_landing(const coverflow *cf, int count)
+{
+	int i;
+	if (!cf->cutting || count <= 0) return -1;
+	i = (int)floorf(cf->land + 0.5f) % count;
+	if (i < 0) i += count;
+	return i;
+}
+
+bool cf_cutting(const coverflow *cf) { return cf->cutting; }
 
 static void step_anim(coverflow *cf, int count)
 {
@@ -254,9 +299,11 @@ static void step_anim(coverflow *cf, int count)
 		 * a whole revolution away. */
 		while (cf->pos >= (float)count) {
 			cf->pos -= count; cf->target -= count; cf->from -= count;
+			if (cf->cutting) cf->land -= count;
 		}
 		while (cf->pos < 0.0f) {
 			cf->pos += count; cf->target += count; cf->from += count;
+			if (cf->cutting) cf->land += count;
 		}
 	}
 	if (!cf->active) return;
@@ -264,11 +311,15 @@ static void step_anim(coverflow *cf, int count)
 		float ms = cf->anim_ms > 0.0f ? cf->anim_ms : ANIM_MS;
 		float u = (float)(SDL_GetTicks() - cf->t0) / ms;
 		if (u >= 1.0f) {
+			/* The cut: the departure has been drawn, so go where the cursor
+			 * has been all along. */
+			if (cf->cutting) { cf->target = cf->land; cf->cutting = false; }
 			cf->pos = cf->target;
 			cf->active = false;
 			return;
 		}
-		cf->pos = cf->from + (cf->target - cf->from) * ease_apply(cf->ease, u);
+		cf->pos = cf->from + (cf->target - cf->from) *
+		          (cf->cutting ? ease_in(u) : ease_apply(cf->ease, u));
 	}
 }
 
