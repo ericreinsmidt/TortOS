@@ -132,9 +132,18 @@ typedef struct {
 	 * CF_WARM_CARDS however it is set - a glide is only free while the cards
 	 * it crosses are already decoded. Zero disables it. */
 	float glide;
-	/* A move longer than the warm window: the tween runs out through the warm
-	 * cards behind the cursor and then cuts to `land`. */
-	float land;
+	/* A move longer than the warm window: the tween is drawn only as far as
+	 * `cut_to` and then jumps to `target`.
+	 *
+	 * `cut_to` is a DRAWING endpoint and nothing else. An earlier version cut
+	 * by overwriting `target` itself, which broke the moment a second move
+	 * arrived mid-tween: cf_set_cursor_dir accumulates with `target += raw`,
+	 * so the next press added its step to the glide endpoint rather than to
+	 * the real destination, and holding a jump walked `pos` tens of cards away
+	 * from `cursor`. The shelf then drew one part of the list under another
+	 * part's title, and stayed there, because an unchanged cursor returns
+	 * early and nothing ever put it back. */
+	float cut_to;
 	bool  cutting;
 } coverflow;
 

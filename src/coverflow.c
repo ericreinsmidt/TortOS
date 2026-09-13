@@ -227,6 +227,16 @@ void cf_set_cursor_dir(coverflow *cf, int cursor, int count, int dir)
 	if (raw) cf->last_dir = raw > 0 ? 1 : -1;
 	cf->last_cursor = cursor;
 
+	/* A press arriving while a cut is still being drawn: the departure on
+	 * screen belongs to a jump that is already over. Land it before taking
+	 * the new one, or the shelf creeps while the cursor races - ease_in is
+	 * cubic, so at the 90ms key repeat a 240ms departure has covered about 5%
+	 * of its travel, and holding the button would leave the cards nearly
+	 * still under a title running through the list. */
+	if (cf->cutting) {
+		cf->pos = cf->target;
+		cf->cutting = false;
+	}
 	cf->target += (float)raw;
 	/* Never more than one step behind the destination.
 	 *
@@ -281,9 +291,8 @@ void cf_set_cursor_dir(coverflow *cf, int cursor, int count, int dir)
 		                                           : cf->glide;
 		if (!cf->chase && g > 0.0f && (span > (float)CF_WARM_CARDS ||
 		                               span < -(float)CF_WARM_CARDS)) {
-			cf->land = cf->target;
 			cf->cutting = true;
-			cf->target = cf->from + (span > 0.0f ? g : -g);
+			cf->cut_to = cf->from + (span > 0.0f ? g : -g);
 		}
 	}
 	cf->t0 = SDL_GetTicks();
@@ -294,7 +303,7 @@ int cf_landing(const coverflow *cf, int count)
 {
 	int i;
 	if (!cf->cutting || count <= 0) return -1;
-	i = (int)floorf(cf->land + 0.5f) % count;
+	i = (int)floorf(cf->target + 0.5f) % count;
 	if (i < 0) i += count;
 	return i;
 }
@@ -310,11 +319,11 @@ static void step_anim(coverflow *cf, int count)
 		 * a whole revolution away. */
 		while (cf->pos >= (float)count) {
 			cf->pos -= count; cf->target -= count; cf->from -= count;
-			if (cf->cutting) cf->land -= count;
+			if (cf->cutting) cf->cut_to -= count;
 		}
 		while (cf->pos < 0.0f) {
 			cf->pos += count; cf->target += count; cf->from += count;
-			if (cf->cutting) cf->land += count;
+			if (cf->cutting) cf->cut_to += count;
 		}
 	}
 	if (!cf->active) return;
@@ -322,15 +331,16 @@ static void step_anim(coverflow *cf, int count)
 		float ms = cf->anim_ms > 0.0f ? cf->anim_ms : ANIM_MS;
 		float u = (float)(SDL_GetTicks() - cf->t0) / ms;
 		if (u >= 1.0f) {
-			/* The cut: the departure has been drawn, so go where the cursor
-			 * has been all along. */
-			if (cf->cutting) { cf->target = cf->land; cf->cutting = false; }
+			/* Whether or not this was a cut, the move ends where the cursor
+			 * has been since the press. `target` was never moved. */
+			cf->cutting = false;
 			cf->pos = cf->target;
 			cf->active = false;
 			return;
 		}
-		cf->pos = cf->from + (cf->target - cf->from) *
-		          (cf->cutting ? ease_in(u) : ease_apply(cf->ease, u));
+		cf->pos = cf->cutting
+			? cf->from + (cf->cut_to - cf->from) * ease_in(u)
+			: cf->from + (cf->target - cf->from) * ease_apply(cf->ease, u);
 	}
 }
 
