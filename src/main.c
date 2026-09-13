@@ -2045,15 +2045,31 @@ static void draw_game_text(app *a, sysview *v, const system_cfg *s, int idx)
 		else
 			ui_text(a->r, ft2, g->title, tx, 40, 0, UI_TEXT);
 		/* Where you are in the list, not what this game is - the same kind
-		 * of thing the rail says. Vertically the rail is stationary and this
-		 * is drawn with it, by the caller, after the cube; baked into a face
-		 * it would turn away mid-move and you would see two of them at once,
-		 * one per face, disagreeing by one. Horizontally there is no face to
-		 * be stuck to and centered under the row is right where it was. */
+		 * of thing the rail says, so it goes where the rail is.
+		 *
+		 * Horizontally that is centered under the row, which is a band across
+		 * the middle of the screen: nothing travels down there.
+		 *
+		 * Vertically it is bottom left, under the rail's lower end, because
+		 * the shelf slides along y a card height and a half per step and a
+		 * centered counter had every move drag a card and its reflection
+		 * straight across it. This read `!both` for years, lumping Vertical
+		 * in with Horizontal, and the comment above it only ever argued the
+		 * case for Horizontal - it was written when Vertical was the cube.
+		 * `.vertical` means the two share an input axis, not that they are
+		 * drawn alike.
+		 *
+		 * Cubic draws the same string in the same place, from its own caller,
+		 * after the cube; baked into a face it would turn away mid-move and two
+		 * would show at once, one per face, disagreeing by one. */
 		if (!CARD_DIRS[g_dir].both) {
 			snprintf(count, sizeof count, "%d / %d", idx + 1, v->list.count);
-			ui_text(a->r, ui_font(UI_F_META), count, TORTOS_SCREEN_W / 2, 690,
-			        0, UI_TEXT_DIM);
+			if (CARD_DIRS[g_dir].vertical)
+				ui_text(a->r, ui_font(UI_F_META), count, 24, 700,
+				        -1, UI_TEXT_DIM);
+			else
+				ui_text(a->r, ui_font(UI_F_META), count,
+				        TORTOS_SCREEN_W / 2, 690, 0, UI_TEXT_DIM);
 		}
 	} else {
 		char nfit[192];
