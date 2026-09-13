@@ -684,88 +684,6 @@ static void cube_face(SDL_Renderer *r, SDL_Texture *tex, float phi,
 	}
 }
 
-/* The four corners of a face, in the order a closed outline wants them.
- *
- * cube_face's own projection, evaluated at the two ends of the face instead of
- * across 32 strips: a = -R and a = +R are its leading and trailing edges, and
- * the across-axis half extent gives the other two corners. */
-static void face_quad(float phi, int screen_w, int screen_h, bool yaw,
-                      float scale, SDL_FPoint *pt)
-{
-	float span = yaw ? (float)screen_w : (float)screen_h;
-	float R = span * 0.5f, F = span * 0.85f;
-	float still = (yaw ? (float)screen_h : (float)screen_w) * 0.5f;
-	float cx = screen_w * 0.5f, cy = screen_h * 0.5f;
-	float cs = cosf(phi), sn = sinf(phi);
-	int i;
-
-	for (i = 0; i < 2; i++) {
-		float a = i ? R : -R;
-		float ra = a * cs + R * sn, rz = a * sn - R * cs;
-		float sc = F / (F + R + rz);
-		float p = (yaw ? cx : cy) + ra * sc * scale;
-		float q = still * sc * scale;
-
-		if (yaw) { pt[i].x = p;   pt[i].y = cy - q;
-		           pt[3-i].x = p; pt[3-i].y = cy + q; }
-		else     { pt[i].y = p;   pt[i].x = cx - q;
-		           pt[3-i].y = p; pt[3-i].x = cx + q; }
-	}
-	pt[4] = pt[0];
-}
-
-/* Trace a face's edges in its own system's color.
- *
- * THE SYSTEM ACCENT, NOT THE LAUNCHER'S CYAN. Each face is a system and wears
- * that system's color, so during a turn the two sides of the fold are
- * different colors and the cube reads as two identified things meeting rather
- * than one decorated shape.
- *
- * Only while turning, because at rest a face fills the screen exactly and the
- * outline would be a border around the whole display. */
-static void face_edges(SDL_Renderer *r, float phi, int screen_w, int screen_h,
-                       bool yaw, float scale, unsigned rgb, Uint8 alpha)
-{
-	const int GLOW = 5;          /* half-width of the soft edge, in pixels */
-	SDL_FPoint pt[5];
-	int i, j;
-
-	if (cosf(phi) <= 0.0f) return;        /* facing away, as cube_face decides */
-	face_quad(phi, screen_w, screen_h, yaw, scale, pt);
-	SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-
-	for (i = 0; i < 4; i++) {
-		SDL_FPoint u = pt[i], v = pt[i + 1];
-		/* Which pair runs down the screen depends on the axis. A pitch lays
-		 * the face out between two horizontal boundaries, so its sides are
-		 * vertical; a yaw is the same picture with the axes swapped. */
-		bool vert = yaw ? (i == 1 || i == 3) : (i == 0 || i == 2);
-
-		if (!vert) {
-			SDL_SetRenderDrawColor(r, (Uint8)(rgb >> 16), (Uint8)(rgb >> 8),
-			                       (Uint8)rgb, alpha);
-			SDL_RenderDrawLineF(r, u.x, u.y, v.x, v.y);
-			continue;
-		}
-		/* THE VERTICAL EDGES ARE SOFT ACROSS, NOT ALONG. They carry the
-		 * whole length at full strength; what falls away is the line's own
-		 * hardness, sideways, so the side of the cube glows rather than being
-		 * ruled. Fading along the length instead left a bright spot at the
-		 * midpoint and nothing at the corners, which reads as faint rather
-		 * than as soft.
-		 *
-		 * Copies offset perpendicular to the edge. These edges run down the
-		 * screen on both axes, so perpendicular is x in both cases. */
-		for (j = -GLOW; j <= GLOW; j++) {
-			float d = fabsf((float)j) / (float)(GLOW + 1);
-			Uint8 e = (Uint8)(alpha * (1.0f - d) * (1.0f - d));
-
-			SDL_SetRenderDrawColor(r, (Uint8)(rgb >> 16), (Uint8)(rgb >> 8),
-			                       (Uint8)rgb, e);
-			SDL_RenderDrawLineF(r, u.x + j, u.y, v.x + j, v.y);
-		}
-	}
-}
 
 void cf_draw_cube(SDL_Renderer *r, SDL_Texture *near_face, SDL_Texture *far_face,
                   float frac, int screen_w, int screen_h, bool yaw,
@@ -815,12 +733,11 @@ void cf_draw_cube(SDL_Renderer *r, SDL_Texture *near_face, SDL_Texture *far_face
 		if (near_face) cube_face(r, near_face, phi, screen_w, screen_h, yaw, k);
 	}
 
-	/* After the faces, so nothing paints over them. Same envelope as the
-	 * pull-back: absent at rest, strongest where the cube is most turned. */
-	if (k < 0.999f) {
-		Uint8 e = (Uint8)(190.0f * sinf(frac * 3.1415927f));
-
-		face_edges(r, far_phi, screen_w, screen_h, yaw, k, far_rgb, e);
-		face_edges(r, phi, screen_w, screen_h, yaw, k, near_rgb, e);
-	}
+	/* NO EDGE LINES. The cube used to be outlined in the system's accent,
+	 * softened across the vertical pair so its sides glowed rather than being
+	 * ruled, fading in and out with the pull-back. Tried both ways on the
+	 * device 2026-09-13 and the solid reads better bare: the faces already
+	 * say where the cube's edges are, and drawing them said it twice. */
+	(void)far_rgb;
+	(void)near_rgb;
 }
