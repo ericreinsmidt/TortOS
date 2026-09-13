@@ -20,6 +20,12 @@
 
 #include "../src/artscrape.h"
 
+/* artscrape calls this when a fetch lands. The real one is src/artshrink.c and
+ * needs SDL_image; this check is offline and builds without SDL, and it only
+ * exercises the title matcher, which never reaches a fetch. */
+void art_shrink(const char *path);
+void art_shrink(const char *path) { (void)path; }
+
 static int failures;
 
 #define BEATS(want, a, b)                                                     \

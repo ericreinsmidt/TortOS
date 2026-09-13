@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 
 #include "artscrape.h"
+#include "artshrink.h"
 #include "config.h"
 #include "library.h"
 #include "net.h"
@@ -732,7 +733,7 @@ int art_step(void)
 		/* A miss here is ordinary - it means libretro spells this game
 		 * differently, which is exactly what the catalog is for. It is not
 		 * counted as missing until the fuzzy pass has also failed. */
-		if (r > 0) g_st.found++;
+		if (r > 0) { art_shrink(g_pending); g_st.found++; }
 		else       g_retry[g_nretry++] = g_ri;
 		g_ri++;
 		g_phase = P_TRY;
@@ -810,7 +811,7 @@ int art_step(void)
 		int r = net_async_poll();
 
 		if (r == 0) return 1;
-		if (r > 0) g_st.found++;
+		if (r > 0) { art_shrink(g_pending); g_st.found++; }
 		else       g_left[g_nleft++] = g_retry[g_qi];
 		g_qi++;
 		g_phase = P_FUZZY;
