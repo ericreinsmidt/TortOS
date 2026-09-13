@@ -29,12 +29,23 @@ typedef struct {
 } res;
 
 /* Two, on a four-core device, leaving a core for the render thread and one
- * for everything else. Decoding is pure CPU and scales straight with this: one
- * worker manages roughly eight cards per 90ms key repeat and a fast scroll
- * needs seven new ones every repeat, so one was break-even at best on a shelf
- * whose art is large. NES is 496KB a cover and Genesis 572KB, against SNES's
- * 272KB - which is why SNES kept up with one worker and those two did not,
- * despite SNES having the most games. */
+ * for everything else.
+ *
+ * Two was chosen when NES covers were 496KB and Genesis 572KB against SNES's
+ * 272KB: those two dropped cards on a fast scroll where SNES never did,
+ * despite SNES having the most games, so the obvious reading was that the art
+ * was too big and shrinking it would remove the need for a second worker.
+ *
+ * TESTED, 2026-09-13, AND THAT WAS WRONG. After the rescrape put NES at 308KB
+ * and Genesis at 354KB - about 40% less work per card - one worker still drops
+ * a card occasionally on those two shelves. Both changes are pulling their
+ * weight and neither makes the other unnecessary. Do not trim this back to one
+ * again on the theory that the art is small enough now; it has been measured
+ * and it is not.
+ *
+ * The cost of the second is close to nothing: workers sleep on the condvar
+ * when there is nothing to decode, and while scrolling the total work is
+ * unchanged - it is the same covers, spread over two cores instead of one. */
 #define NWORKERS 2
 
 static SDL_Thread *g_thread[NWORKERS];
