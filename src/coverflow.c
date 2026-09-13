@@ -77,6 +77,7 @@ const cf_layout CF_LAYOUT_GAME_FACE = {
 	.size = 0.60f, .aspect = 0.72f, .step = 3.20f, .side_scale = 1.00f,
 	.center_y = 0.47f, .tilt = 0.0f, .reflect = 1.52f,
 	.side_alpha = 255, .strips = 16,
+	.equal_area = true,
 };
 
 /* The games row: box art, so the cards are taller and there are more of them
@@ -110,12 +111,14 @@ const cf_layout CF_LAYOUT_GAMES_V = {
 	.size = 0.60f, .aspect = 0.72f, .step = 1.50f, .side_scale = 1.00f,
 	.center_y = 0.47f, .tilt = 0.0f, .reflect = 1.52f,
 	.vertical = true, .side_alpha = 255, .strips = 16,
+	.equal_area = true,
 };
 
 const cf_layout CF_LAYOUT_GAMES = {
 	.size = 0.60f, .aspect = 0.72f, .step = 0.74f, .side_scale = 0.62f,
 	.center_y = 0.47f, .tilt = 0.82f, .reflect = 1.52f,
 	.side_alpha = 150, .strips = 16,
+	.equal_area = true,
 };
 
 void cf_focus_rect(const cf_layout *lay, int screen_w, int screen_h, SDL_Rect *out)
@@ -361,13 +364,38 @@ static void draw_card(SDL_Renderer *r, SDL_Texture *tex, int tw, int th,
                       float cb, float ox, float oy, float hw, float hh,
                       float ang, Uint8 alpha, const cf_layout *lay)
 {
-	/* CONTAIN-fit the texture inside the card frame */
+	/* Fit the texture to the card.
+	 *
+	 * CONTAIN gives every cover the frame's proportions and nobody else's, so
+	 * only art shaped like the frame ever fills it. Measured on this card
+	 * 2026-09-12, on one shelf at one setting: an NES cover is 0.70, close to
+	 * the frame's 0.72, and draws 323x461. A US SNES cover is 1.41 - those
+	 * cases were wider than they were tall - and draws 332x236, barely half
+	 * the area. Square Game Boy and TurboGrafx art draws 332x331, about three
+	 * quarters. The shelf looked inconsistent because it was.
+	 *
+	 * EQUAL AREA solves ahw/ahh = tex_ar against ahw*ahh = hw*hh: the card
+	 * keeps the frame's area and takes the art's shape. Art already shaped
+	 * like the frame barely moves, which is why NES is unchanged and SNES
+	 * grows to 464x330.
+	 *
+	 * It reads each cover rather than each system, which matters more than it
+	 * sounds: 14 of 314 SNES covers here are Japanese, and a Super Famicom box
+	 * is TALL - 0.53, not 1.41. Widening the SNES frame would have helped 300
+	 * covers and cut those 14 to a quarter of their area. This rule never sees
+	 * the difference because it never asks what system it is looking at. */
 	float ahw = hw, ahh = hh;
 	if (tw > 0 && th > 0) {
 		float tex_ar = (float)tw / (float)th;
-		float frame_ar = hw / hh;
-		if (tex_ar > frame_ar) ahh = hw / tex_ar;
-		else ahw = hh * tex_ar;
+		if (lay->equal_area) {
+			float area = hw * hh;
+			ahw = sqrtf(area * tex_ar);
+			ahh = sqrtf(area / tex_ar);
+		} else {
+			float frame_ar = hw / hh;
+			if (tex_ar > frame_ar) ahh = hw / tex_ar;
+			else ahw = hh * tex_ar;
+		}
 	}
 
 	cf_proj p = {

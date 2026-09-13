@@ -41,6 +41,11 @@ typedef struct {
 	 * neighbors are offset along, and `step` then counts card HEIGHTS rather
 	 * than widths, because that is the direction they are spaced in. */
 	bool vertical;
+	/* Size the art to a constant AREA from its own aspect, instead of
+	 * containing it inside the frame. See draw_card. Games only: the console
+	 * photos all share one squared canvas, so there is nothing for it to fix
+	 * there and turning it on would resize a shelf that is already tuned. */
+	bool equal_area;
 	int side_alpha;   /* alpha of fully off-center cards (center is 255) */
 	int strips;       /* vertical subdivisions per card */
 } cf_layout;
