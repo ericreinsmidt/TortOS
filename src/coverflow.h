@@ -14,12 +14,20 @@
 #define CF_WINDOW (2 * CF_HALF_WINDOW + 1)
 
 /* How many cards either side of the cursor the CALLER guarantees are already
- * decoded. This is a contract, not a preference: a move that crosses cold
- * cards decodes them on the render path, and one card is 7-27ms on this
- * device against a 16.7ms frame - measured 2026-09-12 on Game Boy art, which
- * averages 327KB. Seven of those in one frame is why a long jump showed two
- * still pictures and no motion. main.c's TEX_KEEP_NEAR is the guarantee and
- * asserts it is not less than this. */
+ * decoded, and so how far a move may usefully be drawn.
+ *
+ * This once said such a move CANNOT be drawn, because decoding happened on the
+ * render path and seven cold cards in one frame is why a long jump showed two
+ * still pictures. src/texload.c moved decoding onto a worker, so the frames
+ * come out now whatever the cards are - the reason changed, the number did not.
+ * A card past this window has no texture yet, and flying past empty slots says
+ * less than cutting does.
+ *
+ * The other limit is the eye's and never moved: ANIM_MS is 14.4 frames at
+ * 60fps, so past about fourteen cards a move crosses more than one card per
+ * frame, consecutive frames share no cards at all, and there is no motion left
+ * to read. Eight is inside that and is what the texture policy actually keeps.
+ * main.c's TEX_KEEP_NEAR is the guarantee and asserts it is not less. */
 #define CF_WARM_CARDS 8
 
 typedef struct {

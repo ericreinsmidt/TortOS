@@ -21,6 +21,7 @@
 #include "coverflow.h"
 #include "library.h"
 #include "platform.h"
+#include "texload.h"
 #include "artscrape.h"
 #include "favorites.h"
 #include "hare.h"
@@ -574,23 +575,75 @@ static SDL_Texture *game_get_tex(void *ctx, int i, int *w, int *h, float *cb)
 	int o = shelf_owner(a, s, i);
 
 	if (!v->tex[i]) {
-		char path[LIB_PATH * 3];
-		snprintf(path, sizeof path, "%s/%s/.media/%s.png",
+		char art[LIB_PATH * 3], prev[LIB_PATH * 3];
+
+		snprintf(art, sizeof art, "%s/%s/.media/%s.png",
 		         P_ROMS, a->sys.systems[o].folder, v->list.items[i].name);
-		v->tex[i] = load_image(a->r, path, &v->tw[i], &v->th[i], &v->cb[i]);
-		if (!v->tex[i]) {
-			preview_path(a, o, &v->list.items[i], path, sizeof path);
-			v->tex[i] = load_image(a->r, path, &v->tw[i], &v->th[i], &v->cb[i]);
+		preview_path(a, o, &v->list.items[i], prev, sizeof prev);
+		/* Hand it to the worker and draw nothing this frame. Asking is cheap
+		 * and ignores a card already in hand, so callers ask every frame. */
+		if (!texload_want(s, i, art, prev)) {
+			/* No worker. Exactly what this did before, on the frame. */
+			v->tex[i] = load_image(a->r, art, &v->tw[i], &v->th[i], &v->cb[i]);
+			if (!v->tex[i])
+				v->tex[i] = load_image(a->r, prev, &v->tw[i], &v->th[i], &v->cb[i]);
+			if (!v->tex[i])
+				v->tex[i] = ui_make_card(a->r, v->list.items[i].title,
+				                         a->sys.systems[o].accent,
+				                         &v->tw[i], &v->th[i]);
 		}
-		if (!v->tex[i])
-			v->tex[i] = ui_make_card(a->r, v->list.items[i].title,
-			                         a->sys.systems[o].accent,
-			                         &v->tw[i], &v->th[i]);
+	}
+	if (!v->tex[i]) {
+		/* Still coming. cf_draw skips a card with no texture, so the slot is
+		 * simply empty for a few frames instead of the shelf stopping. */
+		*w = *h = 0;
+		if (cb) *cb = 1.0f;
+		return NULL;
 	}
 	*w = v->tw[i];
 	*h = v->th[i];
 	if (cb) *cb = v->cb[i];
 	return v->tex[i];
+}
+
+/* Install everything the worker finished, on the thread that owns the
+ * renderer. SDL_CreateTextureFromSurface is the only part that needs it and
+ * costs 1-2ms; content_bottom is computed here too, because it stops at the
+ * first row with anything in it and so costs the padding, not the image. */
+static void texload_drain(app *a)
+{
+	SDL_Surface *surf;
+	int s, i;
+
+	while (texload_take(&s, &i, &surf)) {
+		sysview *v;
+
+		if (s < 0 || s >= a->sys.count) { if (surf) SDL_FreeSurface(surf); continue; }
+		v = &a->view[s];
+		/* The shelf may have moved on, or something else may have filled this
+		 * slot while the decode was in the air. */
+		if (i < 0 || i >= v->list.count || v->tex[i]) {
+			if (surf) SDL_FreeSurface(surf);
+			continue;
+		}
+		if (surf) {
+			v->cb[i] = content_bottom(surf);
+			v->tex[i] = SDL_CreateTextureFromSurface(a->r, surf);
+			if (v->tex[i])
+				SDL_QueryTexture(v->tex[i], NULL, NULL, &v->tw[i], &v->th[i]);
+			SDL_FreeSurface(surf);
+		}
+		if (!v->tex[i]) {
+			/* Neither file was there, so the card is the generated slab - and
+			 * that needs the renderer, which is why it is made here and not
+			 * on the worker. */
+			int o = shelf_owner(a, s, i);
+			v->tex[i] = ui_make_card(a->r, v->list.items[i].title,
+			                         a->sys.systems[o].accent,
+			                         &v->tw[i], &v->th[i]);
+			v->cb[i] = 1.0f;
+		}
+	}
 }
 
 static void evict_far(sysview *v, int keep)
@@ -628,23 +681,26 @@ static void prime_window(app *a, int s)
 	a->sys_cursor = save;
 }
 
-/* Decode up to `budget` of the cards nearest `center`, nearest first.
+/* Ask for the whole window around `center`, nearest first.
  *
- * Budgeted because this runs on the render path and a card costs 7-27ms on
- * this device against a 16.7ms frame, so more than one in a frame drops one.
- * Nearest-first because on landing only the CENTER card has to be right: the
- * neighbors arrive over the frames after it and nobody sees them do it, which
- * is what lets a long move land without ever blocking. */
-static int prime_toward(app *a, int s, int center, int budget)
+ * This used to take a budget and spend one card per frame, because asking
+ * meant decoding and a card was 7-27ms against a 16.7ms frame. Since
+ * texload.c, asking only queues: game_get_tex hands the worker two paths and
+ * returns, a card already in hand is ignored, so the whole window costs about
+ * nothing and dribbling it out a frame at a time only made it land later.
+ *
+ * Still nearest-first. The order the worker takes them in is the order they
+ * appear, and the centre card is the one being moved to. */
+static int prime_toward(app *a, int s, int center)
 {
 	sysview *v = &a->view[s];
 	int n = v->list.count, k, done = 0, save = a->sys_cursor;
 
-	if (n <= 0 || budget <= 0) return 0;
+	if (n <= 0) return 0;
 	a->sys_cursor = s;
-	for (k = 0; k <= CF_HALF_WINDOW && done < budget; k++) {
+	for (k = 0; k <= CF_HALF_WINDOW; k++) {
 		int side;
-		for (side = (k ? -1 : 1); side <= 1 && done < budget; side += 2) {
+		for (side = (k ? -1 : 1); side <= 1; side += 2) {
 			int i = center + k * side, w, h;
 			i %= n;
 			if (i < 0) i += n;
@@ -743,6 +799,8 @@ static void free_view_textures(sysview *v)
 
 static void free_all_textures(app *a)
 {
+	/* Anything in flight was asked for against the shelf as it was. */
+	texload_bump();
 	for (int i = 0; i < 2; i++)
 		if (g_face[i]) { SDL_DestroyTexture(g_face[i]); g_face[i] = NULL; }
 	faces_stale();
@@ -2031,7 +2089,7 @@ static void draw_games(app *a)
 	 * running it now would free the very cards the departure is drawing. */
 	{
 		int land = cf_landing(&v->cf, v->list.count);
-		if (land >= 0) prime_toward(a, a->sys_cursor, land, 1);
+		if (land >= 0) prime_toward(a, a->sys_cursor, land);
 	}
 	if (!cf_cutting(&v->cf)) evict_far(v, TEX_KEEP_NEAR);
 
@@ -6530,6 +6588,8 @@ static void drop_favorites_shelf(app *a)
  * The tag does not move. */
 static void refresh_favorites_shelf(app *a)
 {
+	/* Favorites is rebuilt in place, so its indices now name other games. */
+	texload_bump();
 	char tag[sizeof a->sys.systems[0].tag];
 	int cur, i;
 
@@ -7118,6 +7178,8 @@ int main(int argc, char *argv[])
 
 	if (!plat_video_init()) { fprintf(stderr, "video init failed\n"); return 1; }
 	IMG_Init(IMG_INIT_PNG);
+	/* After IMG_Init: the worker calls IMG_Load. */
+	texload_start();
 	a.r = plat_renderer();
 	plat_input_init();
 	/* Nothing is handed in any more. The two-tier lookup this replaces - a
@@ -7241,6 +7303,9 @@ int main(int argc, char *argv[])
 		plat_input_poll(&a.in);
 		if (a.in.quit_requested || want_quit) break;
 
+		/* Whatever the worker finished since the last frame. */
+		texload_drain(&a);
+
 		/* Followed here as well as during a game. Diatom is resident and takes
 		 * SETAUDIO while idle, so a cable plugged in at the shelf moves the
 		 * sound before the next launch rather than at it. */
@@ -7283,6 +7348,9 @@ int main(int argc, char *argv[])
 
 done:
 	free_all_textures(&a);
+	/* First, and before IMG_Quit: the worker is inside IMG_Load, and the
+	 * views it decodes into are freed just below. */
+	texload_stop();
 	for (int i = 0; i < a.sys.count; i++) {
 		free(a.view[i].tex); free(a.view[i].tw); free(a.view[i].th);
 		lib_free(&a.view[i].list);

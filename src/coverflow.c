@@ -253,19 +253,27 @@ void cf_set_cursor_dir(coverflow *cf, int cursor, int count, int dir)
 	 * the live position each time is what makes that one continuous glide
 	 * rather than a stutter back to the old start. */
 	cf->from = cf->pos;
-	/* A MOVE LONGER THAN THE WARM WINDOW CANNOT BE DRAWN. Every card past it
-	 * is cold, and decoding on the render path costs more than a frame each,
-	 * so the tween still runs and the device simply cannot produce frames for
-	 * it: a letter jump showed the card it started near, then the card it
-	 * landed on, and nothing in between.
+	/* A MOVE LONGER THAN THE WARM WINDOW IS NOT WORTH DRAWING.
 	 *
-	 * So such a move travels only through the cards already decoded BEHIND the
-	 * cursor and then cuts. The warm ones are all at the departure end - the
-	 * destination is by definition the cold half - so that is where the motion
-	 * has to live, accelerating rather than settling, and the cut happens at
-	 * full speed. Meanwhile the caller decodes the destination underneath it;
-	 * see cf_landing. A chase shelf keeps `pos` within one step already, so
-	 * none of this applies there. */
+	 * Not the same claim this made when it was written. Then it said such a
+	 * move could not be drawn at all, because decoding sat on the render path
+	 * and seven cold cards in a frame meant the frame never arrived - a letter
+	 * jump showed the card it started near, then the card it landed on, and
+	 * nothing between. texload.c fixed that, and the frames arrive now.
+	 *
+	 * What is left is two things the worker does not change. The cards out
+	 * there have no texture yet, so drawing the move would fly past empty
+	 * slots; and a fixed duration turns distance into speed, so past about
+	 * fourteen cards it crosses more than one per frame and stops being motion
+	 * at all. Both say the same thing: show the part that means something and
+	 * cut the rest.
+	 *
+	 * The part that means something is the departure, because the warm cards
+	 * are all behind the cursor - the destination is by definition the half
+	 * not decoded yet. So the motion accelerates rather than settles and the
+	 * cut lands at full speed, where the eye is least able to see it, while
+	 * the caller warms the destination underneath; see cf_landing. A chase
+	 * shelf holds `pos` within one step already and never gets here. */
 	cf->cutting = false;
 	{
 		float span = cf->target - cf->from;
