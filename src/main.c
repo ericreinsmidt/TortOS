@@ -317,7 +317,7 @@ static void sort_all(app *a)
  * next. */
 /* How far down the surface its opaque pixels reach, as a fraction of height.
  *
- * Art here is squared and centred, so a console photographed low in its frame
+ * Art here is squared and centered, so a console photographed low in its frame
  * carries a band of transparency underneath - 102 of 384 rows for the Genesis,
  * against 10 for a Game Boy. Reflecting from the card's edge mirrors that
  * emptiness too, which is why the same reflection setting produced a flush
@@ -690,7 +690,7 @@ static void prime_window(app *a, int s)
  * nothing and dribbling it out a frame at a time only made it land later.
  *
  * Still nearest-first. The order the worker takes them in is the order they
- * appear, and the centre card is the one being moved to. */
+ * appear, and the center card is the one being moved to. */
 static int prime_toward(app *a, int s, int center)
 {
 	sysview *v = &a->view[s];
@@ -2026,7 +2026,7 @@ static void draw_game_text(app *a, sysview *v, const system_cfg *s, int idx)
 		 * is drawn with it, by the caller, after the cube; baked into a face
 		 * it would turn away mid-move and you would see two of them at once,
 		 * one per face, disagreeing by one. Horizontally there is no face to
-		 * be stuck to and centred under the row is right where it was. */
+		 * be stuck to and centered under the row is right where it was. */
 		if (!CARD_DIRS[g_dir].both) {
 			snprintf(count, sizeof count, "%d / %d", idx + 1, v->list.count);
 			ui_text(a->r, ui_font(UI_F_META), count, TORTOS_SCREEN_W / 2, 690,
@@ -2449,7 +2449,7 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 		if (sel >= 0) {
 			/* THE WINDOW ONLY MOVES WHEN THE CURSOR WOULD LEAVE IT.
 			 *
-			 * It used to centre itself on the selection, which meant almost
+			 * It used to center itself on the selection, which meant almost
 			 * every press scrolled the list: the highlight stayed put in the
 			 * middle of the panel and the rows jumped under it. That is the
 			 * wrong thing to move. The cursor is what the player is aiming,

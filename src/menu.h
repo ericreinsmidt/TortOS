@@ -31,7 +31,7 @@ typedef struct {
  * one more row you had failed to be able to select.
  *
  * Marked by a sentinel in `value` rather than a new struct field, so every
- * existing { label, value, live } initialiser stays valid. */
+ * existing { label, value, live } initializer stays valid. */
 #define MENU_NOTE_MARK ((const char *)1)
 #define MENU_NOTE(s)   ((menu_row){ (s), MENU_NOTE_MARK, false })
 #define ROW_IS_NOTE(r) ((r).value == MENU_NOTE_MARK)

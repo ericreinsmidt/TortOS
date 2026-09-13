@@ -431,7 +431,7 @@ static void draw_card(SDL_Renderer *r, SDL_Texture *tex, int tw, int th,
 	 * art itself stays vertically centered. */
 	/* Where the art's opaque pixels stop, in local units. Reflecting from the
 	 * card's bottom edge instead put the mirror below transparent padding: the
-	 * console art is squared and centred, so a Genesis carries 102 of its 384
+	 * console art is squared and centered, so a Genesis carries 102 of its 384
 	 * rows empty underneath and its reflection began a further 102 away again
 	 * - a gap of about 196px on screen, against 10px for a Game Boy, which
 	 * fills its canvas. Same reflection setting, wildly different result.
@@ -653,7 +653,7 @@ static void cube_face(SDL_Renderer *r, SDL_Texture *tex, float phi,
 		float ra0 = a0 * cs + R * sn, rz0 = a0 * sn - R * cs;
 		float ra1 = a1 * cs + R * sn, rz1 = a1 * sn - R * cs;
 		float s0 = F / (F + R + rz0), s1 = F / (F + R + rz1);
-		/* `scale` shrinks the whole face about the screen centre - the cube
+		/* `scale` shrinks the whole face about the screen center - the cube
 		 * backing away during a turn, not a change of shape. Named for what
 		 * it does because `k` is already the face's lighting below. */
 		float p0 = (yaw ? cx : cy) + ra0 * s0 * scale;
@@ -696,7 +696,7 @@ void cf_draw_cube(SDL_Renderer *r, SDL_Texture *near_face, SDL_Texture *far_face
 	 * the whole reason the two signs differ. */
 	float phi = (yaw ? frac : -frac) * q;
 	float far_phi = yaw ? phi - q : phi + q;
-	/* Centre depth of each: the face more nearly square-on is the nearer
+	/* Center depth of each: the face more nearly square-on is the nearer
 	 * one, and has to be drawn last. Fixed order is right for half a turn. */
 	float dn = 1.0f - cosf(phi), df = 1.0f - cosf(far_phi);
 
