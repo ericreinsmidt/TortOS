@@ -424,22 +424,53 @@ page cache. Cold reads of that set measure ~190 ms against ~30 ms warm.
 
 Startup phases are logged rather than guessed at. Both columns below are from
 one device boot on the main card - 1708 games across eleven systems - measured
-2026-09-07. Cold is the first launcher of that boot; warm is the same launcher
-restarted with the page cache already hot. The figures are cumulative from
-process start, not per phase:
+2026-09-13. Cold is the first launcher of that boot; warm is the same launcher
+restarted with the page cache already hot. A second boot reproduced all eight
+figures within 5%. The figures are cumulative from process start, not per
+phase:
 
 ```
                         cold      warm
-boot: scan              164 ms     57 ms
-boot: video+input       845 ms    415 ms
-boot: font+settings     921 ms    421 ms
-boot: card assets      1401 ms    706 ms
+boot: scan              249 ms    103 ms
+boot: video+input       977 ms    524 ms
+boot: font+settings    1040 ms    529 ms
+boot: card assets      1181 ms    641 ms
 ```
+
+**`card assets` is the phase that moved.** As a cost of its own it is 141 ms
+cold, against 480 ms when this file last recorded it: the launcher no longer
+decodes the opening shelf's covers before drawing, it queues them and a worker
+picks them up while the shelf is already on screen. See below.
 
 `scan` is the one that will keep moving: it was 64 ms when this file first
 recorded it and the shelf has grown a long way since. The rest is fixed cost,
 which is why warm is roughly half of cold across the board and none of it is
 the library.
+
+Being straight about the rest of the table: every phase except `card assets`
+is slower than the 2026-09-07 figures it replaces, on the same 1708 games, and
+nothing in this file explains why. The launcher has gained a good deal of code
+since, which is the obvious suspect and is not the same as a measurement. It
+is recorded here rather than quietly rounded away.
+
+### Card art is decoded off the render thread
+
+The shelf asks for every visible card every frame, and a card that is not
+decoded yet used to be decoded right there, inside the frame. On this device
+that is 14-60 ms against a 16.7 ms budget, so arriving somewhere the cache did
+not reach meant one frame doing seven decodes and taking 100-400 ms. It did
+not read as slowness, it read as the shelf stopping.
+
+Decoding now happens on two worker threads. Only the last step, handing the
+finished image to the GPU, needs the renderer and stays on the main thread at
+1-2 ms. A card whose art has not arrived is simply not drawn, so a slot is
+briefly empty instead of the shelf freezing - the art appears at the same
+moment either way, and what changes is whether everything else kept moving
+while it came.
+
+Two workers rather than one, and that was measured rather than assumed: one
+still drops the occasional card on the shelves with the largest covers, even
+after those covers were resized. They sleep when there is nothing to decode.
 
 ### The launcher never goes away
 
@@ -495,7 +526,11 @@ than turning away with the face.
 Card art comes from, in order:
 
 1. box art in `Roms/<system>/.media/<name>.png`, whether you put it there or
-   the Box Art row fetched it;
+   the Box Art row fetched it. Fetched art is shrunk to the size it is drawn
+   at - libretro ships covers at its own resolution, which on some systems is
+   two to three times the pixels this screen can show, and every one of those
+   pixels is decode time on every scroll past. Art you put there yourself is
+   never touched, whatever size it is - only what the fetch brings in;
 2. **the autosave preview** - the frame you were looking at when you stopped,
    which for a game in progress is a better card than any box;
 3. a generated slab: the system's color, the title, and the title's first
