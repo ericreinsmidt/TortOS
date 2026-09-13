@@ -564,6 +564,29 @@ static int shelf_owner(app *a, int sysidx, int item)
 	return sysidx;
 }
 
+/* Where a game's box art lives.
+ *
+ * One definition because four places need the same file - the card, the info
+ * screen, the replace action, and the return from a game - and the last of
+ * those has to test exactly the file the card loads. Four hand-written copies
+ * of the format string only have to drift once for it to ask about one file
+ * and draw another. */
+static void box_art_path(const char *folder, const char *name, char *out, size_t n)
+{
+	snprintf(out, n, "%s/%s/.media/%s.png", P_ROMS, folder, name);
+}
+
+/* Whether it is there. An empty file is not art - the rule the info screen
+ * already used, now the rule for everyone. */
+static bool has_box_art(const char *folder, const char *name)
+{
+	char p[LIB_PATH * 3];
+	struct stat st;
+
+	box_art_path(folder, name, p, sizeof p);
+	return stat(p, &st) == 0 && st.st_size > 0;
+}
+
 static SDL_Texture *game_get_tex(void *ctx, int i, int *w, int *h, float *cb)
 {
 	app *a = ctx;
@@ -577,8 +600,8 @@ static SDL_Texture *game_get_tex(void *ctx, int i, int *w, int *h, float *cb)
 	if (!v->tex[i]) {
 		char art[LIB_PATH * 3], prev[LIB_PATH * 3];
 
-		snprintf(art, sizeof art, "%s/%s/.media/%s.png",
-		         P_ROMS, a->sys.systems[o].folder, v->list.items[i].name);
+		box_art_path(a->sys.systems[o].folder, v->list.items[i].name,
+		             art, sizeof art);
 		preview_path(a, o, &v->list.items[i], prev, sizeof prev);
 		/* Hand it to the worker and draw nothing this frame. Asking is cheap
 		 * and ignores a card already in hand, so callers ask every frame. */
@@ -3913,7 +3936,7 @@ static void gi_gather(app *a, int owner, const game_entry *g, game_info *gi)
 		else             snprintf(gi->saves, sizeof gi->saves, "none");
 	}
 
-	snprintf(p, sizeof p, "%s/%s/.media/%s.png", P_ROMS, s->folder, g->name);
+	box_art_path(s->folder, g->name, p, sizeof p);
 	gi->has_art = (stat(p, &st) == 0 && st.st_size > 0);
 	if (gi->has_art) human_bytes(gi->art, sizeof gi->art,
 	                             (unsigned long long)st.st_size);
@@ -4132,8 +4155,7 @@ static menu_result info_key(app *a, void *ctx, in_button key, int sel)
 		 * "remove, then fill in". */
 		char p[LIB_PATH * 3];
 
-		snprintf(p, sizeof p, "%s/%s/.media/%s.png",
-		         P_ROMS, a->sys.systems[c->owner].folder, c->g->name);
+		box_art_path(a->sys.systems[c->owner].folder, c->g->name, p, sizeof p);
 		remove(p);
 		art_screen(a, a->sys.systems[c->owner].folder, c->g->title,
 		           a->sys.systems[c->owner].accent);
@@ -6131,12 +6153,24 @@ static void launch(app *a)
 	t_back0 = plat_now_ms();
 	present_black(a);
 
-	/* The game has just written a fresh autosave preview; make the card pick
-	 * it up rather than showing the one from last time. */
+	/* The game has just written a fresh autosave preview. Throw the card's
+	 * texture away so it picks that up - but only if the preview is what the
+	 * card is drawn FROM.
+	 *
+	 * Box art comes first in the order a card finds its picture, so for a game
+	 * that has it this used to rebuild the card from a file that had not
+	 * changed, into a pixel-identical texture. That was always wasted work, and
+	 * it was invisible while decoding blocked the frame: the card was back
+	 * before anything drew. Since decoding moved to a worker, the card is
+	 * genuinely absent for a few frames, and the one you just quit popped in
+	 * while every card beside it was already there. The question was never
+	 * "did the preview change", it is "is this card showing the preview". */
 	{
 		game_entry *g = &v->list.items[v->cursor];
+		int o = shelf_owner(a, a->sys_cursor, v->cursor);
+
 		g->state_known = 0;
-		if (v->tex[v->cursor]) {
+		if (v->tex[v->cursor] && !has_box_art(a->sys.systems[o].folder, g->name)) {
 			SDL_DestroyTexture(v->tex[v->cursor]);
 			v->tex[v->cursor] = NULL;
 		}
