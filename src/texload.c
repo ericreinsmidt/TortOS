@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: MIT */
 /* See texload.h for why this exists. */
 #include <stdio.h>
+#include <stdint.h>
 #include <string.h>
 #include <SDL.h>
 #include <SDL_image.h>
@@ -27,7 +28,16 @@ typedef struct {
 	SDL_Surface *surf;
 } res;
 
-static SDL_Thread *g_thread;
+/* Two, on a four-core device, leaving a core for the render thread and one
+ * for everything else. Decoding is pure CPU and scales straight with this: one
+ * worker manages roughly eight cards per 90ms key repeat and a fast scroll
+ * needs seven new ones every repeat, so one was break-even at best on a shelf
+ * whose art is large. NES is 496KB a cover and Genesis 572KB, against SNES's
+ * 272KB - which is why SNES kept up with one worker and those two did not,
+ * despite SNES having the most games. */
+#define NWORKERS 2
+
+static SDL_Thread *g_thread[NWORKERS];
 static SDL_mutex  *g_lock;
 static SDL_cond   *g_wake;
 static bool        g_running;
@@ -37,17 +47,20 @@ static int      g_rq_head, g_rq_n;
 static res      g_rs[QN];
 static int      g_rs_head, g_rs_n;
 static unsigned g_gen = 1;
-/* What the worker holds right now. Without it, a card asked for every frame
+/* What each worker holds right now. Without it, a card asked for every frame
  * would be queued again the moment it left the request ring and before its
- * result arrived - the one window where it is in neither. */
-static int      g_cur_sys = -1, g_cur_idx = -1;
+ * result arrived - the one window where it is in neither. One slot per worker,
+ * because two sharing a slot would let each hide the other's card from the
+ * dedup and queue it twice. */
+static int      g_cur_sys[NWORKERS], g_cur_idx[NWORKERS];
 
 /* Called with the lock held. */
 static bool queued(int sys, int idx)
 {
 	int k;
 
-	if (sys == g_cur_sys && idx == g_cur_idx) return true;
+	for (k = 0; k < NWORKERS; k++)
+		if (sys == g_cur_sys[k] && idx == g_cur_idx[k]) return true;
 	for (k = 0; k < g_rq_n; k++) {
 		const req *q = &g_rq[(g_rq_head + k) % QN];
 		if (q->sys == sys && q->idx == idx) return true;
@@ -73,9 +86,10 @@ static SDL_Surface *decode(const char *path)
 	return conv;
 }
 
-static int worker(void *unused)
+static int worker(void *arg)
 {
-	(void)unused;
+	const int me = (int)(intptr_t)arg;
+
 	for (;;) {
 		req          job;
 		SDL_Surface *s;
@@ -83,18 +97,22 @@ static int worker(void *unused)
 		SDL_LockMutex(g_lock);
 		while (g_running && g_rq_n == 0) SDL_CondWait(g_wake, g_lock);
 		if (!g_running) { SDL_UnlockMutex(g_lock); break; }
-		job = g_rq[g_rq_head];
-		g_rq_head = (g_rq_head + 1) % QN;
+		/* NEWEST FIRST. A queue served oldest-first spends a fast scroll
+		 * decoding cards the cursor left several hops ago while the ones on
+		 * screen wait behind them - which is exactly when it matters, and
+		 * exactly when it used to give up. The newest request is the card
+		 * being looked at. */
 		g_rq_n--;
-		g_cur_sys = job.sys;
-		g_cur_idx = job.idx;
+		job = g_rq[(g_rq_head + g_rq_n) % QN];
+		g_cur_sys[me] = job.sys;
+		g_cur_idx[me] = job.idx;
 		SDL_UnlockMutex(g_lock);
 
 		s = decode(job.first);
 		if (!s) s = decode(job.second);
 
 		SDL_LockMutex(g_lock);
-		g_cur_sys = g_cur_idx = -1;
+		g_cur_sys[me] = g_cur_idx[me] = -1;
 		/* A result whose generation moved on is for a shelf that no longer
 		 * exists in that shape, and installing it would put one game's art
 		 * on another. */
@@ -115,7 +133,10 @@ static int worker(void *unused)
 
 bool texload_start(void)
 {
-	if (g_thread) return true;
+	int k;
+
+	if (g_thread[0]) return true;
+	for (k = 0; k < NWORKERS; k++) g_cur_sys[k] = g_cur_idx[k] = -1;
 	if (!(g_lock = SDL_CreateMutex())) return false;
 	if (!(g_wake = SDL_CreateCond())) {
 		SDL_DestroyMutex(g_lock);
@@ -123,8 +144,13 @@ bool texload_start(void)
 		return false;
 	}
 	g_running = true;
-	g_thread = SDL_CreateThread(worker, "tortos-texload", NULL);
-	if (!g_thread) {
+	for (k = 0; k < NWORKERS; k++) {
+		char name[24];
+		snprintf(name, sizeof name, "tortos-texload%d", k);
+		g_thread[k] = SDL_CreateThread(worker, name, (void *)(intptr_t)k);
+	}
+	if (!g_thread[0]) {
+		/* None at all: fall back to decoding on the frame, as before. */
 		g_running = false;
 		SDL_DestroyCond(g_wake);   g_wake = NULL;
 		SDL_DestroyMutex(g_lock);  g_lock = NULL;
@@ -137,13 +163,18 @@ bool texload_start(void)
 
 void texload_stop(void)
 {
-	if (!g_thread) return;
+	int k;
+
+	if (!g_thread[0]) return;
 	SDL_LockMutex(g_lock);
 	g_running = false;
-	SDL_CondSignal(g_wake);
+	SDL_CondBroadcast(g_wake);      /* every waiter, not one of them */
 	SDL_UnlockMutex(g_lock);
-	SDL_WaitThread(g_thread, NULL);
-	g_thread = NULL;
+	for (k = 0; k < NWORKERS; k++) {
+		if (!g_thread[k]) continue;
+		SDL_WaitThread(g_thread[k], NULL);
+		g_thread[k] = NULL;
+	}
 	texload_bump();              /* frees whatever was still waiting */
 	SDL_DestroyCond(g_wake);     g_wake = NULL;
 	SDL_DestroyMutex(g_lock);    g_lock = NULL;
@@ -173,11 +204,19 @@ bool texload_want(int sys, int idx, const char *first, const char *second)
 {
 	req *q;
 
-	if (!g_thread) return false;
+	if (!g_thread[0]) return false;
 	SDL_LockMutex(g_lock);
-	if (g_rq_n >= QN || queued(sys, idx)) {
+	if (queued(sys, idx)) {
 		SDL_UnlockMutex(g_lock);
 		return true;
+	}
+	/* Full: drop the OLDEST rather than refuse the newest. Refusing meant the
+	 * cards on screen were the ones that never got queued, because they are
+	 * the ones asked for last. The card at the back has been stale longest
+	 * and is the one nobody is waiting for. */
+	if (g_rq_n >= QN) {
+		g_rq_head = (g_rq_head + 1) % QN;
+		g_rq_n--;
 	}
 	q = &g_rq[(g_rq_head + g_rq_n) % QN];
 	q->sys = sys;
@@ -195,7 +234,7 @@ bool texload_take(int *sys, int *idx, SDL_Surface **surf)
 {
 	res *r;
 
-	if (!g_thread) return false;
+	if (!g_thread[0]) return false;
 	SDL_LockMutex(g_lock);
 	if (g_rs_n == 0) {
 		SDL_UnlockMutex(g_lock);
