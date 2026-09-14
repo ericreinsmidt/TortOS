@@ -2171,6 +2171,18 @@ static void draw_no_games(app *a)
 
 static void draw_shelf(app *a)
 {
+	/* Install whatever the workers finished, before anything is drawn.
+	 *
+	 * Here rather than in the main loop, because the main loop is one of
+	 * seventeen places that draw the shelf - every menu and overlay shows it
+	 * behind itself, each from its own loop. Draining only in the main loop
+	 * meant that while any of those was open, a card not yet decoded stayed
+	 * blank for as long as the screen was up, and finished decodes piled into
+	 * the result ring and were discarded once it filled. Everything that draws
+	 * the shelf wants its textures, so the thing that draws the shelf drains.
+	 * First, too: the cube sets render targets further down, and nothing here
+	 * should depend on that not having happened yet. */
+	texload_drain(a);
 	draw_background(a);
 	if (a->sys.count <= 0) draw_no_games(a);
 	else if (a->screen == SCREEN_SYSTEMS) draw_systems(a);
@@ -7360,9 +7372,6 @@ int main(int argc, char *argv[])
 	while (a.running) {
 		plat_input_poll(&a.in);
 		if (a.in.quit_requested || want_quit) break;
-
-		/* Whatever the worker finished since the last frame. */
-		texload_drain(&a);
 
 		/* Followed here as well as during a game. Diatom is resident and takes
 		 * SETAUDIO while idle, so a cable plugged in at the shelf moves the
