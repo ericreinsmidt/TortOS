@@ -30,6 +30,8 @@ bool ra_creds_save(void);
 void ra_creds_clear(void);
 bool ra_signed_in(void);
 const char *ra_user(void);
+/* The account copied out, for work handed to another thread. See rafetch.c. */
+void ra_creds_copy(char *user, size_t un, char *token, size_t tn);
 
 /* Exchange a password for a token. The password is used and dropped; nothing
  * writes it anywhere. `err` takes RA's own message when it refuses, which is
@@ -124,5 +126,14 @@ void ra_start_session(long gameid);
  * and calling it a failure leaves the row owed forever and stops everything
  * queued behind it. */
 int ra_submit_unlock(int achievement_id, const char *rom_hash);
+
+/* The same, for an account passed in rather than the one held here.
+ *
+ * Exists so the unlock queue can be flushed from a worker thread: it touches no
+ * state in this file, only its arguments and a request of its own, so it is
+ * safe to call while the main thread signs in, signs out, or makes a request of
+ * its own. ra_submit_unlock is this with the account held here. */
+int ra_submit_unlock_as(const char *user, const char *token,
+                        int achievement_id, const char *rom_hash);
 
 #endif

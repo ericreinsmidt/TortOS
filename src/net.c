@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <signal.h>
+#include <stdatomic.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -146,9 +147,22 @@ static int run_curl(const char *cfg, int out_fd)
 	return WIFEXITED(st) ? WEXITSTATUS(st) : -1;
 }
 
+/* A path no other call can be using: per process AND per call.
+ *
+ * It was per process alone - "/tmp/tortos-ra-<pid>.curl" - which every thread
+ * in the launcher shares, and the response goes beside it as ".body". That held
+ * only while every synchronous request ran on the main thread, one after
+ * another. The moment two overlap, a sign-in on the main thread and an unlock
+ * sent from a worker, both write the one config and read the one body, and each
+ * gets the other's credentials, or the other's answer, or half of both. Nothing
+ * would crash; a request would simply be refused or misread. The counter makes
+ * every call its own pair of files. */
 static void tmp_config(char *out, size_t n)
 {
-	snprintf(out, n, "/tmp/tortos-ra-%ld.curl", (long)getpid());
+	static atomic_uint seq;
+
+	snprintf(out, n, "/tmp/tortos-ra-%ld-%u.curl", (long)getpid(),
+	         (unsigned)atomic_fetch_add(&seq, 1));
 }
 
 long net_post_buf(const net_field *f, int n, char *out, size_t outn, int timeout_s)

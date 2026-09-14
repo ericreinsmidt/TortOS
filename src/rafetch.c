@@ -26,6 +26,16 @@ const char *ra_user(void) { return g_user; }
 
 void ra_creds_clear(void) { g_user[0] = '\0'; g_token[0] = '\0'; }
 
+/* A copy of the account as it stands, for work that outlives this moment on
+ * another thread. Reading g_user and g_token from a worker while a sign-in on
+ * the main thread rewrites them would be a torn read of the token; a copy taken
+ * where they are owned cannot be. */
+void ra_creds_copy(char *user, size_t un, char *token, size_t tn)
+{
+	snprintf(user, un, "%s", g_user);
+	snprintf(token, tn, "%s", g_token);
+}
+
 bool ra_creds_load(void)
 {
 	char user[RA_USER_MAX * 2], token[RA_TOKEN_MAX * 2];
@@ -451,24 +461,32 @@ void ra_start_session(long gameid)
 
 int ra_submit_unlock(int achievement_id, const char *rom_hash)
 {
+	return ra_submit_unlock_as(g_user, g_token, achievement_id, rom_hash);
+}
+
+int ra_submit_unlock_as(const char *user, const char *token,
+                        int achievement_id, const char *rom_hash)
+{
 	char body[1024], a[24], v[33], sig[128];
 	net_field f[7];
 	jsv root, m;
 	int n = 0;
 
-	if (achievement_id <= 0 || !ra_signed_in() || !net_online()) return -1;
+	if (achievement_id <= 0 || !user || !*user || !token || !*token ||
+	    !net_online())
+		return -1;
 
 	snprintf(a, sizeof a, "%d", achievement_id);
 	/* rcheevos builds exactly this in rc_api_init_award_achievement_request,
 	 * and the server checks it. Written from that source rather than guessed:
 	 * a wrong signature is refused, and a refusal reads like a permissions
 	 * problem. */
-	snprintf(sig, sizeof sig, "%d%s0", achievement_id, g_user);
+	snprintf(sig, sizeof sig, "%d%s0", achievement_id, user);
 	ra_md5_hex(sig, strlen(sig), v);
 
 	f[n].k = "r"; f[n++].v = "awardachievement";
-	f[n].k = "u"; f[n++].v = g_user;
-	f[n].k = "t"; f[n++].v = g_token;
+	f[n].k = "u"; f[n++].v = user;
+	f[n].k = "t"; f[n++].v = token;
 	f[n].k = "a"; f[n++].v = a;
 	f[n].k = "h"; f[n++].v = "0";
 	if (rom_hash && *rom_hash) { f[n].k = "m"; f[n++].v = rom_hash; }
