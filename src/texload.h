@@ -34,6 +34,13 @@ void texload_stop(void);
  * decoded are dropped rather than installed against the wrong game. */
 void texload_bump(void);
 
+/* Drop every request not started yet. Unlike texload_bump nothing is disowned:
+ * a decode already under way still lands and is installed, because the shelf
+ * it was for has not changed shape - only where anyone is looking. For a cursor
+ * that has moved on, so the next requests are not served behind a place nobody
+ * is looking at any more. */
+void texload_forget(void);
+
 /* Decode for (sys, idx), trying `first` then `second`. Either may be NULL.
  * Ignored if that card is already queued, in flight, or waiting to be taken,
  * so a caller may ask every frame without piling work up.

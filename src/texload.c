@@ -220,6 +220,14 @@ void texload_bump(void)
 	SDL_UnlockMutex(g_lock);
 }
 
+void texload_forget(void)
+{
+	if (!g_lock) return;
+	SDL_LockMutex(g_lock);
+	g_rq_n = g_rq_head = 0;
+	SDL_UnlockMutex(g_lock);
+}
+
 bool texload_want(int sys, int idx, const char *first, const char *second)
 {
 	req *q;

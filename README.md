@@ -468,6 +468,10 @@ briefly empty instead of the shelf freezing - the art appears at the same
 moment either way, and what changes is whether everything else kept moving
 while it came.
 
+A system's cards start decoding when the systems row lands on it, not when you
+open it, so opening one shows them at once - measured 2026-09-14 on four
+systems opened straight after a reboot.
+
 Two workers rather than one, and that was measured rather than assumed: one
 still drops the occasional card on the shelves with the largest covers, even
 after those covers were resized. They sleep when there is nothing to decode.

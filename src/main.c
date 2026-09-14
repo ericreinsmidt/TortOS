@@ -684,58 +684,72 @@ static void evict_far(sysview *v, int keep)
 	}
 }
 
-/* Decode the cards across the visible window up front, so the first scroll
- * does not hitch while a PNG decodes in the middle of the slide. */
-static void prime_window(app *a, int s)
+#define PRIME_HALF_MAX (CF_HALF_WINDOW + 2)
+
+/* Ask for the cards on shelf `s` around `center`, out to `half` either side.
+ *
+ * FARTHEST FIRST. The workers take the newest request first (texload.c), so
+ * they decode in the reverse of the order asked, and the center has to be asked
+ * for last to be decoded first. Both callers used to ask for it first or in the
+ * middle, on the reasoning that the order asked is the order decoded - true of
+ * the queue they were written against, and backwards since it went newest-first.
+ * Measured 2026-09-14, cold after a reboot: entering a system put the focused
+ * card up 70-160ms after A, only 15-35ms ahead of the rest of its row, when it
+ * should have been the first to arrive.
+ *
+ * Each card is asked for once. On a shelf shorter than the window, wrapping
+ * offers the same card from both sides, and the second ask would be refused as
+ * already queued - leaving the card wherever the first ask put it.
+ *
+ * game_get_tex reads a->sys_cursor rather than taking a shelf, so it is swapped
+ * around the calls. */
+static void prime_around(app *a, int s, int center, int half)
 {
 	sysview *v = &a->view[s];
-	int span = CF_HALF_WINDOW + 2, k, save = a->sys_cursor;
+	int n = v->list.count, idx[2 * PRIME_HALF_MAX + 1], m = 0;
+	int k, j, save = a->sys_cursor;
 
-	if (v->list.count <= 0) return;
-	a->sys_cursor = s;
-	for (k = -span; k <= span; k++) {
-		int i = v->cursor + k, w, h;
-		if (v->list.count >= 2) {
-			i %= v->list.count;
-			if (i < 0) i += v->list.count;
-		} else if (i < 0 || i >= v->list.count) {
-			continue;
+	if (n <= 0) return;
+	if (half > PRIME_HALF_MAX) half = PRIME_HALF_MAX;
+	for (k = 0; k <= half; k++) {
+		int side;
+		for (side = 1; side >= (k ? -1 : 1); side -= 2) {
+			int i = center + k * side;
+			if (n >= 2) {
+				i %= n;
+				if (i < 0) i += n;
+			} else if (i != 0) {
+				continue;
+			}
+			for (j = 0; j < m && idx[j] != i; j++) ;
+			if (j == m) idx[m++] = i;
 		}
-		game_get_tex(a, i, &w, &h, NULL);
+	}
+	a->sys_cursor = s;
+	while (m-- > 0) {
+		int w, h;
+		if (!v->tex[idx[m]]) game_get_tex(a, idx[m], &w, &h, NULL);
 	}
 	a->sys_cursor = save;
 }
 
-/* Ask for the whole window around `center`, nearest first.
+/* The visible row and two more either side, so the first scroll finds its
+ * neighbors already there instead of sliding in blank. */
+static void prime_window(app *a, int s)
+{
+	prime_around(a, s, a->view[s].cursor, PRIME_HALF_MAX);
+}
+
+/* Ask for the whole window around `center`.
  *
  * This used to take a budget and spend one card per frame, because asking
  * meant decoding and a card was 7-27ms against a 16.7ms frame. Since
  * texload.c, asking only queues: game_get_tex hands the worker two paths and
  * returns, a card already in hand is ignored, so the whole window costs about
- * nothing and dribbling it out a frame at a time only made it land later.
- *
- * Still nearest-first. The order the worker takes them in is the order they
- * appear, and the center card is the one being moved to. */
-static int prime_toward(app *a, int s, int center)
+ * nothing and dribbling it out a frame at a time only made it land later. */
+static void prime_toward(app *a, int s, int center)
 {
-	sysview *v = &a->view[s];
-	int n = v->list.count, k, done = 0, save = a->sys_cursor;
-
-	if (n <= 0) return 0;
-	a->sys_cursor = s;
-	for (k = 0; k <= CF_HALF_WINDOW; k++) {
-		int side;
-		for (side = (k ? -1 : 1); side <= 1; side += 2) {
-			int i = center + k * side, w, h;
-			i %= n;
-			if (i < 0) i += n;
-			if (v->tex[i]) continue;
-			game_get_tex(a, i, &w, &h, NULL);
-			done++;
-		}
-	}
-	a->sys_cursor = save;
-	return done;
+	prime_around(a, s, center, CF_HALF_WINDOW);
 }
 
 static void prime_sys_window(app *a)
@@ -1999,7 +2013,7 @@ static void draw_games_face(app *a, sysview *v, const system_cfg *s, int idx);
  *
  * game_get_tex reads a->sys_cursor rather than the view it is handed, so a
  * face drawn for a system that is not the current one would fetch its art
- * from the wrong shelf. Swapped around the call, the way prime_window already
+ * from the wrong shelf. Swapped around the call, the way prime_around already
  * does it, rather than rethreading the cursor through every getter. */
 static void draw_face_for(app *a, int sys)
 {
@@ -6632,6 +6646,32 @@ static void update_both(app *a)
 	if (a->in.pressed[IN_ACCEPT]) { launch(a); return; }
 }
 
+/* Start on a system's cards when the systems row moves onto it, not when A is
+ * pressed.
+ *
+ * Entering used to be the first time anything asked for a system's covers, so
+ * the games shelf drew with empty slots until they arrived. Measured
+ * 2026-09-14, cold after a reboot, across six systems: the focused card 70-160ms
+ * after A, the whole row 95-177ms. Short, and visible. Leaving a system keeps
+ * the cards around its cursor, which is why only the first entry showed it.
+ *
+ * Starting here gives the decode however long it takes to reach the system and
+ * press A, and that is enough: re-measured the same way, four systems entered
+ * after a reboot all had every card already loaded on arrival.
+ *
+ * Whatever was queued for the system just passed is dropped first, so a
+ * held direction does not decode a row for every system it crosses, and the one
+ * the row stops on is not left waiting behind them.
+ *
+ * The visible row only; entering asks for two more either side. They stay after
+ * the row moves on, which is less than already stays: a system entered and left
+ * keeps nine. */
+static void load_ahead(app *a)
+{
+	texload_forget();
+	prime_toward(a, a->sys_cursor, a->view[a->sys_cursor].cursor);
+}
+
 static void update_systems(app *a)
 {
 	int n = a->sys.count;
@@ -6655,6 +6695,7 @@ static void update_systems(app *a)
 
 	if (in_repeat(&a->in, back)) { a->sys_cursor = (a->sys_cursor - 1 + n) % n; dir = -1; }
 	if (in_repeat(&a->in, fwd))  { a->sys_cursor = (a->sys_cursor + 1) % n; dir = +1; }
+	if (dir) load_ahead(a);
 	if (a->in.pressed[IN_ACCEPT])    enter_system(a);
 	cf_set_cursor_dir(&a->cf_sys, a->sys_cursor, n, dir);
 }
