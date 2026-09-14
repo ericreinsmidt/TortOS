@@ -7056,8 +7056,17 @@ static void take_shot(app *a)
 			const char *what = a->screen == SCREEN_GAMES && v->list.count > 0
 			                 ? v->list.items[v->cursor].title
 			                 : a->sys.systems[a->sys_cursor].name;
-			fprintf(stderr, "wrote %s  [%s] %s\n", shot_path,
-			        a->screen == SCREEN_GAMES ? "games" : "systems", what);
+			/* Checked rather than assumed. This line once named a focused
+			 * game on a shot with no cards in it. A card drawn on the frame
+			 * always ends up with a texture - box art, a preview, or the
+			 * generated card - so one without means the picture is not what
+			 * the name beside it claims, and that is worth saying loudly. */
+			const char *note =
+				a->screen == SCREEN_GAMES && v->list.count > 0 &&
+				v->tex && !v->tex[v->cursor]
+				? "  (NO ART: the focused card had no texture on this frame)" : "";
+			fprintf(stderr, "wrote %s  [%s] %s%s\n", shot_path,
+			        a->screen == SCREEN_GAMES ? "games" : "systems", what, note);
 		}
 	}
 }
@@ -7318,8 +7327,16 @@ int main(int argc, char *argv[])
 
 	if (!plat_video_init()) { fprintf(stderr, "video init failed\n"); return 1; }
 	IMG_Init(IMG_INIT_PNG);
-	/* After IMG_Init: the worker calls IMG_Load. */
-	texload_start();
+	/* After IMG_Init: the worker calls IMG_Load.
+	 *
+	 * Not for --shot. A shot draws the shelf exactly once, and with the workers
+	 * running every card on that one frame is only queued - so the PNG came out
+	 * with the title, the count and the rail and not a single card, while the
+	 * log line named the focused game as though it had been drawn. With no
+	 * worker, game_get_tex decodes on the frame the way it always did, which is
+	 * what a tool for checking one frame wants: the right picture, not a fast
+	 * one. */
+	if (!shot_path) texload_start();
 	a.r = plat_renderer();
 	plat_input_init();
 	/* Nothing is handed in any more. The two-tier lookup this replaces - a
