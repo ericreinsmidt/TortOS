@@ -5,10 +5,10 @@
  * about naming and fetching and has no other business with pixels; and it is
  * compiled standalone by check-artscrape, which is an offline check that must
  * not need SDL to build. */
+#include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
-#include <sys/types.h>
-#include <sys/wait.h>
 #include <unistd.h>
 #include <SDL.h>
 #include <SDL_image.h>
@@ -110,8 +110,8 @@ static void shrink_now(const char *path)
 	 * Getting RGB out means writing the PNG here instead - chunk framing, CRCs
 	 * and adaptive row filtering, against a zlib the sysroot does not carry
 	 * yet. Deliberately not done: a hand-rolled encoder that is subtly wrong
-	 * corrupts art silently, and decoding is about to move off the render
-	 * thread, after which 3ms of decode stops being what anyone feels. */
+	 * corrupts art silently, and decoding has since moved off the render
+	 * thread (src/texload.c), so 3ms of decode is no longer what anyone feels. */
 	if (snprintf(tmp, sizeof tmp, "%s.tmp", path) < (int)sizeof tmp &&
 	    IMG_SavePNG(dst, tmp) == 0) {
 		fprintf(stderr, "art: %dx%d -> %dx%d %ums %s\n",
@@ -126,35 +126,138 @@ static void shrink_now(const char *path)
 }
 
 
-/* Fork and return. The caller is the Box Art screen's frame loop, which is
- * where the power button is read, so nothing there may wait: net_get_async
- * forks curl for exactly this reason and this is the same bargain. A resize
+/* ---------------------------------------------------------- the thread --- */
+
+/* Queue and return; one thread does the resizing, one cover at a time.
+ *
+ * Off the caller either way. The caller is the Box Art screen's frame loop,
+ * which is where the power button is read, so nothing there may wait. A resize
  * that blocked would also stall the next download, because there is ONE async
- * slot - the link would sit idle through every resize and a full run would
- * cost downloads PLUS resizes rather than the larger of the two.
+ * slot - the link would sit idle through every resize and a full run would cost
+ * downloads PLUS resizes rather than the larger of the two.
  *
- * Double fork, so the grandchild is reparented to init and reaped there. The
- * middle child exits at once, so the waitpid below returns immediately and
- * leaves no zombie; tracking the real worker would mean a table and a reaping
- * pass for work whose only failure mode is a cover staying large.
+ * THIS USED TO FORK, AND THE FORK COULD HANG FOREVER. It was a double fork, so
+ * the grandchild did the work and init reaped it, and that was correct when it
+ * was written: the launcher had no threads. src/texload.c added two decode
+ * workers an hour later, which made it a fork from a multithreaded process. A
+ * child gets only the thread that forked, and any lock another thread held at
+ * that instant stays held with nothing left to release it.
  *
- * The grandchild touches surfaces, libpng and the card - never the renderer,
- * never the display - and leaves by _exit so it runs no atexit handler and
- * cannot tear down state the parent is still using. Everything it writes goes
- * through a temporary and a rename, so the parent reading the same cover mid
- * resize sees the old file or the new one and never a partial one.
+ * glibc covers malloc across a fork. It does not cover SDL. SDL2 2.30.8 guards
+ * its pixel-format list with a spinlock, formats_lock in SDL_pixels.c, taken by
+ * surface creation, SDL_ConvertSurfaceFormat and SDL_FreeSurface - every decode
+ * the workers do, and every step below. If a worker held it at the fork, the
+ * child's first surface call would spin in SDL_AtomicLock, which has no timeout
+ * (its source says so, in a FIXME), and the orphan would busy-yield a core for
+ * as long as the device stayed on. Never observed across 1,599 resizes, because
+ * scrapes run while the workers are mostly idle. Rare, not impossible.
  *
- * If the fork fails, do it inline rather than skip it. That is slow, but a
- * launcher that cannot fork is one where curl cannot start either, so the
- * scrape has larger problems than a stalled frame. */
+ * A thread has none of that. The spinlock that can deadlock a forked child is
+ * exactly what makes those same calls safe to make concurrently - the decode
+ * workers already do IMG_Load and surface conversion alongside the main thread.
+ *
+ * What a thread gives up is outliving the launcher. A forked child survived a
+ * killall of its parent; a thread does not. Covers queued but not yet resized
+ * when the launcher exits stay full size, which is the one failure this file
+ * already accepts, and shrink_now's temporary-and-rename still means an exit
+ * mid-write leaves the original rather than half a PNG.
+ *
+ * Started on the first cover, not at launch: most sessions never fetch art,
+ * and those should not carry an idle thread. */
+struct job {
+	struct job *next;
+	char        path[];
+};
+
+static SDL_Thread *g_thread;
+static SDL_mutex  *g_lock;
+static SDL_cond   *g_wake;
+static bool        g_stop;
+static struct job *g_head, *g_tail;
+
+static int worker(void *unused)
+{
+	(void)unused;
+	SDL_LockMutex(g_lock);
+	for (;;) {
+		struct job *j;
+
+		while (!g_stop && !g_head) SDL_CondWait(g_wake, g_lock);
+		if (g_stop) break;
+		j = g_head;
+		g_head = j->next;
+		if (!g_head) g_tail = NULL;
+		SDL_UnlockMutex(g_lock);
+
+		shrink_now(j->path);
+		free(j);
+
+		SDL_LockMutex(g_lock);
+	}
+	SDL_UnlockMutex(g_lock);
+	return 0;
+}
+
+static bool started(void)
+{
+	if (g_thread) return true;
+	if (!(g_lock = SDL_CreateMutex())) return false;
+	if (!(g_wake = SDL_CreateCond())) {
+		SDL_DestroyMutex(g_lock);
+		g_lock = NULL;
+		return false;
+	}
+	g_stop = false;
+	if (!(g_thread = SDL_CreateThread(worker, "tortos-shrink", NULL))) {
+		SDL_DestroyCond(g_wake);   g_wake = NULL;
+		SDL_DestroyMutex(g_lock);  g_lock = NULL;
+		return false;
+	}
+	return true;
+}
+
 void art_shrink(const char *path)
 {
-	pid_t mid = fork();
+	size_t      n;
+	struct job *j;
 
-	if (mid < 0) { shrink_now(path); return; }
-	if (mid == 0) {
-		if (fork() == 0) { shrink_now(path); _exit(0); }
-		_exit(0);
+	if (!path) return;
+	/* No thread to be had: do it here rather than not at all. It stalls the
+	 * frame, but a launcher that cannot start a thread cannot decode card art
+	 * off the frame either, and has larger problems than one slow cover. */
+	if (!started()) { shrink_now(path); return; }
+
+	n = strlen(path) + 1;
+	if (!(j = malloc(sizeof *j + n))) return;   /* best effort: stays full size */
+	j->next = NULL;
+	memcpy(j->path, path, n);
+
+	SDL_LockMutex(g_lock);
+	if (g_tail) g_tail->next = j;
+	else        g_head = j;
+	g_tail = j;
+	SDL_CondSignal(g_wake);
+	SDL_UnlockMutex(g_lock);
+}
+
+void art_shrink_stop(void)
+{
+	struct job *j;
+
+	if (!g_thread) return;
+	SDL_LockMutex(g_lock);
+	g_stop = true;
+	SDL_CondSignal(g_wake);
+	SDL_UnlockMutex(g_lock);
+	/* Waits for the cover in hand, at most one resize, and no more. */
+	SDL_WaitThread(g_thread, NULL);
+	g_thread = NULL;
+
+	while ((j = g_head)) {
+		g_head = j->next;
+		free(j);
 	}
-	waitpid(mid, NULL, 0);
+	g_tail = NULL;
+	SDL_DestroyCond(g_wake);   g_wake = NULL;
+	SDL_DestroyMutex(g_lock);  g_lock = NULL;
 }

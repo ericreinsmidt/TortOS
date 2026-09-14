@@ -22,6 +22,7 @@
 #include "library.h"
 #include "platform.h"
 #include "texload.h"
+#include "artshrink.h"
 #include "artscrape.h"
 #include "favorites.h"
 #include "hare.h"
@@ -7549,8 +7550,10 @@ int main(int argc, char *argv[])
 done:
 	free_all_textures(&a);
 	/* First, and before IMG_Quit: the worker is inside IMG_Load, and the
-	 * views it decodes into are freed just below. */
+	 * views it decodes into are freed just below. The resizer too, for the
+	 * same IMG_Quit - it is in IMG_Load and IMG_SavePNG. */
 	texload_stop();
+	art_shrink_stop();
 	for (int i = 0; i < a.sys.count; i++) {
 		free(a.view[i].tex); free(a.view[i].tw); free(a.view[i].th);
 		lib_free(&a.view[i].list);
