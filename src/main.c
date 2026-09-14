@@ -1,14 +1,15 @@
 /* SPDX-License-Identifier: MIT
  *
- * TortOS -- a custom firmware for the TrimUI Brick that plays NES, TurboGrafx
- * -16 and Game Boy Advance games, and does nothing else.
+ * TortOS - a custom firmware for the TrimUI Brick that plays eleven 8- and
+ * 16-bit consoles.
  *
  * The whole design metric is speed. The launcher starts behind the boot
  * animation rather than after it, hands games to an emulator that is already
- * running rather than starting one, and never tears its own display down --
- * so coming back from a game is a frame, not a second and a half. What is on
- * screen is a row of cards, the name of the thing under the cursor, and a
- * rail saying where you are. Nothing else.
+ * running rather than starting one, and never tears its own display down - so
+ * coming back from a game is a frame, not a second and a half. Around that sit
+ * RetroAchievements, box art the device fetches itself, a file server over
+ * Wi-Fi, Bluetooth audio and play time - each one row in one menu, and none of
+ * it in the way of starting a game.
  */
 #include "atomic.h"
 #include "cheevos.h"
