@@ -1630,6 +1630,29 @@ static void draw_low_battery_dot(SDL_Renderer *r)
 	}
 }
 
+/* ---------- when the next frame is needed -------------------------------- */
+
+/* The earliest moment something already on screen will look different with
+ * nobody touching anything - a card mid-move, the tint still easing toward a
+ * new system, a long title about to scroll, the volume line about to go.
+ * REDRAW_NEVER means nothing drawn in the last frame changes by itself.
+ *
+ * Gathered WHILE drawing, because the things that move are the things that
+ * know they are moving: cf_draw already returns whether a move is in flight,
+ * and a marquee is the only thing that knows where it is in its hold. render
+ * resets it and every drawing path that animates pulls it earlier. The main
+ * loop then only draws when it has come due, or when there was input.
+ *
+ * It exists because the shelf was redrawn and presented at the refresh rate
+ * whether or not anything had changed. Measured on the Brick 2026-09-13, idle
+ * on a shelf: 26.6% of a core and 88 voluntary context switches a second, all
+ * of it the main thread, for a picture that was not moving. */
+#define REDRAW_NEVER UINT32_MAX
+static Uint32 g_redraw_at = 0;
+
+static void redraw_at(Uint32 t) { if (t < g_redraw_at) g_redraw_at = t; }
+static void redraw_now(void)    { g_redraw_at = 0; }
+
 static void draw_background(app *a)
 {
 	SDL_Renderer *r = a->r;
@@ -1769,6 +1792,9 @@ static void draw_both(app *a)
 
 	cf_tick(&a->cf_sys, ns);
 	if (ng > 0) cf_tick(&v->cf, ng);
+	/* After the ticks, so a turn that finished this frame is not asked to
+	 * draw again: this frame already shows where it came to rest. */
+	if (a->cf_sys.active || (ng > 0 && v->cf.active)) redraw_now();
 
 	spos = a->cf_sys.pos;
 	s0 = (int)floorf(spos);
@@ -1898,8 +1924,9 @@ static void draw_systems(app *a)
 
 	cf_focus_rect(&lay, TORTOS_SCREEN_W, TORTOS_SCREEN_H, &focus);
 	ui_glow(a->r, &focus, s->accent, 110, 2.4f);
-	cf_draw(&a->cf_sys, a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, a->sys.count,
-	        sys_get_tex, a, &lay);
+	if (cf_draw(&a->cf_sys, a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, a->sys.count,
+	            sys_get_tex, a, &lay))
+		redraw_now();
 
 	/* Art that does not name itself gets named here, in the gap between the
 	 * card and the count, which is where the classic cards carry it. */
@@ -2047,11 +2074,30 @@ static void draw_game_text(app *a, sysview *v, const system_cfg *s, int idx)
 
 			draw_heart(a->r, (float)(margin + hrad), (float)dy, (float)hrad, c);
 		}
-		if (slides)
+		if (slides) {
 			ui_text_marquee(a->r, ft2, g->title, boxx, 40, boxw,
 			                phase, UI_TEXT);
-		else
+			/* Not "a title is sliding, so keep drawing". It ping-pongs for
+			 * as long as the game is focused, with 1.4s of stillness at the
+			 * start and 0.9s at the far end, so ask for the moment it next
+			 * moves and sleep through the holds. The phase clock is
+			 * plat_now_ms, the same one the main loop compares against.
+			 *
+			 * Only the holds can be skipped; the travel between them is
+			 * motion and has to be drawn. Measured on the Brick 2026-09-13,
+			 * idle for 30s on Advanced Busterhawk Gleylancer: 17.4% of a core,
+			 * against 1.7% on a title that fits and 26.6% before any of this.
+			 *
+			 * Deliberately left that way. Scrolling once and resting, or
+			 * slowing the scroll, would bring a long title down near 1.7%,
+			 * but that trades a behavior that works for a saving measured
+			 * only as CPU - not as battery, where the backlight is on either
+			 * way - and nobody has shown how long the device actually sits
+			 * idle on a long title. Measure the drain before changing it. */
+			redraw_at(plat_now_ms() + ui_pingpong_wait(tw - boxw, phase));
+		} else {
 			ui_text(a->r, ft2, g->title, tx, 40, 0, UI_TEXT);
+		}
 		/* Where you are in the list, not what this game is - the same kind
 		 * of thing the rail says, so it goes where the rail is.
 		 *
@@ -2127,9 +2173,10 @@ static void draw_games(app *a)
 
 	cf_focus_rect(&CF_LAYOUT_GAMES, TORTOS_SCREEN_W, TORTOS_SCREEN_H, &focus);
 	ui_glow(a->r, &focus, s->accent, 100, 2.3f);
-	cf_draw(&v->cf, a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, v->list.count,
-	        game_get_tex, a,
-	        CARD_DIRS[g_dir].vertical ? &CF_LAYOUT_GAMES_V : &CF_LAYOUT_GAMES);
+	if (cf_draw(&v->cf, a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, v->list.count,
+	            game_get_tex, a,
+	            CARD_DIRS[g_dir].vertical ? &CF_LAYOUT_GAMES_V : &CF_LAYOUT_GAMES))
+		redraw_now();
 	/* Warm where the move is about to cut to, one card per frame, underneath
 	 * the departure that is still being drawn. Eviction waits: the cursor is
 	 * already at the destination and evict_far measures from the cursor, so
@@ -2192,23 +2239,45 @@ static void draw_shelf(app *a)
 
 static void render(app *a)
 {
+	g_redraw_at = REDRAW_NEVER;
 	draw_shelf(a);
 	plat_draw_osd(a->r);
+	/* The tint lands exactly on its target now (see tick_tint), so this is a
+	 * test that ends rather than one that is true forever. */
+	if (a->sys.count > 0 && a->tint != a->sys.systems[a->sys_cursor].accent)
+		redraw_now();
+	redraw_at(plat_osd_until());
 	SDL_RenderPresent(a->r);
 }
 
 /* Ease the background tint toward the focused system rather than snapping: the
  * color is meant to feel like the light the machine gives off, and light does
- * not cut. Called from every loop that draws the shelf. */
+ * not cut. Called from every loop that draws the shelf.
+ *
+ * And then land it. ui_mix truncates, so an ease this gentle stops short on any
+ * channel that is rising: at 60fps each step is about 14% of the gap, and 14% of
+ * 7 is under one, so it came to rest up to 7 units below its target and stayed
+ * there for good. That never showed, but it meant "has the tint arrived" was
+ * never true - and a launcher that only redraws while something is still
+ * changing would have redrawn at the refresh rate forever. Within 12 on every
+ * channel it takes the target outright: under 5% of a channel, on a dim wash, at
+ * the very tail of an ease nobody watches finish. 12 rather than 7 because a
+ * faster frame means a smaller step and a wider stall; dt is what sets it. */
 static unsigned last_tint_ms;
 static void tick_tint(app *a)
 {
 	unsigned now = plat_now_ms();
+	unsigned target = a->sys.systems[a->sys_cursor].accent, next;
 	float dt = (float)(now - last_tint_ms) / 1000.0f;
+	int dr, dg, db;
+
 	last_tint_ms = now;
 	if (dt > 0.1f) dt = 0.1f;
-	a->tint = ui_mix(a->tint, a->sys.systems[a->sys_cursor].accent,
-	                 1.0f - expf(-dt * 9.0f));
+	next = ui_mix(a->tint, target, 1.0f - expf(-dt * 9.0f));
+	dr = (int)((next >> 16) & 255) - (int)((target >> 16) & 255);
+	dg = (int)((next >> 8) & 255) - (int)((target >> 8) & 255);
+	db = (int)(next & 255) - (int)(target & 255);
+	a->tint = (abs(dr) <= 12 && abs(dg) <= 12 && abs(db) <= 12) ? target : next;
 }
 
 /* ---------- transitions --------------------------------------------------- */
@@ -7369,6 +7438,32 @@ int main(int argc, char *argv[])
 		launch(&a);
 	}
 
+	/* Drawing only when something changed. See g_redraw_at.
+	 *
+	 * The loop still runs every IDLE_POLL_MS when nothing is drawn, so the power
+	 * button, Auto Off, the headphone jack and the Bluetooth sink are all still
+	 * checked at the same rate as before - only the draw and the present are
+	 * skipped. 16ms keeps the worst case from a press to its first frame where
+	 * it was, one refresh.
+	 *
+	 * Why a poll and not a wait on the input devices: input arrives through two
+	 * roads, SDL's own events and three raw evdev descriptors, and a held
+	 * button produces no event at all while it repeats - in_repeat works from
+	 * the clock. A wait that slept until the next event would have stopped key
+	 * repeat dead. Polling costs a handful of syscalls a frame, against a full
+	 * draw and a present. */
+	const Uint32 IDLE_POLL_MS = 16;
+	/* A gap this long between two passes means something else had the screen -
+	 * a menu, a game, the art scraper - and whatever it drew is not the shelf.
+	 * Catching it here covers every one of them without a list to keep. */
+	const Uint32 AWAY_MS = 100;
+	/* Drawn at least this often regardless. A backstop, not a mechanism: if some
+	 * animation is ever added without telling g_redraw_at, it shows as a screen
+	 * updating once a second, which is visibly wrong, rather than one that has
+	 * silently frozen. */
+	const Uint32 HEARTBEAT_MS = 1000;
+	Uint32 last_pass = 0, last_render = 0;
+
 	while (a.running) {
 		plat_input_poll(&a.in);
 		if (a.in.quit_requested || want_quit) break;
@@ -7409,8 +7504,28 @@ int main(int argc, char *argv[])
 		}
 		if (!a.running) break;
 
-		tick_tint(&a);
-		render(&a);
+		{
+			Uint32 now = plat_now_ms();
+			/* Held counts as touched, not only pressed: a held direction
+			 * repeats from the clock and moves the shelf every 90ms. */
+			bool touched = false, away = now - last_pass > AWAY_MS;
+			int b;
+
+			for (b = 0; b < IN_COUNT && !touched; b++)
+				touched = a.in.pressed[b] || a.in.down[b];
+			last_pass = now;
+
+			/* texload_ready because finished art is installed while drawing:
+			 * a loop that never drew would never find it. */
+			if (touched || away || texload_ready() || now >= g_redraw_at ||
+			    now - last_render >= HEARTBEAT_MS) {
+				tick_tint(&a);
+				render(&a);
+				last_render = plat_now_ms();
+			} else {
+				SDL_Delay(IDLE_POLL_MS);
+			}
+		}
 	}
 
 done:

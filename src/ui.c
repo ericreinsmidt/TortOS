@@ -223,6 +223,26 @@ int ui_pingpong(int over, unsigned phase)
 	                    * (unsigned)over / (unsigned)travel);
 }
 
+/* The same cycle as ui_pingpong, phase for phase - it has to be, or a caller
+ * would wake early, costing a frame, or late, holding back a scroll that should
+ * already have started. */
+unsigned ui_pingpong_wait(int over, unsigned phase)
+{
+	int travel = over * 1000 / MQ_SPEED_PXPS;
+	unsigned cycle, p;
+
+	if (over <= 0) return (unsigned)-1;         /* fits, so it never moves */
+	if (travel < 1) travel = 1;
+	cycle = (unsigned)(MQ_HOLD_MS + travel + MQ_END_MS + travel);
+	p     = phase % cycle;
+
+	if (p < MQ_HOLD_MS) return MQ_HOLD_MS - p;
+	if (p < (unsigned)(MQ_HOLD_MS + travel)) return 0;
+	if (p < (unsigned)(MQ_HOLD_MS + travel + MQ_END_MS))
+		return (unsigned)(MQ_HOLD_MS + travel + MQ_END_MS) - p;
+	return 0;
+}
+
 void ui_text_marquee(SDL_Renderer *r, TTF_Font *f, const char *s,
                      int x, int y, int w, unsigned phase, SDL_Color col)
 {

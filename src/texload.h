@@ -55,4 +55,12 @@ bool texload_want(int sys, int idx, const char *first, const char *second);
  * to save that would be the worse trade. */
 bool texload_take(int *sys, int *idx, SDL_Surface **surf);
 
+/* Whether anything is waiting to be taken, without taking it.
+ *
+ * For a loop that only draws when something changed. Finished decodes are
+ * installed while drawing, so a loop sitting idle would never draw and never
+ * find them: art that finished while nothing moved would wait for the next
+ * press. This lets the loop notice there is something to install. */
+bool texload_ready(void);
+
 #endif

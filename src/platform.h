@@ -196,6 +196,14 @@ bool plat_headphones_present(void);
 /* kind: 1 = brightness, 2 = volume */
 void plat_osd_show(int kind, int val, int max);
 void plat_draw_osd(SDL_Renderer *r);
+/* When the volume or brightness line will next change on its own - the moment
+ * it is due to disappear - or UINT32_MAX while none is showing.
+ *
+ * It does not fade: it is drawn solid until OSD_WINDOW_MS after the last press
+ * and then simply not drawn. So a launcher that only redraws when something
+ * changes needs exactly one more frame, at that moment, or the line would
+ * stay on screen until the next unrelated redraw. */
+Uint32 plat_osd_until(void);
 
 bool plat_battery(int *pct, bool *charging);
 

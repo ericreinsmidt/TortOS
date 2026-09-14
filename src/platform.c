@@ -1630,6 +1630,13 @@ void plat_osd_show(int kind, int val, int max)
 	osd_shown_at = SDL_GetTicks();
 }
 
+/* One past the last tick plat_draw_osd still draws it on, since that test is
+ * `>`: asking at exactly the window's end would still find it showing. */
+Uint32 plat_osd_until(void)
+{
+	return osd_kind ? osd_shown_at + OSD_WINDOW_MS + 1 : UINT32_MAX;
+}
+
 int plat_volume_get(void)     { return cur_vol; }
 int plat_brightness_get(void) { return cur_bright; }
 

@@ -99,6 +99,15 @@ int ui_text_width(TTF_Font *f, const char *s);
  * a title that scrolls sideways. */
 int ui_pingpong(int over, unsigned phase);
 
+/* How many ms until ui_pingpong's answer for `over` next changes, from `phase`:
+ * 0 while it is moving, the rest of the hold while it is standing still.
+ *
+ * So a caller that only draws when something changes can sleep through the
+ * holds. A marquee ping-pongs for as long as its title is focused, and without
+ * this it would keep the whole screen redrawing at the refresh rate the entire
+ * time, through 1.4s of stillness at one end and 0.9s at the other. */
+unsigned ui_pingpong_wait(int over, unsigned phase);
+
 /* Copy `src` into `dst`, shortened with an ellipsis until it fits `maxw`
  * pixels in `f`. Bytes are stepped back one at a time and then walked off any
  * UTF-8 continuation, so a multi-byte character is never cut in half.

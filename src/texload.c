@@ -269,3 +269,14 @@ bool texload_take(int *sys, int *idx, SDL_Surface **surf)
 	SDL_UnlockMutex(g_lock);
 	return true;
 }
+
+bool texload_ready(void)
+{
+	bool any;
+
+	if (!g_thread[0]) return false;
+	SDL_LockMutex(g_lock);
+	any = g_rs_n > 0;
+	SDL_UnlockMutex(g_lock);
+	return any;
+}
