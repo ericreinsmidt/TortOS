@@ -3313,9 +3313,17 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 				if (room <= 0) {
 					/* No room for it at all; the label alone is the row. */
 				} else if (moves) {
+					/* Keyed on the selection alone, as a long label is below.
+					 * It was keyed on the row as well, and every row with a
+					 * long value shares this one slot - so a screen of facts
+					 * with two of them reset the clock twice a frame and
+					 * neither ever moved. Over The Hare showed it 2026-09-14:
+					 * "Transferred" and "Now" both too long, and two captures
+					 * a second apart identical. Sharing the clock, they all
+					 * move. */
 					ui_text_marquee(a->r, fm, rows[i].value,
 					                content_x + content_w - room, ty, room,
-					                mq_phase(MQ_VALUE, sel, i), vc);
+					                mq_phase(MQ_VALUE, sel, 0), vc);
 				} else {
 					ui_fit_text(fm, rows[i].value, val, sizeof val, room);
 					ui_text(a->r, fm, val, content_x + content_w, ty, 1, vc);
