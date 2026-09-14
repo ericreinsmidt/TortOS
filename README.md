@@ -33,12 +33,12 @@ SNES game costs exactly what starting another Game Boy game costs. Nothing is
 preloaded, and there is no core list to configure anywhere.
 
 Every number in this file was measured on the device rather than estimated,
-but they were not all measured on the same day. The boot profile below and the
-975 MB were re-taken 2026-09-07. The launch timings and the core footprint date
-from when the resident emulator landed and have not been re-checked since, so
-read them as the shape of the thing rather than today's reading - and the
-method matters as much as the figure, which is why the boot profile now says
-cold or warm, on which card, with how many games.
+but they were not all measured on the same day. The boot profile below was
+re-taken 2026-09-13, and the 975 MB on 2026-09-07. The launch timings and the
+core footprint date from when the resident emulator landed and have not been
+re-checked since, so read them as the shape of the thing rather than today's
+reading - and the method matters as much as the figure, which is why the boot
+profile now says cold or warm, on which card, with how many games.
 
 ---
 
