@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: MIT
  *
- * TortOS - a custom firmware for the TrimUI Brick that plays eleven 8- and
- * 16-bit consoles.
+ * TortOS - a custom firmware for the TrimUI Brick that plays eleven
+ * 8-, 16- and 32-bit consoles.
  *
  * The whole design metric is speed. The launcher starts behind the boot
  * animation rather than after it, hands games to an emulator that is already

@@ -4,14 +4,14 @@
   <img src="res/readme/turtle.png" alt="" height="84">
 </p>
 
-A custom firmware for the **TrimUI Brick / Brick Hammer** that plays eleven 8-
-and 16-bit consoles.
+A custom firmware for the **TrimUI Brick / Brick Hammer** that plays eleven
+8-, 16- and 32-bit consoles.
 
-What is on screen is a row of cards, the name of the thing under the cursor,
-and a rail saying where you are in the list. Behind that there is
-RetroAchievements, box art the device fetches itself, and a small web server
-for moving files on and off over Wi-Fi - each one row in one menu, and none of
-it in the way of starting a game.
+What is on screen is a shelf of cards - a row, a column or a cube, your pick -
+the name of the thing under the cursor, and a rail saying where you are in the
+list. Behind that there is RetroAchievements, box art the device fetches
+itself, and a small web server for moving files on and off over Wi-Fi - each
+one row in one menu, and none of it in the way of starting a game.
 
 The design metric is **speed**, and one decision carries most of it: **TortOS
 never starts a process to run a game.**
