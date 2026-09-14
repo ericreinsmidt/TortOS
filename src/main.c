@@ -2088,12 +2088,13 @@ static void draw_game_text(app *a, sysview *v, const system_cfg *s, int idx)
 			 * idle for 30s on Advanced Busterhawk Gleylancer: 17.4% of a core,
 			 * against 1.7% on a title that fits and 26.6% before any of this.
 			 *
-			 * Deliberately left that way. Scrolling once and resting, or
-			 * slowing the scroll, would bring a long title down near 1.7%,
-			 * but that trades a behavior that works for a saving measured
-			 * only as CPU - not as battery, where the backlight is on either
-			 * way - and nobody has shown how long the device actually sits
-			 * idle on a long title. Measure the drain before changing it. */
+			 * DECIDED, left that way. Scrolling once and resting would bring a
+			 * long title down near 1.7%, and it is not worth doing, because
+			 * this is not idle. A marquee only runs while its title is focused
+			 * and on screen, so someone looking at one is reading it - the cost
+			 * is the feature doing its job while it is being used. And a device
+			 * set down on a long title with nobody looking is ended by Auto Off,
+			 * so there is no long unattended stretch of it to save. */
 			redraw_at(plat_now_ms() + ui_pingpong_wait(tw - boxw, phase));
 		} else {
 			ui_text(a->r, ft2, g->title, tx, 40, 0, UI_TEXT);
