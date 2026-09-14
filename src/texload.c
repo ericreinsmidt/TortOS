@@ -62,8 +62,15 @@ static unsigned g_gen = 1;
  * would be queued again the moment it left the request ring and before its
  * result arrived - the one window where it is in neither. One slot per worker,
  * because two sharing a slot would let each hide the other's card from the
- * dedup and queue it twice. */
+ * dedup and queue it twice.
+ *
+ * With the generation it was asked for, because texload_bump cannot reach a
+ * decode already under way: it empties both rings but the worker still holds
+ * the job. Without the generation, that disowned job kept answering "already
+ * coming" for its slot, so the request for what the slot NOW holds was refused
+ * until the stale decode finished and was thrown away. */
 static int      g_cur_sys[NWORKERS], g_cur_idx[NWORKERS];
+static unsigned g_cur_gen[NWORKERS];
 
 /* Called with the lock held. */
 static bool queued(int sys, int idx)
@@ -71,7 +78,8 @@ static bool queued(int sys, int idx)
 	int k;
 
 	for (k = 0; k < NWORKERS; k++)
-		if (sys == g_cur_sys[k] && idx == g_cur_idx[k]) return true;
+		if (sys == g_cur_sys[k] && idx == g_cur_idx[k] && g_cur_gen[k] == g_gen)
+			return true;
 	for (k = 0; k < g_rq_n; k++) {
 		const req *q = &g_rq[(g_rq_head + k) % QN];
 		if (q->sys == sys && q->idx == idx) return true;
@@ -117,6 +125,7 @@ static int worker(void *arg)
 		job = g_rq[(g_rq_head + g_rq_n) % QN];
 		g_cur_sys[me] = job.sys;
 		g_cur_idx[me] = job.idx;
+		g_cur_gen[me] = job.gen;
 		SDL_UnlockMutex(g_lock);
 
 		s = decode(job.first);

@@ -803,11 +803,19 @@ static void faces_swap(SDL_Texture **fa, SDL_Texture **fb)
  * Every one of these arrays is indexed by POSITION in the list, so reordering
  * the list moves the games and leaves the art behind - each card would wear
  * the picture of whatever used to sit where it now sits. The cube's two cached
- * faces are keyed by index as well, which is what faces_stale is for. */
+ * faces are keyed by index as well, which is what faces_stale is for.
+ *
+ * Decodes in flight are keyed by position too, and dropping the textures does
+ * not reach them. Without the bump, one asked for under the old order landed
+ * after the reorder and was installed at its old slot - another game's cover
+ * on the card - and then stuck, because a slot with a texture is never asked
+ * for again. free_all_textures always bumped; this, its only other way of
+ * dropping art, did not, and a Sort By change was the one path through it. */
 static void free_view_textures(sysview *v)
 {
 	int k;
 
+	texload_bump();
 	for (k = 0; k < v->list.count; k++) {
 		if (v->tex && v->tex[k]) {
 			SDL_DestroyTexture(v->tex[k]);
