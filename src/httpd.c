@@ -65,6 +65,11 @@ struct httpd_req {
 	FILE  *resp_f;              /* streaming a file out */
 	long   resp_f_left;
 	bool   replied;
+
+	/* --- bookkeeping --------------------------------------------------- */
+	int    tag;                 /* the handler's own, see httpd_set_tag */
+	bool   seen;                /* the handler has been called for it */
+	bool   ended;               /* httpd_end has been told */
 };
 
 typedef struct {
@@ -144,6 +149,8 @@ static const char *status_text(int s)
 const char *httpd_method(const httpd_req *r) { return r->method; }
 const char *httpd_path(const httpd_req *r)   { return r->path; }
 long httpd_content_len(const httpd_req *r)   { return r->content_len; }
+void httpd_set_tag(httpd_req *r, int tag)    { r->tag = tag; }
+int  httpd_tag(const httpd_req *r)           { return r->tag; }
 
 const char *httpd_body(const httpd_req *r, size_t *len)
 {
@@ -273,21 +280,22 @@ void httpd_reply_status(httpd_req *r, int status, const char *text)
 	build_head(r, status, "text/plain; charset=utf-8", n, NULL);
 }
 
-void httpd_reply_file(httpd_req *r, const char *path, const char *content_type,
+bool httpd_reply_file(httpd_req *r, const char *path, const char *content_type,
                       const char *extra_headers)
 {
 	struct stat st;
 
-	if (r->replied) return;
+	if (r->replied) return false;
 	if (stat(path, &st) != 0 || !S_ISREG(st.st_mode)) {
 		httpd_reply_status(r, 404, "no such file");
-		return;
+		return false;
 	}
 	r->resp_f = fopen(path, "rb");
-	if (!r->resp_f) { httpd_reply_status(r, 403, "cannot read that"); return; }
+	if (!r->resp_f) { httpd_reply_status(r, 403, "cannot read that"); return false; }
 	r->resp_f_left = (long)st.st_size;
 	build_head(r, 200, content_type ? content_type : "application/octet-stream",
 	           (long)st.st_size, extra_headers);
+	return true;
 }
 
 /* ---- the connection state machine ----------------------------------- */
@@ -480,6 +488,7 @@ static bool consume(conn *c, httpd_handler fn, void *ctx)
 			 * Conflating the two closed the connection after every GET, which
 			 * looked exactly like the pipelining bug this consumer was written
 			 * to fix and was in fact a second one hiding behind it. */
+			c->r.seen = true;
 			fn(&c->r, false, ctx);
 			if (c->r.replied) {
 				if (c->r.content_len > 0) c->close_after = true;
@@ -549,8 +558,16 @@ static bool pump_read(conn *c, httpd_handler fn, void *ctx, int *did)
 	}
 }
 
+/* Tell the caller a request is over. Once, and only for a request its handler
+ * saw: one refused before it could be parsed was never the caller's. */
+static void end_request(conn *c, bool whole, httpd_end end, void *ctx)
+{
+	if (end && c->r.seen && !c->r.ended) end(&c->r, whole, ctx);
+	c->r.ended = true;
+}
+
 /* Write what is queued, up to the budget. Returns false to close. */
-static bool pump_write(conn *c, int *did)
+static bool pump_write(conn *c, httpd_end end, void *ctx, int *did)
 {
 	httpd_req *r = &c->r;
 	size_t budget = POLL_BUDGET;
@@ -594,7 +611,9 @@ static bool pump_write(conn *c, int *did)
 			 * the socket refused, so a short write does not lose bytes. */
 			r->resp_f_left -= (long)got;
 		} else {
-			/* Everything is out. */
+			/* Everything is out. Said before the close below, which would
+			 * otherwise report this as cut off. */
+			end_request(c, true, end, ctx);
 			if (c->close_after) return false;
 			/* The request is finished; the connection's buffer is not
 			 * necessarily empty. Anything still in it is the next request,
@@ -713,7 +732,7 @@ int httpd_conn_count(void)
 	return n;
 }
 
-int httpd_poll(httpd_handler fn, void *ctx)
+int httpd_poll(httpd_handler fn, httpd_end end, void *ctx)
 {
 	int i, did = 0;
 	unsigned now = now_ms();
@@ -759,8 +778,12 @@ int httpd_poll(httpd_handler fn, void *ctx)
 		if (c->st == C_HEAD || c->st == C_BODY)
 			live = pump_read(c, fn, ctx, &did);
 		if (live && c->st == C_RESP)
-			live = pump_write(c, &did);
-		if (!live) { conn_close(c); continue; }
+			live = pump_write(c, end, ctx, &did);
+		if (!live) {
+			end_request(c, false, end, ctx);
+			conn_close(c);
+			continue;
+		}
 
 		/* A FRESH reading, not the `now` taken before this connection did its
 		 * work. pump_read and pump_write stamp last_ms from their own call to
@@ -774,7 +797,10 @@ int httpd_poll(httpd_handler fn, void *ctx)
 		 * which is exactly the shape that gets blamed on the test harness -
 		 * and was, twice, before the server was traced instead of reasoned
 		 * about. */
-		if (now_ms() - c->last_ms > IDLE_MS) conn_close(c);
+		if (now_ms() - c->last_ms > IDLE_MS) {
+			end_request(c, false, end, ctx);
+			conn_close(c);
+		}
 	}
 	return did;
 }

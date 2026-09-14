@@ -20,6 +20,8 @@
  *   - a short write on the way out, so a download resumes where it stopped
  *   - headers bigger than the buffer, which must be refused rather than
  *     overflow it
+ *   - the end of a request, reported once and as what it was, whole or cut
+ *     off, so a screen showing a transfer knows when to stop showing it
  *
  * No device, no browser. One process, two sockets, and bytes chosen by hand.
  */
@@ -102,6 +104,17 @@ static void handler(httpd_req *r, bool done, void *ctx)
 	}
 }
 
+static int  g_ends;             /* how many times a request's end was reported */
+static int  g_end_whole = -1;   /* what the last report said */
+
+static void on_end(httpd_req *r, bool whole, void *ctx)
+{
+	(void)r;
+	(void)ctx;
+	g_ends++;
+	g_end_whole = whole;
+}
+
 /* ---- a server thread, and an ordinary client ------------------------- */
 
 /* The first version of this file ran the server and the client in one thread,
@@ -123,7 +136,7 @@ static void *server_loop(void *unused)
 {
 	(void)unused;
 	while (!g_stop) {
-		httpd_poll(handler, g_ctx);
+		httpd_poll(handler, on_end, g_ctx);
 		usleep(200);
 	}
 	return NULL;
@@ -141,6 +154,8 @@ static void fresh(void *ctx)
 	httpd_stop();
 	g_ctx = ctx;
 	g_stop = 0;
+	g_ends = 0;
+	g_end_whole = -1;
 	if (!httpd_start(&p0, 1)) {
 		printf("  FAIL: could not rebind\n");
 		failures++;
@@ -431,6 +446,12 @@ int main(void)
 			free(buf);
 		}
 		close(fd);
+		settle();
+		/* The server reports the end once the last byte is out, before it
+		 * notices the hang-up, so a finished download never reads as cut. */
+		CHECK(g_ends == 1 && g_end_whole == 1,
+		      "a finished download reported its end %d time(s), whole=%d",
+		      g_ends, g_end_whole);
 		free(big);
 	}
 
@@ -547,6 +568,10 @@ int main(void)
 		settle();
 		CHECK(stat(tmpsink, &st) != 0,
 		      "a part-file survived a client that hung up mid-upload");
+		/* Without this the transfer screen went on reading "receiving". */
+		CHECK(g_ends == 1 && g_end_whole == 0,
+		      "an upload cut off halfway reported its end %d time(s), whole=%d",
+		      g_ends, g_end_whole);
 	}
 
 	shutdown_server();

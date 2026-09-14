@@ -53,6 +53,26 @@ typedef enum {
  * `done` is false on the first call and true on the second. */
 typedef void (*httpd_handler)(httpd_req *r, bool done, void *ctx);
 
+/* Called once when a request is over, for every request the handler was called
+ * for. `whole` is true when its reply went out in full, false when the
+ * connection went first - a hang-up, a dropped network, or twenty seconds of
+ * silence. The request can still be read here and is released straight after.
+ *
+ * The handler hears when a request arrives and when its body has, and without
+ * this never heard when one ended. So the transfer screen, which says what is
+ * happening now, went on saying "receiving" for an upload that died partway,
+ * and "sending" for every download long after it had finished.
+ *
+ * Not called for connections httpd_stop closes: whoever stops the server
+ * already knows. */
+typedef void (*httpd_end)(httpd_req *r, bool whole, void *ctx);
+
+/* A number the handler keeps on a request for itself, zero until set. Nothing
+ * in httpd reads it. It is how an httpd_end tells the requests it has
+ * something to say about from the ones it does not. */
+void httpd_set_tag(httpd_req *r, int tag);
+int  httpd_tag(const httpd_req *r);
+
 /* Reading the request. */
 const char *httpd_method(const httpd_req *r);   /* "GET", "PUT", ... */
 const char *httpd_path(const httpd_req *r);     /* raw, no query, undecoded */
@@ -69,12 +89,13 @@ void httpd_want_body(httpd_req *r, httpd_body_mode mode, const char *sink_path);
  *
  * httpd_reply copies `body`, so the caller keeps ownership of whatever it
  * passed. httpd_reply_file streams from the card and never reads the file into
- * memory, which is what makes a 900 MB download cost nothing.
- * `extra_headers` may be NULL; when given it is inserted verbatim and must
- * carry its own CRLF terminators. */
+ * memory, which is what makes a 900 MB download cost nothing. It is false when
+ * the file could not be opened, in which case it has replied with an error
+ * instead. `extra_headers` may be NULL; when given it is inserted verbatim and
+ * must carry its own CRLF terminators. */
 void httpd_reply(httpd_req *r, int status, const char *content_type,
                  const void *body, size_t len, const char *extra_headers);
-void httpd_reply_file(httpd_req *r, const char *path, const char *content_type,
+bool httpd_reply_file(httpd_req *r, const char *path, const char *content_type,
                       const char *extra_headers);
 void httpd_reply_status(httpd_req *r, int status, const char *text);
 
@@ -90,14 +111,14 @@ int  httpd_port(void);
  * along, drop the timed-out. Returns the number of connections that did
  * something, which is zero on a quiet frame - the caller uses that to tell
  * "a transfer is running" from "nothing is happening", because Auto Off must
- * not power the device off in the middle of an upload. */
-int httpd_poll(httpd_handler fn, void *ctx);
+ * not power the device off in the middle of an upload. `end` may be NULL. */
+int httpd_poll(httpd_handler fn, httpd_end end, void *ctx);
 
 /* Bytes moved since the last call, in and out. For the screen to show that
  * something is happening, and for the caller to keep Auto Off honest. */
 void httpd_traffic(unsigned long *in, unsigned long *out);
 
-/* How many connections are open, and whether any is mid-transfer. */
+/* How many connections are open. */
 int  httpd_conn_count(void);
 
 #endif

@@ -373,7 +373,36 @@ static bool room_for(const char *path, long want)
 	return (double)vfs.f_bavail * (double)vfs.f_frsize >= (double)want;
 }
 
-/* ---- the one entry point httpd calls --------------------------------- */
+/* ---- the entry points httpd calls ------------------------------------ */
+
+/* What a request has put on the screen, so on_end knows it has more to say. */
+enum { TAG_SENDING = 1, TAG_RECEIVING = 2 };
+
+/* A request is over. Only the two that put something on the screen have
+ * anything to add to it.
+ *
+ * An upload still tagged never reached its second call - its body did not
+ * arrive whole - so it failed however the connection ended, and its part-file
+ * goes when httpd releases the request. A download says whether it went out
+ * whole. */
+static void on_end(httpd_req *r, bool whole, void *ctx)
+{
+	char req[XFER_PATH_MAX], abs[XFER_PATH_MAX];
+	int tag = httpd_tag(r);
+
+	(void)ctx;
+	if (!tag) return;
+	httpd_query(r, "p", req, sizeof req);
+	if (!xfer_resolve(req, abs, sizeof abs)) return;
+	if (tag == TAG_RECEIVING) {
+		if (g_uploads > 0) g_uploads--;
+		note("failed: %s", base_of(abs));
+	} else if (whole) {
+		note("sent %s", base_of(abs));
+	} else {
+		note("failed: %s", base_of(abs));
+	}
+}
 
 static void on_request(httpd_req *r, bool done, void *ctx)
 {
@@ -483,8 +512,11 @@ static void on_request(httpd_req *r, bool done, void *ctx)
 			 * just names the file from the URL. */
 			extra[0] = '\0';
 		}
-		note("sending %s", base_of(abs));
-		httpd_reply_file(r, abs, mime_for(abs), extra[0] ? extra : NULL);
+		/* Only once the file is really going out: a 404 said "sending" too. */
+		if (httpd_reply_file(r, abs, mime_for(abs), extra[0] ? extra : NULL)) {
+			note("sending %s", base_of(abs));
+			httpd_set_tag(r, TAG_SENDING);
+		}
 		return;
 	}
 
@@ -528,6 +560,7 @@ static void on_request(httpd_req *r, bool done, void *ctx)
 			httpd_want_body(r, HTTPD_BODY_FILE, part);
 			g_uploads++;
 			note("receiving %s", base_of(abs));
+			httpd_set_tag(r, TAG_RECEIVING);
 			return;
 		}
 		{
@@ -538,6 +571,9 @@ static void on_request(httpd_req *r, bool done, void *ctx)
 			 * and "it cannot happen here because of something forty lines
 			 * up" is a thing that stops being true when one of them moves. */
 			if (g_uploads > 0) g_uploads--;
+			/* The body is here. What happens to it is said below, not by
+			 * on_end. */
+			httpd_set_tag(r, 0);
 			if (snprintf(part, sizeof part, "%s.part", abs) >= (int)sizeof part) {
 				httpd_reply_status(r, 500, "that name is too long");
 				return;
@@ -725,7 +761,7 @@ int hare_port(void) { return httpd_port(); }
 int hare_poll(void)
 {
 	unsigned long in = 0, out = 0;
-	int did = httpd_poll(on_request, NULL);
+	int did = httpd_poll(on_request, on_end, NULL);
 
 	httpd_traffic(&in, &out);
 	g_in += in;
