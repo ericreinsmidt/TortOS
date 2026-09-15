@@ -44,8 +44,16 @@
  *
  * The library is passed in rather than reached for. Nothing here should know
  * how the launcher stores its config, and a scraper that reads a global is a
- * scraper no check can hand a fixture to. */
-void art_begin(const systems_cfg *sys, const char *roms_dir);
+ * scraper no check can hand a fixture to.
+ *
+ * `only` is NULL for the ordinary run. Given a ROM's name without its
+ * extension, the run is that one game and nothing else, fetched whether or not
+ * it already has a cover. It never deletes: a download lands beside the old
+ * cover and is renamed over it only once it has arrived whole, so a game
+ * libretro has no art for - a translation, homebrew, a cover added by hand -
+ * keeps the one it had. Replace used to delete first and fetch after, and lost
+ * exactly those. */
+void art_begin(const systems_cfg *sys, const char *roms_dir, const char *only);
 void art_cancel(void);
 
 /* One unit of work, so the caller can draw between them. Returns:

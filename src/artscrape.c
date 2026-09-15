@@ -386,6 +386,9 @@ static bool g_running;
 static char g_roms[ENTRIES_MAX][NAME_MAX_];
 static int  g_nroms;
 
+/* The one game a replace is about, or "" for an ordinary run. See art_begin. */
+static char g_only[NAME_MAX_];
+
 static art_progress g_st;
 
 /* ---- reading the library ------------------------------------------------ */
@@ -559,7 +562,7 @@ void art_cancel(void)
 	g_nnames = 0;
 }
 
-void art_begin(const systems_cfg *sys, const char *roms_dir)
+void art_begin(const systems_cfg *sys, const char *roms_dir, const char *only)
 {
 	int i;
 
@@ -571,9 +574,20 @@ void art_begin(const systems_cfg *sys, const char *roms_dir)
 	g_phase = P_SYSTEM;
 	g_nsys = 0;
 	snprintf(g_romdir, sizeof g_romdir, "%s", roms_dir ? roms_dir : "");
-
 	if (!sys) return;
-	for (i = 0; i < sys->count && g_nsys < CFG_MAX_SYSTEMS; i++) {
+
+	/* A name cut short names a different game, so it is refused rather than
+	 * run - and refused as a run with nothing in it, which finishes on the
+	 * first step, not by leaving g_only empty, which would quietly become a
+	 * whole-system scrape. */
+	g_only[0] = '\0';
+	if (only && *only &&
+	    snprintf(g_only, sizeof g_only, "%s", only) >= (int)sizeof g_only) {
+		g_only[0] = '\0';
+		sys = NULL;
+	}
+
+	for (i = 0; sys && i < sys->count && g_nsys < CFG_MAX_SYSTEMS; i++) {
 		char dir[ARTPATH_MAX];
 		struct stat st;
 
@@ -673,17 +687,27 @@ int art_step(void)
 		if (!remote) return next_system("not in the table");
 		g_rem = 0;
 		g_nleft = 0;
-		read_roms(dir, g_sys[g_si].exts);
+		/* A replace is the one game, taken as named rather than found in the
+		 * folder: a disc game is a folder of its own, which read_roms does not
+		 * list, and its cover lives at the same .media path all the same. */
+		if (g_only[0]) {
+			snprintf(g_roms[0], NAME_MAX_, "%s", g_only);
+			g_nroms = 1;
+		} else {
+			read_roms(dir, g_sys[g_si].exts);
+		}
 		if (g_nroms == 0) return next_system("no ROMs");
 
 		/* Count what is missing BEFORE any request, and skip the system when
 		 * nothing is. The skip-if-present test used to live per-ROM, after
 		 * the index had already downloaded, so a second run over a complete
-		 * library still pulled every index to learn it had nothing to do. */
+		 * library still pulled every index to learn it had nothing to do.
+		 * A replace wants its game whether or not it has a cover. */
 		{
 			int i, want = 0;
 
-			for (i = 0; i < g_nroms; i++) {
+			for (i = 0; i < g_nroms && g_only[0]; i++) want++;
+			for (i = 0; i < g_nroms && !g_only[0]; i++) {
 				char have[ARTPATH_MAX];
 
 				if (snprintf(have, sizeof have, "%s/.media/%s.png",
@@ -714,7 +738,7 @@ int art_step(void)
 			g_ri++;
 			return 1;
 		}
-		if (stat(dest, &st) == 0 && st.st_size > 0) { g_ri++; return 1; }
+		if (!g_only[0] && stat(dest, &st) == 0 && st.st_size > 0) { g_ri++; return 1; }
 
 		snprintf(g_st.now, sizeof g_st.now, "%s", g_roms[g_ri]);
 		mkdir(media, 0777);

@@ -4451,13 +4451,16 @@ static void gi_gather(app *a, int owner, const game_entry *g, game_info *gi)
  * less afterwards: since the direct-name pass landed, a whole-library re-run
  * over a full card is nine directory sweeps and no network at all. */
 static void art_screen(app *a, const char *only, const char *one,
-                       unsigned accent)
+                       const char *stem, unsigned accent)
 {
 	menu_row     rows[3];
 	art_progress p;
 	char         counts[64], where[64], head[192];
 	int          nrows = 3;
 	bool         done = false, working = true;
+	/* Whether the one game already had a cover, so a miss can say it kept it
+	 * rather than read as though the cover went. */
+	bool         had = one && stem && only && has_box_art(only, stem);
 
 	if (!net_online()) {
 		menu_row row = { "No network", NULL, false };
@@ -4491,9 +4494,9 @@ static void art_screen(app *a, const char *only, const char *one,
 				one.count = 1;
 				break;
 			}
-		art_begin(&one, P_ROMS);
+		art_begin(&one, P_ROMS, stem);
 	} else {
-		art_begin(&a->sys, P_ROMS);
+		art_begin(&a->sys, P_ROMS, NULL);
 	}
 
 	while (!done && !want_quit && a->running) {
@@ -4507,15 +4510,15 @@ static void art_screen(app *a, const char *only, const char *one,
 		         p.found, p.missing, p.skipped);
 		snprintf(where, sizeof where, "%d of %d", p.systems_done, p.systems);
 		if (one) {
-			/* Asked about one game, answer about one game. Routing a replace
-			 * through the system scrape is right - it finds the one thing
-			 * missing and fetches it - but reporting the system's tallies
-			 * back was not: "1 found, 19 already" is a true statement about
-			 * work the player did not ask for. */
+			/* Asked about one game, answer about one game: the run is that
+			 * game alone (art_begin's `only`), and "1 found, 19 already" would
+			 * be a true statement about work the player did not ask for. */
 			art_head(head, sizeof head, one);
 			rows[0] = (menu_row){ "Box Art",
 			                      working ? "fetching"
-			                      : p.found ? "replaced" : "not found", false };
+			                      : p.found ? (had ? "replaced" : "found")
+			                      : had ? "not found, kept the old one"
+			                            : "not found", false };
 			rows[1] = (menu_row){ working ? "B to stop" : "B to close",
 			                      NULL, false };
 			nrows = 2;
@@ -4642,15 +4645,13 @@ static menu_result info_key(app *a, void *ctx, in_button key, int sel)
 		 * one it opened on, under the heading of the one it opened on. */
 		if (strcmp(was, c->g->file)) return MENU_DONE;
 	} else {
-		/* Replace: delete, then run the ordinary one-system scrape. It finds
-		 * exactly one thing missing and fetches exactly one image, so there is
-		 * no separate single-game code path to keep honest - "replace" is
-		 * "remove, then fill in". */
-		char p[LIB_PATH * 3];
-
-		box_art_path(a->sys.systems[c->owner].folder, c->g->name, p, sizeof p);
-		remove(p);
-		art_screen(a, a->sys.systems[c->owner].folder, c->g->title,
+		/* Replace, or get: the ordinary scrape, run over this one game and
+		 * nothing else. Nothing is deleted first. It used to be - remove, then
+		 * fill in - and a game libretro has no art for lost the cover it had,
+		 * which for a translation, homebrew or a hand-added cover is one the
+		 * scraper can never bring back. The new one is renamed over the old
+		 * only once it has arrived whole. */
+		art_screen(a, a->sys.systems[c->owner].folder, c->g->title, c->g->name,
 		           a->sys.systems[c->owner].accent);
 	}
 	gi_gather(a, c->owner, c->g, &c->gi);
@@ -5412,7 +5413,7 @@ static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
 		 * are looking at, and menu_draw already follows that rule everywhere
 		 * else. */
 		if (sel == SM_BOXART)
-			art_screen(a, a->sys.systems[a->sys_cursor].folder, NULL,
+			art_screen(a, a->sys.systems[a->sys_cursor].folder, NULL, NULL,
 			           a->sys.systems[a->sys_cursor].accent);
 		if (sel == SM_RESCAN) {
 			wait_panel(a, a->sys.systems[a->sys_cursor].name, "Scanning...");
@@ -5507,7 +5508,7 @@ static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
 	switch (sel) {
 	case PM_WIFI:         wifi_screen(a); break;
 	case PM_XFER:         xfer_screen(a); break;
-	case PM_SCRAPE:       art_screen(a, NULL, NULL, MENU_ACCENT); break;
+	case PM_SCRAPE:       art_screen(a, NULL, NULL, NULL, MENU_ACCENT); break;
 	case PM_ACHIEVEMENTS: ra_signin_screen(a); break;
 	case PM_BT:           bt_screen(a); break;
 	case PM_STATS:        if (stats_screen(a)) return MENU_DONE; break;
