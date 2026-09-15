@@ -72,7 +72,7 @@ const cf_layout CF_LAYOUT_SINGLE = {
  * was measured against a card of this size and position. Borrowing the
  * systems' face layout put the art's top edge at y=38 and the title landed on
  * the box art. Only `step` differs from the row: wide enough that the
- * neighbours a face must not show are off the screen entirely. */
+ * neighbors a face must not show are off the screen entirely. */
 const cf_layout CF_LAYOUT_GAME_FACE = {
 	.size = 0.60f, .aspect = 0.72f, .step = 3.20f, .side_scale = 1.00f,
 	.center_y = 0.47f, .tilt = 0.0f, .reflect = 1.52f,

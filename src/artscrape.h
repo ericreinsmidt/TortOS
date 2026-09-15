@@ -38,9 +38,9 @@
  * that is already there costs nothing: it is skipped without a request, which
  * is what makes running this again cheap and a canceled run free to restart.
  *
- * NOT driven from a frame loop. Each step blocks for up to its timeout, so the
- * caller must own the screen and must be somewhere the power button is still
- * being read - see art_step.
+ * Driven from a frame loop, one art_step per frame. No step waits on the
+ * network: each starts a request or polls the one already running, so the
+ * loop calling it goes on reading the power button - see art_step.
  *
  * The library is passed in rather than reached for. Nothing here should know
  * how the launcher stores its config, and a scraper that reads a global is a
@@ -54,8 +54,10 @@ void art_cancel(void);
  *    0  finished
  *   -1  nothing started, or it could not begin at all
  *
- * A step is one index fetch or one image, so the longest a caller can be
- * blocked is one request. */
+ * A step starts one request - an index or an image - or polls the one in
+ * flight, and never waits for it; the transfer runs in curl while the caller
+ * draws. What a step can still cost is local work: parsing an index once it
+ * has arrived, or checking whether a game's art is already on the card. */
 int art_step(void);
 
 /* What to put on screen. `now` is a game or a system name, never a URL. */

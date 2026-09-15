@@ -23,9 +23,12 @@
  * from one, and an account token in argv is readable by anything that can list
  * processes. The file is written 0600 and unlinked straight after.
  *
- * Every call blocks for at most `timeout_s`. Nothing here is called from a
- * frame loop; the shelf fetches between frames and the launch path uses a
- * cached set when the network is slow or absent.
+ * Two halves. The blocking calls wait for at most `timeout_s`, and none is
+ * made from a frame loop or the game tick: sign-in waits behind a panel, and
+ * unlocks go out on a worker thread. Everything a frame loop or the game tick
+ * needs - box art, a set fetched behind a first play, the account's unlocks -
+ * uses the async half further down, which starts a request or polls it and
+ * never waits.
  */
 
 /* Where the certificate store is. Set once at startup; without it every
