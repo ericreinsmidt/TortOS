@@ -7869,8 +7869,14 @@ int main(int argc, char *argv[])
 			int k, dir = shot_jump > 0 ? 1 : -1;
 			for (k = 0; k < (shot_jump < 0 ? -shot_jump : shot_jump); k++)
 				if (v->list.count > 0) v->cursor = shelf_letter_jump(v, dir);
-			cf_reset(&v->cf, v->cursor);
 		}
+		/* A shelf nobody has moved sits at position 0, wherever its cursor
+		 * was restored to. On the device that never reaches the screen:
+		 * update_games ends every pass with cf_set_cursor_dir, which snaps an
+		 * unmoved shelf to its cursor. A shot draws one frame and never runs
+		 * that pass, so without this it drew the list's first card under the
+		 * selected game's title. */
+		cf_reset(&a.view[a.sys_cursor].cf, a.view[a.sys_cursor].cursor);
 		if (a.screen == SCREEN_GAMES) prime_window(&a, a.sys_cursor);
 		take_shot(&a);
 		goto done;
