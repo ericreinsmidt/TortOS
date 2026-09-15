@@ -418,18 +418,20 @@ void ra_sync_begin(long gameid)
 	if (!net_post_async(f, 5, g_sync_path, 25)) g_sync_path[0] = '\0';
 }
 
-int ra_sync_collect(int *out, int max)
+int ra_sync_poll(int *out, int max, int *n)
 {
 	char *body;
 	size_t len;
 	jsv root, arr, it, e;
-	int n = 0, rc;
+	int k = 0, rc;
 
-	if (!g_sync_path[0] || !out || max <= 0) return -1;
-
-	/* Blocks only if the child somehow has not finished a request started
-	 * before a whole game session. It has. */
-	do { rc = net_async_poll(); } while (rc == 0 && (usleep(50000), 1));
+	if (n) *n = 0;
+	/* Only while the slot is this request's. g_sync_path is set only once
+	 * net_post_async took the slot for it, and polling at any other time would
+	 * reap somebody else's child. */
+	if (!g_sync_path[0]) return -1;
+	rc = net_async_poll();
+	if (rc == 0) return 0;
 	if (rc != 1) { unlink(g_sync_path); g_sync_path[0] = '\0'; return -1; }
 
 	body = read_whole(g_sync_path, &len);
@@ -440,9 +442,23 @@ int ra_sync_collect(int *out, int max)
 	root = js_root(body, len);
 	if (!js_member(root, "UserUnlocks", &arr)) { free(body); return -1; }
 	memset(&it, 0, sizeof it);
-	while (n < max && js_next(arr, &it, &e)) out[n++] = (int)js_int(e);
+	while (out && k < max && js_next(arr, &it, &e)) out[k++] = (int)js_int(e);
 	free(body);
-	return n;
+	if (n) *n = k;
+	return 1;
+}
+
+bool ra_sync_pending(void)
+{
+	return g_sync_path[0] != '\0';
+}
+
+void ra_sync_abandon(void)
+{
+	if (!g_sync_path[0]) return;
+	net_async_abort();
+	unlink(g_sync_path);
+	g_sync_path[0] = '\0';
 }
 
 void ra_start_session(long gameid)

@@ -974,11 +974,11 @@ static void wait_panel(app *a, const char *heading, const char *msg);
  * owed, because it is the only record of anything earned offline. Neither is
  * discarded. Silent when offline or not signed in - that is the ordinary
  * case, and it leaves the device working from what it knows. */
-static void ra_merge_unlocks(const int *ids, int n)
+static int ra_merge_unlocks(const int *ids, int n)
 {
 	int i, added = 0;
 
-	if (n <= 0 || chv_game() <= 0) return;
+	if (n <= 0 || chv_game() <= 0) return 0;
 
 	/* Only ids the set actually has. The account carries entries the set does
 	 * not - RetroAchievements' "Unknown Emulator" notice is one, and it went
@@ -997,15 +997,7 @@ static void ra_merge_unlocks(const int *ids, int n)
 	if (added) {
 		chv_earned_save();
 	}
-}
-
-/* And the one that runs on every other launch: started here, collected after
- * the game. See rafetch.h for the measurement that made this necessary. */
-static void ra_sync_collect_and_merge(void)
-{
-	int ids[CHV_MAX], n = ra_sync_collect(ids, CHV_MAX);
-
-	if (n > 0) ra_merge_unlocks(ids, n);
+	return added;
 }
 
 /* Send what is owed. Called once the game is over and the launcher has the
@@ -1014,7 +1006,7 @@ static void ra_sync_collect_and_merge(void)
  * Anything that will not send stays pending and is tried again next time,
  * which is the offline queueing RA's own requirements ask for and the right
  * shape regardless: an unlock earned on a plane is still earned. */
-static void ra_flush_unlocks(const char *rom, const char *tag)
+static void ra_flush_unlocks(const char *rom, const char *tag, int cur)
 {
 	char hash[33] = "";
 	int game, id, sent = 0, settled = 0;
@@ -1029,7 +1021,7 @@ static void ra_flush_unlocks(const char *rom, const char *tag)
 	 * pending one becomes index 0. A failure stops the loop rather than
 	 * spinning on it - if one will not go, the rest will not either. */
 	while (chv_pending_at(0, &game, &id)) {
-		int rc = ra_submit_unlock(id, game == chv_game() ? hash : NULL);
+		int rc = ra_submit_unlock(id, game == cur ? hash : NULL);
 
 		/* 0 is "the account already had it", which settles the row just as
 		 * surely as sending it. Only a real failure stops the loop - if one
@@ -1103,8 +1095,14 @@ static bool g_fl_failed;                 /* it stopped on a real failure */
 
 /* Main thread only. The latest game quit, for the pass that follows; and
  * whether the job in hand has settled anything, which is what guarantees a
- * follow-on pass makes progress rather than spinning. */
+ * follow-on pass makes progress rather than spinning.
+ *
+ * The game is carried, not read from chv_game() when the pass starts. A pass
+ * can start from the shelf, where the info screen loads whichever set it is
+ * showing - so chv_game() could name another game and hand it this ROM's
+ * hash. */
 static char g_fl_next_rom[LIB_PATH * 2], g_fl_next_tag[16];
+static int  g_fl_next_cur;
 static bool g_fl_again;
 static int  g_fl_settled;
 
@@ -1196,15 +1194,21 @@ static bool flush_started(void)
 }
 
 /* Hand what is owed to the worker and return at once. Main thread. */
-static void ra_flush_start(const char *rom, const char *tag)
+static void ra_flush_start(const char *rom, const char *tag, int cur)
 {
 	int n = 0, game, id;
 
 	if (!ra_signed_in() || chv_pending_count() == 0 || !net_online()) return;
-	if (!flush_started()) { ra_flush_unlocks(rom, tag); return; }
+	if (!flush_started()) { ra_flush_unlocks(rom, tag, cur); return; }
 
-	snprintf(g_fl_next_rom, sizeof g_fl_next_rom, "%s", rom);
-	snprintf(g_fl_next_tag, sizeof g_fl_next_tag, "%s", tag);
+	/* Not copied when they already are these buffers: the follow-on pass hands
+	 * them straight back in, and snprintf from a buffer into itself is
+	 * undefined. */
+	if (rom != g_fl_next_rom)
+		snprintf(g_fl_next_rom, sizeof g_fl_next_rom, "%s", rom);
+	if (tag != g_fl_next_tag)
+		snprintf(g_fl_next_tag, sizeof g_fl_next_tag, "%s", tag);
+	g_fl_next_cur = cur;
 
 	SDL_LockMutex(g_fl_lock);
 	/* Busy until its answers have been APPLIED, not merely until the worker
@@ -1227,7 +1231,7 @@ static void ra_flush_start(const char *rom, const char *tag)
 	snprintf(g_fl_rom, sizeof g_fl_rom, "%s", rom);
 	snprintf(g_fl_tag, sizeof g_fl_tag, "%s", tag);
 	ra_creds_copy(g_fl_user, sizeof g_fl_user, g_fl_token, sizeof g_fl_token);
-	g_fl_cur = chv_game();
+	g_fl_cur = cur;
 	g_fl_n = n;
 	g_fl_settled = 0;
 	g_fl_job = true;
@@ -1276,7 +1280,7 @@ static void ra_flush_poll(void)
 	 * ran out of room with more still owed. The second only if it settled
 	 * something, so a pass that achieved nothing cannot keep starting itself. */
 	if (again || (!failed && g_fl_settled > 0 && chv_pending_count() > 0))
-		ra_flush_start(g_fl_next_rom, g_fl_next_tag);
+		ra_flush_start(g_fl_next_rom, g_fl_next_tag, g_fl_next_cur);
 }
 
 /* Tell the worker to stop, and do not wait for it.
@@ -1298,6 +1302,83 @@ static void ra_flush_stop(void)
 	g_fl_thread = NULL;
 }
 
+/* ---------- what the account already has, read while the game runs ------- */
+
+/* The answer to "which of this game's achievements does the account hold",
+ * asked at launch and read as soon as it lands - from the game tick during a
+ * game, from the main loop on the shelf.
+ *
+ * It used to be read only when the game ended, waiting there until it had
+ * landed. So a game's first session after signing in showed 0 of N in its own
+ * menu while the account held 13, and a quit straight after a launch on a slow
+ * network sat out the request between the game's wait loop and the shelf's.
+ * Now the menu is right about half a second in, and quitting never waits.
+ *
+ * The unlocks owed still go out after the answer, not before it: settling what
+ * the account already holds first is what stops them being sent as duplicates.
+ * So a quit that beats the answer leaves the sending to whichever comes first
+ * - the answer landing, or something else needing the one async slot, which
+ * gives up on the answer and sends anyway. Duplicates that causes are answered
+ * as already held, which settles them just the same. */
+static long g_sync_game;                   /* the game asked about, 0 none */
+static char g_sync_set[LIB_PATH * 2];      /* its set, to check the answer against */
+
+/* A send waiting for the answer. */
+static bool g_sync_flush;
+static char g_sync_rom[LIB_PATH * 2], g_sync_tag[16];
+static int  g_sync_cur;
+
+static void sync_begin(long game, const char *set_path)
+{
+	ra_sync_begin(game);
+	g_sync_game = ra_sync_pending() ? game : 0;
+	snprintf(g_sync_set, sizeof g_sync_set, "%s", set_path ? set_path : "");
+}
+
+static void sync_flush_now(void)
+{
+	if (!g_sync_flush) return;
+	g_sync_flush = false;
+	ra_flush_start(g_sync_rom, g_sync_tag, g_sync_cur);
+}
+
+/* The answer, merged if it is in. Returns how many achievements it added to
+ * what this device knew - nonzero means the list Diatom is watching still
+ * holds some the account already has. Cheap when nothing has landed: a
+ * waitpid that does not wait. */
+static int sync_poll(void)
+{
+	int ids[CHV_MAX], n, rc, added = 0;
+
+	if (!g_sync_game) return 0;
+	rc = ra_sync_poll(ids, CHV_MAX, &n);
+	if (rc == 0) return 0;
+
+	if (rc > 0 && n > 0) {
+		/* Against the set the question was about. During a game that is the
+		 * one loaded; on the shelf the info screen loads whichever set it is
+		 * showing, and nothing on the shelf depends on which one that is. */
+		if (chv_game() != g_sync_game) chv_load(g_sync_set);
+		if (chv_game() == g_sync_game) added = ra_merge_unlocks(ids, n);
+	}
+	g_sync_game = 0;
+	sync_flush_now();
+	return added;
+}
+
+/* Something else needs the one async slot now - a launch, the box art
+ * scraper. The answer is dropped, and the next launch of that game asks
+ * again. */
+static void sync_abandon(void)
+{
+	if (g_sync_game) {
+		ra_sync_abandon();
+		g_sync_game = 0;
+		fprintf(stderr, "ra: dropped an account answer that had not landed\n");
+	}
+	sync_flush_now();
+}
+
 /* Where the launcher's own work happens during a game. Ten times a second,
  * from inside the wait loop, and it must stay cheap: that loop is the power
  * button's watchdog.
@@ -1307,6 +1388,11 @@ static void ra_flush_stop(void)
  * only way anyone can be told during a game - over Diatom's overlay. */
 static char g_pending_set[LIB_PATH * 2];
 static char g_pending_active[LIB_PATH * 2];
+/* The watch list Diatom was last handed and when, so an account answer that
+ * lands early can trim it. 0 when there is no list to trim. */
+#define WATCH_RETRIM_MS 5000
+static unsigned g_watch_ms;
+static char     g_watch_active[LIB_PATH * 2];
 /* The set path of the game actually running, so a fetch that lands during a
  * DIFFERENT game can be recognized and dropped. Written at every launch. */
 static char g_game_set[LIB_PATH * 2];
@@ -1470,6 +1556,31 @@ static void on_game_tick(void)
 		}
 	}
 
+	/* The account's answer, as soon as it lands - see sync_poll.
+	 *
+	 * When it adds achievements this device did not know were earned, the list
+	 * Diatom is watching still has them in it, and one of them firing reads as
+	 * a fresh unlock. So the list is handed over again without them - but only
+	 * early in a session. Reloading a set starts every partly-met achievement
+	 * over (Diatom's diatom_cheevos_load re-initializes the runtime), and
+	 * WATCH_RETRIM_MS is ten times the measured answer and still the opening of
+	 * a session. Later than that the count is still put right; a repeat unlock
+	 * is sent and answered as already held.
+	 *
+	 * Before the return below, which is about a set still being fetched: the
+	 * two never share the slot, because this game's question is only asked
+	 * once its set has arrived. */
+	if (sync_poll() > 0 && g_watch_ms &&
+	    plat_now_ms() - g_watch_ms <= WATCH_RETRIM_MS) {
+		if (chv_write_active(g_watch_active))
+			plat_resident_line("SETCHEEVOS\tpath=%s\tconsole=%d",
+			                   g_watch_active, chv_console());
+		else                           /* all of it held: watch nothing */
+			plat_resident_line("SETCHEEVOS\tpath=\tconsole=%d", chv_console());
+		g_watch_ms = 0;
+		fprintf(stderr, "cheevos: the account held some already; watching the rest\n");
+	}
+
 	if (!g_pending_set[0]) return;
 
 	/* Once. Calling it twice advances the state machine twice, which is a
@@ -1508,11 +1619,13 @@ static void on_game_tick(void)
 	}
 
 	if (!chv_load(g_pending_set)) { g_pending_set[0] = '\0'; return; }
-	ra_sync_begin(chv_game());        /* the account's answer, collected at exit */
+	sync_begin(chv_game(), g_pending_set);   /* read on a later tick - sync_poll */
 
 	if (chv_write_active(g_pending_active)) {
 		plat_resident_line("SETCHEEVOS	path=%s	console=%d",
 		                   g_pending_active, chv_console());
+		g_watch_ms = plat_now_ms();
+		snprintf(g_watch_active, sizeof g_watch_active, "%s", g_pending_active);
 		snprintf(msg, sizeof msg, "%d to earn", chv_count());
 	} else {
 		snprintf(msg, sizeof msg, "all %d already earned", chv_count());
@@ -4359,6 +4472,10 @@ static void art_screen(app *a, const char *only, const char *one,
 		return;
 	}
 
+	/* The scraper needs the one async slot, and an account answer from a game
+	 * just quit may still be holding it. */
+	sync_abandon();
+
 	if (only) {
 		/* A one-entry library rather than a filter inside artscrape.c. The
 		 * scraper already takes the list it should work on; handing it a
@@ -6306,6 +6423,12 @@ static void launch(app *a)
 		 * than the last one that went looking for a set. */
 		snprintf(g_game_set, sizeof g_game_set, "%s", set);
 
+		/* The async slot, cleared of an account answer from the last game that
+		 * never landed, before this launch asks anything of its own. And no
+		 * watch list to trim until this game has handed one over. */
+		sync_abandon();
+		g_watch_ms = 0;
+
 		/* Fetch it if this game has never been played here. Only then: a
 		 * cached set costs nothing and this is the launch path, so the delay
 		 * is paid once per game rather than every time. Failing is ordinary -
@@ -6322,10 +6445,11 @@ static void launch(app *a)
 			 * happens to have seen, which is not the same question and does
 			 * not look different: measured 2026-08-29 as 3 of 40 for Contra
 			 * against the site's own 13. */
-			/* The account's answer, without the launch waiting for it. On a
-			 * first play there is nothing to ask about yet; that sync starts
-			 * once the set arrives. */
-			if (!first_play) ra_sync_begin(chv_game());
+			/* The account's answer, without the launch waiting for it - read
+			 * while the game runs, see sync_poll. On a first play there is
+			 * nothing to ask about yet; that question is asked once the set
+			 * arrives. */
+			if (!first_play) sync_begin(chv_game(), set);
 
 
 			/* ra_start_session is deliberately NOT called here. It drives the
@@ -6369,6 +6493,12 @@ static void launch(app *a)
 		if (plat_resident_send(s->tag, core, rom, st, st, pv,
 		                       console, active[0] ? active : NULL)) {
 			int r;
+
+			/* The list Diatom was just handed, for an early answer to trim. */
+			if (active[0]) {
+				g_watch_ms = plat_now_ms();
+				snprintf(g_watch_active, sizeof g_watch_active, "%s", active);
+			}
 
 			/* Play time starts here, and costs a clock read. Nothing is
 			 * opened or written - the launch path does no I/O for this, on
@@ -6462,12 +6592,26 @@ static void launch(app *a)
 			 * spot is between that loop and the shelf's, so the button was
 			 * read by neither while it waited. Whatever will not send stays
 			 * queued. */
-			/* Collect first, so anything the account already had is settled
-			 * before deciding what is owed - otherwise the flush would
-			 * cheerfully submit a dozen duplicates. The snapshot is taken
-			 * after this, so that ordering holds. */
-			ra_sync_collect_and_merge();
-			ra_flush_start(rom, s->tag);
+			/* After the account's answer, so anything it already held is
+			 * settled before deciding what is owed - otherwise the flush would
+			 * cheerfully submit a dozen duplicates. The answer has usually been
+			 * in since half a second into the game. If it is still on its way,
+			 * the sending waits for it rather than the shelf - see sync_poll.
+			 *
+			 * The game is passed rather than read later: by the time a waiting
+			 * send starts, the info screen may have loaded another set. */
+			g_watch_ms = 0;
+			sync_poll();
+			if (g_sync_game) {
+				g_sync_flush = true;
+				snprintf(g_sync_rom, sizeof g_sync_rom, "%s", rom);
+				snprintf(g_sync_tag, sizeof g_sync_tag, "%s", s->tag);
+				g_sync_cur = chv_game();
+				fprintf(stderr, "ra: the account's answer is still on its way; "
+				                "sending waits for it\n");
+			} else {
+				ra_flush_start(rom, s->tag, chv_game());
+			}
 
 			/* RES_DEAD means it stopped answering -- it died, or the game
 			 * never started. Say so by falling through to the path that
@@ -7791,6 +7935,10 @@ int main(int argc, char *argv[])
 		 * SETAUDIO while idle, so a cable plugged in at the shelf moves the
 		 * sound before the next launch rather than at it. */
 		aout_apply(false);
+
+		/* An account answer that outlived its game, merged when it lands, and
+		 * then whatever was waiting on it sent. */
+		sync_poll();
 
 		/* Unlocks sent in the background: apply what the account answered. */
 		ra_flush_poll();

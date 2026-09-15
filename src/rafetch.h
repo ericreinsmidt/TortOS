@@ -61,10 +61,12 @@ bool ra_ensure_set(const char *rom_path, const char *tag, const char *set_path);
 
 /* ---- the account ---------------------------------------------------------
  *
- * Every call here blocks for as long as its timeout. None of them may be made
- * from inside the in-game wait loop, which is also the power button's
- * watchdog: a request in there would make the device stop answering it. They
- * belong on either side of a game, where the launcher owns the screen.
+ * Every call here blocks for as long as its timeout, except the ones that only
+ * start or poll a request - ra_sync_* and ra_fetch_* - which never wait. None
+ * of the blocking ones may be made from inside the in-game wait loop, which is
+ * also the power button's watchdog: a request in there would make the device
+ * stop answering it. They belong on either side of a game, where the launcher
+ * owns the screen.
  */
 
 /* What the account already holds for a game, softcore. Up to `max` ids into
@@ -77,20 +79,24 @@ bool ra_ensure_set(const char *rom_path, const char *tag, const char *set_path);
 int ra_account_unlocks(long gameid, int *out, int max);
 
 /* The same question, asked without waiting for the answer. Start it before the
- * game, collect it after - by which time a request that takes 310-460ms has
- * had a whole session to finish.
+ * game and poll it while the game runs: a request that takes 310-460ms lands
+ * about half a second in. The cost of waiting at launch was 320ms on the front
+ * of every launch, on a launcher whose whole point is that a warm one is 15ms.
+ * Measured on the device 2026-08-29; 150ms of it is the TLS handshake and no
+ * amount of caching removes that.
  *
- * The cost of not waiting is that THIS launch filters against what the store
- * already knew, so a game whose set was cached before its unlocks were may
- * re-announce something earned years ago, once. The cost of waiting was 320ms
- * on the front of every launch, on a launcher whose whole point is that a warm
- * one is 15ms. Measured on the device 2026-08-29; 150ms of it is the TLS
- * handshake and no amount of caching removes that.
+ * It used to be collected only when the game ended, blocking until it had
+ * landed. So the first session of a game read 0 of N in its own menu, and a
+ * quit straight after a launch on a slow network waited out the request.
  *
- * ra_sync_collect returns how many ids landed, or -1 if there was nothing to
- * collect or it failed. */
+ * ra_sync_poll never waits: 1 the answer is in and `*n` ids are in `out`, 0 it
+ * is still on its way, -1 nothing was asked or the asking failed. It shares
+ * the ONE async slot with the set fetch and the box art scraper, so anything
+ * else that wants the slot calls ra_sync_abandon first. */
 void ra_sync_begin(long gameid);
-int  ra_sync_collect(int *out, int max);
+int  ra_sync_poll(int *out, int max, int *n);
+bool ra_sync_pending(void);
+void ra_sync_abandon(void);
 
 /* Finding and fetching a set WHILE the game runs, rather than in front of it.
  *
