@@ -545,6 +545,16 @@ Card art comes from, in order:
 3. a generated slab: the system's color, the title, and the title's first
    letter enormous and barely there behind it.
 
+**Adding a cover by hand.** Some games have no cover anywhere libretro looks -
+fan translations, homebrew, a dump no catalog lists. Put one in yourself over
+Over The Hare: open `Roms/<system>/.media/` in its file browser and upload a PNG
+named exactly like the ROM file, with `.png` in place of its extension -
+`Black Castle.gb` wants `Black Castle.png`. Box Art never overwrites a cover
+that is already there, and Replace only swaps yours out when libretro has a
+cover to put in its place. Keep it near 512 pixels on the long side: a cover
+you add is drawn as it is and never resized, so a 2000-pixel scan is decoded at
+full size whenever its card comes into view.
+
 A game with an autosave gets a dot in the system's color beside its name.
 Pressing A on it does not start it, it continues it.
 
