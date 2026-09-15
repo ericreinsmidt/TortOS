@@ -2,6 +2,7 @@
 /* See artscrape.h for where the rules came from and why they are these. */
 #include <ctype.h>
 #include <dirent.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,6 +17,11 @@
 #include "net.h"
 
 #define BASE "https://thumbnails.libretro.com"
+
+/* No-Intro's list for a collection, as libretro-database carries it: every dump
+ * with its CRC32, under the name libretro files its covers by. Fetched when a
+ * run needs it, like the index, rather than shipped. See the checksum pass. */
+#define DAT_BASE "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/no-intro"
 
 /* Composed paths and URLs get their own sizes rather than reusing LIB_PATH.
  *
@@ -338,6 +344,11 @@ static void urldec(const char *in, char *out, size_t outn)
 static char   *g_html;
 static int     g_nnames;      /* what the index held; for the message only */
 
+/* The collection's No-Intro list, while its checksum pass runs, and whether
+ * that pass has run for the collection in hand. */
+static char   *g_dat;
+static bool    g_crc_tried;
+
 typedef struct { char folder[CFG_STR]; char exts[CFG_STR]; } sysrow;
 static sysrow  g_sys[CFG_MAX_SYSTEMS];
 static int     g_nsys;
@@ -347,11 +358,21 @@ static char    g_romdir[LIB_PATH];
  * waited for: these are called from a screen's frame loop, which is also
  * where the power button is read, so anything that blocks for a timeout is a
  * device that has stopped answering its own power button. */
-/* Two passes over a system, and the order is the point.
+/* Three passes over a system, each only for what the one before it left, and
+ * the order is the point.
  *
  *   P_TRY / P_TRY_WAIT     ask for <rom name>.png directly
  *   P_INDEX / P_INDEX_WAIT fetch the catalog, but only if something missed
  *   P_FUZZY / P_FUZZY_WAIT match the leftovers against it
+ *   P_DAT / P_DAT_WAIT     fetch the collection's No-Intro list, if anything
+ *                          is still unnamed
+ *   P_CRC / P_CRC_WAIT     name those by their checksum, and match that name
+ *
+ * The checksum pass exists because a file's name can be one the catalog no
+ * longer uses. Measured 2026-09-14 on the card: 67 games had no art under the
+ * names they carry - every Neo Geo Pocket game among them - and libretro had a
+ * cover for all 67 under a newer or fuller one. The CRC in a zip's header,
+ * looked up in No-Intro's list, gives the name libretro uses for 29 of them.
  *
  * The index used to come first, always. It is what makes fuzzy matching
  * possible - you cannot normalize against a catalog you have not got - and
@@ -365,7 +386,7 @@ static char    g_romdir[LIB_PATH];
  * Adding a few games - the ordinary case, and the one Over The Hare makes
  * ordinary - usually costs no index at all. */
 enum { P_SYSTEM, P_TRY, P_TRY_WAIT, P_INDEX, P_INDEX_WAIT, P_FUZZY,
-       P_FUZZY_WAIT };
+       P_FUZZY_WAIT, P_DAT, P_DAT_WAIT, P_CRC, P_CRC_WAIT };
 static int  g_phase;
 static char g_pending[ARTPATH_MAX];       /* the image being fetched */
 
@@ -550,6 +571,148 @@ static bool match(const char *base, char *out, size_t outn)
 	return have_norm;
 }
 
+/* ---- the checksum ------------------------------------------------------- */
+
+#define DAT_TMP "/tmp/tortos-artdat"
+
+/* Eight megabytes, like the index: the largest list, NES, was 3.2MB on
+ * 2026-09-14, and a list cut short would name nothing past the cut. */
+#define DAT_MAX (8 * 1024 * 1024)
+
+static bool start_dat(const char *remote)
+{
+	char url[ARTURL_MAX], enc[384];
+
+	urlenc(remote, enc, sizeof enc);
+	snprintf(url, sizeof url, DAT_BASE "/%s.dat", enc);
+	return net_get_async(url, DAT_TMP, 60);
+}
+
+/* Into g_dat, or g_dat stays NULL. A disc collection has no No-Intro list and
+ * 404s, and that is the ordinary case, not a failure. */
+static void load_dat(void)
+{
+	FILE *f = fopen(DAT_TMP, "rb");
+	long n;
+
+	free(g_dat);
+	g_dat = NULL;
+	if (!f) return;
+	if (fseek(f, 0, SEEK_END) == 0 && (n = ftell(f)) > 0 && n < DAT_MAX &&
+	    fseek(f, 0, SEEK_SET) == 0 && (g_dat = malloc((size_t)n + 1))) {
+		if (fread(g_dat, 1, (size_t)n, f) == (size_t)n) {
+			g_dat[n] = '\0';
+		} else {
+			free(g_dat);
+			g_dat = NULL;
+		}
+	}
+	fclose(f);
+	remove(DAT_TMP);
+}
+
+static uint32_t le16(const unsigned char *p) { return (uint32_t)p[0] | (uint32_t)p[1] << 8; }
+static uint32_t le32(const unsigned char *p) { return le16(p) | le16(p + 2) << 16; }
+
+/* The CRC32 of the ROM inside <dir>/<stem>.zip, as the zip records it.
+ *
+ * From the central directory, so nothing is decompressed and nothing hashed:
+ * a few kilobytes read, which is why this can run inside a frame. The entry
+ * taken is the first one the shelf's extensions allow - a zip that carries a
+ * readme beside the ROM must be named by the ROM - or the only file, when the
+ * list allows none of them. Zips only: 1,680 of the card's ROMs are zips, and
+ * a loose file would have to be read whole. */
+static bool rom_zip_crc(const char *dir, const char *stem, const char *exts,
+                        uint32_t *crc)
+{
+	static unsigned char tail[65536 + 22];
+	char path[ARTPATH_MAX], name[NAME_MAX_ * 2];
+	unsigned char *cd = NULL;
+	FILE *f;
+	long size, want, i;
+	uint32_t entries, cdsize, cdoff, off, only = 0;
+	int files = 0;
+	bool found = false;
+
+	if (snprintf(path, sizeof path, "%s/%s.zip", dir, stem) >= (int)sizeof path)
+		return false;
+	if (!(f = fopen(path, "rb"))) return false;
+	if (fseek(f, 0, SEEK_END) != 0 || (size = ftell(f)) < 22) goto out;
+
+	/* The end-of-central-directory record: the last thing in the file, save
+	 * for a comment of up to 65535 bytes after it. */
+	want = size < (long)sizeof tail ? size : (long)sizeof tail;
+	if (fseek(f, size - want, SEEK_SET) != 0 ||
+	    fread(tail, 1, (size_t)want, f) != (size_t)want) goto out;
+	for (i = want - 22; i >= 0; i--)
+		if (le32(tail + i) == 0x06054b50) break;
+	if (i < 0) goto out;
+	entries = le16(tail + i + 10);
+	cdsize  = le32(tail + i + 12);
+	cdoff   = le32(tail + i + 16);
+	if (cdsize == 0 || cdsize > 1024 * 1024 || (long)cdoff + (long)cdsize > size)
+		goto out;
+
+	if (!(cd = malloc(cdsize)) || fseek(f, (long)cdoff, SEEK_SET) != 0 ||
+	    fread(cd, 1, cdsize, f) != cdsize) goto out;
+
+	for (off = 0; entries-- > 0 && off + 46 <= cdsize; ) {
+		uint32_t nl, xl, cl;
+
+		if (le32(cd + off) != 0x02014b50) break;
+		nl = le16(cd + off + 28);
+		xl = le16(cd + off + 30);
+		cl = le16(cd + off + 32);
+		if (off + 46 + nl > cdsize || nl >= sizeof name) break;
+		memcpy(name, cd + off + 46, nl);
+		name[nl] = '\0';
+		if (nl && name[nl - 1] != '/') {
+			if (files++ == 0) only = le32(cd + off + 16);
+			if (ext_allowed(name, exts)) {
+				*crc = le32(cd + off + 16);
+				found = true;
+				break;
+			}
+		}
+		off += 46 + nl + xl + cl;
+	}
+	if (!found && files == 1) {
+		*crc = only;
+		found = true;
+	}
+out:
+	free(cd);
+	fclose(f);
+	return found;
+}
+
+/* The name No-Intro gives the dump with this CRC, from g_dat.
+ *
+ * The list is clrmamepro text: a `game (` block holding its `name "..."` and
+ * one `rom ( ... crc XXXXXXXX ... )` line per file. So the CRC is found as
+ * text and the name is the block's own, the nearest `game (` above it. */
+static bool dat_name(uint32_t crc, char *out, size_t outn)
+{
+	char needle[20];
+	const char *hit, *game, *p, *q;
+
+	if (!g_dat) return false;
+	snprintf(needle, sizeof needle, " crc %08X ", (unsigned)crc);
+	if (!(hit = strstr(g_dat, needle))) {
+		snprintf(needle, sizeof needle, " crc %08x ", (unsigned)crc);
+		if (!(hit = strstr(g_dat, needle))) return false;
+	}
+	for (game = hit; game > g_dat; game--)
+		if (game[-1] == '\n' && !strncmp(game, "game (", 6)) break;
+	if (strncmp(game, "game (", 6) != 0) return false;
+	if (!(p = strstr(game, "name \"")) || p > hit) return false;
+	p += 6;
+	if (!(q = strchr(p, '"')) || q > hit || (size_t)(q - p) >= outn) return false;
+	memcpy(out, p, (size_t)(q - p));
+	out[q - p] = '\0';
+	return true;
+}
+
 /* ---- driving ------------------------------------------------------------ */
 
 void art_cancel(void)
@@ -559,6 +722,7 @@ void art_cancel(void)
 	net_async_abort();
 	g_running = false;
 	free(g_html);  g_html = NULL;
+	free(g_dat);   g_dat = NULL;
 	g_nnames = 0;
 }
 
@@ -687,6 +851,7 @@ int art_step(void)
 		if (!remote) return next_system("not in the table");
 		g_rem = 0;
 		g_nleft = 0;
+		g_crc_tried = false;
 		/* A replace is the one game, taken as named rather than found in the
 		 * folder: a disc game is a folder of its own, which read_roms does not
 		 * list, and its cover lives at the same .media path all the same. */
@@ -792,6 +957,18 @@ int art_step(void)
 
 	case P_FUZZY:
 		if (g_qi >= g_nretry) {
+			/* Names have run out for this collection; its checksums are next,
+			 * for whatever is still unnamed. Once per collection: the checksum
+			 * pass ends by coming back here with g_crc_tried set. */
+			if (g_nleft > 0 && !g_crc_tried) {
+				g_crc_tried = true;
+				memcpy(g_retry, g_left, (size_t)g_nleft * sizeof g_left[0]);
+				g_nretry = g_nleft;
+				g_nleft = 0;
+				g_qi = 0;
+				g_phase = P_DAT;
+				return 1;
+			}
 			/* Another collection for this shelf, and something still unnamed?
 			 * Try it before calling anything missing. A game is only missing
 			 * once every catalog its machine has has been asked. */
@@ -801,6 +978,7 @@ int art_step(void)
 				g_nleft = 0;
 				g_qi = 0;
 				g_rem++;
+				g_crc_tried = false;
 				g_phase = P_INDEX;
 				return 1;
 			}
@@ -839,6 +1017,71 @@ int art_step(void)
 		else       g_left[g_nleft++] = g_retry[g_qi];
 		g_qi++;
 		g_phase = P_FUZZY;
+		return 1;
+	}
+
+	/* ---- pass three: the checksum, for what no name reached ----------- */
+	case P_DAT:
+		snprintf(g_st.now, sizeof g_st.now, "%s checksums",
+		         g_sys[g_si].folder);
+		free(g_dat);
+		g_dat = NULL;
+		/* Without the list every game below simply stays unnamed, which is
+		 * where it was before this pass existed. */
+		g_phase = start_dat(remote_nth(g_sys[g_si].folder, g_rem))
+		          ? P_DAT_WAIT : P_CRC;
+		return 1;
+
+	case P_DAT_WAIT: {
+		int r = net_async_poll();
+
+		if (r == 0) return 1;
+		if (r > 0) load_dat();
+		g_phase = P_CRC;
+		return 1;
+	}
+
+	case P_CRC: {
+		char     dname[NAME_MAX_];
+		uint32_t crc;
+		int      ri;
+
+		/* Done: back to the end of the fuzzy pass, which now knows the
+		 * checksums have had their turn. */
+		if (g_qi >= g_nretry) { g_phase = P_FUZZY; return 1; }
+		ri = g_retry[g_qi];
+		if (!g_dat ||
+		    !art_paths(dir, g_roms[ri], media, sizeof media, dest, sizeof dest) ||
+		    !rom_zip_crc(dir, g_roms[ri], g_sys[g_si].exts, &crc) ||
+		    !dat_name(crc, dname, sizeof dname) ||
+		    !match(dname, hitbuf, sizeof hitbuf)) {
+			g_left[g_nleft++] = ri;
+			g_qi++;
+			return 1;
+		}
+		/* Logged, because a checksum that names a game is a claim worth
+		 * being able to check: it says which file became which cover. */
+		fprintf(stderr, "art: %s is %s by checksum, cover %s\n",
+		        g_roms[ri], dname, hitbuf);
+		snprintf(g_st.now, sizeof g_st.now, "%s", g_roms[ri]);
+		mkdir(media, 0777);
+		if (!start_image(remote_nth(g_sys[g_si].folder, g_rem), hitbuf, dest)) {
+			g_left[g_nleft++] = ri;
+			g_qi++;
+			return 1;
+		}
+		g_phase = P_CRC_WAIT;
+		return 1;
+	}
+
+	case P_CRC_WAIT: {
+		int r = net_async_poll();
+
+		if (r == 0) return 1;
+		if (r > 0) { art_shrink(g_pending); g_st.found++; }
+		else       g_left[g_nleft++] = g_retry[g_qi];
+		g_qi++;
+		g_phase = P_CRC;
 		return 1;
 	}
 	}

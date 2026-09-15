@@ -530,11 +530,16 @@ than turning away with the face.
 Card art comes from, in order:
 
 1. box art in `Roms/<system>/.media/<name>.png`, whether you put it there or
-   the Box Art row fetched it. Fetched art is shrunk to the size it is drawn
-   at - libretro ships covers at its own resolution, which on some systems is
-   two to three times the pixels this screen can show, and every one of those
-   pixels is decode time on every scroll past. Art you put there yourself is
-   never touched, whatever size it is - only what the fetch brings in;
+   the Box Art row fetched it. The fetch looks a game up by its file name, and
+   where no name matches, by its checksum: a zip records its ROM's CRC, which
+   names the game in No-Intro's list - the catalog libretro files its covers
+   under - so a file still carrying an older name finds its box anyway. On the
+   main card that found 29 more, every one the right game. Fetched art is
+   shrunk to the size it is drawn at - libretro ships covers at its own
+   resolution, which on some systems is two to three times the pixels this
+   screen can show, and every one of those pixels is decode time on every
+   scroll past. Art you put there yourself is never touched, whatever size it
+   is - only what the fetch brings in;
 2. **the autosave preview** - the frame you were looking at when you stopped,
    which for a game in progress is a better card than any box;
 3. a generated slab: the system's color, the title, and the title's first
@@ -767,6 +772,7 @@ exists because something once broke in a way nothing noticed:
 | `check-rahash` | the C and Python ROM hashers agree, over the whole library |
 | `check-raset` | the C and Python set converters agree (needs `RA_USER`/`RA_PASS`) |
 | `check-artscrape` | two name normalizers agree on every candidate |
+| `check-artrun` | whole Box Art runs against a fake network: Replace keeps a cover it cannot better, and a checksum names the ROM in a zip, not the readme beside it |
 | `check-hare` | nothing on the file server is reachable without the PIN |
 | `check-httpd` | request parsing, including the malformed ones |
 | `check-xfer` | upload paths cannot escape the directory they were aimed at |

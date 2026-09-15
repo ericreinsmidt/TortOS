@@ -32,6 +32,14 @@
  * The four it cannot match are fan translations - romhacks, absent from any
  * No-Intro-derived database under those names. No provider has them and they
  * want art supplied by hand, which is what Over The Hare is for.
+ *
+ * AND WHERE NO NAME MATCHES, THE CHECKSUM. A file can carry a name the catalog
+ * no longer uses - an older No-Intro name, a GoodTools one - and then no name
+ * rule finds a cover libretro does have. A zip's own record of its ROM's CRC
+ * names the dump in No-Intro's list, and No-Intro's names are what libretro
+ * files its covers under. Measured 2026-09-14 on the main card: 29 more covers,
+ * every one the right game, and all 50 Neo Geo Pocket misses turned out to be
+ * names, not missing art.
  */
 
 /* One index fetch per system, then one download per game that has no art. Art

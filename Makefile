@@ -18,7 +18,7 @@ SSH := sshpass -p 'tina' ssh -o StrictHostKeyChecking=no \
 .PHONY: all clean native toolchain vendor boot checkmark payload release install-card \
         adb adb-elf adb-res adb-vendor adb-restart adb-run adb-log \
         check check-cheevos check-hare check-httpd check-idle check-rahash \
-        check-raset check-xfer check-menus check-artscrape check-artreplace check-audioout \
+        check-raset check-xfer check-menus check-artscrape check-artrun check-audioout \
         check-db check-stats check-sort check-bt check-backlog hooks storeprobe deploy restart logs
 
 all: build/tortos.elf
@@ -28,7 +28,7 @@ all: build/tortos.elf
 # of good intentions is a plan. A check nobody runs is a check that does not
 # exist, and check-menus was about to join eight others in that state.
 CHECKS = check-cheevos check-hare check-httpd check-idle check-rahash \
-         check-raset check-xfer check-menus check-artscrape check-artreplace check-audioout \
+         check-raset check-xfer check-menus check-artscrape check-artrun check-audioout \
          check-db check-stats check-sort check-bt check-backlog
 
 check:
@@ -187,14 +187,14 @@ build-native/artscrape-check: tools/artscrape-check.c src/artscrape.c src/artscr
 
 # Replace fetches over a cover rather than deleting it first. The real scraper
 # against a stubbed network, so a hit and a miss are both pinned with no device
-# and no download - see tools/artreplace-check.c.
-check-artreplace: build-native/artreplace-check
-	@./build-native/artreplace-check
+# and no download - see tools/artrun-check.c.
+check-artrun: build-native/artrun-check
+	@./build-native/artrun-check
 
-build-native/artreplace-check: tools/artreplace-check.c src/artscrape.c src/artscrape.h
+build-native/artrun-check: tools/artrun-check.c src/artscrape.c src/artscrape.h FORCE
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g -Isrc \
-	      -o $@ tools/artreplace-check.c src/artscrape.c
+	      -o $@ tools/artrun-check.c src/artscrape.c
 
 # The two hashers - one C for the device, one Python for the host tools - over
 # every ROM in the library. A wrong rule does not crash; it produces a hash RA
