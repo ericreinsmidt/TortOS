@@ -4,850 +4,213 @@
   <img src="res/readme/turtle.png" alt="" height="84">
 </p>
 
-A custom firmware for the **TrimUI Brick / Brick Hammer** that plays eleven
-8-, 16- and 32-bit consoles.
+<p align="center">
+  <b>A fast, focused custom firmware for the TrimUI Brick and Brick Hammer.</b><br>
+  Plays eleven classic consoles, and gets out of your way.
+</p>
 
-What is on screen is a shelf of cards - a row, a column or a cube, your pick -
-the name of the thing under the cursor, and a rail saying where you are in the
-list. Behind that there is RetroAchievements, box art the device fetches
-itself, and a small web server for moving files on and off over Wi-Fi - each
-one row in one menu, and none of it in the way of starting a game.
+<p align="center">
+  <a href="#install">Install</a> &nbsp;·&nbsp;
+  <a href="#supported-systems">Systems</a> &nbsp;·&nbsp;
+  <a href="#controls">Controls</a> &nbsp;·&nbsp;
+  <a href="#faq">FAQ</a>
+</p>
 
-The design metric is **speed**, and one decision carries most of it: **TortOS
-never starts a process to run a game.**
+<p align="center">
+  <img src="res/readme/shelf.png" alt="The SNES shelf, with Chrono Trigger in focus" width="100%">
+</p>
 
-A cold start costs about 1100 ms on this hardware and almost none of it is the
-game - it is SDL, an EGL context, audio and settings. So the emulator comes up
-once during the boot animation and stays up for the whole session, and a game
-arrives as a single line on a socket.
+<table>
+  <tr>
+    <td align="center"><img src="res/readme/systems.png" width="240" alt="The consoles row"><br><sub>Scroll horizontally</sub></td>
+    <td align="center"><img src="res/readme/vertical.png" width="240" alt="The shelf standing on end"><br><sub>Vertically</sub></td>
+    <td align="center"><img src="res/readme/cubic.png" width="240" alt="The cube"><br><sub>Or as a cube</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="res/readme/info.png" width="240" alt="A game's details"><br><sub>A game's details, one button away</sub></td>
+    <td align="center"><img src="res/readme/cheevos.png" width="240" alt="An achievements list"><br><sub>RetroAchievements on the device</sub></td>
+    <td align="center"><img src="res/readme/menu.png" width="240" alt="The TortOS menu"><br><sub>The Brick's settings in one menu</sub></td>
+  </tr>
+</table>
 
-| | |
-|---|---|
-| Starting a game | **~15 ms** |
-| Switching to a different console | **~15 ms** |
-| Every core held in memory at once | **15 MB** of 975 |
+## Why TortOS
 
-The middle row is the one nothing else here does. Each core is mapped the first
-time a game needs it and is never unloaded, so going from a Game Boy game to a
-SNES game costs exactly what starting another Game Boy game costs. Nothing is
-preloaded, and there is no core list to configure anywhere.
+**Games start the moment you press A.** The emulator is already running before you choose anything, so nothing loads between you and the game, even when you switch consoles.
 
-Every number in this file was measured on the device rather than estimated,
-but they were not all measured on the same day. The boot profile below was
-re-taken 2026-09-13, and the 975 MB on 2026-09-07. The launch timings and the
-core footprint date from when the resident emulator landed and have not been
-re-checked since, so read them as the shape of the thing rather than today's
-reading - and the method matters as much as the figure, which is why the boot
-profile now says cold or warm, on which card, with how many games.
+**You pick up exactly where you left off.** Quit from the menu or just press the power button. The game is saved on the way out, and next time it continues from that moment.
 
----
+**Everything happens on the handheld.** Join Wi-Fi, fetch box art, sign in to RetroAchievements, pair headphones and send games over from your phone, all on the Brick. You need a computer once, to set up the card.
+
+**Your Brick stays yours.** TortOS runs from the SD card. Take the card out and the Brick boots its own system again.
+
+## Features
+
+- **Three ways to browse:** a row of covers, a column, or a cube that turns both ways.
+- **Two looks:** Classic cards, or Fancy Pants photos of each console.
+- **RetroAchievements:** sign in on the device. A game's achievements download once and then work offline, and anything you unlock offline is sent later.
+- **Box art the Brick finds itself,** by file name, or by checksum when the name doesn't match. Or add your own.
+- **Over The Hare:** move games, saves and covers on and off the card from any browser on your Wi-Fi, behind a PIN.
+- **Autosave and resume,** plus six save slots for when you want a checkpoint.
+- **Turbo buttons:** X and Y press A and B for you, on the nine consoles whose controllers had two face buttons.
+- **Bluetooth headphones,** paired on the device. Plug in wired ones and they take over.
+- **Play Time:** how long you've played each game or console, today, this week, this month, this year or ever.
+- **Favorites and sorting:** Y favorites a game, and each console sorts by name, play time, last played or recently added.
+
+## Supported systems
+
+| Console | Put games in | File types | Core |
+|---|---|---|---|
+| NES | `Roms/NES` | `.nes` `.fds` `.unf` `.unif` `.zip` | FCEUmm |
+| Master System | `Roms/Master System` | `.sms` `.zip` | Genesis Plus GX |
+| Game Boy | `Roms/Game Boy` | `.gb` `.dmg` `.zip` | mGBA |
+| Genesis | `Roms/Genesis` | `.md` `.gen` `.bin` `.smd` `.zip` | Genesis Plus GX |
+| TurboGrafx-16 and CD | `Roms/TurboGrafx-16` | `.pce` `.sgx` `.cue` `.ccd` `.chd` `.toc` `.m3u` `.zip` | Beetle PCE Fast |
+| Game Gear | `Roms/Game Gear` | `.gg` `.zip` | Genesis Plus GX |
+| SNES | `Roms/SNES` | `.sfc` `.smc` `.zip` | Snes9x 2010 |
+| Neo Geo Pocket | `Roms/Neo Geo Pocket` | `.ngp` `.ngc` `.ngpc` `.npc` `.zip` | Beetle NeoPop |
+| Game Boy Color | `Roms/Game Boy Color` | `.gbc` `.cgb` `.zip` | mGBA |
+| Neo Geo Pocket Color | `Roms/Neo Geo Pocket Color` | `.ngp` `.ngc` `.ngpc` `.npc` `.zip` | Beetle NeoPop |
+| Game Boy Advance | `Roms/Game Boy Advance` | `.gba` `.agb` `.zip` | mGBA |
+
+**BIOS files** go loose in `Bios/`. Only TurboGrafx-CD games need one, `syscard3.pce`. Game Boy Advance runs without its BIOS; add `gba_bios.bin` if you want the original boot animation.
 
 ## Install
 
-You need the Brick, an SD card, and nothing else.
+You need a TrimUI Brick or Brick Hammer, a microSD card and, just this once, a computer.
 
-**Format the card exFAT**, with a Master Boot Record partition scheme.
+1. **Format the card as exFAT,** with a Master Boot Record partition scheme. On a Mac, open Disk Utility, choose *View > Show All Devices*, and erase the card itself rather than its volume.
+2. **Download `TortOS-v1.0.zip`** from [Releases](https://github.com/ericreinsmidt/TortOS/releases/latest) and unzip it.
+3. **Copy everything inside it to the root of the card:** `TortOS/`, `.tmp_update/`, `trimui/`, `Roms/`, `Bios/` and `Saves/`.
+4. **Put the card in the Brick and turn it on.** The first boot installs TortOS, and every boot after that starts it.
+5. **Add games** to the folders in `Roms/`, from the computer now or over Wi-Fi later.
 
-| | |
-|---|---|
-| **macOS** | Disk Utility, `View -> Show All Devices` so you get the whole card rather than just its volume, then `Erase`: format **ExFAT**, scheme **Master Boot Record**. |
-| **Linux** | `mkfs.exfat` on an MBR-partitioned card. |
-| **Windows** | Right-click the card, `Format`, **exFAT**. |
+> [!IMPORTANT]
+> `.tmp_update` starts with a dot, so most computers hide it and it gets left behind. Without it the first boot powers off and the Brick keeps starting its stock system. On a Mac, press <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>.</kbd> in Finder to show hidden files before you copy.
 
-FAT32 works too if that is what the card already is - the kernel has both - but
-exFAT is what every formatter offers at the size of card anyone actually uses,
-so it is the one worth naming.
+### Adding games over Wi-Fi
 
-Copying from macOS leaves `._name` metadata files beside everything. They are
-harmless - the launcher skips every name beginning with a dot, so they never
-show up as games - and `dot_clean /Volumes/YOURCARD` removes them if they
-bother you.
+<img align="right" width="360" src="res/readme/hare.png" alt="Over The Hare, with a browser connected">
 
-1. Download **`TortOS-v1.0.zip`** from
-   [Releases](https://github.com/ericreinsmidt/TortOS/releases/latest).
-2. Unzip it and copy everything inside it to the **root** of the card - six
-   items: `TortOS/`, `.tmp_update/`, `trimui/`, `Roms/`, `Bios/` and `Saves/`.
-   Not the zip, and not a folder containing them.
-3. Eject the card properly, put it in the Brick, and power on.
+1. Join a network under **MENU > Wi-Fi**.
+2. Open **MENU > Over The Hare**. It shows an address and a PIN.
+3. Open that address in a browser on your phone or computer, and type the PIN.
+4. Drag games into their console's folder. They're on the shelf when you leave the screen.
 
-The first boot is the one that installs: the stock firmware runs the card's
-installer, which sets `/usr/trimui/bin/runtrimui.sh` aside as
-`runtrimui-original.sh`, puts its own there, replaces the two splash images
-and then comes up in TortOS like every boot after it.
+The PIN is new every time you open Over The Hare.
 
-That one script is the only thing TortOS changes on the device, and all it
-does is look for the card - no card, or a card without TortOS on it, and it
-hands straight back to the original. **Taking the card out is enough to get
-the stock system back**; [Undoing it](#undoing-it) has the rest.
+<br clear="right">
 
-> **`.tmp_update` starts with a dot**, so Finder and most file managers hide
-> it and a drag of "everything" leaves it behind. A card missing it gets
-> through the installer and then powers straight off looking for the half that
-> is not there, and boots stock from then on. In Finder, `Cmd-Shift-.` shows
-> hidden files; from a terminal, `cp -R` the unzipped contents and it comes
-> along on its own.
+### Removing TortOS
 
-Building it yourself instead is [further down](#building).
+Take the card out. The Brick boots its own system again.
 
-Then put ROMs in:
+Before you reformat the card or give the Brick away:
 
-```
-Roms/NES/                     .nes .fds .unf .unif .zip
-Roms/Master System/           .sms .zip
-Roms/Game Boy/                .gb .dmg .zip
-Roms/Genesis/                 .md .gen .bin .smd .zip
-Roms/TurboGrafx-16/           .pce .sgx .cue .ccd .chd .toc .m3u .zip
-Roms/Game Gear/               .gg .zip
-Roms/SNES/                    .sfc .smc .zip
-Roms/Neo Geo Pocket/          .ngp .ngc .ngpc .npc .zip
-Roms/Game Boy Color/          .gbc .cgb .zip
-Roms/Neo Geo Pocket Color/    .ngp .ngc .ngpc .npc .zip
-Roms/Game Boy Advance/        .gba .agb .zip
+- **Copy `TortOS/bootlogo.stock.bmp` and `TortOS/splash.stock.png` somewhere safe.** They're the Brick's original boot pictures, and the card holds the only copy.
+- **Forget your Wi-Fi networks** with X on the Wi-Fi screen. Their passwords are stored on the Brick, not on the card.
 
-Roms/<system>/.media/<name>.png     box art, optional
-```
+<details>
+<summary>What TortOS leaves on the Brick itself</summary>
 
-BIOS files go **loose in `Bios/`**, not in a folder per system - that directory
-is handed to the core as its system directory, and a core asks for a filename
-inside it:
-
-```
-Bios/syscard3.pce             TurboGrafx-16 CD games (.chd, .cue, .m3u ...)
-```
-
-That one is required: a PC Engine CD will not start without it, and TortOS says
-so by name rather than letting the core refuse the disc. HuCards on the same
-shelf need nothing and are unaffected.
-
-Nothing else on the shelf needs a BIOS. mGBA has a built-in one, so Game Boy
-Advance runs without the real thing; if you want the original it is
-`Bios/gba_bios.bin`, and the difference is the boot animation.
-
-The shelf is `systems.cfg`, so that list is the shipped one rather than a fixed
-one: a line removed from the config takes its shelf with it, and a system whose
-folder is empty is hidden until there is something in it.
-
-### Undoing it
-
-TortOS replaces the boot splash and the loading splash on first boot, and backs
-both up beside itself (`bootlogo.stock.bmp`, `splash.stock.png`) along with the
-stock init script (`/etc/init.d/runtrimui.tortos-bak`). Removing the card is
-enough to boot stock again; `/usr/trimui/bin/runtrimui-original.sh` is the
-original hook.
-
-What removing the card does **not** undo is anything written to the device
-itself. The stock root filesystem is read-only and everything writable is an
-overlay on the internal eMMC, so what TortOS puts there stays there:
+A boot hook that looks for the card, and hands back to the stock system when TortOS isn't on it:
 
 ```
 /usr/trimui/bin/runtrimui.sh            the hook
 /usr/trimui/bin/runtrimui-original.sh   the stock hook, moved aside
-/usr/trimui/bin/setbright               brightness before the animation,
-/usr/trimui/bin/tortos-bootbright.sh    re-copied by launch.sh every boot
+/usr/trimui/bin/setbright               brightness before the boot animation,
+/usr/trimui/bin/tortos-bootbright.sh    both copied again every boot
 /etc/init.d/runtrimui                   patched to call the line above
 /etc/init.d/runtrimui.tortos-bak        the version before that patch
-/etc/splash.png                         the pic2fb loading splash
-/mnt/boot/bootlogo.bmp                  the u-boot splash, on mmcblk0p1
+/etc/splash.png                         the loading splash
+/mnt/boot/bootlogo.bmp                  the boot logo
 ```
 
-Eight files, none of them a driver and none of them replacing anything the
-system needs to run. TortOS is a launcher that boots on the stock firmware
-rather than a firmware of its own - which is also why **the Wi-Fi networks and
-their passwords survive** a reformatted card. They live in
-`/etc/wifi/wpa_supplicant.conf`, written by the stock `wpa_supplicant` that
-TortOS drives rather than replaces, on the eMMC and never on the card. Forget
-them from the Wi-Fi screen before the device goes to anyone else.
+None of them is a driver, and none replaces anything the system needs to run.
 
-The two splashes are the awkward pair: they are replaced on the device, and the
-originals are saved **to the card** as `bootlogo.stock.bmp` and
-`splash.stock.png`. Keep a copy of those somewhere else if the stock boot logo
-matters to you - a card is the one part of this that gets reformatted.
-
----
+</details>
 
 ## Controls
 
-| | |
+| Button | On the shelf |
 |---|---|
-| **Left / Right** | move along the row, when the shelf runs horizontally. In `Cubic`, always the games |
-| **Up / Down** | move along the shelf when it runs vertically - **up advances**. In `Cubic`, always the systems |
-| **the other axis** | jump to the previous / next initial (games). Not in `Cubic`, where both axes are taken |
-| **L1 / R1** | jump a screenful (games) |
-| **A** | open a system, or start a game. In `Cubic`, start it |
-| **B** | back to the systems row. In `Cubic`, this system's menu |
-| **X** | game info for the card under the cursor |
-| **Y** | favorite it - Favorites is a shelf of its own |
-| **Volume rocker** | volume, everywhere, including in game |
-| **F1 / F2** | brightness, everywhere, including in game |
-| **MENU** (on the systems row) | the TortOS menu - settings that are about the firmware |
-| **MENU** (inside a system) | that system's menu, below |
-| **MENU** (in `Cubic`) | always the TortOS menu; B is the system's |
-| **MENU** (in game) | the in-game menu: Continue, Save, Load, Display, Cheevos, Reset, Quit |
-| **POWER** | powers off. In a game, the game is saved first |
+| **D-pad** | Move. On a game shelf, the other direction jumps by letter |
+| **A** | Open a console, or start or continue a game |
+| **B** | Back |
+| **X** | The game's details |
+| **Y** | Favorite |
+| **L1 / R1** | Jump a screenful |
+| **MENU** | Settings for the Brick, or for the console you're in |
+| **POWER** | Turn off |
 
-MENU means three different menus depending on where you are, and each one is
-about the thing you are looking at: the firmware on the systems row, one
-console inside it, the running game in a game.
+**In a game,** MENU opens Continue, Save, Load, Display, Cheevos, Reset and Quit. X and Y are turbo A and B, except on Genesis and SNES, where they're the controller's own buttons. POWER saves the game and turns the Brick off.
 
-The TortOS menu opens from the systems row and is about the device rather
-than any one console:
+**On the cube,** up and down change console, left and right move through its games, and B opens that console's menu.
 
-| | |
-|---|---|
-| **Wi-Fi** | the network's name when connected, or why it is not |
-| **Bluetooth** | the connected headset, or `not connected` - pair, connect and forget |
-| **Audio Output** | `Auto` or `Speaker`, and where Auto landed - see **Audio** below |
-| **Over The Hare** | the file server; needs Wi-Fi and says so when there is none |
-| **Play Time** | per game or per system, by day, week, month, year or all time |
-| **Auto Off** | how long without a button before the device powers itself down |
-| **Text Size** | left/right; reopens every font, so the whole UI is rebuilt |
-| **UI Theme** | `Classic` or `Fancy Pants` - which art the shelves wear |
-| **UI Direction** | `Horizontal`, `Vertical` or `Cubic` - see below |
-| **Box Art** | fetch what the whole library is missing |
-| **Cheevos** | the RetroAchievements account, or `sign in` |
-| **About TortOS** | version, address, battery, uptime |
+The volume buttons and F1 / F2 (brightness) work everywhere.
 
-Over The Hare and Box Art need a network, and go quiet without one rather than
-disappearing - a row that vanishes teaches nobody why. Cheevos stays reachable
-either way, because signing in is the thing you go there to do, and Bluetooth
-and Play Time need no network at all.
+<details>
+<summary>What's in each menu</summary>
 
-On the Play Time screen, **left and right** change the window - all time, this
-year, this month, this week, today - and **Y** switches between one row per
-game and one per system. The row under the cursor gets its own line at the
-bottom: how many times it has been launched, its longest single session, when
-it was last played, and how many of those sessions ended in a flat battery or
-a crash rather than a quit. That last number only appears when it is not zero.
+**The TortOS menu,** MENU on the consoles row: Play Time, Wi-Fi, Bluetooth, Audio Output, Over The Hare, Auto Off, Text Size, UI Theme, UI Direction, Box Art, Cheevos, About TortOS.
 
-On the Wi-Fi screen, **Y** rescans and **X** forgets the network under the
-cursor, behind a confirm. Forgetting the one you are connected through is
-allowed - refusing would leave a row that is visibly saved and visibly
-un-forgettable, which is worse to explain than the consequence.
+**A console's menu,** MENU inside it: Sort By, Display Mode, Box Art for that console alone, and Rescan Folder for games copied since the Brick was turned on.
 
-The system menu opens on a shelf of games and applies to that system alone:
+**The in-game menu:** Continue, Save, Load, Display, Cheevos, Reset, Quit.
 
-| | |
-|---|---|
-| **Games** | how many the shelf found |
-| **Core** | which libretro core runs them |
-| **Show** | stated, not yet a setting - `All games` |
-| **Sort By** | left/right; `Name`, `Play Time`, `Last Played` or `Recently Added` |
-| **Display Mode** | left/right cycles it; saved the moment it changes |
-| **Box Art** | fetch what this system is missing, and nothing else |
-| **Rescan Folder** | read the card again, for ROMs that arrived since boot |
+</details>
 
-Display Mode is per-system, because a Game Boy and a Genesis do not want the
-same answer. Set here it applies from the next launch; the same row in the
-in-game menu changes the running game as you press it, which is the one to use
-when you want to see the difference rather than guess at it. Either way it is
-written the moment it changes - there is no confirm step to hang the save off.
+Every control, menu row and setting, in detail: [the guide](docs/guide.md).
 
-Sort By is per-system for the same reason. Alphabetical is the only sane way
-to find a title you can name, and no help at all when you are coming back to
-the two or three you are actually playing, which on a large shelf are
-scattered through the alphabet. Play Time and Last Played read the same
-session rows the Play Time screen does; Recently Added is the ROM's timestamp
-on the card. Whichever order you pick, games it knows nothing about sort to
-the bottom rather than into the middle, and two games it cannot tell apart
-fall back to name - a shelf that reshuffles itself when nothing has changed
-reads as broken even when the top of it is right.
+## FAQ
 
-Rescan Folder is what makes a ROM that arrived after boot appear without a
-restart. Over The Hare already does it for you on the way out of the transfer
-screen; this is the same thing by hand, for a card written some other way.
+<details>
+<summary><b>My games don't show up.</b></summary>
 
-**In a game, X and Y are turbo A and turbo B** - hold one down and it presses
-the button repeatedly for you instead of you mashing it. It applies to a whole
-system rather than to one game.
+Check the folder name against the table above, spelled exactly, and that the file type is listed for that console. A console with nothing in its folder is hidden. Games sent over Over The Hare appear when you leave its screen. Games copied any other way while the Brick is on appear after **Rescan Folder** in that console's menu, or after a restart.
 
-Nine of the eleven have it: **NES, Master System, TurboGrafx-16, Game Boy, Game
-Boy Color, Game Boy Advance, Game Gear, Neo Geo Pocket and Neo Geo Pocket
-Color**. Those consoles had two face buttons,
-so X and Y are spare and turbo can have them. Genesis and SNES are left out
-because their pads use X and Y for real buttons. Which systems get it, and how
-fast, is in [docs/turbo.md](docs/turbo.md).
+</details>
 
-Diatom does the pulsing, not the emulator core, which is why it works the same
-on all nine rather than only on the one core that happens to implement turbo.
+<details>
+<summary><b>A game has no box art.</b></summary>
 
-Volume and brightness draw the same thin line across the top of the screen in
-the launcher, in a game, and in the in-game menu. One firmware, one piece of
-feedback - tinted by which of the two it is, warm for brightness and cyan for
-volume, so the line says what it is without a glyph or a number on it.
+**MENU > Box Art** fetches every missing cover over Wi-Fi from [libretro's thumbnail collection](https://thumbnails.libretro.com). It looks a game up by its file name and, for zipped games, by checksum.
 
----
+Some games aren't in libretro's collection, like fan translations and homebrew. Add your own: a PNG named exactly like the game file, in `Roms/<console>/.media/`. `Black Castle.gb` wants `Black Castle.png`. Around 512 pixels on the long side is plenty.
 
-## Audio
+Don't like a cover? Press X on the game and choose **Replace Box Art**. If libretro has nothing to replace it with, you keep the one you had.
 
-Sound can come out of three places, and TortOS picks in a fixed order:
+</details>
 
-**wired headphones, then Bluetooth, then the speaker.**
+<details>
+<summary><b>How do achievements work?</b></summary>
 
-A cable wins outright, in every setting. Someone who physically plugged
-something in has said what they want more plainly than any menu can, and a
-headset that merely happens to be connected has not said anything at all.
+Sign in to your RetroAchievements account under **MENU > Cheevos**. The first time you start a game, the Brick needs Wi-Fi to look it up and download its achievements. After that the game works offline, and anything you unlock offline is kept and sent to your account later.
 
-The **Audio Output** row has two positions rather than three. `Auto` follows
-the rule above; `Speaker` refuses Bluetooth and nothing else - a cable still
-works through it. There is no third "Headset" position because it would do
-nothing `Auto` does not already do: `Auto` takes a headset whenever one is
-connected, and neither setting can route to one that is not there. The row
-shows where the sound actually went - `auto (wired)` - because `Auto` on its
-own names a rule, not a place you can hear.
+</details>
 
-The wired jack has its own volume range, not the speaker's. The two are about
-9 dB apart, and the level is re-mapped the moment a cable goes in or out, so
-plugging in mid-game does not arrive at nine decibels louder than you left it.
+<details>
+<summary><b>Can I use Bluetooth headphones?</b></summary>
 
-### Bluetooth
+Yes. Put them in pairing mode, open **MENU > Bluetooth**, press **Y** to search and **A** to pair. They reconnect by themselves from then on. Set the volume on the headphones: the Brick's volume buttons don't reach them. Wired headphones always win when they're plugged in.
 
-A paired headset reconnects by itself at boot and mid-session, and game audio
-follows it without relaunching anything. The bond survives a reboot.
+</details>
 
-**Pairing is on the Bluetooth screen.** Put the headset in pairing mode, press
-**Y** to search, **A** to pair and connect, **X** to forget. The toggle at the
-top turns the radio on and off.
+<details>
+<summary><b>Where are my saves?</b></summary>
 
-Only devices that advertise a name are listed. A scan in an ordinary room finds
-a dozen BLE beacons and somebody's television, and BlueZ names everything it
-cannot identify after its own address - so the list would otherwise be
-unusable. A device you have already paired is always shown, named or not.
+Battery saves are `.srm` files in `Saves/`, named after the game. Save states, the autosave included, are in `.userdata/shared/.tortos/`, one folder per console. Neo Geo Pocket Color games write no `.srm`, so their progress lives in the autosave.
 
-**Forget means forget.** The bond, the ALSA PCM and BlueZ's cached copy of the
-device all go. Scanning leaves a cache entry for everything in range, so
-leaving the screen sweeps the ones you never paired with.
+</details>
 
-The one thing that matters underneath is the agent: headsets pair "Just Works"
-and need `NoInputNoOutput`. With the default agent every attempt fails with an
-authentication error that looks like a broken key, a broken chip, or broken
-headphones, and is none of them.
+## For developers
 
-**A headset paired now carries game audio from the next launch**, not the
-session already running. alsa-lib reads its configuration once per process, so
-the PCM written when you pair arrives too late for an emulator that opened
-audio at boot. The screen says so when it connects.
+TortOS is C and SDL2. Games run in [Diatom](https://github.com/ericreinsmidt/diatom), a small libretro frontend built for this device that starts once at boot and stays running.
 
-Two things behave differently on a Bluetooth sink and are not bugs:
-
-- **the volume keys do nothing, on purpose.** Volume lives on the headset. The
-  device's own control drives the codec, which a Bluetooth sink does not pass
-  through, so there is nothing for it to turn.
-
-  Making it work would mean a second volume in series with the headset's own,
-  with neither aware of the other - and "the sound is quiet" would then have
-  two possible causes and no way to tell them apart from the screen. One
-  control, one thing to check. That is the decision, not a gap.
-- **there is roughly 100-150 ms of latency**, from SBC, the radio and the
-  headset's own buffer. That is what Bluetooth audio costs on any device and
-  nothing here can tune it away.
-
-If a headset is switched off or walks out of range mid-game, sound falls back
-to the speaker within a second or two and the game keeps running. It never ends
-a game to report an audio problem. That fallback is the emulator's own - it
-does not wait for the launcher to notice the headset is gone.
-
----
-
-## Where the time goes
-
-Starting a game on this hardware costs about **1100 ms**, and almost none of it
-is the game:
-
-| | |
-|---|---|
-| `GFX_init` - SDL video plus the EGL/GL context | ~620 ms |
-| `dlopen` of the libretro core | ~170 ms |
-| audio and settings | ~140 ms |
-| **actually opening the ROM** | **~36 ms** |
-
-Everything except the last line is the cost of *starting a process*. So TortOS
-does not start one.
-
-### The resident emulator
-
-[Diatom](https://github.com/ericreinsmidt/diatom) - an MIT libretro frontend
-built for this device - comes up on a Unix socket during the boot animation
-and stays up for the life of the session. The launcher hands it a game as a
-`RUN` line carrying the core, the ROM, and the paths where the resume state
-and the card preview live, and reads back what actually happened: `RUNNING`,
-`EXIT reason=`, or an `ERROR code=` it can show.
-
-A warm launch - the process up, the core already mapped - is **~15 ms** to
-`RUNNING`. Every core is mapped at startup, during the boot animation, and
-never unloaded, so no launch pays for opening one: six mapped plus one running
-measured **15.0 MB** against the device's 975, which is what makes holding all
-of them affordable rather than reckless. They are opened `RTLD_LOCAL`, so
-libraries exporting the same twenty `retro_*` symbols cannot see each other.
-
-Mapping them replaced reading them. The boot script used to pull the cores into
-the page cache with `cat`, which cost 480 ms cold and bought only the I/O;
-`dlopen` costs 382 ms, because it takes what it needs rather than every byte,
-and it pays the dynamic linker as well. That is what a first launch used to pay
-- and the `~170 ms` above is real, measured 179 ms for `genesis_plus_gx` cold,
-the largest core. It is now paid once, in idle seconds, instead of by whoever
-starts a Genesis game first. Measured 2026-09-08.
-
-The in-game menu is the launcher's own: MENU makes Diatom hand the display
-over with a preview of the paused frame, and Continue, Save, Load, Reset and
-Quit act through one protocol line each. **Display** cycles the running game's
-mode as you press it, which is the one to use when you want to see the
-difference rather than guess at it, and **Cheevos** shows how much of this
-game's set you have earned, or reads `none` and stays unselectable when there
-is no set. Volume and brightness set in a game
-come back to the launcher's settings when the game ends, because the two
-sides share one levels channel instead of overwriting each other.
-
-Nothing depends on the resident emulator. If the socket is not there - in the
-first second after boot, or if it has died - the launcher runs the same
-`diatom` binary standalone, one process for that game, and starts a fresh
-resident once the display is back.
-
-### The boot animation runs *behind* startup
-
-An animation that adds its own length to the boot is a delay with a picture on
-it. TortOS plays its 2.4s animation in the background while the launcher does
-its entire startup - the card scan, GL init, font and card decode - and while
-the resident emulator builds its context and maps the cores it needs.
-
-`ffmpeg` and the launcher both write to `/dev/fb0`, and it is last-writer-wins,
-so they must never draw at the same time. A marker file is the handshake: the
-launcher initializes freely, blocks on the marker, and presents its first frame
-the moment the animation clears it. Bounded at 8 seconds, so a stuck decoder
-cannot hang the boot.
-
-The same idle seconds pull the emulator, the cores and their libraries into the
-page cache. Cold reads of that set measure ~190 ms against ~30 ms warm.
-
-Startup phases are logged rather than guessed at. Both columns below are from
-one device boot on the main card - 1708 games across eleven systems - measured
-2026-09-13. Cold is the first launcher of that boot; warm is the same launcher
-restarted with the page cache already hot. A second boot reproduced all eight
-figures within 5%. The figures are cumulative from process start, not per
-phase:
-
-```
-                        cold      warm
-boot: scan              249 ms    103 ms
-boot: video+input       977 ms    524 ms
-boot: font+settings    1040 ms    529 ms
-boot: card assets      1181 ms    641 ms
-```
-
-**`card assets` is the phase that moved.** As a cost of its own it is 141 ms
-cold, against 480 ms when this file last recorded it: the launcher no longer
-decodes the opening shelf's covers before drawing, it queues them and a worker
-picks them up while the shelf is already on screen. See below.
-
-`scan` is the one that will keep moving: it was 64 ms when this file first
-recorded it and the shelf has grown a long way since. The rest is fixed cost,
-which is why warm is roughly half of cold across the board and none of it is
-the library.
-
-Being straight about the rest of the table: every phase except `card assets`
-is slower than the 2026-09-07 figures it replaces, on the same 1708 games, and
-nothing in this file explains why. The launcher has gained a good deal of code
-since, which is the obvious suspect and is not the same as a measurement. It
-is recorded here rather than quietly rounded away.
-
-### Card art is decoded off the render thread
-
-The shelf asks for every visible card every frame, and a card that is not
-decoded yet used to be decoded right there, inside the frame. On this device
-that is 14-60 ms against a 16.7 ms budget, so arriving somewhere the cache did
-not reach meant one frame doing seven decodes and taking 100-400 ms. It did
-not read as slowness, it read as the shelf stopping.
-
-Decoding now happens on two worker threads. Only the last step, handing the
-finished image to the GPU, needs the renderer and stays on the main thread at
-1-2 ms. A card whose art has not arrived is simply not drawn, so a slot is
-briefly empty instead of the shelf freezing - the art appears at the same
-moment either way, and what changes is whether everything else kept moving
-while it came.
-
-A system's cards start decoding when the systems row lands on it, not when you
-open it, so opening one shows them at once - measured 2026-09-14 on four
-systems opened straight after a reboot.
-
-Two workers rather than one, and that was measured rather than assumed: one
-still drops the occasional card on the shelves with the largest covers, even
-after those covers were resized. They sleep when there is nothing to decode.
-
-### The launcher never goes away
-
-With a resident emulator there is nothing to tear down, so the launcher keeps
-its own GL context through the whole game. Coming back from a game is a frame,
-not a second and a half of re-initializing a display.
-
----
-
-## What it looks like
-
-A single row of cards in perspective, with reflections - Cover Flow, carried
-over from an earlier project by the same author and retuned. The focused card
-sits in a soft glow tinted with its system's color, and the whole background
-carries a wash of that color that eases as you move between systems.
-
-Two things about that are yours to choose, and they are independent.
-
-**UI Theme** picks the art. `Classic` is a drawn card per system, with the
-name on it. `Fancy Pants` is a photograph of the console itself, background
-removed, and because a photograph does not name itself the shelf writes the
-name underneath. A theme is a directory under `res/cards/`, so adding one is
-dropping in a folder - no code and no configuration.
-
-**UI Direction** picks how you move. `Horizontal` is the row above.
-
-`Vertical` is that row stood on its end. The cards slide up and down instead
-of left and right, flat and unrotated and all one size, with the one under the
-cursor filling most of the screen and its neighbors pushed off the top and
-bottom edges. It is laid out the way `Horizontal` is and moves at the row's
-pace; only `Cubic` turns a solid.
-
-`Cubic` turns that cube both ways and merges the two shelves into one surface.
-**Up and down change system, left and right move through that system's
-games.** There is no entering and no going back, because what you are looking
-at is already the thing you can act on - so B, which has nothing to return to,
-opens the system's menu instead, and MENU is always the firmware's.
-
-Every face is a game. Turning to another system shows the game you were last
-on in it: each system keeps its own place, so glancing at one costs you
-nothing. Two rails, because there are two positions to be in - systems down
-the left, games along the bottom - with `n / total` and the system's name on
-the bottom line.
-
-Vertically the shelf runs **A at the bottom to Z at the top**, and up
-advances. The origin is the bottom left and the index grows with x and with
-y, which is the same rule the horizontal row has always followed; a list that
-numbers downward is the screen's convention, not this one's. The position
-rail moves to the left edge and runs bottom-up with it, and on the games
-shelf the `n / total` sits in the bottom left beside it, stationary, rather
-than turning away with the face.
-
-Card art comes from, in order:
-
-1. box art in `Roms/<system>/.media/<name>.png`, whether you put it there or
-   the Box Art row fetched it. The fetch looks a game up by its file name, and
-   where no name matches, by its checksum: a zip records its ROM's CRC, which
-   names the game in No-Intro's list - the catalog libretro files its covers
-   under - so a file still carrying an older name finds its box anyway. On the
-   main card that found 29 more, every one the right game. Fetched art is
-   shrunk to the size it is drawn at - libretro ships covers at its own
-   resolution, which on some systems is two to three times the pixels this
-   screen can show, and every one of those pixels is decode time on every
-   scroll past. Art you put there yourself is never touched, whatever size it
-   is - only what the fetch brings in;
-2. **the autosave preview** - the frame you were looking at when you stopped,
-   which for a game in progress is a better card than any box;
-3. a generated slab: the system's color, the title, and the title's first
-   letter enormous and barely there behind it.
-
-**Adding a cover by hand.** Some games have no cover anywhere libretro looks -
-fan translations, homebrew, a dump no catalog lists. Put one in yourself over
-Over The Hare: open `Roms/<system>/.media/` in its file browser and upload a PNG
-named exactly like the ROM file, with `.png` in place of its extension -
-`Black Castle.gb` wants `Black Castle.png`. Box Art never overwrites a cover
-that is already there, and Replace only swaps yours out when libretro has a
-cover to put in its place. Keep it near 512 pixels on the long side: a cover
-you add is drawn as it is and never resized, so a 2000-pixel scan is decoded at
-full size whenever its card comes into view.
-
-A game with an autosave gets a dot in the system's color beside its name.
-Pressing A on it does not start it, it continues it.
-
----
-
-## Saves
-
-- **Autosave.** Every way out of a game - the Quit row, the power button, a
-  stop from the launcher - writes the state and the preview at the paths the
-  launch handed over. One funnel, so no exit can forget and none can save
-  twice.
-- **Auto-resume.** Every launch hands over the game's autosave,
-  `<ROM file>.auto.state`. If one is there the game comes up exactly where it
-  was left; if not it starts fresh.
-- **Manual save and load**, six slots, from the in-game menu (`MENU`).
-  Silent - the device shows no in-game chrome.
-
-States are keyed on the system's **`Roms/` folder**, and battery `.srm` files
-sit flat in `Saves/` named after the ROM. The **tag** in `systems.cfg` keys
-something else: the per-system display mode, the sort order, and the favorites
-list. This
-paragraph claimed for a while that saves and states hung off the tag; they do
-not, checked in the code on 2026-09-01.
-
-Cartridge battery saves are separate from all of that: a game with a battery
-gets a `.srm` beside the state. **Neo Geo Pocket Color is the exception** - its
-core reports no save memory at all, measured as zero bytes on two carts that do
-save, so nothing writes a `.srm` and no battery file exists to copy off the card.
-Progress there lives entirely in the autosave state, which is written on every
-exit like every other system, so in normal play nothing is lost. It only matters
-if you load an older slot, which rewinds the cartridge's own save with it.
-
----
-
-## Achievements
-
-RetroAchievements, listed in the in-game menu, with what you have earned kept
-across games and cards.
-
-**The evaluation is Diatom's, and that is not a delegation of convenience.**
-Conditions compare against the *previous frame* - `0xH06f0<d0xH06f0` is "this
-byte is lower than it was last frame" - and the launcher only sees the socket
-every 100 ms against a core running at 60 Hz. That is six frames per poll, so
-five of every six are invisible to it and unlocks would be missed silently.
-The launcher declares which console the game is and hands over the set, and
-Diatom watches every frame
-(its ADR-0025 and ADR-0026).
-
-**The device does the normal thing.** Sign in once under `MENU` ->
-RetroAchievements, and the first time you launch a game TortOS hashes the ROM,
-asks RetroAchievements which game it is, fetches the set and caches it at
-`Roms/<System>/.cheevos/<name>.set`, beside the box art in `.media/`. After
-that the launch is instant and works with Wi-Fi off.
-
-That needs HTTPS, which the Brick turns out to have: `curl 7.54.1` against
-`OpenSSL/1.1.0i`. What it does not have is anything to trust, so
-`res/ssl/cacert.pem` ships with the launcher - see its README for the
-measurement. Only the password is typed; RetroAchievements answers with a
-token, and that is what is stored.
-
-`tools/ra-sets.py` does the same fetch from a host, for seeding a whole library
-at once or working offline. It writes the identical file, and is a convenience
-rather than the mechanism. Measured over the 180-ROM test library: **166 games
-have a set, 8,297 achievements, and every condition in all of them parses.**
-
-Three things exist twice, once for the device and once for the host tool: the
-per-console hash rules, the JSON to set-file conversion, and the set format
-itself. `make check-rahash` and `make check-raset` run both implementations
-over the same real data and require them to agree, because the failure they
-guard against is silent - a wrong hash looks exactly like a game
-RetroAchievements does not know.
-
-**Unlocks go back to your account.** They are sent once the game is over and
-the launcher has the screen back, never from inside the frame loop, and what
-will not send stays queued and is tried again next time - an achievement
-earned on a plane is still earned. On the next launch the account is read back
-and merged, so anything already held is not offered again: the account wins on
-what exists, the local store wins on what is still owed, and neither is thrown
-away.
-
-RA still serves a `Warning: Unknown Emulator` entry with every set, because
-this client is not registered with them. It is dropped rather than shown - it
-is not an achievement, and recording it would put a row in the store that can
-never be displayed and might later be submitted as a duplicate of something
-that was never real.
-
----
-
-## Configuration
-
-**Settings live in a database, not in files.** Two of them, and the split is
-deliberate:
-
-| | holds | why it is separate |
-|---|---|---|
-| `.userdata/<platform>/tortos.db` | volume, brightness, text size, Auto Off, audio output, Wi-Fi, Bluetooth, display mode per system | per handheld. A card moved to another device should not carry the first one's screen and speaker settings, or its account token |
-| `.userdata/shared/.tortos/library.db` | timezone, startup system, turbo maps, core options | per card. It travels with the library, the same way favorites and earned achievements do |
-
-The shipped defaults are **compiled into the launcher** and seed whichever
-database is missing them, so there is no config file to ship, none to drift from
-the code that reads it, and a deleted database comes back working.
-
-### Reading it
-
-Nothing on the device can open a database - there is no `sqlite3` binary - so
-the launcher prints it:
-
-```
-tortos.elf --dump
-```
-
-That is deliberately read-only. Settings are not hand-edited any more; every one
-of them is reachable from a menu.
-
-### What the boot script reads
-
-`launch.sh` needs five values before `tortos.elf` exists - the panel brightness
-for before the boot animation, the timezone, and whether each radio should come
-up. It is POSIX shell and cannot read a database, so the launcher exports
-`.userdata/<platform>/boot.env` and the script sources it.
-
-That file is **derived, never authoritative**. Delete it and the next boot runs
-at the shipped defaults, then the next settings change rewrites it. It replaced
-six `sed` invocations across four files, each one a fork, so the boot path got
-shorter rather than longer.
-
-### `systems.cfg`, which is still a file
-
-`TortOS/systems.cfg` is the one that did not move, because it is **build input
-rather than a setting**. `mk/payload.sh` reads it twice on the host: once to
-refuse a card whose `systems.cfg` names cores that `vendor/` does not have -
-which is how a card was nearly built with four of nine systems dead - and once
-to create the ROM folders. Neither can wait for a database that only exists on
-the device.
-
-```
-sys | display name | Roms/ folder | core | tag | card art | accent | extensions | disc bios
-```
-
-The **tag** keys the per-system display mode and the favorites list. It is not
-what saves and states hang off - states are keyed on the folder and `.srm` files
-sit flat in `Saves/` named after the ROM. `system_cfg` declares `tag[8]`, so up
-to seven characters, and changing a tag orphans that system's display mode and
-favorites.
-
-### Core options and turbo
-
-Both are entries in the library database rather than files, seeded from the
-values compiled into the launcher.
-
-**Core options** are keyed `coreopt.<tag>.<option>`, with an empty tag for a
-global - so `coreopt..mgba_sgb_borders` applies everywhere and
-`coreopt.GB.mgba_gb_model` to Game Boy alone. A tagged entry overrides a global
-of the same name. A core that does not declare a key ignores it, so a key meant
-for one core is harmless everywhere else. They are sent **before** the game
-loads, because a core reads its `(Restart)` options during load and one set
-afterwards does nothing until the next launch.
-
-One trap worth repeating: **a resume state beats these.** A save state carries
-the machine it was made on, so changing an option that selects hardware will not
-appear to work on a game you have already played. Test on a game that has never
-been launched, or delete its `.auto.state`.
-
-**Turbo** is keyed `turbo.<tag>`, and [docs/turbo.md](docs/turbo.md) carries the
-reasoning: which nine systems get it, why MD and SFC do not, and why PC Engine
-is on the list despite its core having a turbo of its own.
-
-### What the launcher still writes as files
-
-Two things, each for a reason:
-
-| | |
-|---|---|
-| `cheevos-active.set` | Diatom reads it, handed over as a path on RUN under its ADR-0026. Moving it would mean Diatom linking sqlite and learning the schema |
-| `systems.cfg` | build input rather than a setting, as above |
-
-Everything else is in one of the two databases. Favorites are rows keyed
-`fav.<tag>\t<file>` in the library, earned achievements are `chv.<game>.<id>`,
-and the RetroAchievements account is `ra.user` and `ra.token` in the device
-database.
-
----
-
-## Building
-
-Everything cross-compiles in TortOS's own toolchain image - a stock Debian
-cross-compiler pinned by digest, built by `mk/toolchain.Dockerfile`, linking
-against the device's own SDL2 in `sysroot/`. So the only host requirements are
-Docker and (for regenerating art) Python with Pillow, plus ffmpeg.
-
-```sh
-make toolchain  # the cross-compiler      -> tortos-toolchain   (once)
-mk/fetch-sysroot.sh  # the device's SDL2  -> sysroot/           (once, needs adb)
-make            # the launcher            -> build/tortos.elf
-make vendor     # five libretro cores     -> vendor/
-mk/build-mgba-bridge.sh  # the sixth      -> vendor/            (see below)
-make payload    # the installable card    -> out/sd/ and out/TortOS-v1.0.zip
-make native     # host build of the launcher, for working on how it looks
-make boot       # regenerate the boot animation
-make check      # every check below, offline, in a second or two
-```
-
-**mGBA is built rather than fetched, and is meant to stop being.** Every MBC2
-Game Boy cartridge segfaults on the buildbot core - Kirby's Pinball Land, Wave
-Race, Golf, X, both Final Fantasy Legends - a regression reported as
-mgba-emu/mgba#3859 and fixed upstream the same day, but in no downloadable core
-because libretro builds mGBA from a fork that has not synced.
-`mk/build-mgba-bridge.sh` builds that same pinned tree with only upstream's own
-fix applied, hardened to match the official build. Without it `make payload`
-refuses the card rather than shipping one whose Game Boy, Game Boy Color and
-Game Boy Advance shelves open onto nothing. Restore the fetch and delete the
-script the day that fork syncs.
-
-`make payload` needs a built Diatom binary (`DIATOM_ELF`, defaulting to a
-sibling checkout).
-
-`make check` runs before every commit. Each part can be run alone, and each
-exists because something once broke in a way nothing noticed:
-
-| | |
-|---|---|
-| `check-menus` | what each menu CONTAINS in a given state, with no renderer and no device |
-| `check-audioout` | where sound goes given a cable, a headset and a setting - all eight combinations |
-| `check-idle` | the Auto Off clock, including the charger case and the counter wrapping |
-| `check-cheevos` | the achievement half: parsing and filtering |
-| `check-rahash` | the C and Python ROM hashers agree, over the whole library |
-| `check-raset` | the C and Python set converters agree (needs `RA_USER`/`RA_PASS`) |
-| `check-artscrape` | two name normalizers agree on every candidate |
-| `check-artrun` | whole Box Art runs against a fake network: Replace keeps a cover it cannot better, and a checksum names the ROM in a zip, not the readme beside it |
-| `check-hare` | nothing on the file server is reachable without the PIN |
-| `check-httpd` | request parsing, including the malformed ones |
-| `check-xfer` | upload paths cannot escape the directory they were aimed at |
-| `check-db` | a shipped default never overwrites a choice, and the two scopes stay apart |
-| `check-stats` | play time is recorded, and a LAUNCH still writes nothing |
-| `check-sort` | a shelf sorts the way it says it does, and the same shelf twice the same way |
-| `check-bt` | a device name from the air is only ever data; an address is validated |
-| `check-backlog` | the backlog still says what is left, and has been swept recently |
-
-They are offline and need no device. A screen's rows are a pure function of
-its state precisely so the first two can exist - see `docs/decisions/`.
-
-The host build renders exactly what the handheld renders, and can be asked for
-a single frame:
-
-```sh
-TORTOS_ROOT=… TORTOS_ROMS=… TORTOS_FONT=res/fonts/menu.ttf \
-  build-native/tortos --shot /tmp/shelf.png --screen games
-```
-
-`--menu [row]` draws the TortOS menu over that shelf, and `--slots <n>
-[aspect]` draws one frame of the save/load carousel over synthetic game
-frames - the two screens that otherwise need a game running on a device before
-they can be looked at. `--jump <n>` applies n letter-jumps first (negative for
-up), so where the d-pad lands on a real library can be checked without a hand
-on the device. Every shot names the screen and the focused item on stderr, so
-a sequence of them reads back as a list of what was actually drawn.
-
-### On device
-
-```sh
-make adb          # push everything over USB
-make adb-elf      # just the launcher
-make adb-restart  # kill the launcher so launch.sh picks the new one up
-make adb-log
-```
-
-**Never `kill` `launch.sh` itself.** The boot hook's failsafe powers the device
-off when the launch loop exits.
-
----
-
-## Layout
-
-```
-src/            the launcher (MIT)
-docs/           why the code is shaped the way it is: the architecture
-                decisions in docs/decisions/, and the rules a menu follows
-                in docs/menus.md. Not user documentation - read before
-                changing a screen, not before using one.
-mk/             cross build, payload, deployment
-tools/          the boot-animation and card generators, setbright, the
-                achievement fetcher, and the checks
-res/            the boot animation, the system cards, the font, Over The
-                Hare's page, and the two marks this README shows
-config/         systems.cfg as shipped; the rest is compiled in
-sd/             the boot hook and launch.sh as they land on the card
-sysroot/        fetched: the device's own SDL2, for linking (mk/fetch-sysroot.sh)
-vendor/         the libretro cores: five fetched and hash-pinned, mGBA
-                built by mk/build-mgba-bridge.sh
-```
+- [How it works](docs/how-it-works.md): the resident emulator, the boot, and card art off the render thread
+- [Configuration](docs/configuration.md): the two settings databases, `systems.cfg`, core options and turbo
+- [Building](docs/building.md): the toolchain, the card, the checks, and deploying to a device
+- [Design decisions](docs/decisions/) and [how menus behave](docs/menus.md)
 
 ## License
 
-TortOS's own code is **MIT** (`LICENSE`).
-
-The emulator is [Diatom](https://github.com/ericreinsmidt/diatom), **MIT**, a
-separate program the launcher runs and talks to over a socket. The cores keep
-their own licenses - two of them non-commercial, which is what actually
-constrains a card - and full notices for everything redistributed are in
-`THIRD-PARTY-LICENSES.md`.
+TortOS is MIT, and so is Diatom. The cores keep their own licenses, two of them non-commercial. Full notices are in [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md).
