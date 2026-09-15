@@ -48,19 +48,6 @@ bool bt_mac_valid(const char *m)
 	return m && strlen(m) == 17 && mac_ok_prefix(m);
 }
 
-void bt_pcm_name(const char *mac, char *out, size_t n)
-{
-	size_t i;
-
-	if (!out || !n) return;
-	/* An address is 17 characters and the caller's buffer is sized for one.
-	 * Bounded anyway: this is reached with whatever a bond directory was
-	 * named, and a longer name should be cut rather than assumed away. */
-	snprintf(out, n, "bt_%.17s", mac ? mac : "");
-	for (i = 0; i < n && out[i]; i++)
-		if (out[i] == ':') out[i] = '_';
-}
-
 /* BlueZ prints an address as the name when it has none, in either punctuation.
  * Returns false when the "name" is just the address again. */
 static bool name_is_address(const char *name, const char *mac)
@@ -558,29 +545,40 @@ bool bt_forget(const char *mac)
 	return true;
 }
 
-bool bt_asoundrc(const char *userdata_dir)
+bool bt_asoundrc(const char *tortos_dir, const char *userdata_dir)
 {
-	char path[512], tmp[520], pcm[BT_MAC_MAX + 8];
-	bt_device d[BT_MAX];
-	int n, i;
-	FILE *f;
+	char script[512];
+	char *argv[6];
+	pid_t pid;
+	int st;
 
-	if (!userdata_dir || !*userdata_dir) return false;
-	snprintf(path, sizeof path, "%s/.asoundrc", userdata_dir);
-	snprintf(tmp, sizeof tmp, "%s.tmp", path);
-	if (!(f = fopen(tmp, "w"))) return false;
+	if (!tortos_dir || !*tortos_dir || !userdata_dir || !*userdata_dir) return false;
+	if (snprintf(script, sizeof script, "%s/bt-alsa.sh", tortos_dir)
+	    >= (int)sizeof script)
+		return false;
 
-	n = bt_bonded(d, BT_MAX);
-	for (i = 0; i < n; i++) {
-		bt_pcm_name(d[i].mac, pcm, sizeof pcm);
-		fprintf(f, "pcm.%s {\n    type bluealsa\n    device \"%s\"\n"
-		           "    profile \"a2dp\"\n}\n", pcm, d[i].mac);
+	/* The paths go in as $0 and $1, never pasted into the command, so no path
+	 * is ever read as shell. The same reason the rest of this file uses execv
+	 * and not popen. */
+	argv[0] = (char *)"/bin/sh";
+	argv[1] = (char *)"-c";
+	argv[2] = (char *)". \"$0\" && USERDATA_PATH=$1 && bt_write_asoundrc";
+	argv[3] = script;
+	argv[4] = (char *)userdata_dir;
+	argv[5] = NULL;
+
+	pid = fork();
+	if (pid < 0) return false;
+	if (pid == 0) {
+		/* Nothing between fork and exec that is not async-signal-safe: the
+		 * launcher has threads. stderr stays, so a failure lands in the log. */
+		int null = open("/dev/null", O_RDONLY);
+		if (null >= 0) { dup2(null, 0); close(null); }
+		execv(argv[0], argv);
+		_exit(127);
 	}
-	/* `default` is deliberately not redefined: ALSA reads this in addition to
-	 * /etc/asound.conf, and the speaker path must stay exactly as it was. */
-	if (fclose(f) != 0) { unlink(tmp); return false; }
-	if (rename(tmp, path) != 0) { unlink(tmp); return false; }
-	return true;
+	if (waitpid(pid, &st, 0) != pid) return false;
+	return WIFEXITED(st) && WEXITSTATUS(st) == 0;
 }
 
 #else   /* not __linux__ */
@@ -595,6 +593,6 @@ int  bt_mark_connected_now(bt_device *l, int n) { (void)l; (void)n; return 0; }
 bool bt_power(bool on) { (void)on; return false; }
 bool bt_disconnect(const char *m) { (void)m; return false; }
 bool bt_forget(const char *m) { (void)m; return false; }
-bool bt_asoundrc(const char *d) { (void)d; return false; }
+bool bt_asoundrc(const char *t, const char *d) { (void)t; (void)d; return false; }
 
 #endif

@@ -4718,7 +4718,7 @@ static void bt_screen(app *a)
 							 * start can reach it. It cannot help the one
 							 * already running: alsa-lib reads its config
 							 * once. See bt.h. */
-							bt_asoundrc(P_USERDATA);
+							bt_asoundrc(P_ROOT, P_USERDATA);
 						}
 					}
 					if (ok) {
@@ -4740,7 +4740,7 @@ static void bt_screen(app *a)
 		    u.dev[u.cursor].bonded) {
 			wait_panel(a, "Bluetooth", "Forgetting...");
 			if (bt_forget(u.dev[u.cursor].mac)) {
-				bt_asoundrc(P_USERDATA);
+				bt_asoundrc(P_ROOT, P_USERDATA);
 				snprintf(u.note, sizeof u.note, "Forgotten"); note_until = now + 4000;
 			} else {
 				snprintf(u.note, sizeof u.note, "It would not unpair"); note_until = now + 4000;

@@ -112,18 +112,14 @@ bool bt_connected(const char *mac);
 bool bt_disconnect(const char *mac);
 bool bt_forget(const char *mac);
 
-/* The ALSA name a bonded device gets. Must agree with bt_pcm_name in
- * launch.sh - see bt_asoundrc. */
-void bt_pcm_name(const char *mac, char *out, size_t n);
-
 /* Rewrite .asoundrc from the current bonds, so a newly paired headset has a
  * PCM waiting for it.
  *
- * THIS IS A SECOND IMPLEMENTATION of launch.sh's bt_write_asoundrc, and the
- * duplication is deliberate rather than overlooked: the shell one runs at boot
- * before this binary exists, and calling the launcher from launch.sh to avoid
- * it would load SDL on the boot path to write four lines. The check pins the
- * exact bytes both are expected to produce.
+ * By running bt_write_asoundrc from bt-alsa.sh in `tortos_dir` - the same
+ * function launch.sh runs at boot, not a copy of it. There used to be a second
+ * implementation here, held to the shell one by a check on the names alone;
+ * bt-alsa.sh says why there is one now. Waits for the shell to finish, and its
+ * errors go to the log.
  *
  * It also arrives too late to help the emulator that is already running.
  * alsa-lib loads its config once and never notices a file written afterwards,
@@ -131,7 +127,7 @@ void bt_pcm_name(const char *mac, char *out, size_t n);
  * place and worked immediately on restarting the emulator with the file
  * already there. So a device paired now carries game audio from the next
  * emulator start, and the screen has to say so rather than look broken. */
-bool bt_asoundrc(const char *userdata_dir);
+bool bt_asoundrc(const char *tortos_dir, const char *userdata_dir);
 
 /* Delete every cached device that is not bonded, and return how many went.
  *

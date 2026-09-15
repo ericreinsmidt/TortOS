@@ -168,18 +168,6 @@ static void labels(void)
 	ck(v[0] == '\0', "nothing at all says nothing");
 }
 
-static void pcm_names(void)
-{
-	char pcm[32];
-
-	printf("the ALSA name, which launch.sh also computes:\n");
-	bt_pcm_name("AA:BB:CC:DD:EE:FF", pcm, sizeof pcm);
-	/* launch.sh: bt_pcm_name() { echo "bt_$(echo "$1" | tr ':' '_')"; } */
-	ck(!strcmp(pcm, "bt_AA_BB_CC_DD_EE_FF"), "colons become underscores");
-	bt_pcm_name("a0:b1:c2:d3:e4:f5", pcm, sizeof pcm);
-	ck(!strcmp(pcm, "bt_a0_b1_c2_d3_e4_f5"), "case is left alone, as tr leaves it");
-}
-
 /* The rows themselves. This is why bt_menu.c exists as its own SDL-free file:
  * the first version of this screen built its rows inside main.c, where nothing
  * could reach them. ADR-0001 says a build function has to be callable with no
@@ -297,7 +285,6 @@ int main(void)
 	device_lines();
 	connections();
 	labels();
-	pcm_names();
 	rows_are_shaped_like_the_others();
 	sweep();
 	if (fails) { printf("\n%d FAILED\n", fails); return 1; }

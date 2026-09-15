@@ -22,6 +22,7 @@ mkdir -p "$P/cards" "$P/cores" "$P/res/web" \
 cp "$ROOT/build/tortos.elf" "$P/"
 cp "$ROOT/build/setbright" "$P/"          # brightness before the boot animation
 cp "$ROOT/sd/tortos/launch.sh" "$P/"
+cp "$ROOT/sd/tortos/bt-alsa.sh" "$P/"     # sourced by launch.sh, run by the launcher
 # Only systems.cfg is shipped now. tortos.cfg, turbo.cfg and coreopts.cfg are
 # compiled into the launcher and seed the settings database on first run, so
 # there is no file to ship and none to drift from the code that reads it.

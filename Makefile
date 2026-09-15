@@ -321,7 +321,7 @@ build-native/sort-check: tools/sort-check.c src/sort.h src/library.h src/stats.c
 # Bluetooth. A device NAME is arbitrary bytes chosen by whoever owns the
 # headset, arriving over the air into a process running as root; an ADDRESS is
 # the one value handed back to bluetoothctl. This checks the boundary between
-# them, and that the ALSA naming agrees with launch.sh's second implementation.
+# them.
 check-bt: build-native/bt-check
 	@./build-native/bt-check
 
@@ -420,7 +420,7 @@ adb-log:
 # what it draws.
 deploy: all
 	tar -cf - -C build tortos.elf setbright -C ../config systems.cfg \
-	    -C ../sd/tortos launch.sh -C ../../res/fonts menu.ttf | \
+	    -C ../sd/tortos launch.sh bt-alsa.sh -C ../../res/fonts menu.ttf | \
 	    $(SSH) 'tar -xf - -C /mnt/SDCARD/TortOS'
 	tar -cf - -C res cards | $(SSH) 'tar -xf - -C /mnt/SDCARD/TortOS'
 

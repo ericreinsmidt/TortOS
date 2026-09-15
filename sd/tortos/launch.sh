@@ -394,55 +394,15 @@ bt_on() {
 	bt_reconnect &
 }
 
-# Keep a remembered headset connected, so powering it on reconnects it wherever
-# you are rather than only at a screen that happens to be watching.
+# The Bluetooth headsets' ALSA config, bt_pcm_name and bt_write_asoundrc, in a
+# file of its own so the launcher runs the same code after a pair or a forget.
 #
-# Trusted devices only: BlueZ writes those to /etc/lib/bluetooth/<adapter>/, NOT
-# to /etc/bluetooth/keys/ - that directory is a decoy created by the bluetoothd
-# init wrapper's `ln -snf ... /var/lib/bluetooth`, and bluetoothd never reads it
-# because its storage path is compiled in with --localstatedir=/etc.
-#
-# Judge success by `info`, never by the return of `connect`: bluetoothctl reports
-# Failed for a2dp even when the link came up.
-# One named ALSA PCM per bonded headset, written BEFORE the emulator starts.
-#
-# This has to exist before the first PCM open in that process. alsa-lib loads
-# its config once and tracks the files it actually read: a .asoundrc created
-# later is never noticed, so a config written when a headset CONNECTS arrives
-# too late for a resident emulator that opened the speaker at boot. Measured
-# 2026-09-05 - it failed in place and then worked immediately on restarting the
-# emulator with the file already there.
-#
-# The bond is persistent (/etc/lib/bluetooth/<adapter>/<device>/), so every
-# headset that could connect is known now, without waiting for one to. A PCM
-# for a headset that is not connected simply fails to open, and the port falls
-# back to the speaker and says so - which is ADR-0029's behavior anyway.
-#
-# One per device rather than one reused name, so switching headsets needs no
-# restart. bt_pcm_name is the single place the naming is decided.
-bt_pcm_name() {
-	echo "bt_$(echo "$1" | tr ':' '_')"
-}
-
-bt_write_asoundrc() {
-	rc=$USERDATA_PATH/.asoundrc
-	: > "$rc.tmp"
-	for d in /etc/lib/bluetooth/*/*:*; do
-		[ -d "$d" ] || continue
-		grep -q '^Trusted=true' "$d/info" 2> /dev/null || continue
-		mac=$(basename "$d")
-		cat >> "$rc.tmp" <<-EOF
-		pcm.$(bt_pcm_name "$mac") {
-		    type bluealsa
-		    device "$mac"
-		    profile "a2dp"
-		}
-		EOF
-	done
-	# `default` is deliberately not redefined: ALSA reads this in addition to
-	# /etc/asound.conf, and the speaker path must stay exactly as it was.
-	mv "$rc.tmp" "$rc"
-}
+# Tested first, and the test is not decoration: `.` on a missing file ends a
+# non-interactive shell, and this one ending powers the device off (see
+# .tmp_update/updater). Without the file the boot goes on: .asoundrc is not
+# rewritten, and a connected headset's name comes out empty, which the launcher
+# reads as no sink - so game audio stays on the speaker.
+[ -f "$TORTOS_DIR/bt-alsa.sh" ] && . "$TORTOS_DIR/bt-alsa.sh"
 
 start_resident() {
 	pgrep -f "TortOS/diatom --socket" > /dev/null && return
@@ -454,6 +414,16 @@ start_resident() {
 	echo $! > /tmp/diatom.pid
 }
 
+# Keep a remembered headset connected, so powering it on reconnects it wherever
+# you are rather than only at a screen that happens to be watching.
+#
+# Trusted devices only: BlueZ writes those to /etc/lib/bluetooth/<adapter>/, NOT
+# to /etc/bluetooth/keys/ - that directory is a decoy created by the bluetoothd
+# init wrapper's `ln -snf ... /var/lib/bluetooth`, and bluetoothd never reads it
+# because its storage path is compiled in with --localstatedir=/etc.
+#
+# Judge success by `info`, never by the return of `connect`: bluetoothctl reports
+# Failed for a2dp even when the link came up.
 bt_reconnect() {
 	adapter=$(hciconfig hci0 2> /dev/null | sed -n 's/.*BD Address: \([0-9A-F:]*\).*/\1/p')
 	[ -n "$adapter" ] || return 0
