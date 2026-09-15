@@ -127,10 +127,6 @@ The shelf is `systems.cfg`, so that list is the shipped one rather than a fixed
 one: a line removed from the config takes its shelf with it, and a system whose
 folder is empty is hidden until there is something in it.
 
-A folder inside a system folder that contains a disc image counts as one game,
-launching the image inside it - that is how a multi-disc PC Engine CD set stays
-a single entry.
-
 ### Undoing it
 
 TortOS replaces the boot splash and the loading splash on first boot, and backs
@@ -187,7 +183,7 @@ matters to you - a card is the one part of this that gets reformatted.
 | **MENU** (inside a system) | that system's menu, below |
 | **MENU** (in `Cubic`) | always the TortOS menu; B is the system's |
 | **MENU** (in game) | the in-game menu: Continue, Save, Load, Display, Cheevos, Reset, Quit |
-| **POWER** | ends the game if one is running, otherwise powers off |
+| **POWER** | powers off. In a game, the game is saved first |
 
 MENU means three different menus depending on where you are, and each one is
 about the thing you are looking at: the firmware on the systems row, one
@@ -566,9 +562,10 @@ Pressing A on it does not start it, it continues it.
   stop from the launcher - writes the state and the preview at the paths the
   launch handed over. One funnel, so no exit can forget and none can save
   twice.
-- **Auto-resume.** The launcher asks for slot 9 before every launch. If a state
-  is there the game comes up exactly where it was left; if not it starts fresh.
-- **Manual save and load**, eight slots, from the in-game menu (`MENU`).
+- **Auto-resume.** Every launch hands over the game's autosave,
+  `<ROM file>.auto.state`. If one is there the game comes up exactly where it
+  was left; if not it starts fresh.
+- **Manual save and load**, six slots, from the in-game menu (`MENU`).
   Silent - the device shows no in-game chrome.
 
 States are keyed on the system's **`Roms/` folder**, and battery `.srm` files
