@@ -76,7 +76,9 @@ bool plat_spawn_detached(char *const argv[], const char *const envkv[],
                          const char *workdir);
 
 /* The resident emulator. plat_resident_send() hands over a game and returns
- * at once, so the launcher can animate while it loads; plat_resident_wait()
+ * at once - the launcher draws nothing over the load, because it and the
+ * emulator presenting together wedges the display (see launch() in main.c),
+ * and a warm launch leaves nothing to cover anyway; plat_resident_wait()
  * blocks until the game is over - or, on the Diatom transport, until the
  * player opens the in-game menu, which the launcher draws (the emulator hands
  * the display over rather than drawing its own).

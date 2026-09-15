@@ -482,22 +482,71 @@ static bool run_power_pressed;
 bool plat_run_power_pressed(void) { return run_power_pressed; }
 void plat_note_power_pressed(void) { run_power_pressed = true; }
 
+extern char **environ;
+
+/* The environment a child starts with: this process's, with `envkv` laid over
+ * it - each "KEY=VALUE" replacing any KEY already there. Built BEFORE the fork
+ * and handed to execve, so between fork and exec the child calls nothing but
+ * chdir, setsid, execve, write and _exit.
+ *
+ * Both forks below used to putenv each pair in the child, and one reported a
+ * failed exec with fprintf. Neither is async-signal-safe, which is all POSIX
+ * promises a child of a threaded process may call before it execs - and this
+ * process has threads, the art resizer among them writing to stderr. Whether
+ * glibc's own fork makes those two safe anyway was never checked; building the
+ * environment first removes the question.
+ *
+ * The strings are borrowed, not copied: environ's and the caller's both outlive
+ * the exec that uses them. Only the array is allocated, and the parent frees it
+ * once the fork is done. */
+static char **child_environ(const char *const envkv[])
+{
+	size_t have = 0, add = 0, i, k, n = 0;
+	char **out;
+
+	while (environ && environ[have]) have++;
+	while (envkv && envkv[add]) add++;
+	if (!(out = malloc((have + add + 1) * sizeof *out))) return NULL;
+	for (i = 0; i < have; i++) {
+		const char *eq = strchr(environ[i], '=');
+		size_t klen = eq ? (size_t)(eq - environ[i]) : strlen(environ[i]);
+		bool replaced = false;
+
+		for (k = 0; k < add && !replaced; k++)
+			replaced = !strncmp(envkv[k], environ[i], klen) && envkv[k][klen] == '=';
+		if (!replaced) out[n++] = environ[i];
+	}
+	for (k = 0; k < add; k++)
+		if (strchr(envkv[k], '=')) out[n++] = (char *)envkv[k];
+	out[n] = NULL;
+	return out;
+}
+
 int plat_run(char *const argv[], const char *const envkv[], const char *workdir)
 {
 	pid_t pid;
+	char **env = child_environ(envkv);
+	size_t alen = strlen(argv[0]);
+
+	if (!env) return -1;
 	run_power_pressed = false;
 	pid = fork();
-	if (pid < 0) return -1;
+	if (pid < 0) { free(env); return -1; }
 	if (pid == 0) {
+		ssize_t w;
+
 		if (workdir) {
 			if (chdir(workdir) != 0) { /* still try to run */ }
 		}
-		for (int i = 0; envkv && envkv[i]; i++)
-			putenv((char *)envkv[i]);
-		execv(argv[0], argv);
-		fprintf(stderr, "execv %s: failed\n", argv[0]);
+		execve(argv[0], argv, env);
+		/* write, not fprintf - see child_environ. */
+		w = write(2, "execve ", 7);
+		w = write(2, argv[0], alen);
+		w = write(2, ": failed\n", 9);
+		(void)w;
 		_exit(127);
 	}
+	free(env);
 	int status = 0;
 #ifdef __linux__
 	/* Escape hatch: a core that dead-ends (a bad ROM, a missing BIOS) leaves
@@ -540,19 +589,22 @@ int plat_run(char *const argv[], const char *const envkv[], const char *workdir)
 bool plat_spawn_detached(char *const argv[], const char *const envkv[],
                          const char *workdir)
 {
-	pid_t pid = fork();
-	if (pid < 0) return false;
+	char **env = child_environ(envkv);
+	pid_t pid;
+
+	if (!env) return false;
+	pid = fork();
+	if (pid < 0) { free(env); return false; }
 	if (pid == 0) {
 		if (fork() == 0) {
 			setsid();
 			if (workdir) { if (chdir(workdir) != 0) { /* still try */ } }
-			for (int i = 0; envkv && envkv[i]; i++)
-				putenv((char *)envkv[i]);
-			execv(argv[0], argv);
+			execve(argv[0], argv, env);
 			_exit(127);
 		}
 		_exit(0);
 	}
+	free(env);
 	waitpid(pid, NULL, 0);
 	return true;
 }
@@ -716,8 +768,6 @@ bool plat_resident_ready(void)
 
 
 
-/* Ask for a game. Returns immediately -- the caller draws its launch
- * animation while the game loads, which is most of what a launch costs. */
 static void (*d_on_unlock)(int id);
 
 void plat_resident_on_unlock(void (*fn)(int id)) { d_on_unlock = fn; }

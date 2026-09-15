@@ -631,14 +631,23 @@ static SDL_Texture *game_get_tex(void *ctx, int i, int *w, int *h, float *cb)
 	return v->tex[i];
 }
 
+static void faces_stale(void);
+
 /* Install everything the worker finished, on the thread that owns the
  * renderer. SDL_CreateTextureFromSurface is the only part that needs it and
  * costs 1-2ms; content_bottom is computed here too, because it stops at the
- * first row with anything in it and so costs the padding, not the image. */
+ * first row with anything in it and so costs the padding, not the image.
+ *
+ * And the cube's two cached faces go stale when anything lands. They are
+ * rendered once per step of a turn and kept for its whole 450ms, so a card
+ * that arrived mid-turn stayed blank on its face until the turn ended. Staling
+ * them costs a render of both faces on a frame where art arrived - a handful
+ * per turn, not the render every frame the cache exists to avoid. */
 static void texload_drain(app *a)
 {
 	SDL_Surface *surf;
 	int s, i;
+	bool landed = false;
 
 	while (texload_take(&s, &i, &surf)) {
 		sysview *v;
@@ -668,7 +677,9 @@ static void texload_drain(app *a)
 			                         &v->tw[i], &v->th[i]);
 			v->cb[i] = 1.0f;
 		}
+		landed = true;
 	}
+	if (landed) faces_stale();
 }
 
 static void evict_far(sysview *v, int keep)
@@ -2658,9 +2669,17 @@ static void tick_tint(app *a)
 
 /* ---------- transitions --------------------------------------------------- */
 
-/* Starting a game: the focused card comes at you and the screen goes with it.
- * Played WHILE the resident emulator loads the ROM, not before -- the whole
- * ~200ms of a launch is covered by it, so the animation costs nothing. */
+/* Starting a game the slow way: the focused card comes at you and the screen
+ * goes with it.
+ *
+ * Only on the fallback, when there is no resident emulator and Diatom runs as
+ * a process of its own. A normal launch has no animation at all, and that is a
+ * display-safety rule rather than a taste call - see the resident path in
+ * launch(): Diatom presents through fbdev and this process through GL, and the
+ * two presenting at once wedges the display engine. On the fallback nothing
+ * else is presenting yet, and this process tears its display down straight
+ * after. This comment used to say the zoom played while the resident loaded
+ * the ROM, which stopped being true when that rule was made. */
 static void anim_launch(app *a, unsigned ms)
 {
 	sysview *v = &a->view[a->sys_cursor];
@@ -2677,6 +2696,16 @@ static void anim_launch(app *a, unsigned ms)
 		float e = k * k;                     /* accelerate away */
 		float scale = 1.0f + e * 2.2f;
 		SDL_Rect dst;
+
+		/* Asked again every frame until it is there. Card art decodes on a
+		 * worker, so A pressed straight after a letter jump can start this
+		 * before the focused card has arrived - and asking once, as this did,
+		 * zoomed an empty frame for the whole animation. Now a card that lands
+		 * partway through joins the zoom where it is. */
+		if (!card && v->list.count) {
+			texload_drain(a);
+			card = game_get_tex(a, v->cursor, &tw, &th, NULL);
+		}
 
 		SDL_SetRenderDrawColor(a->r, UI_BG_R, UI_BG_G, UI_BG_B, 255);
 		SDL_RenderClear(a->r);
