@@ -39,17 +39,11 @@ void net_set_ca_path(const char *path);
 
 typedef struct { const char *k, *v; } net_field;
 
-/* Small replies - login, gameid, startsession. Returns the body length, or
+/* Small replies - sign-in, and an unlock sent. Returns the body length, or
  * -1: no curl, no network, HTTP error, or a timeout. The distinction between
  * those is logged, not returned, because every caller does the same thing
  * with it - carry on without. */
 long net_post_buf(const net_field *f, int n, char *out, size_t outn, int timeout_s);
-
-/* Large replies - a patch response runs past 100KB for a big set. Written
- * straight to `path` so nothing has to guess a buffer size. Writes through a
- * temporary and renames, so an interrupted fetch cannot leave a half a set
- * where a whole one is expected. */
-bool net_post_file(const net_field *f, int n, const char *path, int timeout_s);
 
 /* The same request, started and left to run. Nothing waits for it.
  *
@@ -64,17 +58,9 @@ bool net_post_file(const net_field *f, int n, const char *path, int timeout_s);
 bool net_post_async(const net_field *f, int n, const char *path, int timeout_s);
 int  net_async_poll(void);
 
-/* Plain GET, for things that are not RetroAchievements: a directory index
- * into a buffer, an image straight to a file. Same certificate store, same
- * timeout, same fork-and-execv.
- *
- * net_get_file writes through a temporary and renames, so an interrupted
- * download cannot leave half a PNG where later runs would read it as art that
- * is already there and skip it forever. */
-long net_get_buf(const char *url, char *out, size_t outn, int timeout_s);
-bool net_get_file(const char *url, const char *path, int timeout_s);
-
-/* The same GET, started and left running, reaped through net_async_poll.
+/* A GET, for things that are not RetroAchievements - a catalog, a checksum
+ * list, a cover - started and left running, reaped through net_async_poll.
+ * Same certificate store, same timeout, same fork-and-execv.
  *
  * For anything driven from a screen's frame loop. A blocking fetch there is
  * not merely slow: that loop is where the power button is read, so a request

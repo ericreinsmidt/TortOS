@@ -38,26 +38,11 @@ void ra_creds_copy(char *user, size_t un, char *token, size_t tn);
  * the difference between a wrong password and a site that is down. */
 bool ra_sign_in(const char *user, const char *password, char *err, size_t errn);
 
-/* 0: RetroAchievements does not know this hash, which for a fan translation is
- * the permanent and correct answer. -1: the question could not be asked, which
- * is a different thing and must not be cached as though it were an answer. */
-long ra_game_for_rom(const char *rom_path, const char *tag);
-
 /* The conversion on its own, so it can be checked against real responses with
  * no network involved. tools/raset-check.c does exactly that, against the
  * files tools/ra-sets.py writes from the same JSON. */
 bool ra_set_from_json(const char *json, size_t len, long gameid,
                       const char *out_path);
-
-/* Fetch a set and write it where chv_load will find it. The file is the same
- * format tools/ra-sets.py writes, because it is read by the same two
- * programs - see src/cheevos.h. */
-bool ra_fetch_set(long gameid, const char *out_path);
-
-/* The whole thing for one game: hash, identify, fetch, cache. False means no
- * set is available, for any of the ordinary reasons - offline, not signed in,
- * RA does not know the game, or it has no achievements. */
-bool ra_ensure_set(const char *rom_path, const char *tag, const char *set_path);
 
 /* ---- the account ---------------------------------------------------------
  *
@@ -69,21 +54,18 @@ bool ra_ensure_set(const char *rom_path, const char *tag, const char *set_path);
  * owns the screen.
  */
 
-/* What the account already holds for a game, softcore. Up to `max` ids into
- * `out`; returns how many, or -1 if the question could not be asked - a
- * different thing from "none", and one that must not be recorded as an answer.
+/* What the account already holds for a game, softcore, asked without waiting
+ * for the answer.
  *
  * This is what makes a count mean something. Without it the launcher reports
  * what THIS DEVICE has seen, which looks exactly like an account total and is
- * not one - measured 2026-08-29 as 3/40 against the site's 13/40. */
-int ra_account_unlocks(long gameid, int *out, int max);
-
-/* The same question, asked without waiting for the answer. Start it before the
- * game and poll it while the game runs: a request that takes 310-460ms lands
- * about half a second in. The cost of waiting at launch was 320ms on the front
- * of every launch, on a launcher whose whole point is that a warm one is 15ms.
- * Measured on the device 2026-08-29; 150ms of it is the TLS handshake and no
- * amount of caching removes that.
+ * not one - measured 2026-08-29 as 3/40 against the site's 13/40.
+ *
+ * Start it before the game and poll it while the game runs: a request that
+ * takes 310-460ms lands about half a second in. The cost of waiting at launch
+ * was 320ms on the front of every launch, on a launcher whose whole point is
+ * that a warm one is 15ms. Measured on the device 2026-08-29; 150ms of it is
+ * the TLS handshake and no amount of caching removes that.
  *
  * It used to be collected only when the game ended, blocking until it had
  * landed. So the first session of a game read 0 of N in its own menu, and a
@@ -118,10 +100,6 @@ void ra_sync_abandon(void);
 void ra_fetch_begin(const char *rom_hash, const char *set_path);
 int  ra_fetch_step(void);
 long ra_fetch_gameid(void);
-
-/* Tell RetroAchievements a game has started. Fire and forget: it drives
- * "currently playing" on the site and nothing here depends on it. */
-void ra_start_session(long gameid);
 
 /* Submit one unlock, softcore. Signed the way rcheevos signs it -
  * md5(achievement id + username + hardcore flag) - because the server checks

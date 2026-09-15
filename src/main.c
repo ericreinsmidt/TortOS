@@ -6482,10 +6482,10 @@ static void launch(app *a)
 			if (!first_play) sync_begin(chv_game(), set);
 
 
-			/* ra_start_session is deliberately NOT called here. It drives the
-			 * "currently playing" indicator on the website and nothing on the
-			 * device, and it is another 320ms request - which is the exact
-			 * trade this whole path exists to refuse. */
+			/* No "startsession" request, deliberately. It drives the "currently
+			 * playing" indicator on the website and nothing on the device, and
+			 * it is another 320ms request - which is the exact trade this whole
+			 * path exists to refuse. */
 
 			chv_active_path(active, sizeof active);
 			if (chv_write_active(active)) {

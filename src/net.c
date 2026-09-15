@@ -195,35 +195,6 @@ long net_post_buf(const net_field *f, int n, char *out, size_t outn, int timeout
 	return got;
 }
 
-bool net_post_file(const net_field *f, int n, const char *path, int timeout_s)
-{
-	char cfg[128], tmp[1024];
-	struct stat st;
-	int fd, rc;
-
-	tmp_config(cfg, sizeof cfg);
-	if (!write_config(cfg, f, n, timeout_s)) return false;
-
-	/* Through a temporary in the destination directory, then rename. A set
-	 * truncated by a dropped connection would otherwise sit in the cache
-	 * looking complete, and the next launch would watch half a game. */
-	snprintf(tmp, sizeof tmp, "%s.part", path);
-	fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-	if (fd < 0) { unlink(cfg); return false; }
-
-	rc = run_curl(cfg, fd);
-	close(fd);
-	unlink(cfg);
-
-	if (rc != 0 || stat(tmp, &st) != 0 || st.st_size == 0) {
-		if (rc != 0) fprintf(stderr, "ra: fetch failed (curl exit %d)\n", rc);
-		unlink(tmp);
-		return false;
-	}
-	if (rename(tmp, path) != 0) { unlink(tmp); return false; }
-	return true;
-}
-
 /* ---- the same thing, without waiting ------------------------------------ */
 
 static pid_t g_async = -1;
@@ -381,63 +352,4 @@ bool net_online(void)
 	}
 	freeifaddrs(ifa);
 	return up;
-}
-
-long net_get_buf(const char *url, char *out, size_t outn, int timeout_s)
-{
-	char cfg[128];
-	int fd, rc;
-	long got = -1;
-
-	if (!out || outn == 0) return -1;
-	out[0] = '\0';
-	tmp_config(cfg, sizeof cfg);
-	if (!write_get_config(cfg, url, timeout_s)) return -1;
-
-	{
-		char tmp[160];
-		FILE *rf;
-
-		snprintf(tmp, sizeof tmp, "%s.out", cfg);
-		fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0600);
-		if (fd < 0) { remove(cfg); return -1; }
-		rc = run_curl(cfg, fd);
-		close(fd);
-		remove(cfg);
-		if (rc != 0) { remove(tmp); return -1; }
-
-		rf = fopen(tmp, "rb");
-		if (!rf) { remove(tmp); return -1; }
-		got = (long)fread(out, 1, outn - 1, rf);
-		out[got < 0 ? 0 : got] = '\0';
-		fclose(rf);
-		remove(tmp);
-	}
-	return got;
-}
-
-bool net_get_file(const char *url, const char *path, int timeout_s)
-{
-	char cfg[128], tmp[512];
-	int fd, rc;
-
-	tmp_config(cfg, sizeof cfg);
-	if (!write_get_config(cfg, url, timeout_s)) return false;
-
-	/* Through a temporary and renamed. An interrupted download that left half
-	 * a PNG in place would be read by every later run as art that is already
-	 * there, and skipped forever - the one failure this whole feature could
-	 * not recover from on its own. */
-	if (snprintf(tmp, sizeof tmp, "%s.part", path) >= (int)sizeof tmp) {
-		remove(cfg);
-		return false;
-	}
-	fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-	if (fd < 0) { remove(cfg); return false; }
-	rc = run_curl(cfg, fd);
-	close(fd);
-	remove(cfg);
-	if (rc != 0) { remove(tmp); return false; }
-	if (rename(tmp, path) != 0) { remove(tmp); return false; }
-	return true;
 }

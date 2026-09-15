@@ -109,25 +109,6 @@ bool ra_sign_in(const char *user, const char *password, char *err, size_t errn)
 
 /* ---------------------------------------------------------- the set ----- */
 
-long ra_game_for_rom(const char *rom_path, const char *tag)
-{
-	char hash[33], body[512];
-	net_field f[2];
-	jsv root, v;
-
-	if (!ra_hash_rom(rom_path, tag, hash)) return -1;
-	if (!net_online()) return -1;
-
-	f[0].k = "r"; f[0].v = "gameid";
-	f[1].k = "m"; f[1].v = hash;
-	if (net_post_buf(f, 2, body, sizeof body, 20) < 0) return -1;
-
-	root = js_root(body, strlen(body));
-	if (!js_member(root, "Success", &v) || !js_is_true(v)) return -1;
-	if (!js_member(root, "GameID", &v)) return -1;
-	return js_int(v);
-}
-
 /* A tab or a newline in a title would become a field in the set file. RA's
  * titles have neither today; this is here so that the day one does, the file
  * stays readable rather than becoming subtly wrong. */
@@ -235,71 +216,6 @@ bool ra_set_from_json(const char *json, size_t len, long gameid,
 		                "dropped\n", gameid);
 	fprintf(stderr, "ra: %d achievements cached for game %ld\n", kept, gameid);
 	return true;
-}
-
-bool ra_fetch_set(long gameid, const char *out_path)
-{
-	char tmp[1024], g[24];
-	char *json;
-	size_t len;
-	net_field f[4];
-	bool ok;
-
-	if (gameid <= 0 || !ra_signed_in() || !net_online()) return false;
-
-	snprintf(g, sizeof g, "%ld", gameid);
-	snprintf(tmp, sizeof tmp, "%s.json", out_path);
-
-	f[0].k = "r"; f[0].v = "patch";
-	f[1].k = "g"; f[1].v = g;
-	f[2].k = "u"; f[2].v = g_user;
-	f[3].k = "t"; f[3].v = g_token;
-	/* Straight to a file: a big set runs past 100KB and nothing here should
-	 * have to guess how big is big enough. */
-	if (!net_post_file(f, 4, tmp, 30)) return false;
-
-	json = read_whole(tmp, &len);
-	unlink(tmp);
-	if (!json) return false;
-
-	ok = ra_set_from_json(json, len, gameid, out_path);
-	free(json);
-	return ok;
-}
-
-/* ---- the account -------------------------------------------------------- */
-
-int ra_account_unlocks(long gameid, int *out, int max)
-{
-	char *body;
-	char g[24];
-	net_field f[5];
-	jsv root, arr, it, e;
-	int n = 0;
-
-	if (gameid <= 0 || !out || max <= 0) return -1;
-	if (!ra_signed_in() || !net_online()) return -1;
-
-	/* Heap rather than a guess on the stack: 200 ids is a few KB and the
-	 * reply carries more than the ids. */
-	body = malloc(65536);
-	if (!body) return -1;
-
-	snprintf(g, sizeof g, "%ld", gameid);
-	f[0].k = "r"; f[0].v = "unlocks";
-	f[1].k = "u"; f[1].v = g_user;
-	f[2].k = "t"; f[2].v = g_token;
-	f[3].k = "g"; f[3].v = g;
-	f[4].k = "h"; f[4].v = "0";     /* softcore: TortOS enforces no hardcore */
-	if (net_post_buf(f, 5, body, 65536, 20) < 0) { free(body); return -1; }
-
-	root = js_root(body, strlen(body));
-	if (!js_member(root, "UserUnlocks", &arr)) { free(body); return -1; }
-
-	memset(&it, 0, sizeof it);
-	while (n < max && js_next(arr, &it, &e)) out[n++] = (int)js_int(e);
-	free(body);
-	return n;
 }
 
 /* ---- finding a set while the game is already running -------------------- */
@@ -461,20 +377,6 @@ void ra_sync_abandon(void)
 	g_sync_path[0] = '\0';
 }
 
-void ra_start_session(long gameid)
-{
-	char body[1024], g[24];
-	net_field f[4];
-
-	if (gameid <= 0 || !ra_signed_in() || !net_online()) return;
-	snprintf(g, sizeof g, "%ld", gameid);
-	f[0].k = "r"; f[0].v = "startsession";
-	f[1].k = "u"; f[1].v = g_user;
-	f[2].k = "t"; f[2].v = g_token;
-	f[3].k = "g"; f[3].v = g;
-	net_post_buf(f, 4, body, sizeof body, 15);
-}
-
 int ra_submit_unlock(int achievement_id, const char *rom_hash)
 {
 	return ra_submit_unlock_as(g_user, g_token, achievement_id, rom_hash);
@@ -529,27 +431,4 @@ int ra_submit_unlock_as(const char *user, const char *token,
 		if (strstr(msg, "already has this achievement")) return 0;
 	}
 	return -1;
-}
-
-bool ra_ensure_set(const char *rom_path, const char *tag, const char *set_path)
-{
-	struct stat st;
-	long gid;
-
-	if (stat(set_path, &st) == 0 && st.st_size > 0) return true;   /* cached */
-	if (!ra_signed_in() || !net_online()) return false;
-
-	gid = ra_game_for_rom(rom_path, tag);
-	if (gid <= 0) return false;
-
-	{	/* .cheevos/ beside the ROM, created on first use rather than at scan
-		 * time: most systems will never need one. */
-		char dir[1024];
-		char *slash;
-
-		snprintf(dir, sizeof dir, "%s", set_path);
-		slash = strrchr(dir, '/');
-		if (slash) { *slash = '\0'; mkdir(dir, 0755); }
-	}
-	return ra_fetch_set(gid, set_path);
 }
