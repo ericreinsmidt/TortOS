@@ -65,4 +65,17 @@ int menu_step_sel(const menu_row *rows, int n, int sel, int dir);
  * looking at one frame cannot. Pure, so tools/menu-check.c can walk it. */
 int menu_window_first(const menu_row *rows, int n, int sel, int vis, int first);
 
+/* Whether a row too wide for its panel SCROLLS rather than being cut short.
+ *
+ * Two reasons to move: the cursor is on it, or the cursor can never get to it -
+ * because a row nobody can select has no other way of showing text that does
+ * not fit. `visits_all` is how a caller says the second reason does not apply
+ * to its list, which is true wherever `live` means something other than
+ * selectable.
+ *
+ * Pure, and here rather than inside the renderer, because the last time this
+ * rule quietly meant something else nobody could see it: the achievement list
+ * scrolled a title or cut it depending on whether the player had EARNED it. */
+bool menu_row_moves(menu_row row, bool selected, bool visits_all);
+
 #endif

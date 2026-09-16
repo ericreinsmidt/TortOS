@@ -2322,7 +2322,8 @@ static int shot_phase = -1;        /* --phase, for the shot harness only */
  * prevent, a step smaller: each would see the other's key every frame and
  * neither would ever get past the opening hold. */
 #define MQ_NOTES 2
-enum { MQ_SHELF, MQ_MENU, MQ_VALUE, MQ_NOTE0, MQ_NOTE1, MQ_VSCROLL, MQ_SLOTS };
+enum { MQ_SHELF, MQ_MENU, MQ_VALUE, MQ_NOTE0, MQ_NOTE1, MQ_VSCROLL,
+       MQ_HEAD, MQ_SLOTS };
 
 static unsigned mq_phase(int who, int key_a, int key_b)
 {
@@ -2813,9 +2814,14 @@ static int menu_list_fit(int fixed, int rules, int notes)
  * not a field on menu_row because exactly one screen has any use for it, and
  * putting it there made all 69 initializers in the launcher declare that they
  * do not care. NULL, which is what menu_draw passes, is the ordinary rule. */
+/* `visits_all` says the cursor can rest on EVERY row, whatever their `live`
+ * says - which is only true of a list that uses `live` for something other
+ * than selectability. The achievement list is the one: there `live` means
+ * EARNED, and the cursor walks earned and unearned alike. Everywhere else the
+ * two meanings coincide and this is false. */
 static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
                          int n, int sel, int fixed_w, unsigned accent,
-                         const unsigned *vcolors)
+                         const unsigned *vcolors, bool visits_all)
 {
 	TTF_Font *fm = ui_font(UI_F_MENU), *fh = ui_font(UI_F_LABEL);
 	int row_h = menu_row_h();
@@ -3068,13 +3074,39 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 		 * notice.c each fit their own before handing it over, which worked
 		 * and meant two callers had to remember. */
 		{
+			/* A HEADING THAT DOES NOT FIT SCROLLS, like every other line in
+			 * this launcher that does not fit. It used to be cut with an
+			 * ellipsis and left there, which on the achievement list meant a
+			 * game's own name was the one thing on screen you could not read:
+			 * "Castlevania III - Dracula's C...". The panel is a fixed width
+			 * shared by every menu, and a game title is whatever it is.
+			 *
+			 * Left-aligned while it moves, for the reason a long note is:
+			 * text wider than the box has nothing left to center.
+			 *
+			 * Both lines share one slot, so when a heading has two they move
+			 * together rather than taking turns resetting each other's clock -
+			 * the same lesson the value marquee learned on Over The Hare. */
 			char h1[192], h2[192];
+			int hw = ui_text_width(fh, head1);
+			unsigned ph = mq_phase(MQ_HEAD, (int)strlen(head1), content_w);
 
-			ui_fit_text(fh, head1, h1, sizeof h1, content_w);
-			ui_text(a->r, fh, h1, cx, hy, 0, UI_TEXT_SOFT);
+			if (hw <= content_w) {
+				ui_fit_text(fh, head1, h1, sizeof h1, content_w);
+				ui_text(a->r, fh, h1, cx, hy, 0, UI_TEXT_SOFT);
+			} else {
+				ui_text_marquee(a->r, fh, head1, content_x, hy, content_w,
+				                ph, UI_TEXT_SOFT);
+			}
 			if (head2) {
-				ui_fit_text(fh, head2, h2, sizeof h2, content_w);
-				ui_text(a->r, fh, h2, cx, hy + line_head, 0, UI_TEXT_SOFT);
+				if (ui_text_width(fh, head2) <= content_w) {
+					ui_fit_text(fh, head2, h2, sizeof h2, content_w);
+					ui_text(a->r, fh, h2, cx, hy + line_head, 0, UI_TEXT_SOFT);
+				} else {
+					ui_text_marquee(a->r, fh, head2, content_x,
+					                hy + line_head, content_w, ph,
+					                UI_TEXT_SOFT);
+				}
 			}
 		}
 		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
@@ -3397,7 +3429,11 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 			 * a screen of facts, waiting for selection waits forever. Rows
 			 * long enough to move are rare either way, and a page where
 			 * everything is moving will not sit still to be read. */
-			bool moves = (i == sel || !rows[i].live);
+			/* See menu_row_moves. The rule lives in menu.c because the
+			 * last time it quietly meant something else, nothing could see
+			 * it: the achievement list scrolled a title or cut it depending
+			 * on whether the player had earned it. */
+			bool moves = menu_row_moves(rows[i], i == sel, visits_all);
 
 			if (lw + (vw ? gap + vw : 0) <= content_w) {
 				ui_fit_text(fm, rows[i].label, lbl, sizeof lbl, content_w);
@@ -3518,7 +3554,7 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
                       int sel, int fixed_w, unsigned accent)
 {
-	menu_draw_ex(a, heading, rows, n, sel, fixed_w, accent, NULL);
+	menu_draw_ex(a, heading, rows, n, sel, fixed_w, accent, NULL, false);
 }
 
 /* The two menus behind MENU, their row indices and their buffers: src/sys_menu.h */
@@ -6162,7 +6198,7 @@ static bool cheevo_detail_screen(app *a, SDL_Texture *bg, bool over_shelf,
 		}
 
 		chv_backdrop(a, bg, over_shelf);
-		menu_draw_ex(a, c->title, rows, n, -1, fixed, a->tint, vcols);
+		menu_draw_ex(a, c->title, rows, n, -1, fixed, a->tint, vcols, false);
 		SDL_RenderPresent(a->r);
 		SDL_Delay(8);
 	}
@@ -6301,8 +6337,10 @@ static void cheevos_screen(app *a, SDL_Texture *bg, bool over_shelf)
 		}
 
 		chv_backdrop(a, bg, over_shelf);
+		/* visits_all: every achievement can be opened, earned or not, so
+		 * `live` here is about color and not about reach. */
 		menu_draw_ex(a, heading, rows, n, sel, menu_std_width(a), a->tint,
-		             vcols);
+		             vcols, true);
 		SDL_RenderPresent(a->r);
 		SDL_Delay(8);
 	}
@@ -7556,6 +7594,8 @@ static int shot_kb, shot_kb_layer;
 static const char *shot_notice;
 static const char *shot_notice_head = "Unlocked  -  5 points";
 static int shot_cheevos;
+static int shot_cheevos_sel;
+static const char *shot_cheevos_game = "Hagane: The Final Conflict";
 static int shot_syn;       /* --synopsis: the card a scraped game opens */
 static int shot_info;
 static int shot_art;
@@ -7680,11 +7720,16 @@ static void take_shot(app *a)
 		}
 	}
 	if (shot_cheevos) {
+		/* Real titles, and the long ones are the point: a set's names run past
+		 * the panel often, and this shot drew eight short ones - so the screen
+		 * could be looked at without a device and still not show the thing
+		 * worth looking at. Two of the three below are real RetroAchievements
+		 * titles from sets on this card. */
 		static const struct { const char *t; int p; bool got; } sample[] = {
 			{ "The Path to Disaster", 5, true },
-			{ "The Fortress of Doom", 5, false },
+			{ "Hold On To Your Potatoes, We're In For A Bumpy Ride", 10, true },
 			{ "Violated Heavens", 10, true },
-			{ "Cry of the Spirits", 10, false },
+			{ "I Am Not Left Handed Either, But I Can Still Beat You", 25, false },
 			{ "Koma Faction's Fall", 25, false },
 			{ "Not So Disaster", 10, false },
 			{ "Storming The Fortress", 10, false },
@@ -7692,15 +7737,22 @@ static void take_shot(app *a)
 		};
 		int cn = (int)(sizeof sample / sizeof sample[0]), ci;
 		menu_row rows[8];
+		unsigned vcols[8] = { 0 };
 		char vals[8][16], head[192];
 
 		for (ci = 0; ci < cn; ci++) {
 			snprintf(vals[ci], sizeof vals[ci], "%d", sample[ci].p);
 			rows[ci] = (menu_row){ sample[ci].t, vals[ci], sample[ci].got };
+			vcols[ci] = sample[ci].got ? UI_EARNED_RGB : 0u;
 		}
-		snprintf(head, sizeof head, "Hagane: The Final Conflict\n%d/36 cheevos   %d/415 points",
-		         2, 15);
-		menu_draw(a, head, rows, cn, 0, 0, a->tint);
+		snprintf(head, sizeof head, "%s\n%d/36 cheevos   %d/415 points",
+		         shot_cheevos_game, 3, 25);
+		/* Drawn the way cheevos_screen draws it - menu_draw_ex, the earned
+		 * colors, the shared width - because a shot that composes the panel
+		 * differently from the screen is a picture of something that does not
+		 * exist. It used to call menu_draw with a width of 0. */
+		menu_draw_ex(a, head, rows, cn, shot_cheevos_sel, menu_std_width(a),
+		             a->tint, vcols, true);
 	}
 	if (shot_notice) {
 		char dt[512];
@@ -7792,7 +7844,14 @@ int main(int argc, char *argv[])
 		/* --keyboard [layer] [text] draws one frame of the text-entry panel,
 		 * for the same reason --menu and --slots exist: it is dense, and
 		 * laying it out against a screenshot beats a round trip to a device. */
-		else if (!strcmp(argv[i], "--cheevos-screen")) shot_cheevos = 1;
+		else if (!strcmp(argv[i], "--cheevos-screen")) {
+			shot_cheevos = 1;
+			if (i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9')
+				shot_cheevos_sel = atoi(argv[++i]);
+			/* A game name, so the heading can be looked at with one of the
+			 * long ones rather than only the short one that fit. */
+			if (i + 1 < argc && argv[i + 1][0] != '-') shot_cheevos_game = argv[++i];
+		}
 		else if (!strcmp(argv[i], "--synopsis")) shot_syn = 1;
 		else if (!strcmp(argv[i], "--info")) shot_info = 1;
 		else if (!strcmp(argv[i], "--phase") && i + 1 < argc)

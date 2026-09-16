@@ -46,3 +46,8 @@ int menu_window_first(const menu_row *rows, int n, int sel, int vis, int first)
 	if (first < 0)                  first = 0;
 	return first;
 }
+
+bool menu_row_moves(menu_row row, bool selected, bool visits_all)
+{
+	return selected || (!row.live && !visits_all);
+}

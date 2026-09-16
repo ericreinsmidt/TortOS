@@ -514,6 +514,35 @@ static void window_returns(void)
 }
 
 
+/* What scrolls, and what is cut short.
+ *
+ * The rule reads "the row under the cursor, and rows the cursor can never
+ * reach" - and it used to infer the second half from `live`, which is right
+ * everywhere except the one list that uses `live` for something else. There
+ * `live` means EARNED, so a long achievement title scrolled or was cut
+ * depending on whether the player had it. Reported from the device
+ * 2026-09-16. */
+static void what_scrolls(void)
+{
+	menu_row live_row = { "a long label", "v", true };
+	menu_row dead_row = { "a long label", "v", false };
+
+	printf("which rows scroll:\n");
+	ck(menu_row_moves(live_row, true, false), "the row under the cursor does");
+	ck(!menu_row_moves(live_row, false, false), "one the cursor left does not");
+	ck(menu_row_moves(dead_row, false, false),
+	   "a row the cursor cannot reach does, having no other way to be read");
+
+	/* A list whose cursor visits every row: `live` is about color there, so
+	 * only the cursor decides. */
+	ck(menu_row_moves(live_row, true, true), "with visits_all, the cursor still does");
+	ck(menu_row_moves(dead_row, true, true), "and an unearned row under it does too");
+	ck(!menu_row_moves(dead_row, false, true),
+	   "but an unearned row elsewhere is cut like any other");
+	ck(!menu_row_moves(live_row, false, true), "exactly like an earned one");
+}
+
+
 /* ---------- the game info screen ------------------------------------------ */
 
 /* Five rows at most, two of which open into something and lead because of it.
@@ -804,6 +833,7 @@ int main(void)
 	card_sets();
 	step_terminates();
 	window_returns();
+	what_scrolls();
 	info_rows();
 	ingame_rows();
 	audio_row();
