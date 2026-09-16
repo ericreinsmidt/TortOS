@@ -93,7 +93,7 @@ typedef struct {
 } sys_ui;
 
 /* Seconds to the label a row shows. Pure, and here rather than in main.c so
- * the check can hold it to "off", "30s" and "2m" without a device. */
+ * the check can hold it to "never", "30s" and "2m" without a device. */
 void sys_menu_auto_off_label(int seconds, char *out, size_t n);
 
 /* Build whichever menu u->games calls for. Returns the row count, so the input

@@ -8,7 +8,7 @@
 
 void sys_menu_auto_off_label(int seconds, char *out, size_t n)
 {
-	if (seconds <= 0)      snprintf(out, n, "off");
+	if (seconds <= 0)      snprintf(out, n, "never");
 	else if (seconds < 60) snprintf(out, n, "%ds", seconds);
 	else                   snprintf(out, n, "%dm", seconds / 60);
 }

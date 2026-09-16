@@ -276,7 +276,7 @@ static void tortos_menu_online(void)
 	ck(rows[PM_XFER].live && !rows[PM_XFER].value, "OTH is live and unqualified");
 	ck(rows[PM_SCRAPE].live, "Box Art is live");
 	ck(!strcmp(val(&rows[PM_ACHIEVEMENTS]), "eric"), "Cheevos shows the account");
-	ck(!strcmp(val(&rows[PM_SLEEP]), "off"), "0s reads as off");
+	ck(!strcmp(val(&rows[PM_SLEEP]), "never"), "0s reads as never");
 }
 
 /* Connecting and idle are not the same as off, and the row must not flatten
@@ -351,7 +351,7 @@ static void auto_off_words(void)
 {
 	char s[16];
 	struct { int sec; const char *want; } t[] = {
-		{ 0, "off" }, { 30, "30s" }, { 60, "1m" },
+		{ 0, "never" }, { 30, "30s" }, { 60, "1m" },
 		{ 120, "2m" }, { 300, "5m" }, { 600, "10m" },
 	};
 	size_t i;
