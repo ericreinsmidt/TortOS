@@ -71,6 +71,25 @@ bool ss_creds_save(void)
 	       db_set_str(db_dev(), "ss.password", g_pass);
 }
 
+bool ss_auth_query(char *out, size_t n)
+{
+	char user[SS_USER_MAX * 3], pass[SS_PASS_MAX * 3];
+	int len;
+
+	if (!out || !n) return false;
+	out[0] = '\0';
+	if (!ss_signed_in()) return false;
+
+	net_urlencode(g_user, user, sizeof user);
+	net_urlencode(g_pass, pass, sizeof pass);
+	len = snprintf(out, n, "devid=%s&devpassword=%s&softname=%s&output=json"
+	                       "&ssid=%s&sspassword=%s",
+	               SS_DEVID, SS_DEVPASS, SS_SOFT, user, pass);
+	memset(pass, 0, sizeof pass);
+	if (len < 0 || (size_t)len >= n) { out[0] = '\0'; return false; }
+	return true;
+}
+
 bool ss_sign_in(const char *user, const char *password, char *err, size_t errn)
 {
 	char body[4096], url[128];

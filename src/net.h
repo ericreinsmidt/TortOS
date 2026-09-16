@@ -88,6 +88,16 @@ bool net_get_async(const char *url, const char *path, int timeout_s);
  * silently. */
 void net_async_abort(void);
 
+/* Percent-encode for a query string. Unreserved characters pass; everything
+ * else becomes %XX. Truncates rather than overflowing. Implemented in
+ * src/urlenc.c rather than net.c, for the reason written there.
+ *
+ * Here because two scrapers now build query strings and one copy of this is
+ * enough - and because the thing most likely to need it is a password, where
+ * an unencoded `&` would end the parameter and hand the rest of the password
+ * to the server as a field of its own. */
+void net_urlencode(const char *in, char *out, size_t outn);
+
 /* Whether there is any point trying: curl present and an address on a
  * non-loopback interface. Cheap, and it turns "achievements did not appear"
  * into something the menu can explain. */

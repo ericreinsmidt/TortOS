@@ -288,23 +288,11 @@ int art_tag_score(const char *want, const char *cand)
  * survive. Unreserved characters pass; everything else is escaped, including
  * '/' - each of these is ONE segment, and a name containing a slash must not
  * become two. */
+/* Moved to net.c when a second scraper needed it. Kept under the old name so
+ * the call sites below read as they did. */
 static void urlenc(const char *in, char *out, size_t outn)
 {
-	static const char hex[] = "0123456789ABCDEF";
-	size_t o = 0;
-
-	for (; *in && o + 4 < outn; in++) {
-		unsigned char c = (unsigned char)*in;
-
-		if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
-			out[o++] = (char)c;
-		} else {
-			out[o++] = '%';
-			out[o++] = hex[c >> 4];
-			out[o++] = hex[c & 15];
-		}
-	}
-	out[o] = '\0';
+	net_urlencode(in, out, outn);
 }
 
 static int hexval(int c)
