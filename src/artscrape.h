@@ -111,4 +111,17 @@ void art_norm(const char *in, char *out, size_t outn);
  * asserts the orderings that matter. */
 int art_tag_score(const char *want, const char *cand);
 
+/* The CRC32 of the ROM inside <dir>/<stem>.zip, as the zip itself records it.
+ *
+ * Exposed because ScreenScraper wants the same number and one implementation
+ * of it is enough. It reads the central directory, so nothing is decompressed
+ * and nothing is hashed - a few kilobytes, which is why it can run inside a
+ * frame. The entry taken is the first the shelf's extensions allow, so a zip
+ * carrying a readme beside the ROM is still named by the ROM.
+ *
+ * Zips only. 1,680 of this card's ROMs are zips and a loose file would have to
+ * be read whole; false for one, which the caller treats as "ask by name". */
+bool art_rom_crc(const char *dir, const char *stem, const char *exts,
+                 uint32_t *crc);
+
 #endif

@@ -14,13 +14,18 @@
  * Everything here that CAN be pure is pure, because the parts worth getting
  * wrong are the parts a device cannot show you: which system id a folder maps
  * to, whether a reply is about the game you asked about, and which of the
- * covers on offer is the right one. tools/ssfetch-check.c holds all three to
- * real replies with no network in sight.
+ * covers on offer is the right one. tools/ss-check.c holds all three to a
+ * written reply with no network in sight.
  *
- * WHY THE LOOKUP IS BY CHECKSUM. A file's name is what somebody typed; the
- * checksum is what the cartridge is. Measured over this card's 1,708 games:
- * every one of the 1,683 cartridges was known by checksum, against a name
- * match that fails on every fan translation.
+ * WHAT THE LOOKUP ACTUALLY SENDS, measured 2026-09-16 rather than assumed: the
+ * checksum AND the file's name, because neither works alone the way you would
+ * expect. A checksum with no name is answered "no answer". A name with a wrong
+ * checksum still finds the game. And a checksum can be filed against the wrong
+ * title upstream - Kid Niki 2's is filed under the first Kid Niki - which is
+ * why an answer that fails the name check is asked again by name.
+ *
+ * So neither is "the" key. Both are sent, the answer is checked, and a bad
+ * answer is asked a second way before anyone gives up on it.
  *
  * AND WHY IT IS NOT, FOR A DISC. A CHD is 160 to 456 MB and its file checksum
  * is not what any catalog files a CD game under. Measured 2026-09-16: all 25
@@ -78,17 +83,23 @@ bool ss_name_ok(const char *file, const char *const *names, int n);
  * paths write it into a 0600 config file rather than into argv, which is the
  * only reason passing it as a URL is acceptable at all.
  *
- * `crc` of 0 and `size` of 0 ask by name alone, which is what a disc image
- * needs. False when the build has no key, nobody is signed in, or the folder
- * has no system id. */
+ * `crc` of 0 asks by name alone, which is what a disc image needs and what the
+ * retry below uses. The ROM's name is sent EITHER WAY: measured 2026-09-16, a
+ * checksum with no name is answered "no answer". False when the build has no
+ * key, nobody is signed in, or the folder has no system id. */
 bool ss_lookup_url(char *out, size_t n, const char *folder, const char *file,
-                   uint32_t crc, long size);
+                   uint32_t crc);
 
 /* The whole round trip, waiting for it. NOT for a frame loop - that is where
  * the power button is read, and a ScreenScraper call measured 5.5 seconds per
  * game on a good connection. For tools, checks, and any caller that is already
- * sitting behind a wait panel. */
-bool ss_lookup(const char *folder, const char *file, uint32_t crc, long size,
+ * sitting behind a wait panel.
+ *
+ * ASKS TWICE WHEN THE FIRST ANSWER LOOKS WRONG: a checksum answer that fails
+ * the name check is asked again by name, and taken only if the retry passes
+ * the same check. Measured on the four games this card's run got wrong, it
+ * rescues three of them. ssfetch.c has the table. */
+bool ss_lookup(const char *folder, const char *file, uint32_t crc,
                ss_result *out);
 
 #endif

@@ -345,7 +345,7 @@ bool ss_parse(const char *json, size_t len, const char *file, ss_result *out)
 /* ---- asking ------------------------------------------------------------- */
 
 bool ss_lookup_url(char *out, size_t n, const char *folder, const char *file,
-                   uint32_t crc, long size)
+                   uint32_t crc)
 {
 	char auth[512], enc[512];
 	int id = ss_system_id(folder);
@@ -359,12 +359,15 @@ bool ss_lookup_url(char *out, size_t n, const char *folder, const char *file,
 	if (!ss_auth_query(auth, sizeof auth)) return false;
 	net_urlencode(file, enc, sizeof enc);
 
-	if (crc && size > 0)
+	/* The name goes on BOTH forms. Measured 2026-09-16: a checksum with no
+	 * name is answered "no answer" - crc=1F3C05A1 alone found nothing where
+	 * the same crc with the file's name found Gunstar Heroes. The size is not
+	 * needed either way, so it is not sent. */
+	if (crc)
 		len = snprintf(out, n, "%s/jeuInfos.php?%s&systemeid=%d&romtype=rom"
-		                       "&crc=%08X&romtaille=%ld&romnom=%s",
-		               SS_API, auth, id, crc, size, enc);
+		                       "&crc=%08X&romnom=%s",
+		               SS_API, auth, id, crc, enc);
 	else
-		/* A disc image: by name alone. See ssfetch.h. */
 		len = snprintf(out, n, "%s/jeuInfos.php?%s&systemeid=%d&romtype=rom"
 		                       "&romnom=%s",
 		               SS_API, auth, id, enc);
@@ -378,8 +381,8 @@ bool ss_lookup_url(char *out, size_t n, const char *folder, const char *file,
  * names and dates, every language's synopsis and up to 54 media URLs. */
 #define SS_REPLY_MAX (192 * 1024)
 
-bool ss_lookup(const char *folder, const char *file, uint32_t crc, long size,
-               ss_result *out)
+/* One request, into `out`. */
+static bool ask(const char *folder, const char *file, uint32_t crc, ss_result *out)
 {
 	char *body;
 	char url[1024];
@@ -387,7 +390,7 @@ bool ss_lookup(const char *folder, const char *file, uint32_t crc, long size,
 	bool ok = false;
 
 	memset(out, 0, sizeof *out);
-	if (!ss_lookup_url(url, sizeof url, folder, file, crc, size)) return false;
+	if (!ss_lookup_url(url, sizeof url, folder, file, crc)) return false;
 	if (!(body = malloc(SS_REPLY_MAX))) return false;
 
 	got = net_get_buf(url, NULL, 0, body, SS_REPLY_MAX, 30);
@@ -395,4 +398,40 @@ bool ss_lookup(const char *folder, const char *file, uint32_t crc, long size,
 	if (got > 0) ok = ss_parse(body, (size_t)got, file, out);
 	free(body);
 	return ok;
+}
+
+bool ss_lookup(const char *folder, const char *file, uint32_t crc, ss_result *out)
+{
+	ss_result byname;
+
+	if (!ask(folder, file, crc, out)) return false;
+	if (!crc || !out->found || out->name_ok) return true;
+
+	/* A CHECKSUM ANSWER THAT FAILS THE NAME CHECK IS ASKED AGAIN BY NAME,
+	 * and that is worth a second request because it is usually right.
+	 *
+	 * Measured 2026-09-16 on the four games this card's whole run got wrong:
+	 *
+	 *   Kid Niki 2             crc -> Kid Niki - Radical Ninja
+	 *                         name -> Kaiketsu Yancha Maru 2      RIGHT
+	 *   Shin Megami Tensei II   crc -> Shin Megami Tensei
+	 *                         name -> Shin Megami Tensei 2        RIGHT
+	 *   Mother 3                crc -> ZZZ(notgame):#NONGAME
+	 *                         name -> Mother 3                    RIGHT
+	 *   Dragon Quest III        crc -> Dragon Quest 1 And 2
+	 *                         name -> Dragon Quest 1 And 2        still wrong
+	 *
+	 * Three of four rescued, and the fourth still fails the check on the
+	 * retry, so it falls through to libretro as it should. The retry costs one
+	 * request on the 9 games in 1,708 that get flagged, and nothing on the
+	 * rest.
+	 *
+	 * The retry is NOT trusted blindly: it has to pass the same check. Asking
+	 * by name is how "Kid Niki 2" found the first Kid Niki in the first place,
+	 * so a name answer is no more inherently right than a checksum one. */
+	if (ask(folder, file, 0, &byname) && byname.found && byname.name_ok) {
+		*out = byname;
+		return true;
+	}
+	return true;      /* the flagged answer stands; the caller decides */
 }

@@ -263,7 +263,7 @@ int main(void)
 			ss_result r;
 
 			if (!ss_lookup("Genesis", "Gunstar Heroes (USA).zip",
-			               0x1F3C05A1u, 1048576, &r)) {
+			               0x1F3C05A1u, &r)) {
 				printf("  the live lookup did not answer\n");
 			} else {
 				ck(r.found, "a real lookup finds a real game");
@@ -274,6 +274,17 @@ int main(void)
 				printf("  looked up %s (%s), %d characters, cover %s\n",
 				       r.name, r.meta.year, (int)strlen(r.meta.synopsis),
 				       r.art_region);
+			}
+			/* The retry, against the checksum that started it: this one is
+			 * filed upstream under the first Kid Niki, and asking by name
+			 * gets the right game. Three of this card's four wrong answers
+			 * come back this way. */
+			if (ss_lookup("NES", "Kid Niki 2 (Japan) (Translated).zip",
+			              0xEFAD8ECEu, &r) && r.found) {
+				ck(r.name_ok, "a flagged checksum answer is retried by name");
+				ck(strstr(r.name, "Yancha Maru 2") != NULL,
+				   "and the retry is the right game");
+				printf("  retried by name: %s\n", r.name);
 			}
 		}
 		/* Said out loud, because every assertion above is silent when it

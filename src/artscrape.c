@@ -610,8 +610,8 @@ static uint32_t le32(const unsigned char *p) { return le16(p) | le16(p + 2) << 1
  * readme beside the ROM must be named by the ROM - or the only file, when the
  * list allows none of them. Zips only: 1,680 of the card's ROMs are zips, and
  * a loose file would have to be read whole. */
-static bool rom_zip_crc(const char *dir, const char *stem, const char *exts,
-                        uint32_t *crc)
+bool art_rom_crc(const char *dir, const char *stem, const char *exts,
+                 uint32_t *crc)
 {
 	static unsigned char tail[65536 + 22];
 	char path[ARTPATH_MAX], name[NAME_MAX_ * 2];
@@ -1040,7 +1040,7 @@ int art_step(void)
 		ri = g_retry[g_qi];
 		if (!g_dat ||
 		    !art_paths(dir, g_roms[ri], media, sizeof media, dest, sizeof dest) ||
-		    !rom_zip_crc(dir, g_roms[ri], g_sys[g_si].exts, &crc) ||
+		    !art_rom_crc(dir, g_roms[ri], g_sys[g_si].exts, &crc) ||
 		    !dat_name(crc, dname, sizeof dname) ||
 		    !match(dname, hitbuf, sizeof hitbuf)) {
 			g_left[g_nleft++] = ri;

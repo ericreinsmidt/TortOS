@@ -37,6 +37,7 @@
 #include "audioout.h"
 #include "menu.h"
 #include "ss.h"
+#include "ssrun.h"
 #include "sys_menu.h"
 #include "cards.h"
 #include "game_menu.h"
@@ -4539,7 +4540,7 @@ static void gi_gather(app *a, int owner, const game_entry *g, game_info *gi)
  * less afterwards: since the direct-name pass landed, a whole-library re-run
  * over a full card is nine directory sweeps and no network at all. */
 static void art_screen(app *a, const char *only, const char *one,
-                       const char *stem, unsigned accent)
+                       const char *stem, const char *one_file, unsigned accent)
 {
 	menu_row     rows[3];
 	art_progress p;
@@ -4566,6 +4567,93 @@ static void art_screen(app *a, const char *only, const char *one,
 	/* The scraper needs the one async slot, and an account answer from a game
 	 * just quit may still be holding it. */
 	sync_abandon();
+
+	/* SCREENSCRAPER FIRST, FOR ONE GAME. BACKLOG 27 settled the order: them
+	 * when the player has an account, libretro when they do not and libretro
+	 * again when they cannot answer - a miss, a refusal, or a name that does
+	 * not survive the check.
+	 *
+	 * Only the single-game path for now. The bulk run is the same idea over
+	 * 1,708 games and a different conversation about time: measured at 5.5
+	 * seconds a game it is an overnight job, where libretro fetches one index
+	 * per system and then only what is missing.
+	 *
+	 * It brings the text with it. A cover fetched without the year and the
+	 * synopsis would mean asking again later for what was in hand now. */
+	if (one && stem && only && ss_signed_in()) {
+		const system_cfg *sys = NULL;
+		char dir[LIB_PATH * 2];
+		int i;
+
+		for (i = 0; i < a->sys.count; i++)
+			if (!strcmp(a->sys.systems[i].folder, only)) { sys = &a->sys.systems[i]; break; }
+		snprintf(dir, sizeof dir, "%s/%s", P_ROMS, only);
+		if (sys && ss_run_begin(only, one_file, stem, dir, sys->exts)) {
+			bool ss_working = true;
+
+			while (ss_working && !want_quit && a->running) {
+				int st = ss_run_step();
+
+				plat_input_poll(&a->in);
+				if (a->in.quit_requested) { ss_run_cancel(); a->running = false; return; }
+				if (a->in.pressed[IN_POWER] || idle_due(a)) {
+					ss_run_cancel();
+					power_off(a);
+					return;
+				}
+				if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) {
+					ss_run_cancel();
+					plat_input_flush();
+					memset(&a->in, 0, sizeof a->in);
+					return;
+				}
+				if (in_repeat(&a->in, IN_VOLUP))    plat_volume_nudge(+1);
+				if (in_repeat(&a->in, IN_VOLDN))    plat_volume_nudge(-1);
+				if (in_repeat(&a->in, IN_BRIGHTUP)) plat_brightness_nudge(+1);
+				if (in_repeat(&a->in, IN_BRIGHTDN)) plat_brightness_nudge(-1);
+
+				if (st == 0) {
+					/* Got it. Say so on the same panel the libretro run
+					 * uses, so the two sources look like one feature. */
+					menu_row row[2];
+
+					art_head(head, sizeof head, one);
+					row[0] = (menu_row){ "Box Art",
+					                     had ? "replaced" : "found", false };
+					row[1] = (menu_row){ "B to close", NULL, false };
+					tick_tint(a);
+					draw_shelf(a);
+					SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+					SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
+					SDL_RenderFillRect(a->r, NULL);
+					menu_draw(a, head, row, 2, -1, menu_std_width(a), accent);
+					plat_draw_osd(a->r);
+					SDL_RenderPresent(a->r);
+					SDL_Delay(900);
+					ss_run_cancel();
+					free_all_textures(a);
+					plat_input_flush();
+					memset(&a->in, 0, sizeof a->in);
+					return;
+				}
+				if (st < 0) { ss_run_cancel(); ss_working = false; break; }
+
+				art_head(head, sizeof head, one);
+				rows[0] = (menu_row){ "Box Art", ss_run_where(), false };
+				rows[1] = (menu_row){ "B to stop", NULL, false };
+				tick_tint(a);
+				draw_shelf(a);
+				SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+				SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
+				SDL_RenderFillRect(a->r, NULL);
+				menu_draw(a, head, rows, 2, -1, menu_std_width(a), accent);
+				plat_draw_osd(a->r);
+				SDL_RenderPresent(a->r);
+				SDL_Delay(8);
+			}
+			if (!a->running || want_quit) return;
+		}
+	}
 
 	if (only) {
 		/* A one-entry library rather than a filter inside artscrape.c. The
@@ -4751,7 +4839,7 @@ static menu_result info_key(app *a, void *ctx, in_button key, int sel)
 		 * scraper can never bring back. The new one is renamed over the old
 		 * only once it has arrived whole. */
 		art_screen(a, a->sys.systems[c->owner].folder, c->g->title, c->g->name,
-		           a->sys.systems[c->owner].accent);
+		           c->g->file, a->sys.systems[c->owner].accent);
 	}
 	gi_gather(a, c->owner, c->g, &c->gi);
 	plat_input_flush();
@@ -5518,7 +5606,7 @@ static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
 		 * else. */
 		if (sel == SM_BOXART)
 			art_screen(a, a->sys.systems[a->sys_cursor].folder, NULL, NULL,
-			           a->sys.systems[a->sys_cursor].accent);
+			           NULL, a->sys.systems[a->sys_cursor].accent);
 		if (sel == SM_RESCAN) {
 			wait_panel(a, a->sys.systems[a->sys_cursor].name, "Scanning...");
 			rescan_all(a);
@@ -5612,7 +5700,7 @@ static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
 	switch (sel) {
 	case PM_WIFI:         wifi_screen(a); break;
 	case PM_XFER:         xfer_screen(a); break;
-	case PM_SCRAPE:       art_screen(a, NULL, NULL, NULL, MENU_ACCENT); break;
+	case PM_SCRAPE:       art_screen(a, NULL, NULL, NULL, NULL, MENU_ACCENT); break;
 	case PM_ACHIEVEMENTS: ra_signin_screen(a); break;
 	case PM_SS:           ss_signin_screen(a); break;
 	case PM_BT:           bt_screen(a); break;
