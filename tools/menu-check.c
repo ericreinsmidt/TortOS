@@ -500,76 +500,86 @@ static void window_returns(void)
 
 /* ---------- the game info screen ------------------------------------------ */
 
-/* Five facts and two actions. The facts are not stops for the cursor; the two
- * actions are, except that fetching art needs a network and says so. */
+/* Five rows at most, two of which open into something and lead because of it.
+ *
+ * What is NOT here is as deliberate as what is: no File, no Size, no Box Art
+ * byte count, and no Favorite, which Y does from the shelf. Asserted rather
+ * than assumed, because a row is easy to put back by habit. */
 static void info_rows(void)
 {
 	game_info gi;
 	menu_row rows[GI_MAX];
-	int got[GI_MAX], n, k;
+	int got[GI_MAX], n, k, i;
 
 	memset(&gi, 0, sizeof gi);
-	snprintf(gi.file, sizeof gi.file, "Chrono Trigger.sfc");
-	snprintf(gi.size, sizeof gi.size, "4.0 MB");
 	snprintf(gi.saves, sizeof gi.saves, "2");
 	snprintf(gi.cheevos, sizeof gi.cheevos, "12 of 78");
-	snprintf(gi.art, sizeof gi.art, "yes");
+	gi.has_cheevos = true;
 	gi.has_art = true;
-	gi.favorite = false;
 
 	n = gi_rows(rows, &gi, true);
 	printf("game info, nothing scraped, art present and a network:\n");
-	ck(n == GI_MAX - 2, "five facts and two actions, with no scraped rows");
+	ck(n == 3, "Cheevos, the art action, and Saves");
 	ck(!strcmp(rows[0].label, "Cheevos"), "Cheevos leads");
 	ck(!strcmp(val(&rows[0]), "12 of 78"), "and carries the count");
-	ck(!strcmp(rows[1].label, "File"), "the file comes under it");
-	ck(!strcmp(val(&rows[1]), "Chrono Trigger.sfc"), "and names the file");
-	ck(!strcmp(rows[n - 2].label, "Replace Box Art"), "art present offers a replace");
-	ck(!strcmp(val(&rows[n - 1]), "no"), "Favorite reads its state");
+	ck(rows[0].live, "and opens the set, the way the in-game row does");
+	ck(!strcmp(rows[1].label, "Replace Box Art"), "art present offers a replace");
+	ck(!strcmp(rows[n - 1].label, "Saves"), "your copy's state comes last");
+	for (i = 0; i < n; i++) {
+		ck(strcmp(rows[i].label, "File") != 0, "no File row");
+		ck(strcmp(rows[i].label, "Size") != 0, "no Size row");
+		ck(strcmp(rows[i].label, "Box Art") != 0, "no Box Art row");
+		ck(strcmp(rows[i].label, "Favorite") != 0, "no Favorite row");
+	}
 	k = reachable(rows, n, got, GI_MAX);
-	ck(k == 2, "only the two actions are stops");
-	ck(!holds(got, k, 0) && !holds(got, k, 4), "no fact is a stop");
+	ck(k == 2, "two stops: the set and the action");
+	ck(!holds(got, k, n - 1), "Saves is not a stop");
 
+	gi.has_cheevos = false;
+	snprintf(gi.cheevos, sizeof gi.cheevos, "none");
 	gi.has_art = false;
-	gi.favorite = true;
 	n = gi_rows(rows, &gi, false);
-	printf("game info, no art and no network:\n");
-	ck(!strcmp(rows[n - 2].label, "Get Box Art"), "no art offers a get, not a replace");
-	ck(!strcmp(val(&rows[n - 2]), "needs Wi-Fi"), "and says why it is dead");
-	ck(!rows[n - 2].live, "which it is");
-	ck(!strcmp(val(&rows[n - 1]), "yes"), "Favorite follows the flag");
+	printf("game info, no set, no art and no network:\n");
+	ck(!rows[0].live, "a game with no set has nothing to open");
+	ck(!strcmp(rows[1].label, "Get Box Art"), "no art offers a get, not a replace");
+	ck(!strcmp(val(&rows[1]), "needs Wi-Fi"), "and says why it is dead");
+	ck(!rows[1].live, "which it is");
 	k = reachable(rows, n, got, GI_MAX);
-	ck(k == 1, "Favorite is the only stop left");
-	ck(holds(got, k, n - 1), "and it is Favorite");
+	ck(k == 0, "nothing on the screen can be chosen");
 
 	/* Scraped, which adds the two rows under Cheevos and nowhere else. The
 	 * three shapes below are the whole of what a scrape can leave behind. */
+	gi.has_cheevos = true;
+	snprintf(gi.cheevos, sizeof gi.cheevos, "12 of 78");
+	gi.has_art = true;
 	gi.scraped = true;
 	gi.has_synopsis = true;
 	snprintf(gi.year, sizeof gi.year, "1995");
 	n = gi_rows(rows, &gi, true);
 	printf("game info, scraped with a year and prose:\n");
 	ck(n == GI_MAX, "two rows more than an unscraped game");
-	ck(!strcmp(rows[1].label, "Year") && !strcmp(val(&rows[1]), "1995"),
-	   "Year sits under Cheevos");
-	ck(!strcmp(rows[2].label, "Synopsis"), "and Synopsis under Year");
-	ck(rows[2].live, "which opens");
-	ck(!strcmp(rows[3].label, "File"), "the file rows follow them");
+	ck(!strcmp(rows[1].label, "Synopsis"), "Synopsis sits under Cheevos");
+	ck(rows[1].live, "and opens");
+	ck(!strcmp(rows[2].label, "Year") && !strcmp(val(&rows[2]), "1995"),
+	   "Year follows the two that open");
+	ck(!strcmp(rows[3].label, "Replace Box Art"), "then the action");
+	ck(!strcmp(rows[4].label, "Saves"), "and your copy's state last");
 	k = reachable(rows, n, got, GI_MAX);
-	ck(k == 3, "three stops now: the synopsis and the two actions");
+	ck(k == 3, "three stops now: the set, the synopsis and the action");
 
 	gi.has_synopsis = false;
 	n = gi_rows(rows, &gi, true);
 	printf("game info, scraped with no prose:\n");
-	ck(!strcmp(val(&rows[2]), "none"), "Synopsis says none");
-	ck(!rows[2].live, "and does nothing, the way the in-game Cheevos row does");
+	ck(!strcmp(val(&rows[1]), "none"), "Synopsis says none");
+	ck(!rows[1].live, "and does nothing, the way the in-game Cheevos row does");
 
 	gi.year[0] = '\0';
 	gi.has_synopsis = true;
 	n = gi_rows(rows, &gi, true);
 	printf("game info, scraped with no year:\n");
 	ck(n == GI_MAX - 1, "the Year row is simply absent");
-	ck(!strcmp(rows[1].label, "Synopsis"), "and Synopsis moves up under Cheevos");
+	ck(!strcmp(rows[1].label, "Synopsis"), "and Synopsis stays under Cheevos");
+	ck(!strcmp(rows[2].label, "Replace Box Art"), "with the action next");
 }
 
 

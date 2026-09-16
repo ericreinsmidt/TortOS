@@ -64,10 +64,7 @@ static inline int gm_save_slot(const bool *have)
 	return GM_SLOTS;
 }
 
-/* What the info screen offers to do, beyond telling you things. */
-typedef enum { GI_ART, GI_FAV, GI_ROWS } gi_row;
-
-#define GI_MAX 9          /* seven facts at most, two actions */
+#define GI_MAX 5          /* four facts at most, one action */
 
 /* Everything worth saying about one game, gathered once.
  *
@@ -76,14 +73,11 @@ typedef enum { GI_ART, GI_FAV, GI_ROWS } gi_row;
  * action changes one of them. Polling would mean a stat storm every frame for
  * numbers that only move when the player does something. */
 typedef struct {
-	char  file[LIB_PATH];
-	char  size[32];
 	char  saves[32];
 	char  cheevos[64];
-	char  art[32];
 	char  year[8];         /* from the scrape, empty when it said nothing */
-	bool  favorite;
-	bool  has_art;
+	bool  has_cheevos;     /* there is a set to open, not just a count to read */
+	bool  has_art;         /* chooses the action's label; no longer a row */
 	/* Whether this game has a row in the card's games table at all, and
 	 * whether that row carries a synopsis. Two flags rather than one, because
 	 * they answer different questions: a game nobody has scraped shows neither

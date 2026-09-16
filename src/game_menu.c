@@ -8,30 +8,57 @@ int gi_rows(menu_row *out, const game_info *gi, bool net)
 {
 	int n = 0;
 
-	/* What is true of the GAME first, then what is true of your copy of it.
-	 * Cheevos leads because it is the one fact that changes while you play,
-	 * and it is what this screen is opened to check. Year and the synopsis
-	 * belong directly under it when the scrape that fills them exists. */
-	out[n++] = (menu_row){ "Cheevos",  gi->cheevos, false };
-	/* Only once a scrape has spoken for this game. Before that these two rows
-	 * would say "unknown" on every game on the card, which is a row asking to
-	 * be ignored rather than a fact. A scrape that came back without a year
-	 * still says nothing; one that came back without prose says "none", the
-	 * way the in-game Cheevos row does, because the difference between "not
-	 * looked up" and "looked up, nothing there" is worth a word. */
-	if (gi->scraped && gi->year[0])
-		out[n++] = (menu_row){ "Year",  gi->year, false };
+	/* WHAT OPENS INTO SOMETHING COMES FIRST, then what is only worth reading.
+	 *
+	 * The two rows that lead are the two the cursor can act on, so the screen
+	 * starts where the hand starts. Cheevos before the synopsis because it is
+	 * the one fact here that changes while you play, and it is what this screen
+	 * gets opened to check; the synopsis is the same every time.
+	 *
+	 * Cheevos opens the same list the in-game menu opens - which is where this
+	 * row's own count comes from. Reading "4/54" and having nowhere to go with
+	 * it is the question half-answered: which four, and what are the other
+	 * fifty. A game with no set has nothing to open and says so. */
+	out[n++] = (menu_row){ "Cheevos",  gi->cheevos, gi->has_cheevos };
+	/* Both only once a scrape has spoken for this game. Before that they would
+	 * say "unknown" on every game on the card, which is a row asking to be
+	 * ignored rather than a fact. A scrape that came back without a year simply
+	 * says nothing; one that came back without prose says "none", the way the
+	 * in-game Cheevos row does, because the difference between "not looked up"
+	 * and "looked up, nothing there" is worth a word. */
 	if (gi->scraped)
 		out[n++] = (menu_row){ "Synopsis", gi->has_synopsis ? NULL : "none",
 		                       gi->has_synopsis };
-	out[n++] = (menu_row){ "File",     gi->file,    false };
-	out[n++] = (menu_row){ "Size",     gi->size,    false };
-	out[n++] = (menu_row){ "Saves",    gi->saves,   false };
-	out[n++] = (menu_row){ "Box Art",  gi->art,     false };
-	/* The two live rows last, under the facts, because they act on them. */
+	if (gi->scraped && gi->year[0])
+		out[n++] = (menu_row){ "Year",  gi->year, false };
+	/* WHAT THIS SCREEN NO LONGER SAYS, and why, because each was removed on a
+	 * reason rather than to make the list shorter:
+	 *
+	 * File. The panel is headed by the game's name and the shelf behind it is
+	 * showing the same game, so the row spent its width repeating what was
+	 * already on screen twice over, plus a region tag and an extension. What
+	 * goes with it is the one place the exact bytes of a filename could be
+	 * read, which is a real loss on the day a scrape misses - and still not
+	 * worth a permanent row that every player reads past every time.
+	 *
+	 * Size. The size of a cartridge ROM has no consequence on a card with room
+	 * for a thousand of them, and it is not a number anybody acts on.
+	 *
+	 * Box Art, as a count of bytes. The cover is on the shelf behind this
+	 * panel, so whether there is one is already answered by looking; the only
+	 * part worth saying is whether the action below gets one or replaces one,
+	 * which that row says in its own label.
+	 *
+	 * Favorite. Y does it from the shelf, on both screens that have a cursor,
+	 * and a second way to do the same thing is a second thing to keep working.
+	 * The row also had to rebuild the Favorites shelf under its own cursor and
+	 * decide whether the game it was describing had moved out from under it. */
 	out[n++] = (menu_row){ gi->has_art ? "Replace Box Art" : "Get Box Art",
 	                       net ? NULL : "needs Wi-Fi", net };
-	out[n++] = (menu_row){ "Favorite", gi->favorite ? "yes" : "no", true };
+	/* Last, and the only row here about your copy rather than the game. It is
+	 * also the one nobody comes to this screen for: a save is something you
+	 * notice from the carousel when you load, not something you look up. */
+	out[n++] = (menu_row){ "Saves",    gi->saves,   false };
 	return n;
 }
 

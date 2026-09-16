@@ -4416,34 +4416,6 @@ static void gi_gather(app *a, int owner, const game_entry *g, game_info *gi)
 
 	memset(gi, 0, sizeof *gi);
 
-	/* The whole filename, exactly as it is on the card.
-	 *
-	 * This row used to show only what the filename ADDED to the heading -
-	 * "(World) (Sega Ages).zip" under a panel already saying "Alex Kidd in
-	 * Miracle World" in large type - because 59 of 180 filenames in this
-	 * library were too wide for the row, and most of that width was the row
-	 * repeating what was already on screen. Trimming was the right answer
-	 * while the alternative was a hard ellipsis, since a cut filename answers
-	 * nothing and a trimmed one at least answers which dump it is.
-	 *
-	 * It is not the right answer any more. An overlong value scrolls now, so
-	 * the choice is no longer between a shortened name and a cut one - it is
-	 * between a shortened name and the whole thing, and this row is the only
-	 * place in the UI that can say what a game is actually called. The title
-	 * is derived, the shelf shows the title, and the card art is named after
-	 * the file: when a scrape misses or a save does not appear, the exact
-	 * bytes of the name are the thing you need and the thing nothing else
-	 * would tell you.
-	 *
-	 * The cost is real and accepted: the marquee scrolls through the title
-	 * before it reaches the part that was news. */
-	snprintf(gi->file, sizeof gi->file, "%s", g->file);
-
-	snprintf(p, sizeof p, "%s/%s/%s", P_ROMS, s->folder, g->file);
-	if (stat(p, &st) == 0) human_bytes(gi->size, sizeof gi->size,
-	                                  (unsigned long long)st.st_size);
-	else snprintf(gi->size, sizeof gi->size, "missing");
-
 	/* The autosave is not one of the numbered slots - it is where the game
 	 * resumes from - so it is counted apart rather than folded in. */
 	preview_path(a, owner, g, p, sizeof p);
@@ -4463,21 +4435,19 @@ static void gi_gather(app *a, int owner, const game_entry *g, game_info *gi)
 
 	box_art_path(s->folder, g->name, p, sizeof p);
 	gi->has_art = (stat(p, &st) == 0 && st.st_size > 0);
-	if (gi->has_art) human_bytes(gi->art, sizeof gi->art,
-	                             (unsigned long long)st.st_size);
-	else snprintf(gi->art, sizeof gi->art, "none");
 
 	/* Loading the set clobbers whatever set is loaded, which is nobody's
-	 * during shelf browsing - no game is running. */
+	 * during shelf browsing - no game is running. It stays loaded after this
+	 * returns, which is what lets the Cheevos row open the list: the same set
+	 * this count was taken from is the one that screen reads. */
 	chv_path(P_ROMS, s->folder, g->name, p, sizeof p);
-	if (chv_load(p))
+	gi->has_cheevos = chv_load(p) && chv_count() > 0;
+	if (gi->has_cheevos)
 		snprintf(gi->cheevos, sizeof gi->cheevos, "%d/%d, %d/%d points",
 		         chv_earned(), chv_count(),
 		         chv_points_earned(), chv_points_total());
 	else
 		snprintf(gi->cheevos, sizeof gi->cheevos, "none");
-
-	gi->favorite = fav_is(s->tag, g->file);
 
 	/* What a scrape left on the card, if anything. Read here with the rest
 	 * rather than when the synopsis card opens: this is one indexed row, the
@@ -4667,6 +4637,13 @@ static int info_build(void *ctx, menu_row *rows, int max, const char **heading)
 static void synopsis_screen(app *a, const char *title, const char *text,
                             unsigned accent);
 
+/* The achievement list, which the in-game menu opens over a paused frame and
+ * this screen opens over the shelf. `over_shelf` says which, rather than the
+ * absence of a frame saying it: in-game, a capture that failed also leaves no
+ * frame, and drawing the shelf under a paused game would be a lie about where
+ * the player is. */
+static void cheevos_screen(app *a, SDL_Texture *bg, bool over_shelf);
+
 static menu_result info_key(app *a, void *ctx, in_button key, int sel)
 {
 	info_ctx *c = ctx;
@@ -4690,28 +4667,15 @@ static menu_result info_key(app *a, void *ctx, in_button key, int sel)
 		return MENU_STAY;
 	}
 
-	if (!strcmp(rows[sel].label, "Favorite")) {
-		char was[LIB_PATH];
+	if (!strcmp(rows[sel].label, "Cheevos")) {
+		/* The set the gatherer loaded to count this row is still the loaded
+		 * one, so the list has what it needs without reloading it. Over the
+		 * shelf rather than a paused frame: no game is running here. */
+		cheevos_screen(a, NULL, true);
+		return MENU_STAY;
+	}
 
-		fav_toggle(a->sys.systems[c->owner].tag, c->g->file);
-		fav_save();
-		/* The Favorites shelf is built from this list, so it has to be rebuilt
-		 * before anything reads it again - including the cursor this screen is
-		 * standing on. Everything from before this line may have moved:
-		 * sys_cursor, the indices, and v itself. */
-		snprintf(was, sizeof was, "%s", c->g->file);
-		refresh_favorites_shelf(a);
-		c->v = &a->view[a->sys_cursor];
-		if (c->v->list.count == 0) return MENU_DONE;
-		c->owner = shelf_owner(a, a->sys_cursor, c->v->cursor);
-		c->g = &c->v->list.items[c->v->cursor];
-		c->st.accent = a->sys.systems[c->owner].accent;
-		/* Un-favoriting ON the Favorites shelf takes the game out from under
-		 * the cursor, and something else slides into its place. Carrying on
-		 * would leave this screen quietly describing a different game than the
-		 * one it opened on, under the heading of the one it opened on. */
-		if (strcmp(was, c->g->file)) return MENU_DONE;
-	} else {
+	{
 		/* Replace, or get: the ordinary scrape, run over this one game and
 		 * nothing else. Nothing is deleted first. It used to be - remove, then
 		 * fill in - and a game libretro has no art for lost the cover it had,
@@ -6042,7 +6006,28 @@ static int wrap_text(TTF_Font *f, const char *src, int w,
  *
  * Returns true if the caller should close too, which is what MENU and power
  * mean anywhere else in the launcher. */
-static bool cheevo_detail_screen(app *a, SDL_Texture *bg, const cheevo *c)
+/* What the two achievement screens sit on.
+ *
+ * In a game that is the paused frame under a heavy dim, which is what makes a
+ * menu read as being over something that has stopped. On the shelf it is the
+ * shelf under the SAME lighter dim the game details screen uses, so opening
+ * Cheevos from that screen does not darken the room on the way. */
+static void chv_backdrop(app *a, SDL_Texture *bg, bool over_shelf)
+{
+	if (over_shelf) {
+		draw_shelf(a);
+	} else {
+		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 255);
+		SDL_RenderClear(a->r);
+		draw_paused_frame(a, bg);
+	}
+	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+	SDL_SetRenderDrawColor(a->r, 0, 0, 0, over_shelf ? 120 : 185);
+	SDL_RenderFillRect(a->r, NULL);
+}
+
+static bool cheevo_detail_screen(app *a, SDL_Texture *bg, bool over_shelf,
+                                 const cheevo *c)
 {
 	char lines[CHV_WRAP_LINES][CHV_WRAP_COLS];
 	menu_row rows[CHV_WRAP_LINES + 3];
@@ -6077,20 +6062,18 @@ static bool cheevo_detail_screen(app *a, SDL_Texture *bg, const cheevo *c)
 		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_ACCEPT]) done = 1;
 		if (a->in.pressed[IN_MENU]) { done = 1; close_all = true; }
 		/* Same reasoning as the list below: this screen is not inside
-		 * plat_resident_wait, so nothing else is watching power for it. */
+		 * plat_resident_wait, so nothing else is watching power for it. Over
+		 * the shelf there is no game to stop, and stopping one is not what
+		 * power means there. */
 		if (a->in.pressed[IN_POWER] || idle_due(a)) {
+			if (over_shelf) { power_off(a); break; }
 			plat_note_power_pressed();
 			plat_resident_line("STOP");
 			done = 1;
 			close_all = true;
 		}
 
-		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 255);
-		SDL_RenderClear(a->r);
-		draw_paused_frame(a, bg);
-		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
-		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 185);
-		SDL_RenderFillRect(a->r, NULL);
+		chv_backdrop(a, bg, over_shelf);
 		menu_draw_ex(a, c->title, rows, n, -1, fixed, a->tint, vcols);
 		SDL_RenderPresent(a->r);
 		SDL_Delay(8);
@@ -6156,7 +6139,7 @@ static void synopsis_screen(app *a, const char *title, const char *text,
 	free(rows);
 }
 
-static void cheevos_screen(app *a, SDL_Texture *bg)
+static void cheevos_screen(app *a, SDL_Texture *bg, bool over_shelf)
 {
 	int n = chv_count(), sel = 0, i, done = 0;
 	menu_row *rows;
@@ -6209,7 +6192,7 @@ static void cheevos_screen(app *a, SDL_Texture *bg)
 		/* A used to close this screen. It opens the achievement instead,
 		 * which is the only thing on it there was ever anything more to say
 		 * about; BACK and MENU still close, so nothing lost a way out. */
-		if (a->in.pressed[IN_ACCEPT] && cheevo_detail_screen(a, bg, chv_at(sel)))
+		if (a->in.pressed[IN_ACCEPT] && cheevo_detail_screen(a, bg, over_shelf, chv_at(sel)))
 			done = 1;
 		/* Power still stops the game from in here. Not trapping it would
 		 * make this screen the one place in the launcher that ignores it.
@@ -6218,19 +6201,18 @@ static void cheevos_screen(app *a, SDL_Texture *bg)
 		 * powering off, and only the evdev watchdog inside plat_resident_wait
 		 * sets that flag - a loop which is not running while this screen is
 		 * up. So power here stopped the game and then went back to the shelf,
-		 * with the menu still drawn over it until something was pressed. */
+		 * with the menu still drawn over it until something was pressed.
+		 *
+		 * Opened from the game details screen there is no game to stop, and
+		 * power means what it means everywhere else on the shelf. */
 		if (a->in.pressed[IN_POWER] || idle_due(a)) {
+			if (over_shelf) { power_off(a); break; }
 			plat_note_power_pressed();
 			plat_resident_line("STOP");
 			done = 1;
 		}
 
-		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 255);
-		SDL_RenderClear(a->r);
-		draw_paused_frame(a, bg);
-		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
-		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 185);
-		SDL_RenderFillRect(a->r, NULL);
+		chv_backdrop(a, bg, over_shelf);
 		menu_draw_ex(a, heading, rows, n, sel, menu_std_width(a), a->tint,
 		             vcols);
 		SDL_RenderPresent(a->r);
@@ -6362,7 +6344,7 @@ static menu_result gm_key(app *a, void *ctx, in_button key, int sel)
 		gm_cycle_display(a, +1);
 		break;
 	case GM_CHEEVOS:
-		cheevos_screen(a, c->bg);
+		cheevos_screen(a, c->bg, false);
 		break;
 	case GM_RESET:
 		plat_resident_line("RESET");
