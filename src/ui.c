@@ -15,7 +15,22 @@
  * ratios between the roles are what keeps a count from competing with a title.
  * UI_F_CARD is in card pixels, not screen pixels -- the card face is drawn at
  * 512 wide and shown at roughly two thirds of that. */
-#define FONT_BASE 32.0f
+/* THE ONE SIZE THE LAUNCHER DRAWS AT, and 1.15 is here rather than 36.8 so it
+ * stays legible as what it is: the largest of the three steps the Text Size row
+ * used to offer, which was also the most readable of them.
+ *
+ * The row is gone. It ran 85% to 115%, and that band is too narrow to solve
+ * anyone's problem - a player who cannot read the default is not rescued by
+ * fifteen percent, and one who wants more games on screen is not served by
+ * fifteen percent either. It changed how the launcher looked without changing
+ * what anyone could do, while making every panel's fit a function of a
+ * variable. See BACKLOG 34 for what a real large-text mode would need, which is
+ * panels that flow from the type rather than from constants.
+ *
+ * Written as the same product it used to be evaluated as, so every font comes
+ * out at exactly the point size 115% gave and nothing moves by a rounding
+ * accident. */
+#define FONT_BASE (32.0f * 1.15f)
 static const float font_mul[UI_F_COUNT] = {
 	[UI_F_TITLE] = 1.62f,   /* 52 */
 	[UI_F_MENU]  = 1.34f,   /* 43 */
@@ -25,7 +40,6 @@ static const float font_mul[UI_F_COUNT] = {
 };
 
 static TTF_Font *fonts[UI_F_COUNT];
-static float font_scale = 1.0f;
 static TTF_Font *f_mark;
 static char font_path_kept[512];
 static SDL_Texture *glow_tex;
@@ -69,18 +83,6 @@ static SDL_Texture *make_glow(SDL_Renderer *r)
 	return t;
 }
 
-void ui_set_font_scale(float scale)
-{
-	/* Matched to the three steps the launcher offers - see TEXT_SCALES. The
-	 * range used to run to 1.50, which the menu panel survived and the
-	 * keyboard panel did not. A hand-edited config should not be able to
-	 * reach a size nothing was checked at. */
-	if (scale < 0.85f) scale = 0.85f;
-	if (scale > 1.15f) scale = 1.15f;
-	font_scale = scale;
-}
-
-float ui_get_font_scale(void) { return font_scale; }
 
 bool ui_init(SDL_Renderer *r, const char *font_path)
 {
@@ -92,7 +94,7 @@ bool ui_init(SDL_Renderer *r, const char *font_path)
 	}
 	snprintf(font_path_kept, sizeof font_path_kept, "%s", font_path);
 	for (i = 0; i < UI_F_COUNT; i++) {
-		int pt = (int)(FONT_BASE * font_mul[i] * font_scale + 0.5f);
+		int pt = (int)(FONT_BASE * font_mul[i] + 0.5f);
 		fonts[i] = TTF_OpenFont(font_path, pt);
 		if (!fonts[i])
 			fprintf(stderr, "font %s @%d: %s\n", font_path, pt, TTF_GetError());

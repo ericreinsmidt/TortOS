@@ -32,7 +32,7 @@
 typedef enum {
 	PM_STATS,
 	PM_WIFI, PM_BT, PM_AUDIO, PM_XFER,
-	PM_SLEEP, PM_TEXT, PM_THEME, PM_DIR, PM_SCRAPE, PM_ACHIEVEMENTS, PM_SS,
+	PM_SLEEP, PM_THEME, PM_DIR, PM_SCRAPE, PM_ACHIEVEMENTS, PM_SS,
 	PM_ABOUT, PM_ROWS
 } pm_row;
 
@@ -92,7 +92,6 @@ typedef struct {
 	bool        ss_have;     /* this build carries a developer key */
 	bool        ss_in;
 	const char *ss_name;     /* only read when ss_in */
-	const char *text_size;   /* "100%" - the caller owns the scale table */
 	const char *cards;       /* the showing card set's name, from CARD_SETS */
 	const char *cards_dir;   /* which way the shelves run, from CARD_DIRS */
 	int         auto_off;    /* seconds, 0 for off */

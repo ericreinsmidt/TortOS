@@ -180,7 +180,6 @@ static void tortos_menu_offline(void)
 
 	memset(&u, 0, sizeof u);
 	u.wifi = WIFI_OFF;
-	u.text_size = "100%";
 	u.cards = "Plain Jane";
 	u.cards_dir = "Horizontal";
 	u.auto_off = 120;
@@ -197,7 +196,6 @@ static void tortos_menu_offline(void)
 	ck(!strcmp(val(&rows[PM_ACHIEVEMENTS]), "sign in"), "Cheevos invites a sign in");
 	ck(rows[PM_ACHIEVEMENTS].live, "Cheevos is reachable signed out");
 	ck(!strcmp(val(&rows[PM_SLEEP]), "2m"), "120s reads as 2m");
-	ck(!strcmp(val(&rows[PM_TEXT]), "100%"), "text size is passed through");
 	ck(!strcmp(val(&rows[PM_THEME]), "Plain Jane"), "the card set names itself");
 	ck(!strcmp(val(&rows[PM_DIR]), "Horizontal"), "and so does the direction");
 	ck(rows[PM_DIR].live, "UI Direction is reachable offline too");
@@ -224,7 +222,6 @@ static void audio_row(void)
 	const char *heading;
 
 	memset(&u, 0, sizeof u);
-	u.text_size = "100%";
 	printf("the Audio Output row:\n");
 
 	u.audio_policy = AOUT_AUTO;
@@ -266,7 +263,6 @@ static void tortos_menu_online(void)
 	u.ssid = "kitchen";
 	u.ra_in = true;
 	u.ra_name = "eric";
-	u.text_size = "115%";
 	u.auto_off = 0;
 	n = sys_menu_build(&u, rows, &b, &heading);
 
@@ -311,7 +307,6 @@ static void wifi_row_wording(void)
 	const char *heading;
 
 	memset(&u, 0, sizeof u);
-	u.text_size = "100%";
 	printf("the Wi-Fi row's three off states:\n");
 
 	u.wifi = WIFI_CONNECTING;
@@ -444,7 +439,6 @@ static void cursor_reaches(void)
 
 	memset(&u, 0, sizeof u);
 	u.wifi = WIFI_OFF;
-	u.text_size = "100%";
 	n = sys_menu_build(&u, rows, &b, &heading);
 	k = reachable(rows, n, got, MENU_MAX_ROWS);
 

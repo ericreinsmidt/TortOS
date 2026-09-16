@@ -73,11 +73,8 @@ typedef enum {
 	UI_F_COUNT
 } ui_font_role;
 
-/* Multiply every role. Applied when the fonts are opened, so this has to be
- * set before ui_init -- it persists across the ui_quit/ui_init pair that the
- * standalone-emulator fallback path goes through. */
-void ui_set_font_scale(float scale);
-float ui_get_font_scale(void);
+/* The font for a role. One size: the Text Size setting is gone, and src/ui.c
+ * says why. */
 TTF_Font *ui_font(ui_font_role role);
 /* Baseline-to-baseline distance for a role, the unit menu rows are laid out in. */
 int ui_font_line(ui_font_role role);

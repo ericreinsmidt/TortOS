@@ -88,9 +88,9 @@ int sys_menu_build(const sys_ui *u, menu_row *out, menu_bufs *b,
 	out[PM_XFER]         = (menu_row){ "Over The Hare", NEEDS_WIFI(net), net };
 	out[PM_STATS]        = (menu_row){ "Play Time",  NULL,      true  };
 	out[PM_SLEEP]        = (menu_row){ "Auto Off",  b->c,      true  };
-	out[PM_TEXT]         = (menu_row){ "Text Size", u->text_size, true };
-	/* Under Text Size because both are the same kind of row: they change how
-	 * the shelf looks and nothing about what is on it. */
+	/* Both change how the shelf looks and nothing about what is on it. They
+	 * are what is left of that group: Text Size stood here until the band it
+	 * offered turned out to be too narrow to matter - src/ui.c. */
 	out[PM_THEME]        = (menu_row){ "UI Theme",  u->cards,     true };
 	out[PM_DIR]          = (menu_row){ "UI Direction", u->cards_dir, true };
 	/* Not "Sleep". The device has no suspend and is not getting one - see the

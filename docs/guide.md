@@ -133,7 +133,6 @@ than any one console:
 | **Audio Output** | `Auto` or `Speaker`, and where Auto landed - see **Audio** below |
 | **Over The Hare** | the file server; needs Wi-Fi and says so when there is none |
 | **Auto Off** | how long without a button before the device powers itself down |
-| **Text Size** | left/right; reopens every font, so the whole UI is rebuilt |
 | **UI Theme** | `Plain Jane` or `Fancy Pants` - which art the shelves wear |
 | **UI Direction** | `Horizontal`, `Vertical` or `Cubic` - see below |
 | **Box Art** | fetch what the whole library is missing |

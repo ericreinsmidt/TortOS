@@ -874,57 +874,6 @@ static void free_all_textures(app *a)
 	}
 }
 
-/* The text sizes offered.
- *
- * Three, not six, and 0.85 to 1.15 rather than 0.75 to 1.50. The panels this
- * type sits in are laid out in fixed pixels, and the wider ladder wrote
- * cheques they could not cash: at 1.50 the keyboard's title overlapped its
- * own text field, the space key clipped its label, and the button hints ran
- * off the panel edge. Rendered and looked at, 2026-08-30, which is the only
- * way any of that is visible.
- *
- * The honest fix is to make those panels flow from the type rather than from
- * constants, and that is a rework. Offering only what fits is the small one.
- *
- * A ladder rather than a nudge, because the fonts are reopened on every
- * change and there is no sense doing that for one percent. */
-static const float TEXT_SCALES[] = { 0.85f, 1.00f, 1.15f };
-static const char *TEXT_NAMES[]  = { "85%", "100%", "115%" };
-#define TEXT_SCALE_COUNT ((int)(sizeof TEXT_SCALES / sizeof TEXT_SCALES[0]))
-
-static int text_scale_step(void)
-{
-	float cur = ui_get_font_scale();
-	int i, best = 0;
-	float bd = 1e9f;
-
-	/* Nearest, not equal: the value may have come from a shipped default, where
-	 * anything in range is legal and 1.07 is as valid as 1.00. */
-	for (i = 0; i < TEXT_SCALE_COUNT; i++) {
-		float d = cur > TEXT_SCALES[i] ? cur - TEXT_SCALES[i] : TEXT_SCALES[i] - cur;
-		if (d < bd) { bd = d; best = i; }
-	}
-	return best;
-}
-
-static void text_scale_save(float scale)
-{
-	char buf[32];
-	snprintf(buf, sizeof buf, "%.2f", (double)scale);
-	db_set_str(db_dev(), "textsize", buf);
-}
-
-static float text_scale_load(float fallback)
-{
-	char buf[32];
-	float v;
-
-	if (!db_get_str(db_dev(), "textsize", buf, sizeof buf, NULL)) return fallback;
-	v = (float)atof(buf);
-	/* A scale that does not parse leaves the UI readable rather than
-	 * unreadable, which is why this falls back instead of clamping a zero. */
-	return v > 0.0f ? v : fallback;
-}
 
 /* Whether the radio should come up at boot.
  *
@@ -3640,7 +3589,6 @@ static int menu_build(app *a, screen_id screen, int sys,
 		u.ss_have   = ss_have_dev();
 		u.ss_in     = ss_signed_in();
 		u.ss_name   = u.ss_in ? ss_user() : NULL;
-		u.text_size = TEXT_NAMES[text_scale_step()];
 		u.cards     = CARD_SETS[g_cards].name;
 		u.cards_dir = CARD_DIRS[g_dir].name;
 		u.auto_off  = a->auto_off;
@@ -5638,24 +5586,7 @@ static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
 	 * is rebuilt: the panel's cached width is measured from font metrics, and
 	 * any card generated for a game with no box art has its title baked in at
 	 * the old size. Both are dropped here rather than left subtly wrong. */
-	if (d && sel == PM_TEXT) {
-		int k = text_scale_step() + d;
-
-		if (k < 0) k = 0;
-		if (k >= TEXT_SCALE_COUNT) k = TEXT_SCALE_COUNT - 1;
-		if (TEXT_SCALES[k] != ui_get_font_scale()) {
-			free_all_textures(a);
-			ui_quit();
-			ui_set_font_scale(TEXT_SCALES[k]);
-			ui_init(a->r, P_FONT);
-			a->menu_w = 0;      /* fonts reopened: remeasure the panel */
-			prime_sys_window(a);
-			text_scale_save(TEXT_SCALES[k]);
-		}
-		return MENU_STAY;
-	}
-
-	/* The UI theme. Cheaper than text size - no font is reopened, so only the
+	/* The UI theme. No font is reopened, so only the
 	 * card textures are dropped - but the same shape: change it, throw away
 	 * what was drawn from the old value, draw it again. A steps as well as
 	 * left and right, so the row can be cycled without leaving the thumb.
@@ -8205,7 +8136,6 @@ int main(int argc, char *argv[])
 	/* The size the player chose beats the shipped default, the same way a
 	 * saved brightness does. Read before ui_init, which is when the scale is
 	 * applied. */
-	ui_set_font_scale(text_scale_load(1.0f));
 	if (!ui_init(a.r, P_FONT)) fprintf(stderr, "font init failed\n");
 	{
 		char set[CFG_STR];
