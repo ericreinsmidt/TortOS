@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "cards.h"
 #include "db.h"
@@ -24,6 +25,7 @@ static int  (*sq_prepare)(sqlite3 *, const char *, int, sqlite3_stmt **, const c
 static int  (*sq_step)(sqlite3_stmt *);
 static int  (*sq_finalize)(sqlite3_stmt *);
 static int  (*sq_bind_text)(sqlite3_stmt *, int, const char *, int, void *);
+static int  (*sq_bind_int)(sqlite3_stmt *, int, int);
 static const unsigned char *(*sq_column_text)(sqlite3_stmt *, int);
 static void (*sq_free)(void *);
 
@@ -66,11 +68,12 @@ bool db_available(void)
 	sq_step       = dlsym(h, "sqlite3_step");
 	sq_finalize   = dlsym(h, "sqlite3_finalize");
 	sq_bind_text  = dlsym(h, "sqlite3_bind_text");
+	sq_bind_int   = dlsym(h, "sqlite3_bind_int");
 	sq_column_text = dlsym(h, "sqlite3_column_text");
 	sq_free       = dlsym(h, "sqlite3_free");
 
 	if (!sq_open_v2 || !sq_close || !sq_exec || !sq_prepare || !sq_step ||
-	    !sq_finalize || !sq_bind_text || !sq_column_text)
+	    !sq_finalize || !sq_bind_text || !sq_bind_int || !sq_column_text)
 		return false;
 	loaded = 1;
 	return true;
@@ -151,6 +154,24 @@ static const char SCHEMA[] =
 	"  value TEXT NOT NULL"
 	");";
 
+/* The card's games, one row each. Library scope only - a handheld has no
+ * business holding a synopsis for a card that is not in it. See db.h. */
+static const char GAMES_SCHEMA[] =
+	"CREATE TABLE IF NOT EXISTS games("
+	"  folder TEXT NOT NULL,"
+	"  file TEXT NOT NULL,"
+	"  year TEXT,"
+	"  publisher TEXT,"
+	"  developer TEXT,"
+	"  players TEXT,"
+	"  genres TEXT,"
+	"  esrb TEXT,"
+	"  note TEXT,"
+	"  synopsis TEXT,"
+	"  scraped INTEGER,"
+	"  PRIMARY KEY(folder, file)"
+	");";
+
 static bool run(db *d, const char *sql)
 {
 	char *err = NULL;
@@ -174,6 +195,7 @@ db *db_open(const char *path, db_scope scope)
 		return NULL;
 	}
 	if (!run(d, SCHEMA)) { db_close(d); return NULL; }
+	if (scope == DB_LIBRARY && !run(d, GAMES_SCHEMA)) { db_close(d); return NULL; }
 
 	/* The device database holds the RetroAchievements session token, so it
 	 * asks for 0600. Sidecars included: a -wal holding the same pages at 0644
@@ -295,6 +317,74 @@ bool db_del(db *d, const char *key)
 	if (sq_prepare(d->h, "DELETE FROM settings WHERE key=?;", -1, &st, NULL) != SQ_OK)
 		return false;
 	sq_bind_text(st, 1, key, -1, SQ_TRANSIENT);
+	ok = sq_step(st) == SQ_DONE;
+	sq_finalize(st);
+	return ok;
+}
+
+/* --- the games table ------------------------------------------------------ */
+
+static void col_str(sqlite3_stmt *st, int i, char *out, size_t n)
+{
+	const unsigned char *v = sq_column_text(st, i);
+	snprintf(out, n, "%s", v ? (const char *)v : "");
+}
+
+bool db_game_get(db *d, const char *folder, const char *file, game_meta *out)
+{
+	sqlite3_stmt *st = NULL;
+	bool got = false;
+
+	if (out) memset(out, 0, sizeof *out);
+	if (!d || !folder || !file || !out) return false;
+	if (sq_prepare(d->h,
+	               "SELECT year,publisher,developer,players,genres,esrb,note,synopsis"
+	               " FROM games WHERE folder=? AND file=?;", -1, &st, NULL) != SQ_OK)
+		return false;
+	sq_bind_text(st, 1, folder, -1, SQ_TRANSIENT);
+	sq_bind_text(st, 2, file, -1, SQ_TRANSIENT);
+	if (sq_step(st) == SQ_ROW) {
+		col_str(st, 0, out->year,      sizeof out->year);
+		col_str(st, 1, out->publisher, sizeof out->publisher);
+		col_str(st, 2, out->developer, sizeof out->developer);
+		col_str(st, 3, out->players,   sizeof out->players);
+		col_str(st, 4, out->genres,    sizeof out->genres);
+		col_str(st, 5, out->esrb,      sizeof out->esrb);
+		col_str(st, 6, out->note,      sizeof out->note);
+		col_str(st, 7, out->synopsis,  sizeof out->synopsis);
+		got = true;
+	}
+	sq_finalize(st);
+	return got;
+}
+
+bool db_game_set(db *d, const char *folder, const char *file, const game_meta *m)
+{
+	sqlite3_stmt *st = NULL;
+	bool ok;
+
+	if (!d || !folder || !file || !m) return false;
+	/* INSERT OR REPLACE for the same reason db_set_str uses it: the device
+	 * ships sqlite 3.12.2, which predates ON CONFLICT. */
+	if (sq_prepare(d->h,
+	               "INSERT OR REPLACE INTO games(folder,file,year,publisher,developer,"
+	               "players,genres,esrb,note,synopsis,scraped)"
+	               " VALUES(?,?,?,?,?,?,?,?,?,?,?);", -1, &st, NULL) != SQ_OK)
+		return false;
+	sq_bind_text(st,  1, folder,        -1, SQ_TRANSIENT);
+	sq_bind_text(st,  2, file,          -1, SQ_TRANSIENT);
+	sq_bind_text(st,  3, m->year,       -1, SQ_TRANSIENT);
+	sq_bind_text(st,  4, m->publisher,  -1, SQ_TRANSIENT);
+	sq_bind_text(st,  5, m->developer,  -1, SQ_TRANSIENT);
+	sq_bind_text(st,  6, m->players,    -1, SQ_TRANSIENT);
+	sq_bind_text(st,  7, m->genres,     -1, SQ_TRANSIENT);
+	sq_bind_text(st,  8, m->esrb,       -1, SQ_TRANSIENT);
+	sq_bind_text(st,  9, m->note,       -1, SQ_TRANSIENT);
+	sq_bind_text(st, 10, m->synopsis,   -1, SQ_TRANSIENT);
+	/* When, so a re-scrape can skip what it already has and a stale row can be
+	 * told from one that was never written. Not in game_meta: nothing on a
+	 * screen asks for it. */
+	sq_bind_int(st, 11, (int)time(NULL));
 	ok = sq_step(st) == SQ_DONE;
 	sq_finalize(st);
 	return ok;

@@ -3001,10 +3001,7 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 
 			if (win_n != n) win_first = 0;
 			win_n = n;
-			if (sel < win_first)           win_first = sel;
-			if (sel > win_first + vis - 1) win_first = sel - vis + 1;
-			if (win_first > n - vis)       win_first = n - vis;
-			if (win_first < 0)             win_first = 0;
+			win_first = menu_window_first(rows, n, sel, vis, win_first);
 			first = win_first;
 		} else {
 			/* NO CURSOR MEANS NOTHING CAN SCROLL IT, so it scrolls itself.
@@ -3052,9 +3049,13 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 		 * The gap under the footer text is pad/6 from centring plus whatever
 		 * bottom pad is left. Set by eye on the device 2026-09-04, not derived:
 		 * the full pad gives 1.17 and floats, 0.50 is too tight, and 0.75 is
-		 * where Eric called it. 5/12 is the subtraction that leaves 0.75. */
+		 * where Eric called it. 5/12 is the subtraction that leaves 0.75.
+		 *
+		 * A body row is not a footer. A synopsis short enough to fit without
+		 * scrolling ends in prose, which is the panel's content and wants the
+		 * same pad under it that a list does. */
 		if (!scroll_h && last >= 0 && last < n && rows[last].label &&
-		    ROW_IS_NOTE(rows[last]))
+		    ROW_IS_NOTE(rows[last]) && !ROW_IS_BODY(rows[last]))
 			panel.h -= pad * 5 / 12;
 	}
 	panel.x = (TORTOS_SCREEN_W - panel.w) / 2;
@@ -3397,10 +3398,16 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 			 * faded edges a long title gets on the shelf.
 			 *
 			 * Left-aligned in that case, not centered: the text is wider
-			 * than the box, so centering it has nothing left to center. */
+			 * than the box, so centering it has nothing left to center.
+			 *
+			 * A body row is left-aligned whether it fits or not. It is one
+			 * line of a paragraph, and a paragraph needs one left edge. */
 			if (ui_text_width(fm, rows[i].label) <= content_w) {
+				bool body = ROW_IS_BODY(rows[i]);
+
 				ui_fit_text(fm, rows[i].label, note, sizeof note, content_w);
-				ui_text(a->r, fm, note, cx, ty, 0, lc);
+				ui_text(a->r, fm, note, body ? content_x : cx, ty,
+				        body ? -1 : 0, lc);
 			} else {
 				int slot = MQ_NOTE0 + (notes_drawn < MQ_NOTES - 1
 				                       ? notes_drawn : MQ_NOTES - 1);
@@ -4471,6 +4478,20 @@ static void gi_gather(app *a, int owner, const game_entry *g, game_info *gi)
 		snprintf(gi->cheevos, sizeof gi->cheevos, "none");
 
 	gi->favorite = fav_is(s->tag, g->file);
+
+	/* What a scrape left on the card, if anything. Read here with the rest
+	 * rather than when the synopsis card opens: this is one indexed row, the
+	 * screen already reads the save directory and the achievement set, and a
+	 * row that appears a frame after the panel does reads as a glitch. */
+	{
+		game_meta m;
+
+		if (db_game_get(db_lib(), s->folder, g->file, &m)) {
+			gi->scraped = true;
+			gi->has_synopsis = m.synopsis[0] != '\0';
+			snprintf(gi->year, sizeof gi->year, "%.4s", m.year);
+		}
+	}
 }
 
 /* `only` names one system's folder, or NULL for the whole library.
@@ -4641,6 +4662,11 @@ static int info_build(void *ctx, menu_row *rows, int max, const char **heading)
 	return n > max ? max : n;
 }
 
+/* Defined with the achievement card, which is where wrap_text lives and which
+ * this is the same gesture as: a row that opens into something to read. */
+static void synopsis_screen(app *a, const char *title, const char *text,
+                            unsigned accent);
+
 static menu_result info_key(app *a, void *ctx, in_button key, int sel)
 {
 	info_ctx *c = ctx;
@@ -4651,6 +4677,18 @@ static menu_result info_key(app *a, void *ctx, in_button key, int sel)
 	/* X closes it, the same button that opened it. */
 	if (key == IN_X) return MENU_DONE;
 	if (key != IN_ACCEPT || sel >= n || !rows[sel].live) return MENU_STAY;
+
+	if (!strcmp(rows[sel].label, "Synopsis")) {
+		game_meta m;
+
+		/* Read again here rather than carried in game_info: it is up to 4 KB
+		 * of prose for a row that is usually not opened, and the gatherer runs
+		 * on every action this screen takes. */
+		if (db_game_get(db_lib(), a->sys.systems[c->owner].folder, c->g->file, &m)
+		    && m.synopsis[0])
+			synopsis_screen(a, c->g->title, m.synopsis, c->st.accent);
+		return MENU_STAY;
+	}
 
 	if (!strcmp(rows[sel].label, "Favorite")) {
 		char was[LIB_PATH];
@@ -4720,18 +4758,23 @@ void info_preview(app *a, bool net)
 	sysview   *v = &a->view[a->sys_cursor];
 	menu_row   rows[GI_MAX];
 	game_info  gi;
-	int        owner, n;
+	int        owner, n, sel;
 
 	if (v->list.count == 0) return;
 	owner = shelf_owner(a, a->sys_cursor, v->cursor);
 	gi_gather(a, owner, &v->list.items[v->cursor], &gi);
 	n = gi_rows(rows, &gi, net);
+	/* Where the screen actually opens, asked the way menu_run_body asks it
+	 * rather than hardcoded. It was a literal 5, which was the Box Art action
+	 * until the rows were reordered and then was Saves - so the shot showed a
+	 * highlight on a dead row, which the real screen cannot do. */
+	sel = rows[0].live ? 0 : menu_step_sel(rows, n, 0, +1);
 
 	draw_shelf(a);
 	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 	SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
 	SDL_RenderFillRect(a->r, NULL);
-	menu_draw(a, v->list.items[v->cursor].title, rows, n, 5, menu_std_width(a),
+	menu_draw(a, v->list.items[v->cursor].title, rows, n, sel, menu_std_width(a),
 	          a->sys.systems[owner].accent);
 }
 
@@ -5924,7 +5967,7 @@ static int gm_build(app *a, menu_row *out, gm_bufs *b)
 #define CHV_WRAP_LINES 12
 #define CHV_WRAP_COLS  96
 
-/* Break `src` into lines no wider than `w`, at spaces. Returns how many.
+/* Break `src` into lines no wider than `w`, at whitespace. Returns how many.
  *
  * menu_draw marquees a note that does not fit, which is right for a footer
  * carrying four facts and wrong for a sentence: the reader has to wait for the
@@ -5934,22 +5977,45 @@ static int gm_build(app *a, menu_row *out, gm_bufs *b)
  * A word wider than the panel is cut instead of hunted for a space, because
  * the alternative is a line that overflows and there is nowhere else for it to
  * go. Measuring per prefix is quadratic in the line, which nobody will notice
- * at 191 characters, once, when the card opens. */
+ * at 191 characters, once, when the card opens.
+ *
+ * LINE BREAKS IN THE SOURCE ARE PARAGRAPHS, and this used to walk straight past
+ * them: only ' ' broke a line and only ' ' was skipped, so a '\n' rode into the
+ * middle of a line and SDL_ttf drew it as nothing - a hole two characters wide
+ * after "Gunstar-9!!" with the next paragraph running on behind it. Of the 78
+ * ScreenScraper synopses on this card 47 carry a break and 42 carry a blank
+ * line; splitting at every break gives 191 pieces with a median of 276
+ * characters, which is paragraphs rather than a source that hard-wraps. So any
+ * run of whitespace containing a break ends the paragraph and gets one empty
+ * row, however many blank lines the run actually held. Never at the top, where
+ * it would only push the first line down off the rule. */
 static int wrap_text(TTF_Font *f, const char *src, int w,
                      char out[][CHV_WRAP_COLS], int max)
 {
 	int n = 0;
 
-	while (*src && n < max) {
+	while (n < max) {
 		char buf[CHV_WRAP_COLS];
 		int take = 0, i;
+		bool para = false;
 
-		for (i = 1; src[i - 1]; i++) {
+		while (*src == ' ' || *src == '\n' || *src == '\r' || *src == '\t') {
+			if (*src == '\n' || *src == '\r') para = true;
+			src++;
+		}
+		if (!*src) break;
+		if (para && n > 0) {
+			out[n++][0] = '\0';
+			if (n >= max) break;
+		}
+		for (i = 1; src[i - 1] && src[i - 1] != '\n' && src[i - 1] != '\r' &&
+		            src[i - 1] != '\t'; i++) {
 			if (i >= (int)sizeof buf) break;
 			memcpy(buf, src, (size_t)i);
 			buf[i] = '\0';
 			if (ui_text_width(f, buf) > w) break;
-			if (src[i] == ' ' || src[i] == '\0') take = i;
+			if (src[i] == ' ' || src[i] == '\n' || src[i] == '\r' ||
+			    src[i] == '\t' || src[i] == '\0') take = i;
 		}
 		if (!take) {                    /* one word longer than the panel */
 			take = i > 1 ? i - 1 : 1;
@@ -5959,7 +6025,6 @@ static int wrap_text(TTF_Font *f, const char *src, int w,
 		out[n][take] = '\0';
 		n++;
 		src += take;
-		while (*src == ' ') src++;
 	}
 	return n;
 }
@@ -6034,6 +6099,61 @@ static bool cheevo_detail_screen(app *a, SDL_Texture *bg, const cheevo *c)
 	plat_input_flush();
 	memset(&a->in, 0, sizeof a->in);
 	return close_all;
+}
+
+/* The synopsis, opened with A from the game info screen.
+ *
+ * The same shape as the achievement card above and for the same reason: there
+ * is nothing here to choose between, so it is drawn with no cursor and scrolls
+ * itself. A synopsis averages 670 characters and the longest on the test card
+ * is 2,221 (BACKLOG item 27), so most of them fit and the long ones walk.
+ *
+ * Over the shelf rather than a paused frame: this is reached from the shelf,
+ * where the info screen already dims the same way. */
+#define SYN_WRAP_LINES 80
+
+static void synopsis_screen(app *a, const char *title, const char *text,
+                            unsigned accent)
+{
+	char (*lines)[CHV_WRAP_COLS];
+	menu_row *rows;
+	int fixed = menu_std_width(a);
+	int n, i, done = 0;
+
+	if (!text || !*text) return;
+	lines = calloc(SYN_WRAP_LINES, sizeof *lines);
+	rows  = calloc(SYN_WRAP_LINES, sizeof *rows);
+	if (!lines || !rows) { free(lines); free(rows); return; }
+
+	n = wrap_text(ui_font(UI_F_MENU), text, fixed, lines, SYN_WRAP_LINES);
+	for (i = 0; i < n; i++)
+		rows[i] = (menu_row){ lines[i], MENU_BODY_MARK, true };
+
+	plat_input_flush();
+	memset(&a->in, 0, sizeof a->in);
+
+	while (!done && !want_quit && a->running) {
+		plat_input_poll(&a->in);
+		if (a->in.quit_requested) break;
+		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_ACCEPT] ||
+		    a->in.pressed[IN_X] || a->in.pressed[IN_MENU]) done = 1;
+		/* Nothing else watches power for this screen, the same as every other
+		 * loop the launcher runs outside plat_resident_wait. */
+		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); break; }
+
+		draw_shelf(a);
+		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
+		SDL_RenderFillRect(a->r, NULL);
+		menu_draw(a, title, rows, n, -1, fixed, accent);
+		SDL_RenderPresent(a->r);
+		SDL_Delay(8);
+	}
+
+	plat_input_flush();
+	memset(&a->in, 0, sizeof a->in);
+	free(lines);
+	free(rows);
 }
 
 static void cheevos_screen(app *a, SDL_Texture *bg)
@@ -7366,6 +7486,7 @@ static int shot_kb, shot_kb_layer;
 static const char *shot_notice;
 static const char *shot_notice_head = "Unlocked  -  5 points";
 static int shot_cheevos;
+static int shot_syn;       /* --synopsis: the card a scraped game opens */
 static int shot_info;
 static int shot_art;
 static const char *shot_art_now = "Legend of Zelda, The - A Link to the Past (USA)";
@@ -7463,6 +7584,31 @@ static void take_shot(app *a)
 	if (shot_hare)
 		hare_preview(a, shot_hare_addr, "4071", shot_hare_who,
 		             "12 KB in / 41 MB out", shot_hare_head);
+	/* The synopsis card, from the card's own games table - so a shot of it is a
+	 * picture of real scraped text rather than a fixture. */
+	if (shot_syn) {
+		sysview *v = &a->view[a->sys_cursor];
+		const system_cfg *s = &a->sys.systems[shelf_owner(a, a->sys_cursor, v->cursor)];
+		game_meta m;
+
+		if (v->list.count > 0 &&
+		    db_game_get(db_lib(), s->folder, v->list.items[v->cursor].file, &m) &&
+		    m.synopsis[0]) {
+			char lines[SYN_WRAP_LINES][CHV_WRAP_COLS];
+			menu_row rows[SYN_WRAP_LINES];
+			int fixed = menu_std_width(a);
+			int nl = wrap_text(ui_font(UI_F_MENU), m.synopsis, fixed, lines,
+			                   SYN_WRAP_LINES), li;
+
+			for (li = 0; li < nl; li++)
+				rows[li] = (menu_row){ lines[li], MENU_BODY_MARK, true };
+			SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+			SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
+			SDL_RenderFillRect(a->r, NULL);
+			menu_draw(a, v->list.items[v->cursor].title, rows, nl, -1, fixed,
+			          s->accent);
+		}
+	}
 	if (shot_cheevos) {
 		static const struct { const char *t; int p; bool got; } sample[] = {
 			{ "The Path to Disaster", 5, true },
@@ -7577,6 +7723,7 @@ int main(int argc, char *argv[])
 		 * for the same reason --menu and --slots exist: it is dense, and
 		 * laying it out against a screenshot beats a round trip to a device. */
 		else if (!strcmp(argv[i], "--cheevos-screen")) shot_cheevos = 1;
+		else if (!strcmp(argv[i], "--synopsis")) shot_syn = 1;
 		else if (!strcmp(argv[i], "--info")) shot_info = 1;
 		else if (!strcmp(argv[i], "--phase") && i + 1 < argc)
 			shot_phase = atoi(argv[++i]);
@@ -7692,6 +7839,96 @@ int main(int argc, char *argv[])
 		printf("%s = %s\n", key, eq + 1);
 		db_shutdown();
 		return 0;
+	}
+
+	/* --meta <file>: fill the card's games table from scraped rows.
+	 *
+	 * The scrape runs on a computer for now (BACKLOG item 27), and from there
+	 * the card's database cannot simply be written: the launcher holds it open
+	 * in WAL mode for as long as the device is on, and swapping the file under
+	 * a live SQLite handle is how a card loses its favorites and its play time.
+	 * Measured on this device: a 76 KB library.db beside a 161 KB -wal.
+	 *
+	 * So the rows travel as a file and the writing happens HERE, in a second
+	 * process, where SQLite arbitrates between the two the way it is built to.
+	 * Runs before video, like --set and --dump: it is a question asked over
+	 * adb, not a screen, and nothing here presents.
+	 *
+	 * A record is a tab-separated header - folder, file, year, publisher,
+	 * developer, players, genres, esrb, note, and the synopsis length in bytes
+	 * - then that many bytes of synopsis and a newline. COUNTED RATHER THAN
+	 * ESCAPED, because the synopsis is the one field with newlines in it and 42
+	 * of the 78 replies this card's games got have them; an escape is a second
+	 * thing to get right at both ends. */
+	if (argc > 2 && !strcmp(argv[1], "--meta")) {
+		char dev[CFG_STR * 2], lib[CFG_STR * 2], head[1024];
+		FILE *f = fopen(argv[2], "rb");
+		int wrote = 0, bad = 0;
+
+		if (!f) {
+			fprintf(stderr, "cannot read %s\n", argv[2]);
+			return 1;
+		}
+		paths_init();
+		db_paths_ready(dev, sizeof dev, lib, sizeof lib, NULL, 0);
+		if (!db_init(dev, lib, NULL)) {
+			fprintf(stderr, "cannot open the library database\n");
+			fclose(f);
+			return 1;
+		}
+		while (fgets(head, sizeof head, f)) {
+			game_meta m = { 0 };
+			char *fld[10], *p = head;
+			size_t want, take;
+			long len;
+			int i;
+
+			for (i = 0; i < 9; i++) {
+				char *t = strchr(p, '\t');
+
+				if (!t) break;
+				*t = '\0';
+				fld[i] = p;
+				p = t + 1;
+			}
+			if (i < 9) { bad++; continue; }
+			fld[9] = p;
+			/* A length that is not a length means the file is not what it says
+			 * and every byte after it is at an unknown offset. Stop, rather
+			 * than write whatever the rest happens to parse as.
+			 *
+			 * Checked digit by digit rather than left to strtol, which reads
+			 * "nine" as 0 - a perfectly valid length, and the row lands with
+			 * its synopsis quietly gone and the reader none the wiser. */
+			for (p = fld[9]; *p >= '0' && *p <= '9'; p++)
+				;
+			if (p == fld[9] || (*p != '\n' && *p != '\r' && *p != '\0')) {
+				bad++;
+				break;
+			}
+			len = strtol(fld[9], NULL, 10);
+			if (len < 0 || len > 1 << 20) { bad++; break; }
+			want = (size_t)len;
+			take = want < sizeof m.synopsis ? want : sizeof m.synopsis - 1;
+			if (fread(m.synopsis, 1, take, f) != take) { bad++; break; }
+			m.synopsis[take] = '\0';
+			for (want -= take; want > 0; want--)
+				if (fgetc(f) == EOF) break;
+			fgetc(f);                            /* the record's newline */
+			snprintf(m.year,      sizeof m.year,      "%s", fld[2]);
+			snprintf(m.publisher, sizeof m.publisher, "%s", fld[3]);
+			snprintf(m.developer, sizeof m.developer, "%s", fld[4]);
+			snprintf(m.players,   sizeof m.players,   "%s", fld[5]);
+			snprintf(m.genres,    sizeof m.genres,    "%s", fld[6]);
+			snprintf(m.esrb,      sizeof m.esrb,      "%s", fld[7]);
+			snprintf(m.note,      sizeof m.note,      "%s", fld[8]);
+			if (db_game_set(db_lib(), fld[0], fld[1], &m)) wrote++;
+			else bad++;
+		}
+		fclose(f);
+		printf("%d written, %d rejected\n", wrote, bad);
+		db_shutdown();
+		return bad && !wrote ? 1 : 0;
 	}
 
 	if (argc > 1 && !strcmp(argv[1], "--dump")) {

@@ -67,7 +67,7 @@ static inline int gm_save_slot(const bool *have)
 /* What the info screen offers to do, beyond telling you things. */
 typedef enum { GI_ART, GI_FAV, GI_ROWS } gi_row;
 
-#define GI_MAX 7          /* five facts, two actions */
+#define GI_MAX 9          /* seven facts at most, two actions */
 
 /* Everything worth saying about one game, gathered once.
  *
@@ -81,8 +81,16 @@ typedef struct {
 	char  saves[32];
 	char  cheevos[64];
 	char  art[32];
+	char  year[8];         /* from the scrape, empty when it said nothing */
 	bool  favorite;
 	bool  has_art;
+	/* Whether this game has a row in the card's games table at all, and
+	 * whether that row carries a synopsis. Two flags rather than one, because
+	 * they answer different questions: a game nobody has scraped shows neither
+	 * row, and a game that was scraped and came back without prose says so
+	 * rather than looking unscraped. */
+	bool  scraped;
+	bool  has_synopsis;
 } game_info;
 
 /* `net` is whether there is a network, asked by the caller and passed in: the

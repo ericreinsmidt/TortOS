@@ -31,10 +31,21 @@ typedef struct {
  * one more row you had failed to be able to select.
  *
  * Marked by a sentinel in `value` rather than a new struct field, so every
- * existing { label, value, live } initializer stays valid. */
+ * existing { label, value, live } initializer stays valid.
+ *
+ * A BODY row is the same row LEFT-ALIGNED: one line of a wrapped paragraph
+ * rather than a caption. Centering is right for a caption and wrong for prose -
+ * across the fifteen-odd lines of a game synopsis every line begins somewhere
+ * different and the eye has to hunt for the start of each one. Everything else
+ * about the two is identical, so ROW_IS_NOTE covers both and only the draw
+ * asks which it has. */
 #define MENU_NOTE_MARK ((const char *)1)
+#define MENU_BODY_MARK ((const char *)2)
 #define MENU_NOTE(s)   ((menu_row){ (s), MENU_NOTE_MARK, false })
-#define ROW_IS_NOTE(r) ((r).value == MENU_NOTE_MARK)
+#define MENU_BODY(s)   ((menu_row){ (s), MENU_BODY_MARK, false })
+#define ROW_IS_BODY(r) ((r).value == MENU_BODY_MARK)
+#define ROW_IS_NOTE(r) ((r).value == MENU_NOTE_MARK || \
+                        (r).value == MENU_BODY_MARK)
 
 /* Move to the next live row in `dir` (+1 or -1), or stay put if none is.
  *
@@ -43,5 +54,15 @@ typedef struct {
  * replaced would spin forever on one. Pure, so tools/menu-check.c holds it
  * to that. */
 int menu_step_sel(const menu_row *rows, int n, int sel, int dir);
+
+/* Which row a scrolling list should draw first, given where it drew first last
+ * time. `vis` is how many rows fit; `first` is the previous answer, which is
+ * kept unless the cursor has moved out of it.
+ *
+ * Here rather than inside menu_draw because the rule has a case that only shows
+ * up after a particular walk through a particular list - down to the bottom and
+ * back - which is exactly the shape of thing a check can hold and a person
+ * looking at one frame cannot. Pure, so tools/menu-check.c can walk it. */
+int menu_window_first(const menu_row *rows, int n, int sel, int vis, int first);
 
 #endif

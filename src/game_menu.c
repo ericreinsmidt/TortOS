@@ -8,10 +8,25 @@ int gi_rows(menu_row *out, const game_info *gi, bool net)
 {
 	int n = 0;
 
+	/* What is true of the GAME first, then what is true of your copy of it.
+	 * Cheevos leads because it is the one fact that changes while you play,
+	 * and it is what this screen is opened to check. Year and the synopsis
+	 * belong directly under it when the scrape that fills them exists. */
+	out[n++] = (menu_row){ "Cheevos",  gi->cheevos, false };
+	/* Only once a scrape has spoken for this game. Before that these two rows
+	 * would say "unknown" on every game on the card, which is a row asking to
+	 * be ignored rather than a fact. A scrape that came back without a year
+	 * still says nothing; one that came back without prose says "none", the
+	 * way the in-game Cheevos row does, because the difference between "not
+	 * looked up" and "looked up, nothing there" is worth a word. */
+	if (gi->scraped && gi->year[0])
+		out[n++] = (menu_row){ "Year",  gi->year, false };
+	if (gi->scraped)
+		out[n++] = (menu_row){ "Synopsis", gi->has_synopsis ? NULL : "none",
+		                       gi->has_synopsis };
 	out[n++] = (menu_row){ "File",     gi->file,    false };
 	out[n++] = (menu_row){ "Size",     gi->size,    false };
 	out[n++] = (menu_row){ "Saves",    gi->saves,   false };
-	out[n++] = (menu_row){ "Cheevos",  gi->cheevos, false };
 	out[n++] = (menu_row){ "Box Art",  gi->art,     false };
 	/* The two live rows last, under the facts, because they act on them. */
 	out[n++] = (menu_row){ gi->has_art ? "Replace Box Art" : "Get Box Art",

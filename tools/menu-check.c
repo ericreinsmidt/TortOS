@@ -452,6 +452,51 @@ static void step_terminates(void)
 	ck(menu_step_sel(dead, 0, 0, +1) == 0, "an empty menu is survivable");
 }
 
+/* Walking down a list and back must end up looking at the top of it again.
+ *
+ * The list here is the game info screen as a scraped game builds it: Cheevos
+ * and Year lead, and neither is a stop for the cursor. On the device on
+ * 2026-09-16, one walk down to Favorite scrolled both off the top and nothing
+ * afterwards brought them back - the window moved only when the CURSOR would
+ * leave it, and no cursor can ever be up there.
+ *
+ * Walked rather than asserted at one position, because every single frame of
+ * that walk was correct on its own. */
+static void window_returns(void)
+{
+	menu_row rows[9];
+	int vis = 8, first = 0, sel, i;
+
+	for (i = 0; i < 9; i++) rows[i] = (menu_row){ "row", NULL, false };
+	rows[2].live = rows[7].live = rows[8].live = true;   /* Synopsis, art, fav */
+
+	printf("a list whose first two rows cannot be selected:\n");
+	sel = menu_step_sel(rows, 9, 0, +1);
+	ck(sel == 2, "opens on the first row that can be");
+	first = menu_window_first(rows, 9, sel, vis, first);
+	ck(first == 0, "and shows the rows above it");
+
+	sel = menu_step_sel(rows, 9, sel, +1);
+	first = menu_window_first(rows, 9, sel, vis, first);
+	sel = menu_step_sel(rows, 9, sel, +1);
+	first = menu_window_first(rows, 9, sel, vis, first);
+	ck(sel == 8 && first == 1, "walking to the bottom scrolls the top away");
+
+	sel = menu_step_sel(rows, 9, sel, -1);
+	first = menu_window_first(rows, 9, sel, vis, first);
+	ck(sel == 7 && first == 1, "one step back does not move the window");
+
+	sel = menu_step_sel(rows, 9, sel, -1);
+	first = menu_window_first(rows, 9, sel, vis, first);
+	ck(sel == 2 && first == 0, "reaching the top row brings the top back");
+
+	/* The cursor still wins when what is above it cannot fit. */
+	for (i = 0; i < 9; i++) rows[i].live = false;
+	rows[8].live = true;
+	ck(menu_window_first(rows, 9, 8, 4, 0) == 5, "a cursor is never pushed off");
+	ck(menu_window_first(rows, 9, 8, 9, 0) == 0, "a list that fits never scrolls");
+}
+
 
 /* ---------- the game info screen ------------------------------------------ */
 
@@ -473,13 +518,14 @@ static void info_rows(void)
 	gi.favorite = false;
 
 	n = gi_rows(rows, &gi, true);
-	printf("game info, art present and a network:\n");
-	ck(n == GI_MAX, "five facts and two actions");
-	ck(!strcmp(rows[0].label, "File"), "File leads");
-	ck(!strcmp(val(&rows[0]), "Chrono Trigger.sfc"), "and names the file");
-	ck(!strcmp(rows[GI_MAX - 2].label, "Replace Box Art"),
-	   "art present offers a replace");
-	ck(!strcmp(val(&rows[GI_MAX - 1]), "no"), "Favorite reads its state");
+	printf("game info, nothing scraped, art present and a network:\n");
+	ck(n == GI_MAX - 2, "five facts and two actions, with no scraped rows");
+	ck(!strcmp(rows[0].label, "Cheevos"), "Cheevos leads");
+	ck(!strcmp(val(&rows[0]), "12 of 78"), "and carries the count");
+	ck(!strcmp(rows[1].label, "File"), "the file comes under it");
+	ck(!strcmp(val(&rows[1]), "Chrono Trigger.sfc"), "and names the file");
+	ck(!strcmp(rows[n - 2].label, "Replace Box Art"), "art present offers a replace");
+	ck(!strcmp(val(&rows[n - 1]), "no"), "Favorite reads its state");
 	k = reachable(rows, n, got, GI_MAX);
 	ck(k == 2, "only the two actions are stops");
 	ck(!holds(got, k, 0) && !holds(got, k, 4), "no fact is a stop");
@@ -488,14 +534,42 @@ static void info_rows(void)
 	gi.favorite = true;
 	n = gi_rows(rows, &gi, false);
 	printf("game info, no art and no network:\n");
-	ck(!strcmp(rows[GI_MAX - 2].label, "Get Box Art"),
-	   "no art offers a get, not a replace");
-	ck(!strcmp(val(&rows[GI_MAX - 2]), "needs Wi-Fi"), "and says why it is dead");
-	ck(!rows[GI_MAX - 2].live, "which it is");
-	ck(!strcmp(val(&rows[GI_MAX - 1]), "yes"), "Favorite follows the flag");
+	ck(!strcmp(rows[n - 2].label, "Get Box Art"), "no art offers a get, not a replace");
+	ck(!strcmp(val(&rows[n - 2]), "needs Wi-Fi"), "and says why it is dead");
+	ck(!rows[n - 2].live, "which it is");
+	ck(!strcmp(val(&rows[n - 1]), "yes"), "Favorite follows the flag");
 	k = reachable(rows, n, got, GI_MAX);
 	ck(k == 1, "Favorite is the only stop left");
-	ck(holds(got, k, GI_MAX - 1), "and it is Favorite");
+	ck(holds(got, k, n - 1), "and it is Favorite");
+
+	/* Scraped, which adds the two rows under Cheevos and nowhere else. The
+	 * three shapes below are the whole of what a scrape can leave behind. */
+	gi.scraped = true;
+	gi.has_synopsis = true;
+	snprintf(gi.year, sizeof gi.year, "1995");
+	n = gi_rows(rows, &gi, true);
+	printf("game info, scraped with a year and prose:\n");
+	ck(n == GI_MAX, "two rows more than an unscraped game");
+	ck(!strcmp(rows[1].label, "Year") && !strcmp(val(&rows[1]), "1995"),
+	   "Year sits under Cheevos");
+	ck(!strcmp(rows[2].label, "Synopsis"), "and Synopsis under Year");
+	ck(rows[2].live, "which opens");
+	ck(!strcmp(rows[3].label, "File"), "the file rows follow them");
+	k = reachable(rows, n, got, GI_MAX);
+	ck(k == 3, "three stops now: the synopsis and the two actions");
+
+	gi.has_synopsis = false;
+	n = gi_rows(rows, &gi, true);
+	printf("game info, scraped with no prose:\n");
+	ck(!strcmp(val(&rows[2]), "none"), "Synopsis says none");
+	ck(!rows[2].live, "and does nothing, the way the in-game Cheevos row does");
+
+	gi.year[0] = '\0';
+	gi.has_synopsis = true;
+	n = gi_rows(rows, &gi, true);
+	printf("game info, scraped with no year:\n");
+	ck(n == GI_MAX - 1, "the Year row is simply absent");
+	ck(!strcmp(rows[1].label, "Synopsis"), "and Synopsis moves up under Cheevos");
 }
 
 
@@ -703,6 +777,7 @@ int main(void)
 	save_slot();
 	card_sets();
 	step_terminates();
+	window_returns();
 	info_rows();
 	ingame_rows();
 	audio_row();

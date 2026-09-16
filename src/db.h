@@ -72,6 +72,42 @@ bool db_del(db *d, const char *key);
 typedef bool (*db_each_fn)(const char *key, const char *value, void *ctx);
 void db_each_prefix(db *d, const char *prefix, db_each_fn fn, void *ctx);
 
+/* --- what a scrape knows about one game -----------------------------------
+ * A TABLE, not more settings rows. The settings namespace above is key/value
+ * and `--dump` prints the whole of it; 1,708 synopses are neither settings nor
+ * something anyone wants in a dump.
+ *
+ * DB_LIBRARY only. This describes the card's games, the way favorites and play
+ * time do, rather than the handheld. Keyed on the ROM's folder and file name,
+ * because that is what a game IS here - the tag keys per-system choices, and
+ * this is per game.
+ *
+ * Every field is stored even though the screen shows two of them. Measured
+ * 2026-09-15 over 78 real replies: a synopsis averages 670 characters and the
+ * whole card is 1.7 MB of text, while re-scraping 1,708 games to add a column
+ * later is an hour on one thread (BACKLOG item 27). Storing it is the cheap
+ * side of that trade by a wide margin.
+ *
+ * The synopsis cap is 4 KB against a longest-seen 2,221 characters. A longer
+ * one is truncated rather than refused: half a synopsis still reads. */
+#define GAME_SYNOPSIS_MAX 4096
+
+typedef struct {
+	char year[8];              /* "1991" - the first four of any date form */
+	char publisher[96];
+	char developer[96];
+	char players[8];
+	char genres[128];          /* comma separated, English names */
+	char esrb[16];
+	char note[8];              /* the source's own score, out of 20 */
+	char synopsis[GAME_SYNOPSIS_MAX];
+} game_meta;
+
+/* False when there is no row. `out` is zeroed either way, so a screen can draw
+ * from it without asking twice. */
+bool db_game_get(db *d, const char *folder, const char *file, game_meta *out);
+bool db_game_set(db *d, const char *folder, const char *file, const game_meta *m);
+
 /* Inspectable without being editable. Nothing on the device can read a
  * database - there is no sqlite3 binary - and losing the ability to SEE what a
  * setting is would be a real loss where losing the ability to edit it is not.

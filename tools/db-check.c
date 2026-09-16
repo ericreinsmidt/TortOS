@@ -11,6 +11,8 @@
  *   - a value that is not a number is not a zero.
  *   - the two scopes stay apart. Flattening them would move a session token
  *     between handhelds, which is the one thing the old layout was careful of.
+ *   - the games table exists on the card and nowhere else, and a row of scraped
+ *     text comes back exactly as it went in.
  *
  * Links src/db.c and NOT SDL. If it ever needs SDL, the split has failed.
  */
@@ -122,6 +124,59 @@ static void a_lost_database_self_heals(void)
 	ck(db_get_int(d, "volume", -1) == 8, "with the shipped default, not an empty value");
 	ck(!db_has(d, "probe.int"), "and nothing from the old file");
 	db_close(d);
+}
+
+/* The scraped text: a card's, not a handheld's, and intact on the way back. */
+static void the_games_table(void)
+{
+	db *dev, *lib;
+	game_meta m, got;
+	size_t i;
+
+	printf("the games table:\n");
+	dev = db_open(DEV, DB_DEVICE);
+	lib = db_open(LIB, DB_LIBRARY);
+	if (!dev || !lib) { ck(0, "both open"); return; }
+
+	memset(&m, 0, sizeof m);
+	snprintf(m.year, sizeof m.year, "1993");
+	snprintf(m.publisher, sizeof m.publisher, "Sega");
+	snprintf(m.developer, sizeof m.developer, "Treasure");
+	snprintf(m.players, sizeof m.players, "2");
+	snprintf(m.genres, sizeof m.genres, "Action,Shooter");
+	snprintf(m.esrb, sizeof m.esrb, "E");
+	snprintf(m.note, sizeof m.note, "18");
+	/* Right up to the cap, because that is the length nobody tries by hand. */
+	for (i = 0; i < sizeof m.synopsis - 1; i++)
+		m.synopsis[i] = (char)('a' + (i % 26));
+
+	ck(db_game_set(lib, "Genesis", "Gunstar Heroes (USA).zip", &m),
+	   "a row goes into the card's database");
+	ck(!db_game_set(dev, "Genesis", "Gunstar Heroes (USA).zip", &m),
+	   "and cannot go into the handheld's, which has no such table");
+
+	memset(&got, 0xAB, sizeof got);
+	ck(db_game_get(lib, "Genesis", "Gunstar Heroes (USA).zip", &got), "and comes back");
+	ck(!strcmp(got.year, "1993") && !strcmp(got.publisher, "Sega") &&
+	   !strcmp(got.developer, "Treasure") && !strcmp(got.players, "2") &&
+	   !strcmp(got.genres, "Action,Shooter") && !strcmp(got.esrb, "E") &&
+	   !strcmp(got.note, "18"), "with every field as written");
+	ck(!strcmp(got.synopsis, m.synopsis), "including a synopsis at the cap");
+
+	memset(&got, 0xAB, sizeof got);
+	ck(!db_game_get(lib, "Genesis", "a game nobody has.zip", &got),
+	   "a game with no row says so");
+	ck(got.year[0] == '\0' && got.synopsis[0] == '\0',
+	   "and zeroes what it was handed, so a screen can draw it either way");
+
+	/* Scraped twice is one row, not two: the second write replaces. */
+	snprintf(m.year, sizeof m.year, "1994");
+	ck(db_game_set(lib, "Genesis", "Gunstar Heroes (USA).zip", &m), "a re-scrape writes");
+	ck(db_game_get(lib, "Genesis", "Gunstar Heroes (USA).zip", &got) &&
+	   !strcmp(got.year, "1994"), "and replaces rather than duplicating");
+
+	db_close(dev);
+	db_close(lib);
 }
 
 static void the_scopes_stay_apart(void)
@@ -361,6 +416,7 @@ int main(void)
 	a_default_never_beats_a_choice();
 	round_trips();
 	a_lost_database_self_heals();
+	the_games_table();
 	the_scopes_stay_apart();
 	boot_env_says_what_the_shell_needs();
 	prefix_scan();
