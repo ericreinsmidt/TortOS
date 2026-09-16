@@ -134,7 +134,7 @@ than any one console:
 | **Over The Hare** | the file server; needs Wi-Fi and says so when there is none |
 | **Auto Off** | how long without a button before the device powers itself down |
 | **Text Size** | left/right; reopens every font, so the whole UI is rebuilt |
-| **UI Theme** | `Classic` or `Fancy Pants` - which art the shelves wear |
+| **UI Theme** | `Plain Jane` or `Fancy Pants` - which art the shelves wear |
 | **UI Direction** | `Horizontal`, `Vertical` or `Cubic` - see below |
 | **Box Art** | fetch what the whole library is missing |
 | **Cheevos** | the RetroAchievements account, or `sign in` |
@@ -286,7 +286,7 @@ carries a wash of that color that eases as you move between systems.
 
 Two things about that are yours to choose, and they are independent.
 
-**UI Theme** picks the art. `Classic` is a drawn card per system, with the
+**UI Theme** picks the art. `Plain Jane` is a drawn card per system, with the
 name on it. `Fancy Pants` is a photograph of the console itself, background
 removed, and because a photograph does not name itself the shelf writes the
 name underneath. A theme is a directory under `res/cards/`, so adding one is

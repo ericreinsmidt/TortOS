@@ -49,7 +49,7 @@ typedef struct {
 } card_set;
 
 static const card_set CARD_SETS[] = {
-	{ "classic", "classic", "Classic",     true,  0.00f },
+	{ "classic", "classic", "Plain Jane",  true,  0.00f },
 	{ "fancy",   "fancy",   "Fancy Pants", false, 0.21f },   /* about 50px */
 };
 #define CARD_SET_COUNT ((int)(sizeof CARD_SETS / sizeof CARD_SETS[0]))

@@ -181,7 +181,7 @@ static void tortos_menu_offline(void)
 	memset(&u, 0, sizeof u);
 	u.wifi = WIFI_OFF;
 	u.text_size = "100%";
-	u.cards = "Classic";
+	u.cards = "Plain Jane";
 	u.cards_dir = "Horizontal";
 	u.auto_off = 120;
 	n = sys_menu_build(&u, rows, &b, &heading);
@@ -198,7 +198,7 @@ static void tortos_menu_offline(void)
 	ck(rows[PM_ACHIEVEMENTS].live, "Cheevos is reachable signed out");
 	ck(!strcmp(val(&rows[PM_SLEEP]), "2m"), "120s reads as 2m");
 	ck(!strcmp(val(&rows[PM_TEXT]), "100%"), "text size is passed through");
-	ck(!strcmp(val(&rows[PM_THEME]), "Classic"), "the card set names itself");
+	ck(!strcmp(val(&rows[PM_THEME]), "Plain Jane"), "the card set names itself");
 	ck(!strcmp(val(&rows[PM_DIR]), "Horizontal"), "and so does the direction");
 	ck(rows[PM_DIR].live, "UI Direction is reachable offline too");
 	ck(rows[PM_THEME].live, "UI Theme is reachable offline, being a look and not a service");

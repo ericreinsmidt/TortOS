@@ -46,7 +46,7 @@
 ## Features
 
 - **Three ways to browse:** a row of covers, a column, or a cube that turns both ways.
-- **Two looks:** Classic cards, or Fancy Pants photos of each console.
+- **Two looks:** Plain Jane cards, or Fancy Pants photos of each console.
 - **RetroAchievements:** sign in on the device. A game's achievements download once and then work offline, and anything you unlock offline is sent later.
 - **Box art the Brick finds itself,** by file name, or by checksum when the name doesn't match. Or add your own.
 - **Over The Hare:** move games, saves and covers on and off the card from any browser on your Wi-Fi, behind a PIN.
