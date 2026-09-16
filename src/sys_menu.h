@@ -32,7 +32,8 @@
 typedef enum {
 	PM_STATS,
 	PM_WIFI, PM_BT, PM_AUDIO, PM_XFER,
-	PM_SLEEP, PM_TEXT, PM_THEME, PM_DIR, PM_SCRAPE, PM_ACHIEVEMENTS, PM_ABOUT, PM_ROWS
+	PM_SLEEP, PM_TEXT, PM_THEME, PM_DIR, PM_SCRAPE, PM_ACHIEVEMENTS, PM_SS,
+	PM_ABOUT, PM_ROWS
 } pm_row;
 
 /* The system menu. Games and Core carry real values rather than invented ones,
@@ -45,7 +46,25 @@ typedef enum {
 	SM_DISPLAY, /* SM_BUTTONS, */ SM_BOXART, SM_RESCAN, SM_ROWS
 } sm_row;
 
-#define MENU_MAX_ROWS 12
+#define MENU_MAX_ROWS 13
+
+/* The array every caller declares must hold every row a build can produce, and
+ * on 2026-09-16 it stopped: PM_ROWS went to 13 against a cap of 12 when the
+ * ScreenScraper row landed, so sys_menu_build wrote one past the end of the
+ * caller's stack array. The launcher aborted on its first frame and
+ * tools/menu-check.c passed, because it overflows identically and nothing
+ * there was watching that memory.
+ *
+ * A number that has to be kept in step with an enum, by hand, in another file.
+ * Now it is the compiler's job.
+ *
+ * _Static_assert and not #if: PM_ROWS is an enum constant, and the
+ * preprocessor reads an identifier it does not know as 0 - so `#if
+ * MENU_MAX_ROWS < PM_ROWS` is `13 < 0`, false forever, a guard that compiles
+ * and protects nothing. Written that way first, and only caught by putting the
+ * cap back to 12 and watching the build succeed. */
+_Static_assert(MENU_MAX_ROWS >= PM_ROWS, "MENU_MAX_ROWS < PM_ROWS");
+_Static_assert(MENU_MAX_ROWS >= SM_ROWS, "MENU_MAX_ROWS < SM_ROWS");
 
 /* Where the built rows' text lives. A row holds pointers, not copies, so the
  * strings a build formats have to outlive the build; the caller owns this and
@@ -65,6 +84,14 @@ typedef struct {
 	/* The TortOS menu */
 	bool        ra_in;
 	const char *ra_name;     /* only read when ra_in */
+	/* The ScreenScraper account, which needs one more fact than the
+	 * RetroAchievements one: whether this build can reach them at all. The
+	 * developer key comes from the environment at build time and a build
+	 * without it cannot sign anybody in, so the row has three states rather
+	 * than two - see src/ss.h and BACKLOG 31. */
+	bool        ss_have;     /* this build carries a developer key */
+	bool        ss_in;
+	const char *ss_name;     /* only read when ss_in */
 	const char *text_size;   /* "100%" - the caller owns the scale table */
 	const char *cards;       /* the showing card set's name, from CARD_SETS */
 	const char *cards_dir;   /* which way the shelves run, from CARD_DIRS */

@@ -101,6 +101,17 @@ int sys_menu_build(const sys_ui *u, menu_row *out, menu_bufs *b,
 	out[PM_ACHIEVEMENTS] = (menu_row){ "Cheevos",
 	                                   u->ra_in ? u->ra_name : "sign in",
 	                                   true };
+	/* Beside Cheevos because it is the same kind of row: an account, named by
+	 * the service it belongs to, reading "sign in" until there is one. Not
+	 * beside Box Art, which is a job you run rather than a thing you are.
+	 *
+	 * Dead when the build has no developer key, because then there is nothing
+	 * to sign into - and saying so is better than a row that opens a keyboard
+	 * and refuses whatever is typed into it. */
+	out[PM_SS]           = (menu_row){ "ScreenScraper",
+	                                   !u->ss_have ? "not in this build"
+	                                   : u->ss_in ? u->ss_name : "sign in",
+	                                   u->ss_have };
 	out[PM_ABOUT]        = (menu_row){ "About TortOS", NULL,   true  };
 	return PM_ROWS;
 }

@@ -404,6 +404,55 @@ static void every_default_is_readable(void)
 	}
 }
 
+/* --dump must never put a credential on a terminal.
+ *
+ * It is the repair tool for a device with no sqlite3, so it is run over adb
+ * and its output lands in a log, a paste or a screen share. It printed
+ * ra.token from the day the account arrived; ss.password would have joined it,
+ * and that one is the credential itself rather than something traded for it.
+ *
+ * Asserted by dumping to a file and searching it for the values, which is the
+ * only form of this check that cannot be fooled by the redaction being applied
+ * somewhere other than where the printing happens. */
+static void a_dump_hides_credentials(void)
+{
+	static const char *secret = "hunter2-not-a-real-password";
+	static const char *plain  = "America/New_York";
+	char path[256], buf[8192];
+	FILE *f;
+	size_t got = 0;
+
+	printf("what --dump puts on a terminal:\n");
+	/* Its own database: the case before this one closes them deliberately, and
+	 * a dump of nothing would pass every assertion below by being empty. */
+	scrub();
+	if (!db_init(DEV, LIB, NULL)) { ck(0, "could not open a database to dump"); return; }
+	db_set_str(db_dev(), "ra.token", secret);
+	db_set_str(db_dev(), "ss.password", secret);
+	db_set_str(db_dev(), "ss.user", "someone");
+	db_set_str(db_dev(), "timezone", plain);
+
+	snprintf(path, sizeof path, "%s.dump", DEV);
+	f = fopen(path, "w+");
+	if (!f) { ck(0, "could not write a dump to read back"); return; }
+	db_dump(db_dev(), f);
+	fflush(f);
+	rewind(f);
+	got = fread(buf, 1, sizeof buf - 1, f);
+	buf[got] = '\0';
+	fclose(f);
+	unlink(path);
+
+	ck(strstr(buf, secret) == NULL, "no secret value appears anywhere in it");
+	ck(strstr(buf, "ra.token") != NULL, "the token's KEY is still listed");
+	ck(strstr(buf, "ss.password") != NULL, "and so is the password's");
+	ck(strstr(buf, "[hidden,") != NULL, "with a length in place of the value");
+	/* A user name is not a secret, and hiding it would make the dump useless
+	 * for the question it is usually opened to answer: which account is this. */
+	ck(strstr(buf, "someone") != NULL, "an account NAME is still shown");
+	ck(strstr(buf, plain) != NULL, "and an ordinary setting is untouched");
+}
+
 int main(void)
 {
 	if (!db_available()) {
@@ -422,6 +471,7 @@ int main(void)
 	prefix_scan();
 	no_database_is_survivable();
 	every_default_is_readable();
+	a_dump_hides_credentials();
 	scrub();
 
 	if (fails) { printf("\n%d FAILED\n", fails); return 1; }

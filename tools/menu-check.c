@@ -277,6 +277,28 @@ static void tortos_menu_online(void)
 	ck(rows[PM_SCRAPE].live, "Box Art is live");
 	ck(!strcmp(val(&rows[PM_ACHIEVEMENTS]), "eric"), "Cheevos shows the account");
 	ck(!strcmp(val(&rows[PM_SLEEP]), "never"), "0s reads as never");
+
+	/* THE SCREENSCRAPER ROW HAS THREE STATES, one more than the Cheevos row
+	 * beside it: the developer key comes from the environment at build time,
+	 * so a build can exist that cannot sign anyone in at all. That state is
+	 * the one worth pinning - a row that opens a keyboard and then refuses
+	 * whatever is typed would look like a rejected password. */
+	printf("the ScreenScraper account row:\n");
+	ck(!u.ss_have, "the fixture above has no key");
+	ck(!strcmp(val(&rows[PM_SS]), "not in this build"), "and the row says so");
+	ck(!rows[PM_SS].live, "and does not open");
+
+	u.ss_have = true;
+	n = sys_menu_build(&u, rows, &b, &heading);
+	ck(!strcmp(val(&rows[PM_SS]), "sign in"), "a key with no account invites one");
+	ck(rows[PM_SS].live, "and opens");
+
+	u.ss_in = true;
+	u.ss_name = "someone";
+	n = sys_menu_build(&u, rows, &b, &heading);
+	ck(!strcmp(val(&rows[PM_SS]), "someone"), "an account shows its name");
+	ck(rows[PM_SS].live, "and stays open, to change it");
+	ck(n == PM_ROWS, "and none of that changes the row count");
 }
 
 /* Connecting and idle are not the same as off, and the row must not flatten

@@ -36,6 +36,7 @@
 #include "wifi.h"
 #include "audioout.h"
 #include "menu.h"
+#include "ss.h"
 #include "sys_menu.h"
 #include "cards.h"
 #include "game_menu.h"
@@ -3635,6 +3636,9 @@ static int menu_build(app *a, screen_id screen, int sys,
 
 		u.ra_in     = ra_signed_in();
 		u.ra_name   = u.ra_in ? ra_user() : NULL;
+		u.ss_have   = ss_have_dev();
+		u.ss_in     = ss_signed_in();
+		u.ss_name   = u.ss_in ? ss_user() : NULL;
 		u.text_size = TEXT_NAMES[text_scale_step()];
 		u.cards     = CARD_SETS[g_cards].name;
 		u.cards_dir = CARD_DIRS[g_dir].name;
@@ -4140,6 +4144,70 @@ static void ra_signin_screen(app *a)
 	row = (menu_row){ err, NULL, ok };
 	wifi_backdrop(a);
 	menu_draw(a, "RetroAchievements", &row, 1, -1, 0, MENU_ACCENT);
+	plat_draw_osd(a->r);
+	SDL_RenderPresent(a->r);
+	SDL_Delay(1800);
+	plat_input_flush();
+	memset(&a->in, 0, sizeof a->in);
+}
+
+/* The ScreenScraper account. The same shape as the screen above, and the
+ * differences are the interesting part.
+ *
+ * There is nothing to trade the password for. RetroAchievements returns a
+ * token and the password is dropped here and never stored; ScreenScraper signs
+ * every request with the password itself, so what ss_sign_in keeps is a
+ * reusable credential and the only "sign-in" available is asking them whether
+ * they answer to it. The password is still wiped from THIS screen's stack the
+ * moment it has been handed over, because a buffer that outlives its use is
+ * the one thing a screen can get wrong on its own.
+ *
+ * The third state is the one RetroAchievements does not have: a build made
+ * without SS_DEVID cannot sign anyone in, and says so rather than taking a
+ * password it has no way to use. See src/ss.h. */
+static void ss_signin_screen(app *a)
+{
+	char user[SS_USER_MAX] = "", pass[SS_PASS_MAX] = "", err[160] = "";
+	menu_row row;
+	kb_result kr;
+	bool ok;
+
+	snprintf(user, sizeof user, "%s", ss_user());
+
+	if (!ss_have_dev() || !net_online()) {
+		row = (menu_row){ !ss_have_dev()
+		                  ? "This build has no ScreenScraper key."
+		                  : "Not on a network. Connect Wi-Fi first.", NULL, false };
+		wifi_backdrop(a);
+		menu_draw(a, "ScreenScraper", &row, 1, -1, 0, MENU_ACCENT);
+		plat_draw_osd(a->r);
+		SDL_RenderPresent(a->r);
+		SDL_Delay(1600);
+		return;
+	}
+
+	kr = kb_prompt(a->r, &a->in, "ScreenScraper User", user,
+	               (int)sizeof user, MENU_ACCENT, wifi_backdrop, idle_due_ctx, a);
+	if (kr == KB_POWER) { power_off(a); return; }
+	if (kr != KB_ACCEPT || !user[0]) return;
+
+	kr = kb_prompt(a->r, &a->in, "Password", pass,
+	               (int)sizeof pass, MENU_ACCENT, wifi_backdrop, idle_due_ctx, a);
+	if (kr == KB_POWER) { memset(pass, 0, sizeof pass); power_off(a); return; }
+	if (kr != KB_ACCEPT || !pass[0]) { memset(pass, 0, sizeof pass); return; }
+
+	wait_panel(a, "ScreenScraper", "Signing in...");
+	ok = ss_sign_in(user, pass, err, sizeof err);
+	memset(pass, 0, sizeof pass);
+
+	/* ss_sign_in stores the account itself, because it is the half that knows
+	 * whether the reply was real. Nothing to save here. */
+	if (ok) snprintf(err, sizeof err, "Signed in as %s", ss_user());
+	else if (!err[0]) snprintf(err, sizeof err, "Sign-in failed");
+
+	row = (menu_row){ err, NULL, ok };
+	wifi_backdrop(a);
+	menu_draw(a, "ScreenScraper", &row, 1, -1, 0, MENU_ACCENT);
 	plat_draw_osd(a->r);
 	SDL_RenderPresent(a->r);
 	SDL_Delay(1800);
@@ -5546,6 +5614,7 @@ static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
 	case PM_XFER:         xfer_screen(a); break;
 	case PM_SCRAPE:       art_screen(a, NULL, NULL, NULL, MENU_ACCENT); break;
 	case PM_ACHIEVEMENTS: ra_signin_screen(a); break;
+	case PM_SS:           ss_signin_screen(a); break;
 	case PM_BT:           bt_screen(a); break;
 	case PM_STATS:        if (stats_screen(a)) return MENU_DONE; break;
 	case PM_ABOUT:        about_screen(a); break;
@@ -7995,6 +8064,7 @@ int main(int argc, char *argv[])
 		snprintf(cp, sizeof cp, "%s/cacert.pem", P_ROOT);
 		net_set_ca_path(cp);
 		ra_creds_load();
+		ss_creds_load();
 	}
 
 	/* Scan every system now, not when one is opened: it is three directory

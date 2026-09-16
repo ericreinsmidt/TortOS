@@ -421,6 +421,24 @@ void db_each_prefix(db *d, const char *prefix, db_each_fn fn, void *ctx)
 	sq_finalize(st);
 }
 
+/* Whether a key's VALUE is a credential, by the name it was given.
+ *
+ * A convention rather than a list, so a key added next year is covered by
+ * having been named honestly rather than by somebody remembering this
+ * function. Two exist today: ra.token and ss.password. */
+static bool secret_key(const char *k)
+{
+	size_t n = k ? strlen(k) : 0;
+	const char *suffix[] = { ".token", ".password" };
+	size_t i, m;
+
+	for (i = 0; i < sizeof suffix / sizeof suffix[0]; i++) {
+		m = strlen(suffix[i]);
+		if (n >= m && strcmp(k + n - m, suffix[i]) == 0) return true;
+	}
+	return false;
+}
+
 void db_dump(db *d, FILE *out)
 {
 	sqlite3_stmt *st = NULL;
@@ -435,6 +453,20 @@ void db_dump(db *d, FILE *out)
 	while (sq_step(st) == SQ_ROW) {
 		k = sq_column_text(st, 0);
 		v = sq_column_text(st, 1);
+		/* THE SECRETS ARE COUNTED, NOT PRINTED. This tool exists because
+		 * there is no sqlite3 on the device, so it is run over adb and its
+		 * output lands in a terminal, a log, a paste or a screen share. It
+		 * printed ra.token from the day the account arrived and would have
+		 * printed ss.password from today - and unlike a token, that one is
+		 * the credential itself and is reusable.
+		 *
+		 * A length is still worth having: it is what tells "nothing stored"
+		 * apart from "stored, and something is wrong with it". */
+		if (secret_key(k ? (const char *)k : "")) {
+			fprintf(out, "  %-16s [hidden, %d characters]\n",
+			        (const char *)k, v ? (int)strlen((const char *)v) : 0);
+			continue;
+		}
 		fprintf(out, "  %-16s %s\n", k ? (const char *)k : "?",
 		        v ? (const char *)v : "");
 	}
