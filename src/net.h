@@ -45,6 +45,14 @@ typedef struct { const char *k, *v; } net_field;
  * with it - carry on without. */
 long net_post_buf(const net_field *f, int n, char *out, size_t outn, int timeout_s);
 
+/* The same, as a GET to any URL, with the fields urlencoded onto the query
+ * string. For a service that authenticates every call with parameters rather
+ * than with a token in a body - ScreenScraper does, and the parameters include
+ * an account password, which is why this goes through the same 0600 config
+ * file and never through argv. */
+long net_get_buf(const char *url, const net_field *f, int n, char *out,
+                 size_t outn, int timeout_s);
+
 /* The same request, started and left to run. Nothing waits for it.
  *
  * This exists because a launch was 15ms warm and a request to RetroAchievements

@@ -19,7 +19,7 @@ SSH := sshpass -p 'tina' ssh -o StrictHostKeyChecking=no \
         adb adb-elf adb-res adb-vendor adb-restart adb-run adb-log \
         check check-cheevos check-hare check-httpd check-idle check-rahash \
         check-raset check-xfer check-menus check-artscrape check-artrun check-audioout \
-        check-db check-stats check-sort check-bt check-backlog hooks storeprobe deploy restart logs
+        check-db check-stats check-sort check-bt check-backlog check-ss hooks storeprobe deploy restart logs
 
 all: build/tortos.elf
 
@@ -29,7 +29,7 @@ all: build/tortos.elf
 # exist, and check-menus was about to join eight others in that state.
 CHECKS = check-cheevos check-hare check-httpd check-idle check-rahash \
          check-raset check-xfer check-menus check-artscrape check-artrun check-audioout \
-         check-db check-stats check-sort check-bt check-backlog
+         check-db check-stats check-sort check-bt check-backlog check-ss
 
 check:
 	@fail=0; for c in $(CHECKS); do \
@@ -47,8 +47,10 @@ build/tortos.elf: $(wildcard src/*.c) $(wildcard src/*.h) tools/setbright.c mk/c
 		echo "toolchain image missing; run: make toolchain" >&2; exit 1; }
 	@[ -d sysroot/usr/include/SDL2 ] || { \
 		echo "no sysroot; run: mk/fetch-sysroot.sh (needs the device)" >&2; exit 1; }
-	docker run --rm -v $(CURDIR):/work -w /work $(IMAGE) \
-		make -f mk/cross.mk SYSROOT=/work/sysroot VERSION=$(VERSION) build/tortos.elf build/setbright
+	@# -e VAR with no value passes the HOST's value through, so the pair
+	@# reaches the container without appearing in this command line.
+	docker run --rm -e SS_DEVID -e SS_DEVPASS -v $(CURDIR):/work -w /work $(IMAGE) \
+		make -f mk/cross.mk SYSROOT=/work/sysroot VERSION=$(VERSION) creds build/tortos.elf build/setbright
 	@# Refuse to be quiet about an output older than its own source.
 	@#
 	@# Docker on macOS can show the container a stale mtime for a file the host
@@ -217,6 +219,19 @@ build-native/raset-check: tools/raset-check.c src/rafetch.c src/rajson.c src/rah
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g -DTORTOS_VERSION='"check"' \
 	      -o $@ tools/raset-check.c src/rafetch.c src/rajson.c src/rahash.c src/net.c src/atomic.c src/db.c
+
+# Whether this build can reach ScreenScraper, and whether an account survives
+# a restart. The live half needs a network and ~/.screenscraper.env, and skips
+# cleanly without them - the same bargain check-raset makes.
+check-ss: build-native/ss-check
+	@./build-native/ss-check
+
+build-native/ss-check: tools/ss-check.c src/ss.c src/ss.h src/db.c src/net.c src/rajson.c FORCE
+	@mkdir -p build-native
+	@$(MAKE) -f mk/native.mk creds
+	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g -Ibuild-native \
+	      -DTORTOS_VERSION='"check"' \
+	      -o $@ tools/ss-check.c src/ss.c src/db.c src/net.c src/rajson.c
 
 # One-time: the cross-compiler image. Pinned by digest, so it does not drift.
 toolchain:

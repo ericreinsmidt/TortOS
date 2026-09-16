@@ -80,8 +80,18 @@ static bool write_get_config(const char *path, const char *url, int timeout_s)
 	return true;
 }
 
-static bool write_config(const char *path, const net_field *fl, int n,
-                         int timeout_s)
+/* `url` is where it goes and `get` says how the fields travel: as a body, or
+ * urlencoded onto the query string. Both were once RA_URL and a POST, which is
+ * all RetroAchievements needs; ScreenScraper authenticates every call with
+ * query parameters instead, and it carries the account password in them.
+ *
+ * Which is exactly why it goes through here rather than through a URL built by
+ * a caller: curl's --data-urlencode with --get puts those parameters in THIS
+ * file, mode 0600, and never in argv where anything that can list processes
+ * would read them. One place knows about the trust store, the agent and the
+ * quoting, and it stays one place. */
+static bool write_config(const char *path, const char *url, bool get,
+                         const net_field *fl, int n, int timeout_s)
 {
 	FILE *f;
 	int fd, i;
@@ -111,7 +121,8 @@ static bool write_config(const char *path, const net_field *fl, int n,
 		cfg_quote(f, kv);
 		fputc('\n', f);
 	}
-	fprintf(f, "url = "); cfg_quote(f, RA_URL); fputc('\n', f);
+	if (get) fprintf(f, "get\n");
+	fprintf(f, "url = "); cfg_quote(f, url); fputc('\n', f);
 	fclose(f);
 	return true;
 }
@@ -165,7 +176,10 @@ static void tmp_config(char *out, size_t n)
 	         (unsigned)atomic_fetch_add(&seq, 1));
 }
 
-long net_post_buf(const net_field *f, int n, char *out, size_t outn, int timeout_s)
+/* The two blocking calls differ only in where they go and how the fields
+ * travel, so they are one body with the config written two ways. */
+static long request_buf(const char *url, bool get, const net_field *f, int n,
+                        char *out, size_t outn, int timeout_s)
 {
 	char cfg[128], tmp[160];
 	int fd, rc;
@@ -175,7 +189,7 @@ long net_post_buf(const net_field *f, int n, char *out, size_t outn, int timeout
 	out[0] = '\0';
 	tmp_config(cfg, sizeof cfg);
 	snprintf(tmp, sizeof tmp, "%s.body", cfg);
-	if (!write_config(cfg, f, n, timeout_s)) return -1;
+	if (!write_config(cfg, url, get, f, n, timeout_s)) return -1;
 
 	fd = open(tmp, O_RDWR | O_CREAT | O_TRUNC, 0600);
 	if (fd < 0) { unlink(cfg); return -1; }
@@ -188,11 +202,22 @@ long net_post_buf(const net_field *f, int n, char *out, size_t outn, int timeout
 		r = read(fd, out, outn - 1);
 		if (r >= 0) { out[r] = '\0'; got = (long)r; }
 	} else {
-		fprintf(stderr, "ra: request failed (curl exit %d)\n", rc);
+		fprintf(stderr, "net: request failed (curl exit %d)\n", rc);
 	}
 	close(fd);
 	unlink(tmp);
 	return got;
+}
+
+long net_get_buf(const char *url, const net_field *f, int n, char *out,
+                 size_t outn, int timeout_s)
+{
+	return request_buf(url, true, f, n, out, outn, timeout_s);
+}
+
+long net_post_buf(const net_field *f, int n, char *out, size_t outn, int timeout_s)
+{
+	return request_buf(RA_URL, false, f, n, out, outn, timeout_s);
 }
 
 /* ---- the same thing, without waiting ------------------------------------ */
@@ -210,7 +235,7 @@ bool net_post_async(const net_field *f, int n, const char *path, int timeout_s)
 
 	snprintf(g_async_cfg, sizeof g_async_cfg, "/tmp/tortos-ra-async-%ld.curl",
 	         (long)getpid());
-	if (!write_config(g_async_cfg, f, n, timeout_s)) return false;
+	if (!write_config(g_async_cfg, RA_URL, false, f, n, timeout_s)) return false;
 
 	fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 	if (fd < 0) { unlink(g_async_cfg); return false; }
