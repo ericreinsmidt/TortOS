@@ -556,6 +556,28 @@ static int shelf_owner(app *a, int sysidx, int item)
 	return sysidx;
 }
 
+/* The view whose SYSTEM settings the game under the cursor belongs to.
+ *
+ * Favorites is a shelf of other systems' games, so the two kinds of setting
+ * have to be told apart: a property of the SYSTEM - the core, the ROM folder,
+ * the BIOS, the display mode - resolves through the game's owner, while a
+ * property of the SHELF - its sort order, its cursor, its own card - belongs
+ * to the shelf you are standing on.
+ *
+ * launch() had that right for three of the four and wrong for the display
+ * mode, which it read off the shelf: a Genesis game set to integer on its own
+ * shelf played stretched when it was started from Favorites, because the mode
+ * it used was the one filed under FAV. Nothing showed it on this card, where
+ * every system reads stretch and all the answers agree. Named as a function
+ * rather than repeated at each site so the next per-system setting has one
+ * obvious thing to call. */
+static sysview *owner_view(app *a)
+{
+	sysview *v = &a->view[a->sys_cursor];
+
+	return &a->view[shelf_owner(a, a->sys_cursor, v->cursor)];
+}
+
 /* Where a game's box art lives.
  *
  * One definition because four places need the same file - the card, the info
@@ -6179,7 +6201,11 @@ static int slot_strip(app *a, SDL_Texture *bg, int saving)
  * the backdrop behind the menu redraws where the game is about to be. */
 static void gm_cycle_display(app *a, int d)
 {
-	sysview *v = &a->view[a->sys_cursor];
+	/* The OWNER's, so a mode chosen while playing a favorite is set for the
+	 * system that game belongs to - which is what a per-system mode means.
+	 * Set on the Favorites shelf it would have been filed under FAV and worn
+	 * by every game launched from there, whatever machine it came from. */
+	sysview *v = owner_view(a);
 
 	v->dmode = (v->dmode + d + DMODE_COUNT) % DMODE_COUNT;
 	display_save(a);
@@ -6984,7 +7010,8 @@ static void launch(app *a)
 			 * a system that has never been set would otherwise inherit
 			 * whatever the previous one chose. Ordered on the same socket, so
 			 * it lands before the first frame. */
-			plat_resident_line("SETDISPLAY\tmode=%s", DMODES[v->dmode].name);
+			plat_resident_line("SETDISPLAY\tmode=%s",
+			                   DMODES[a->view[o].dmode].name);
 
 			/* Auto Off. Out here rather than inside the chv_load branch
 			 * above, which is where the first version put it and is the same
@@ -7114,7 +7141,8 @@ static void launch(app *a)
 		argv[n++] = (char *)"--rom";             argv[n++] = rom;
 		argv[n++] = (char *)"--save";            argv[n++] = save;
 		argv[n++] = (char *)"--system";          argv[n++] = bios;
-		argv[n++] = (char *)"--display";         argv[n++] = (char *)DMODES[v->dmode].name;
+		argv[n++] = (char *)"--display";
+		argv[n++] = (char *)DMODES[a->view[o].dmode].name;
 		argv[n++] = (char *)"--load-state";      argv[n++] = st;
 		argv[n++] = (char *)"--state-on-exit";   argv[n++] = st;
 		/* The Auto card's own path here, not the scratch the resident mode
