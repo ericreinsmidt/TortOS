@@ -42,7 +42,7 @@ typedef enum {
  * side - Diatom has per-system display modes and core-supplied button labels -
  * so these are hooks waiting to be wired, not wishes. */
 typedef enum {
-	SM_GAMES, SM_CORE, SM_SHOW, SM_SORT,
+	SM_GAMES, SM_CORE, SM_SORT,
 	SM_DISPLAY, /* SM_BUTTONS, */ SM_BOXART, SM_RESCAN, SM_ROWS
 } sm_row;
 

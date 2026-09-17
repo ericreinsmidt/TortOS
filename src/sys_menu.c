@@ -29,7 +29,6 @@ int sys_menu_build(const sys_ui *u, menu_row *out, menu_bufs *b,
 		*heading = u->sys_name;
 		out[SM_GAMES]   = (menu_row){ "Games",         b->a,        false };
 		out[SM_CORE]    = (menu_row){ "Core",          b->b,        false };
-		out[SM_SHOW]    = (menu_row){ "Show",          "All games", false };
 		out[SM_SORT]    = (menu_row){ "Sort By",
 		                              u->sort ? u->sort : "Name", true  };
 		out[SM_DISPLAY] = (menu_row){ "Display Mode",  u->dmode,    true  };
@@ -37,7 +36,15 @@ int sys_menu_build(const sys_ui *u, menu_row *out, menu_bufs *b,
 		 * supplies core button labels, so the hook is real - but a dead row
 		 * in a menu of live ones is a promise the launcher is not keeping,
 		 * and it has sat there unwired longer than it was ever going to be
-		 * worth. Put the enum entry back with it when it is built. */
+		 * worth. Put the enum entry back with it when it is built.
+		 *
+		 * Show went with it on 2026-09-17, and it was the weaker of the two:
+		 * Button Mapping at least named something the emulator can do, where
+		 * Show read "All games" because that string was written here and
+		 * nothing could ever change it. Games and Core are dead rows too and
+		 * they stay, because what they report is true - the shelf's count and
+		 * the core that will run it. The filter Show promised is on the shelf
+		 * already: Y marks a favorite and Favorites is its own shelf. */
 		/* out[SM_BUTTONS] = (menu_row){ "Button Mapping", NULL,    false }; */
 		/* Just this system. Needs the network like its counterpart in the
 		 * TortOS menu, and says so rather than opening a screen that can only
