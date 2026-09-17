@@ -545,11 +545,15 @@ static void what_scrolls(void)
 
 /* ---------- the game info screen ------------------------------------------ */
 
-/* Five rows at most, two of which open into something and lead because of it.
+/* Five rows at most: the three that describe the game, then the two that do
+ * something about it. The order reversed on 2026-09-17 - it used to lead with
+ * what the cursor could act on - so it is asserted rather than assumed, which
+ * is also how the old order got pinned and had to be unpinned here.
  *
  * What is NOT here is as deliberate as what is: no File, no Size, no Box Art
- * byte count, and no Favorite, which Y does from the shelf. Asserted rather
- * than assumed, because a row is easy to put back by habit. */
+ * byte count, no Favorite, which Y does from the shelf, and no Saves, which
+ * the carousel shows with the frames themselves. A row is easy to put back by
+ * habit. */
 static void info_rows(void)
 {
 	game_info gi;
@@ -557,28 +561,26 @@ static void info_rows(void)
 	int got[GI_MAX], n, k, i;
 
 	memset(&gi, 0, sizeof gi);
-	snprintf(gi.saves, sizeof gi.saves, "2");
 	snprintf(gi.cheevos, sizeof gi.cheevos, "12 of 78");
 	gi.has_cheevos = true;
 	gi.has_art = true;
 
 	n = gi_rows(rows, &gi, true);
 	printf("game info, nothing scraped, art present and a network:\n");
-	ck(n == 3, "Cheevos, the art action, and Saves");
-	ck(!strcmp(rows[0].label, "Cheevos"), "Cheevos leads");
+	ck(n == 2, "Cheevos and the art action, and nothing else to say");
+	ck(!strcmp(rows[0].label, "Cheevos"), "Cheevos leads when nothing describes the game");
 	ck(!strcmp(val(&rows[0]), "12 of 78"), "and carries the count");
 	ck(rows[0].live, "and opens the set, the way the in-game row does");
 	ck(!strcmp(rows[1].label, "Replace Box Art"), "art present offers a replace");
-	ck(!strcmp(rows[n - 1].label, "Saves"), "your copy's state comes last");
 	for (i = 0; i < n; i++) {
 		ck(strcmp(rows[i].label, "File") != 0, "no File row");
 		ck(strcmp(rows[i].label, "Size") != 0, "no Size row");
 		ck(strcmp(rows[i].label, "Box Art") != 0, "no Box Art row");
 		ck(strcmp(rows[i].label, "Favorite") != 0, "no Favorite row");
+		ck(strcmp(rows[i].label, "Saves") != 0, "no Saves row");
 	}
 	k = reachable(rows, n, got, GI_MAX);
 	ck(k == 2, "two stops: the set and the action");
-	ck(!holds(got, k, n - 1), "Saves is not a stop");
 
 	gi.has_cheevos = false;
 	snprintf(gi.cheevos, sizeof gi.cheevos, "none");
@@ -592,39 +594,49 @@ static void info_rows(void)
 	k = reachable(rows, n, got, GI_MAX);
 	ck(k == 0, "nothing on the screen can be chosen");
 
-	/* Scraped, which adds the two rows under Cheevos and nowhere else. The
-	 * three shapes below are the whole of what a scrape can leave behind. */
+	/* Scraped, which adds the three rows ABOVE Cheevos and nowhere else. The
+	 * shapes below are the whole of what a scrape can leave behind. */
 	gi.has_cheevos = true;
 	snprintf(gi.cheevos, sizeof gi.cheevos, "12 of 78");
 	gi.has_art = true;
 	gi.scraped = true;
 	gi.has_synopsis = true;
 	snprintf(gi.year, sizeof gi.year, "1995");
+	snprintf(gi.genre, sizeof gi.genre, "Platform,Shoot'em Up");
 	n = gi_rows(rows, &gi, true);
-	printf("game info, scraped with a year and prose:\n");
-	ck(n == GI_MAX, "two rows more than an unscraped game");
-	ck(!strcmp(rows[1].label, "Synopsis"), "Synopsis sits under Cheevos");
-	ck(rows[1].live, "and opens");
-	ck(!strcmp(rows[2].label, "Year") && !strcmp(val(&rows[2]), "1995"),
-	   "Year follows the two that open");
-	ck(!strcmp(rows[3].label, "Replace Box Art"), "then the action");
-	ck(!strcmp(rows[4].label, "Saves"), "and your copy's state last");
+	printf("game info, scraped with a year, a genre and prose:\n");
+	ck(n == GI_MAX, "three rows more than an unscraped game");
+	ck(!strcmp(rows[0].label, "Synopsis"), "what the game IS leads");
+	ck(rows[0].live, "and opens, because the prose does not fit on a row");
+	ck(!strcmp(rows[1].label, "Year") && !strcmp(val(&rows[1]), "1995"),
+	   "then when it came out");
+	ck(!strcmp(rows[2].label, "Genre") && !strcmp(val(&rows[2]), "Platform,Shoot'em Up"),
+	   "then what kind, as the scrape joined it");
+	ck(!strcmp(rows[3].label, "Cheevos"),
+	   "then what there is to shoot for, which is worth seeing before starting");
+	ck(!strcmp(rows[4].label, "Replace Box Art"), "and the action last");
 	k = reachable(rows, n, got, GI_MAX);
-	ck(k == 3, "three stops now: the set, the synopsis and the action");
+	ck(k == 3, "three stops: the synopsis, the set and the action");
 
 	gi.has_synopsis = false;
 	n = gi_rows(rows, &gi, true);
 	printf("game info, scraped with no prose:\n");
-	ck(!strcmp(val(&rows[1]), "none"), "Synopsis says none");
-	ck(!rows[1].live, "and does nothing, the way the in-game Cheevos row does");
+	ck(!strcmp(val(&rows[0]), "none"), "Synopsis says none");
+	ck(!rows[0].live, "and does nothing, the way the in-game Cheevos row does");
 
 	gi.year[0] = '\0';
 	gi.has_synopsis = true;
 	n = gi_rows(rows, &gi, true);
 	printf("game info, scraped with no year:\n");
 	ck(n == GI_MAX - 1, "the Year row is simply absent");
-	ck(!strcmp(rows[1].label, "Synopsis"), "and Synopsis stays under Cheevos");
-	ck(!strcmp(rows[2].label, "Replace Box Art"), "with the action next");
+	ck(!strcmp(rows[0].label, "Synopsis"), "and Synopsis still leads");
+	ck(!strcmp(rows[1].label, "Genre"), "with the genre where the year was");
+
+	gi.genre[0] = '\0';
+	n = gi_rows(rows, &gi, true);
+	printf("game info, scraped with neither year nor genre:\n");
+	ck(n == GI_MAX - 2, "both are simply absent");
+	ck(!strcmp(rows[1].label, "Cheevos"), "leaving the prose and the two actions");
 }
 
 

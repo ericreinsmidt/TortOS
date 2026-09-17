@@ -8,29 +8,42 @@ int gi_rows(menu_row *out, const game_info *gi, bool net)
 {
 	int n = 0;
 
-	/* WHAT OPENS INTO SOMETHING COMES FIRST, then what is only worth reading.
+	/* THE GAME FIRST, THEN WHAT YOU CAN DO ABOUT IT. Eric's order, 2026-09-17,
+	 * and it reverses the one this screen shipped with a day earlier.
 	 *
-	 * The two rows that lead are the two the cursor can act on, so the screen
-	 * starts where the hand starts. Cheevos before the synopsis because it is
-	 * the one fact here that changes while you play, and it is what this screen
-	 * gets opened to check; the synopsis is the same every time.
+	 * That first order led with what the cursor could act on, which is the
+	 * right rule for a menu of actions and the wrong one here: this screen is
+	 * opened to find out what a game IS. So the three that describe it come
+	 * first - what it is about, when it came out, what kind of thing it is -
+	 * and the two that do something follow.
 	 *
-	 * Cheevos opens the same list the in-game menu opens - which is where this
-	 * row's own count comes from. Reading "4/54" and having nowhere to go with
-	 * it is the question half-answered: which four, and what are the other
-	 * fifty. A game with no set has nothing to open and says so. */
-	out[n++] = (menu_row){ "Cheevos",  gi->cheevos, gi->has_cheevos };
-	/* Both only once a scrape has spoken for this game. Before that they would
-	 * say "unknown" on every game on the card, which is a row asking to be
-	 * ignored rather than a fact. A scrape that came back without a year simply
-	 * says nothing; one that came back without prose says "none", the way the
-	 * in-game Cheevos row does, because the difference between "not looked up"
-	 * and "looked up, nothing there" is worth a word. */
+	 * Synopsis leads and is still selectable, because the prose does not fit
+	 * on a row and the row is how you get to it.
+	 *
+	 * Cheevos stays, below them, for the reason it is worth opening BEFORE a
+	 * game rather than during one: seeing what there is to shoot for is part
+	 * of deciding whether to start. Its count is also the one thing here that
+	 * changes while you play.
+	 *
+	 * All three scraped rows are absent until a scrape has spoken for this
+	 * game. Before that they would say "unknown" on every game on the card,
+	 * which is a row asking to be ignored rather than a fact. A scrape that
+	 * came back without a year or a genre simply says nothing; one that came
+	 * back without prose says "none", the way the in-game Cheevos row does,
+	 * because the difference between "not looked up" and "looked up, nothing
+	 * there" is worth a word. */
 	if (gi->scraped)
 		out[n++] = (menu_row){ "Synopsis", gi->has_synopsis ? NULL : "none",
 		                       gi->has_synopsis };
 	if (gi->scraped && gi->year[0])
-		out[n++] = (menu_row){ "Year",  gi->year, false };
+		out[n++] = (menu_row){ "Year",  gi->year,  false };
+	if (gi->scraped && gi->genre[0])
+		out[n++] = (menu_row){ "Genre", gi->genre, false };
+	/* The count opens the same list the in-game menu opens - which is where it
+	 * comes from. Reading "4/54" and having nowhere to go with it is the
+	 * question half-answered: which four, and what are the other fifty. A game
+	 * with no set has nothing to open and says so. */
+	out[n++] = (menu_row){ "Cheevos", gi->cheevos, gi->has_cheevos };
 	/* WHAT THIS SCREEN NO LONGER SAYS, and why, because each was removed on a
 	 * reason rather than to make the list shorter:
 	 *
@@ -52,13 +65,23 @@ int gi_rows(menu_row *out, const game_info *gi, bool net)
 	 * Favorite. Y does it from the shelf, on both screens that have a cursor,
 	 * and a second way to do the same thing is a second thing to keep working.
 	 * The row also had to rebuild the Favorites shelf under its own cursor and
-	 * decide whether the game it was describing had moved out from under it. */
+	 * decide whether the game it was describing had moved out from under it.
+	 *
+	 * Saves. The save carousel shows them when you load, which is the moment
+	 * anyone cares, and it shows the actual frames rather than a count. This
+	 * row was the only one here about your copy rather than the game, and it
+	 * cost a stat of the whole slot set every time the screen opened.
+	 *
+	 * Players, and the rest of the scrape. The card carries publisher,
+	 * developer, players, genres, ESRB and their score out of 20, and only
+	 * genre is here. Measured over the 1,705 rows on 2026-09-17: ESRB is empty
+	 * on 53% of them, which makes it a row that is blank half the time;
+	 * players is 1-player on 1,008 of them and moot on a handheld nobody else
+	 * is holding; publisher and developer run to 214 and 417 distinct values
+	 * of pure trivia. They stay stored - re-scraping to add a column is an
+	 * hour - and stay off this screen. */
 	out[n++] = (menu_row){ gi->has_art ? "Replace Box Art" : "Get Box Art",
 	                       net ? NULL : "needs Wi-Fi", net };
-	/* Last, and the only row here about your copy rather than the game. It is
-	 * also the one nobody comes to this screen for: a save is something you
-	 * notice from the carousel when you load, not something you look up. */
-	out[n++] = (menu_row){ "Saves",    gi->saves,   false };
 	return n;
 }
 

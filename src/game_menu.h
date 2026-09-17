@@ -66,6 +66,13 @@ static inline int gm_save_slot(const bool *have)
 
 #define GI_MAX 5          /* four facts at most, one action */
 
+/* The genre line, from the scrape. Sized from the card rather than guessed:
+ * measured 2026-09-17 over 1,704 rows, the whole comma-separated value has a
+ * median of 15 characters, a 90th percentile of 36 and a longest of 63 - one
+ * game in three carries a second genre and one in forty a third. 80 holds all
+ * of them with room, which is what stops this being the row that truncates. */
+#define GI_GENRE_MAX 80
+
 /* Everything worth saying about one game, gathered once.
  *
  * Gathered rather than watched: this screen is a still. It reads the card, the
@@ -73,9 +80,9 @@ static inline int gm_save_slot(const bool *have)
  * action changes one of them. Polling would mean a stat storm every frame for
  * numbers that only move when the player does something. */
 typedef struct {
-	char  saves[32];
 	char  cheevos[64];
 	char  year[8];         /* from the scrape, empty when it said nothing */
+	char  genre[GI_GENRE_MAX];   /* the same, comma separated */
 	bool  has_cheevos;     /* there is a set to open, not just a count to read */
 	bool  has_art;         /* chooses the action's label; no longer a row */
 	/* Whether this game has a row in the card's games table at all, and

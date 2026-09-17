@@ -18,12 +18,6 @@ typedef struct {
 	                       * follows it. */
 	char file[LIB_PATH];  /* launch path relative to Roms/<folder>: a filename,
 	                       * or "<folder>/<disc>" for a disc-folder game */
-	/* Whether an autosave exists for this game, so the card can say so and
-	 * the launch can be honest about resuming. Resolved on first use, not at
-	 * scan time: it is two lookups per game and a card of a thousand games
-	 * would spend the whole boot animation on them. */
-	signed char state_known;
-	signed char has_state;
 	/* The ROM's mtime, for the recently-added sort order.
 	 *
 	 * The scan did not stat files before this - readdir's d_type answers the

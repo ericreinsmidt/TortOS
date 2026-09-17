@@ -544,18 +544,6 @@ static void persist_dir_ensure(app *a, int s)
 	mkdir(d, 0755);
 }
 
-static bool game_has_state(app *a, int s, game_entry *g)
-{
-	if (!g->state_known) {
-		char p[LIB_PATH * 2];
-		struct stat st;
-		preview_path(a, s, g, p, sizeof p);
-		g->has_state = (stat(p, &st) == 0 && st.st_size > 0);
-		g->state_known = 1;
-	}
-	return g->has_state != 0;
-}
-
 /* Card art, in order of preference: the box art the user put in .media/, then
  * the autosave preview -- the last frame they saw, which for a game in
  * progress is a better card than any box -- then a generated slab. */
@@ -4528,27 +4516,13 @@ static void gi_gather(app *a, int owner, const game_entry *g, game_info *gi)
 	const system_cfg *s = &a->sys.systems[owner];
 	char p[LIB_PATH * 3];
 	struct stat st;
-	int i, slots = 0;
 
 	memset(gi, 0, sizeof *gi);
 
-	/* The autosave is not one of the numbered slots - it is where the game
-	 * resumes from - so it is counted apart rather than folded in. */
-	preview_path(a, owner, g, p, sizeof p);
-	for (i = 1; i <= GM_SLOTS; i++) {
-		slot_state_path(a, owner, g, i, p, sizeof p);
-		if (stat(p, &st) == 0 && st.st_size > 0) slots++;
-	}
-	{
-		bool resume = game_has_state(a, owner, (game_entry *)g);
-
-		if (slots && resume)
-			snprintf(gi->saves, sizeof gi->saves, "resume + %d", slots);
-		else if (slots)  snprintf(gi->saves, sizeof gi->saves, "%d", slots);
-		else if (resume) snprintf(gi->saves, sizeof gi->saves, "resume only");
-		else             snprintf(gi->saves, sizeof gi->saves, "none");
-	}
-
+	/* The save slots are not read here any more. The row that showed them went
+	 * on 2026-09-17 - the carousel shows them when you load, with the frames
+	 * rather than a count - and with it went a stat of every slot plus the
+	 * autosave each time this screen opened. */
 	box_art_path(s->folder, g->name, p, sizeof p);
 	gi->has_art = (stat(p, &st) == 0 && st.st_size > 0);
 
@@ -4576,6 +4550,11 @@ static void gi_gather(app *a, int owner, const game_entry *g, game_info *gi)
 			gi->scraped = true;
 			gi->has_synopsis = m.synopsis[0] != '\0';
 			snprintf(gi->year, sizeof gi->year, "%.4s", m.year);
+			/* Comma separated as the scrape stored it, and read as it is:
+			 * the source already joins its English names, and re-splitting
+			 * them here to rejoin them differently would be this screen
+			 * having an opinion about somebody else's taxonomy. */
+			snprintf(gi->genre, sizeof gi->genre, "%s", m.genres);
 		}
 	}
 }
@@ -7014,7 +6993,6 @@ static void launch(app *a)
 		game_entry *g = &v->list.items[v->cursor];
 		int o = shelf_owner(a, a->sys_cursor, v->cursor);
 
-		g->state_known = 0;
 		if (v->tex[v->cursor] && !has_box_art(a->sys.systems[o].folder, g->name)) {
 			SDL_DestroyTexture(v->tex[v->cursor]);
 			v->tex[v->cursor] = NULL;
