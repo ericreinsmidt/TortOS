@@ -872,6 +872,11 @@ bool plat_resident_send(const char *tag, const char *core, const char *rom,
 		                    vol, PLAT_VOL_MAX + 1);
 		if (bri >= 0) dsend("SETLEVEL\tkind=brightness\tindex=%d\tcount=%d",
 		                    bri, PLAT_BRIGHT_MAX + 1);
+		/* And the mute, ON EVERY RUN and not only when it changes. A state
+		 * sent only on transition is wrong exactly once - the first time -
+		 * which here means a game started with the switch already down comes
+		 * up loud. Diatom's ADR-0031. */
+		dsend("SETMUTE\ton=%d", plat_muted() ? 1 : 0);
 		return true;
 	}
 
@@ -1637,6 +1642,12 @@ bool plat_mute_poll(bool own_volume)
 
 	if (now == muted) return false;
 	muted = now;
+	/* Tell the resident whichever side of a game we are on. It cuts the stage
+	 * itself below, which is what makes the switch feel immediate; this is
+	 * what stops Diatom putting it back on its next level write. Harmless
+	 * with no game running - the resident is there either way, and knowing
+	 * early means a RUN cannot race the flip. */
+	dsend("SETMUTE\ton=%d", muted == 1 ? 1 : 0);
 	if (own_volume) {
 		if (cur_vol >= 0) apply_volume(cur_vol);
 		return true;
@@ -1652,9 +1663,12 @@ bool plat_mute_poll(bool own_volume)
 	 * Turning the speaker back ON is safe even if Diatom sits at level 0,
 	 * because it attenuates as well as switching - its own comment puts the
 	 * control's minimum near -74 dB - so the worst case is a path opened onto
-	 * something already inaudible, and Diatom's next level write settles it.
-	 * That is the interim. Once Diatom honors SETMUTE (its ADR-0031) it stops
-	 * needing to be raced at all. */
+	 * something already inaudible, and Diatom's own next write settles it.
+	 *
+	 * This side cuts because it is immediate: 100 ms, the resident loop's
+	 * period. The SETMUTE above is what makes the cut STICK, since Diatom
+	 * writes the same control whenever it applies a level (ADR-0031). Neither
+	 * alone is enough - one is fast and one is durable. */
 	{
 		long on = (muted != 1);
 
