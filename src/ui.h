@@ -89,6 +89,17 @@ int ui_font_height(ui_font_role role);
  * string), so redrawing the same title every frame costs one blit. */
 int ui_text(SDL_Renderer *r, TTF_Font *f, const char *s, int x, int y,
             int anchor, SDL_Color col);
+
+/* The same color at a fraction of its opacity, for text that fades in or out.
+ * Clamped, so a caller doing its own easing cannot overshoot into a wrapped
+ * alpha byte. */
+static inline SDL_Color ui_fade(SDL_Color c, float k)
+{
+	if (k < 0.0f) k = 0.0f;
+	if (k > 1.0f) k = 1.0f;
+	c.a = (Uint8)(c.a * k + 0.5f);
+	return c;
+}
 int ui_text_width(TTF_Font *f, const char *s);
 
 /* The ping-pong offset a marquee is at, in pixels, for `phase` ms into it.

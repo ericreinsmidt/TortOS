@@ -30,6 +30,20 @@
  * main.c's TEX_KEEP_NEAR is the guarantee and asserts it is not less. */
 #define CF_WARM_CARDS 8
 
+/* Where "wider than tall" starts, for cf_layout.wide_area.
+ *
+ * Measured against the eleven console photographs on 2026-09-16, which sort
+ * into two groups with a wide gap between them: Game Boy Color at 0.72, Game
+ * Boy at 0.82 and Favorites at 1.03, then nothing until NGPC at 1.39, running
+ * up to Master System at 2.05. Anywhere in that gap is the same rule; 1.2 is
+ * the middle of it. */
+#define CF_WIDE_ART 1.2f
+
+/* How much of a move the label's crossfade uses at each end, leaving the
+ * middle empty. See cf_label: the card crosses where the text is, so the text
+ * has to be gone before it gets there. */
+#define CF_LABEL_EDGE 0.30f
+
 typedef struct {
 	float size;       /* card height as a fraction of screen height */
 	float aspect;     /* card width / card height */
@@ -54,6 +68,15 @@ typedef struct {
 	 * photos all share one squared canvas, so there is nothing for it to fix
 	 * there and turning it on would resize a shelf that is already tuned. */
 	bool equal_area;
+	/* The same rule for art WIDER THAN IT IS TALL - the consoles photographed
+	 * lying down - as a FRACTION of the frame's area rather than a switch.
+	 * 0 leaves them contained; 1.0 gives them the whole frame's area.
+	 *
+	 * A dial because the two shelves want different answers. The vertical one
+	 * shows a single card with its neighbours pushed off screen, so it can
+	 * take the whole area and does. The horizontal row has a neighbour either
+	 * side to overlap, and full area buries them. See CF_WIDE_ART. */
+	float wide_area;
 	int side_alpha;   /* alpha of fully off-center cards (center is 255) */
 	int strips;       /* vertical subdivisions per card */
 } cf_layout;
@@ -151,6 +174,28 @@ typedef struct {
  * uses it to decode that window while the departure is still being drawn, so
  * the move lands on a card that is already there. */
 int cf_landing(const coverflow *cf, int count);
+
+/* Which item a label under the shelf should be describing right now, and how
+ * visible it should be: 1.0 at rest, falling to 0 at the midpoint of a move.
+ *
+ * A LABEL DRAWN FROM THE CURSOR ARRIVES BEFORE THE SHELF DOES. The cursor
+ * changes the instant a button is pressed and the cards take ANIM_MS to catch
+ * up, so the name of the system you are moving TO sits under the card you are
+ * still looking at. The horizontal row hides it - seven cards move at once and
+ * the eye is on them - but Vertical shows one card filling the screen, and
+ * there the text is the only thing that jumps.
+ *
+ * Stateless, which is the point: the item is whatever `pos` is nearest, so it
+ * changes at the halfway mark, and the alpha is zero exactly there. Nothing
+ * has to remember the name it was showing, and a move interrupted halfway
+ * needs no unwinding. */
+float cf_label(const coverflow *cf, int count, int *index);
+
+/* The smoothstep the shelves ease with, exposed so the shot harness can stage
+ * a move at a chosen fraction and put the card exactly where the animation
+ * would have. A harness that positions cards by a different curve than the
+ * launcher is a harness that draws a screen nobody will ever see. */
+float cf_ease_smooth(float u);
 
 /* Whether a cut is in flight. The caller holds off evicting while it is, or it
  * would free the very cards the departure is still drawing: the cursor is

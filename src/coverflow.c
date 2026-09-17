@@ -40,7 +40,7 @@
 const cf_layout CF_LAYOUT_SYSTEMS = {
 	.size = 0.81f, .aspect = 0.78f, .step = 0.82f, .side_scale = 0.38f,
 	.center_y = 0.415f, .tilt = 0.0f, .reflect = 1.34f,
-	.side_alpha = 140, .strips = 16,
+	.side_alpha = 140, .strips = 16, .wide_area = 0.80f,
 };
 
 /* One system filling the screen, flat, sliding in from off the edge.
@@ -99,7 +99,7 @@ const cf_layout CF_LAYOUT_GAME_FACE = {
 const cf_layout CF_LAYOUT_SYSTEMS_V = {
 	.size = 0.88f, .aspect = 0.78f, .step = 1.30f, .side_scale = 1.00f,
 	.center_y = 0.45f, .tilt = 0.0f, .reflect = 1.34f,
-	.vertical = true, .side_alpha = 255, .strips = 16,
+	.vertical = true, .side_alpha = 255, .strips = 16, .wide_area = 1.00f,
 };
 
 /* Box art at the SAME SIZE the horizontal row uses, unlike the systems row
@@ -160,9 +160,17 @@ static float ease_out(float u)
 	return 1.0f - k * k * k;
 }
 
-/* Smoothstep: zero velocity at both ends, peak 1.5x average in the middle. */
+/* Smoothstep: zero velocity at both ends, peak 1.5x average in the middle.
+ * cf_ease_smooth below is this, published for the shot harness. */
 static float ease_smooth(float u)
 {
+	return cf_ease_smooth(u);
+}
+
+float cf_ease_smooth(float u)
+{
+	if (u < 0.0f) u = 0.0f;
+	if (u > 1.0f) u = 1.0f;
 	return u * u * (3.0f - 2.0f * u);
 }
 
@@ -299,6 +307,65 @@ void cf_set_cursor_dir(coverflow *cf, int cursor, int count, int dir)
 	cf->active = true;
 }
 
+float cf_label(const coverflow *cf, int count, int *index)
+{
+	float u, ms;
+	float where;
+	int i;
+
+	if (index) *index = 0;
+	if (count <= 0) return 0.0f;
+
+	/* FROM TIME, NOT FROM POSITION. The first version read the fade off
+	 * `pos`, which is the eased position - and Vertical eases with
+	 * smoothstep, so the shelf crawls at both ends and races through the
+	 * middle. The alpha inherited that shape: it hung near full while nothing
+	 * moved, fell off a cliff, then POPPED back to full and crept the rest of
+	 * the way. The fade out looked slow and the fade in did not look like a
+	 * fade at all.
+	 *
+	 * `u` is the same linear clock step_anim measures the ease against, so
+	 * the crossfade is even whatever curve the cards are riding.
+	 *
+	 * It also fixes something the position version got wrong for free: a move
+	 * across several cards is ONE fade, out and back, rather than a flash per
+	 * card crossed. Holding the d-pad strobed the label before. */
+	if (!cf->active) {
+		where = cf->pos;
+		u = -1.0f;
+	} else {
+		ms = cf->anim_ms > 0.0f ? cf->anim_ms : ANIM_MS;
+		u = (float)(SDL_GetTicks() - cf->t0) / ms;
+		if (u < 0.0f) u = 0.0f;
+		if (u > 1.0f) u = 1.0f;
+		/* The name swaps at the halfway mark, where it is invisible. */
+		where = u < 0.5f ? cf->from : cf->target;
+	}
+
+	i = (int)floorf(where + 0.5f) % count;
+	if (i < 0) i += count;
+	if (index) *index = i;
+
+	if (u < 0.0f) return 1.0f;
+
+	/* GONE BEFORE THE CARD ARRIVES, BACK AFTER IT HAS LEFT.
+	 *
+	 * Spanning the whole move was wrong for the reason Eric spotted: Vertical
+	 * slides the console straight through y=618, where the name is. The text
+	 * is drawn over the card, but a third of its opacity over a lit console
+	 * reads as being behind it, and the fade-in finished while the card was
+	 * still crossing - so the name never appeared to arrive, it just resolved
+	 * out of a smear.
+	 *
+	 * So the crossfade lives in the first and last CF_LABEL_EDGE of the move
+	 * and the middle is empty. The card crosses an empty strip, the swap
+	 * happens where nothing is drawn anyway, and the new name fades up on a
+	 * clear background once the card has gone by. */
+	if (u <= CF_LABEL_EDGE)        return 1.0f - u / CF_LABEL_EDGE;
+	if (u >= 1.0f - CF_LABEL_EDGE) return (u - (1.0f - CF_LABEL_EDGE)) / CF_LABEL_EDGE;
+	return 0.0f;
+}
+
 int cf_landing(const coverflow *cf, int count)
 {
 	int i;
@@ -405,8 +472,23 @@ static void draw_card(SDL_Renderer *r, SDL_Texture *tex, int tw, int th,
 	float ahw = hw, ahh = hh;
 	if (tw > 0 && th > 0) {
 		float tex_ar = (float)tw / (float)th;
-		if (lay->equal_area) {
-			float area = hw * hh;
+		/* A CONSOLE LYING DOWN GETS THE FRAME'S AREA TOO, for the same
+		 * reason a wide box cover does, and it took cropping the art before
+		 * anything could see it. Every fancy card was a 384x384 canvas with
+		 * the console centred in transparent padding, so the shelf
+		 * contain-fitted a SQUARE and never learned the console's shape: a
+		 * Master System drew 466x227 inside a 485x622 frame, two thirds the
+		 * area of a Game Boy Color, with 395px of frame height unused.
+		 * Measured 2026-09-16, and cards.h records the art convention that
+		 * follows from it.
+		 *
+		 * 1.2 IS A GAP, NOT A GUESS. The eleven consoles sort into two groups
+		 * with nothing between them: Game Boy Color 0.72, Game Boy 0.82,
+		 * Favorites 1.03, then NGPC 1.39 and up to Master System at 2.05. The
+		 * three below stay exactly as they were - they already fill their
+		 * frame, and growing them walks into the system name at y=618. */
+		if (lay->equal_area || (lay->wide_area > 0.0f && tex_ar > CF_WIDE_ART)) {
+			float area = hw * hh * (lay->equal_area ? 1.0f : lay->wide_area);
 			ahw = sqrtf(area * tex_ar);
 			ahh = sqrtf(area / tex_ar);
 		} else {

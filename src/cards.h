@@ -14,6 +14,23 @@
  * is why a set of square photographs sits on the same shelf as portrait cards
  * without touching the layout.
  *
+ * ONE CONVENTION, AND IT IS LOAD-BEARING: art wider than it is tall is CROPPED
+ * to its own edges, and art taller than wide keeps whatever canvas it has.
+ *
+ * The shelf reads a texture's shape to decide how big to draw it
+ * (cf_layout.wide_area, CF_WIDE_ART), and padding lies about shape. Every
+ * fancy card used to be a 384x384 canvas with the console centred in
+ * transparency, so a Master System - 369x180 of actual console - was drawn as
+ * a SQUARE: 466x227 inside a 485x622 frame, two thirds the area of a Game Boy
+ * Color, with 395px of frame height empty. Cropping the nine wide ones on
+ * 2026-09-16 is what let the shelf see them.
+ *
+ * The tall ones were deliberately NOT cropped, and that is the part worth
+ * knowing before you tidy it. Game Boy Color's ink is 267x369 in that square,
+ * and cropping it would let contain-fit grow it from 466px tall to the frame's
+ * full 622 - straight through the system name at y=618. They already fill
+ * their frame; the padding is what holds them where they belong.
+ *
  * Accents stay in systems.cfg and do not vary by set. They were sampled from
  * the classic art, and the obvious idea of resampling them per set does not
  * survive contact with the photographs: measured over their opaque pixels the

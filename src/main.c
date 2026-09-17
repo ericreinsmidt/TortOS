@@ -2235,7 +2235,23 @@ furniture:
 		snprintf(cnt, sizeof cnt, "%d / %d", ng > 0 ? v->cursor + 1 : 0, ng);
 		ui_text(a->r, ui_font(UI_F_META), cnt, 24, 700, -1, UI_TEXT_DIM);
 
-		ui_fit_text(ui_font(UI_F_META), s->name, nfit, sizeof nfit, 360);
+		/* THE NAME GETS WHAT THE COUNT LEAVES, rather than a constant 360.
+		 * This is the only place Cubic says which system you are on - no face
+		 * ever shows a console - so a truncated name there is the one label
+		 * that cannot be checked against anything else on screen. "Neo Geo
+		 * Pocket Color" did not fit in 360 and read as "Neo Geo Pocket Co...",
+		 * which is also the name of a DIFFERENT shelf two steps away.
+		 *
+		 * A constant was always going to be wrong for some pairing of a long
+		 * name and a four-digit count; drawing at one larger text size from
+		 * 2026-09-16 made it wrong for a name we ship. 40px is the clear air
+		 * between the two, so they never read as one string. */
+		{
+			int cw = ui_text_width(ui_font(UI_F_META), cnt);
+			int room = TORTOS_SCREEN_W - 24 - (24 + cw + 40);
+
+			ui_fit_text(ui_font(UI_F_META), s->name, nfit, sizeof nfit, room);
+		}
 		w = ui_text_width(ui_font(UI_F_META), nfit);
 		ui_text(a->r, ui_font(UI_F_META), nfit,
 		        TORTOS_SCREEN_W - 24 - w, 700, -1, UI_TEXT_DIM);
@@ -2265,23 +2281,46 @@ static void draw_systems(app *a)
 	            sys_get_tex, a, &lay))
 		redraw_now();
 
+	/* WHICH SYSTEM THE WORDS BELOW DESCRIBE, and how visible they are.
+	 *
+	 * Vertical crossfades them: one card fills the screen there, so a name
+	 * that changed the instant the button went down sat under a console that
+	 * had not started moving - the only thing on screen ahead of the motion.
+	 * cf_label answers both questions from the shelf's own position, so the
+	 * name swaps while it is invisible and nothing has to remember the old
+	 * one. The horizontal row keeps the cursor and the instant change: seven
+	 * cards move at once there and the eye is on them, and fading the name
+	 * would be a second thing happening for no reason.
+	 *
+	 * The count follows the name, not the cursor, or a move would show the
+	 * old system's name over the new system's game count. */
+	const system_cfg *label = s;
+	float label_a = 1.0f;
+
+	if (CARD_DIRS[g_dir].vertical) {
+		int li = 0;
+
+		label_a = cf_label(&a->cf_sys, a->sys.count, &li);
+		if (li >= 0 && li < a->sys.count) label = &a->sys.systems[li];
+	}
+
 	/* Art that does not name itself gets named here, in the gap between the
 	 * card and the count, which is where the classic cards carry it. */
 	if (!CARD_SETS[g_cards].labeled) {
 		char nfit[192];
 
-		ui_fit_text(ui_font(UI_F_TITLE), s->name, nfit, sizeof nfit,
+		ui_fit_text(ui_font(UI_F_TITLE), label->name, nfit, sizeof nfit,
 		            TORTOS_SCREEN_W - 48);
 		/* 618 is not arbitrary: the title renders 52px tall, so it ends at
 		 * 670 and leaves 20px before the count at 690. The card is sized to
 		 * fit ABOVE this rather than this being pushed down to suit the
 		 * card. */
 		ui_text(a->r, ui_font(UI_F_TITLE), nfit, TORTOS_SCREEN_W / 2, 618, 0,
-		        UI_TEXT);
+		        ui_fade(UI_TEXT, label_a));
 	}
 
 	{
-		int gc = a->view[a->sys_cursor].list.count;
+		int gc = a->view[(int)(label - a->sys.systems)].list.count;
 
 		/* A shelf of one read "1 games". Favorites hits it first because it
 		 * starts empty and grows one at a time, but any system with a single
@@ -2289,9 +2328,15 @@ static void draw_systems(app *a)
 		if (gc > 0)
 			snprintf(line, sizeof line, "%d game%s", gc, gc == 1 ? "" : "s");
 		else
-			snprintf(line, sizeof line, "no games in Roms/%s", s->folder);
+			/* The folder is bounded by CFG_STR and this line is not, so
+			 * the name is capped rather than the buffer grown: a folder
+			 * long enough to overflow a sentence is not one anybody can
+			 * read off a shelf either. The cross compiler is the only one
+			 * that says so - clang does not. */
+			snprintf(line, sizeof line, "no games in Roms/%.96s", label->folder);
 	}
-	ui_text(a->r, ui_font(UI_F_META), line, TORTOS_SCREEN_W / 2, 690, 0, UI_TEXT_DIM);
+	ui_text(a->r, ui_font(UI_F_META), line, TORTOS_SCREEN_W / 2, 690, 0,
+	        ui_fade(UI_TEXT_DIM, label_a));
 	(CARD_DIRS[g_dir].vertical ? ui_rail_v : ui_rail)
 		(a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, a->sys_cursor, a->sys.count,
 		 s->accent);
@@ -7595,6 +7640,10 @@ static const char *shot_notice;
 static const char *shot_notice_head = "Unlocked  -  5 points";
 static int shot_cheevos;
 static int shot_cheevos_sel;
+/* How far between two systems the shelf is caught, 0 at rest. The shot is one
+ * settled frame, so anything that only happens DURING a move - the label
+ * crossfade, a card mid-slide - cannot be looked at without this. */
+static float shot_sysmove;
 static const char *shot_cheevos_game = "Hagane: The Final Conflict";
 static int shot_syn;       /* --synopsis: the card a scraped game opens */
 static int shot_info;
@@ -7853,6 +7902,8 @@ int main(int argc, char *argv[])
 			if (i + 1 < argc && argv[i + 1][0] != '-') shot_cheevos_game = argv[++i];
 		}
 		else if (!strcmp(argv[i], "--synopsis")) shot_syn = 1;
+		else if (!strcmp(argv[i], "--sysmove") && i + 1 < argc)
+			shot_sysmove = (float)atof(argv[++i]);
 		else if (!strcmp(argv[i], "--info")) shot_info = 1;
 		else if (!strcmp(argv[i], "--phase") && i + 1 < argc)
 			shot_phase = atoi(argv[++i]);
@@ -8243,6 +8294,25 @@ int main(int argc, char *argv[])
 		 * that pass, so without this it drew the list's first card under the
 		 * selected game's title. */
 		cf_reset(&a.view[a.sys_cursor].cf, a.view[a.sys_cursor].cursor);
+		/* CAUGHT MID-MOVE, for whatever only exists while one is happening.
+		 *
+		 * A whole move is staged, not just a position: the label crossfade
+		 * reads the animation's own clock, so nudging `pos` alone would draw
+		 * a shelf part way along with nothing moving. `pos` is set to where
+		 * the ease would have put it at this fraction, so the card and the
+		 * text agree. */
+		if (shot_sysmove != 0.0f) {
+			float ms = 360.0f;      /* what shelf_pacing gives Vertical */
+			float u = shot_sysmove;
+
+			a.cf_sys.from = (float)a.sys_cursor;
+			a.cf_sys.target = (float)a.sys_cursor + 1.0f;
+			a.cf_sys.anim_ms = ms;
+			a.cf_sys.active = true;
+			a.cf_sys.t0 = SDL_GetTicks() - (Uint32)(u * ms);
+			a.cf_sys.pos = a.cf_sys.from
+			             + (a.cf_sys.target - a.cf_sys.from) * cf_ease_smooth(u);
+		}
 		if (a.screen == SCREEN_GAMES) prime_window(&a, a.sys_cursor);
 		take_shot(&a);
 		goto done;
