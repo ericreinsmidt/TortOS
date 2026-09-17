@@ -425,6 +425,8 @@ void plat_input_poll(in_state *st)
 	 * Diatom's while Diatom holds it. Diatom polls the same switch on its own
 	 * side for the same reason. */
 	plat_audio_jack_poll();
+	/* And the mute switch, for the same reason and on the same frame. */
+	plat_mute_poll(true);
 	SDL_Event e;
 	while (SDL_PollEvent(&e)) {
 		switch (e.type) {
@@ -1036,6 +1038,21 @@ static int diatom_wait(void)
 		char *l;
 
 		if (dsock < 0) return RES_DEAD;
+		/* THE MUTE SWITCH IS READ DURING A GAME TOO, and this is the half
+		 * that matters: a player reaching for it is almost always reaching
+		 * for it because a game is loud. plat_input_poll is not called from
+		 * here, so without this the switch does nothing for as long as
+		 * anything is playing.
+		 *
+		 * This loop turns every 100ms - dline's timeout - which is the whole
+		 * reason the launcher can own the switch at all. An earlier design
+		 * assumed this side was blocked and handed the job to the emulator.
+		 *
+		 * The cut reaches the game's audio because HpSpeaker Switch sits
+		 * below the mixer: measured 2026-09-16 by muting a tone played from a
+		 * second process while Diatom held the dmix slave. See BACKLOG 28 and
+		 * Diatom's ADR-0031. */
+		plat_mute_poll(false);
 		while ((l = dline(100))) {
 			if      (strncmp(l, "RUNNING", 7) == 0) d_got_running = 1;
 			else if (strncmp(l, "PAUSED", 6) == 0)  return RES_PAUSED;
@@ -1155,6 +1172,7 @@ static int diatom_wait(void)
 /* Declared with the ladder, defined far below it; called here because this is
  * the one place the launcher is known to be taking input back. */
 static void jack_forget(void);
+static void mute_forget(void);
 
 int plat_resident_wait(void)
 {
@@ -1175,6 +1193,7 @@ int plat_resident_wait(void)
 	 * optional and a caller cannot be relied on to remember. Diatom does the
 	 * same on its side, in diatom_port_level_invalidate. */
 	jack_forget();
+	mute_forget();
 	return r;
 }
 
@@ -1538,6 +1557,43 @@ static int jack_present(void)
 
 static int jack_was = -1;         /* last state acted on; -1 = never asked */
 
+/* THE MUTE SWITCH, and why it is read here rather than as an input event.
+ *
+ * Measured 2026-09-16 by watching every input device and every exported GPIO
+ * while the switch was flipped. It reports two ways: as EV_SW code 1 on
+ * /dev/input/event3, and as this pin. The pin is the one worth reading,
+ * because an event only arrives on a CHANGE - it says nothing about which way
+ * the switch is pointing at boot, after a resume, or after the launcher
+ * restarts, which is exactly when a physical control and the software can
+ * disagree. A file that always holds the truth cannot drift.
+ *
+ * DOWN, which reads 1, is muted. Eric's call: "off" is what the position says,
+ * and on a mute switch that labels the sound.
+ *
+ * Opened once and pread, not opened per poll: this runs from plat_input_poll,
+ * which every screen calls once a frame. */
+#define MUTE_GPIO "/sys/class/gpio/gpio243/value"
+static int mute_fd = -1;
+/* Tri-state: -1 means "not known", which is not the same as "not muted".
+ *
+ * The switch can be flipped DURING a game, when Diatom owns the codec and this
+ * side is blocked in plat_resident_wait seeing nothing. Coming back with a
+ * remembered position, the poll below compares the hardware against it, finds
+ * them equal and returns without re-applying - so the launcher would play at
+ * full volume with the switch down. Exactly the fault jack_forget exists to
+ * prevent, and found by reading its comment. */
+static int muted = -1;
+
+static bool mute_switch_down(void)
+{
+	char c = 0;
+
+	if (mute_fd < 0) mute_fd = open(MUTE_GPIO, O_RDONLY | O_CLOEXEC);
+	if (mute_fd < 0) return false;
+	if (pread(mute_fd, &c, 1, 0) != 1) return false;
+	return c == '1';
+}
+
 static void apply_volume(int v)
 {
 	int hp = jack_present();
@@ -1549,8 +1605,11 @@ static void apply_volume(int v)
 	jack_was = hp;
 	cur_vol = v;
 	ctl_io(GAIN_CTL, &raw, 1);
-	/* Zero has to cut the path, not merely attenuate it. */
-	on = (v > 0);
+	/* Zero has to cut the path, not merely attenuate it - and so does the
+	 * switch, which is why it lands here rather than beside the callers: every
+	 * route that re-applies a level (a nudge, a jack coming out) passes
+	 * through this line and honors the switch for free. */
+	on = (v > 0) && muted != 1;
 	ctl_io(SPEAKER_CTL, &on, 1);
 }
 
@@ -1562,6 +1621,53 @@ static void apply_volume(int v)
  * to call from a periodic path: one ioctl on an already-open fd, and it writes
  * nothing unless the state actually changed. */
 bool plat_headphones_present(void) { return jack_present() != 0; }
+
+/* The switch, checked wherever the jack is and for the same reason: this is
+ * the one thing every screen does once a frame.
+ *
+ * It mutes the LAUNCHER's audio only. While a game runs the launcher is
+ * blocked in plat_resident_wait and Diatom owns the codec - it must, or the
+ * two would fight over one control - so the switch reaches a game by being
+ * told to it, not by both of them reading the same pin. Deciding what a
+ * physical control MEANS is the launcher's job; being quiet when asked is the
+ * emulator's. See BACKLOG 28. */
+bool plat_mute_poll(bool own_volume)
+{
+	int now = mute_switch_down() ? 1 : 0;
+
+	if (now == muted) return false;
+	muted = now;
+	if (own_volume) {
+		if (cur_vol >= 0) apply_volume(cur_vol);
+		return true;
+	}
+	/* DURING A GAME, ONLY THE SWITCH - never the gain.
+	 *
+	 * apply_volume would write GAIN_CTL from cur_vol, which is this side's
+	 * idea of the volume and is stale the moment Diatom takes over: the
+	 * player can change it in-game and only Diatom knows where it ended up.
+	 * Re-applying it here is the exact fault the comment above plat_input_poll
+	 * warns about, arriving by a new road.
+	 *
+	 * Turning the speaker back ON is safe even if Diatom sits at level 0,
+	 * because it attenuates as well as switching - its own comment puts the
+	 * control's minimum near -74 dB - so the worst case is a path opened onto
+	 * something already inaudible, and Diatom's next level write settles it.
+	 * That is the interim. Once Diatom honors SETMUTE (its ADR-0031) it stops
+	 * needing to be raced at all. */
+	{
+		long on = (muted != 1);
+
+		ctl_io(SPEAKER_CTL, &on, 1);
+	}
+	return true;
+}
+
+bool plat_muted(void) { return muted == 1; }
+
+/* Whatever this side remembers about the switch was formed while it was
+ * driving; a game just was. Called where jack_forget is, and for its reason. */
+static void mute_forget(void) { muted = -1; }
 
 void plat_audio_jack_poll(void)
 {
@@ -1642,8 +1748,12 @@ static void apply_volume(int v) { cur_vol = v; }
 static void apply_brightness(int b) { cur_bright = b; }
 /* No jack on the host, so nothing can be plugged into it. */
 void plat_audio_jack_poll(void) { }
+/* And no switch to flip. */
+bool plat_mute_poll(bool own_volume) { (void)own_volume; return false; }
+bool plat_muted(void) { return false; }
 bool plat_headphones_present(void) { return false; }
 static void jack_forget(void) { }
+static void mute_forget(void) { }
 
 /* No settings database on the host, so the config defaults are all there is.
  * Taken anyway rather than ignored: a shelf rendered by --shot should show the

@@ -187,6 +187,14 @@ void plat_brightness_set(int level);
  * A no-op on the host. */
 void plat_audio_jack_poll(void);
 
+/* The hardware mute switch. plat_mute_poll reads it and returns true on the
+ * frame it CHANGED, so a caller can tell a running game; plat_muted answers
+ * the current position. Muting the launcher's own audio is handled inside. */
+/* `own_volume` is false while a game is running: Diatom owns the level then,
+ * so only the speaker switch may be touched and never the gain. */
+bool plat_mute_poll(bool own_volume);
+bool plat_muted(void);
+
 /* Is a cable in the headphone jack? SW_HEADPHONE_INSERT on the codec's input
  * node, the same switch the volume ladder above already follows.
  *
