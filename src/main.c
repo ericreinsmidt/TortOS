@@ -3766,6 +3766,10 @@ static int menu_build(app *a, screen_id screen, int sys,
 
 		u.sys_name   = sc->name;
 		u.sys_core   = sc->core;
+		/* By what it HAS, not by its name or its position: a shelf with no
+		 * core and no folder is the built one, and a check can hand that
+		 * over without inventing a flag day. */
+		u.fav        = sc->core[0] == '\0' && sc->folder[0] == '\0';
 		u.game_count = a->view[sys].list.count;
 		u.dmode      = DMODES[a->view[sys].dmode].label;
 		u.sort       = SORTS[a->view[sys].sort].label;

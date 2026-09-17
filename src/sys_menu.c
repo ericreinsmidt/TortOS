@@ -27,6 +27,14 @@ int sys_menu_build(const sys_ui *u, menu_row *out, menu_bufs *b,
 		snprintf(b->a, sizeof b->a, "%d", u->game_count);
 		snprintf(b->b, sizeof b->b, "%s", u->sys_core ? u->sys_core : "");
 		*heading = u->sys_name;
+		/* A shelf of favorites gets the two rows that are true of it and
+		 * nothing else - not even the enum's order, since Core sits between
+		 * them and it has none. See SM_FAV_ROWS. */
+		if (u->fav) {
+			out[0] = (menu_row){ "Games",   b->a,                      false };
+			out[1] = (menu_row){ "Sort By", u->sort ? u->sort : "Name", true };
+			return SM_FAV_ROWS;
+		}
 		out[SM_GAMES]   = (menu_row){ "Games",         b->a,        false };
 		out[SM_CORE]    = (menu_row){ "Core",          b->b,        false };
 		out[SM_SORT]    = (menu_row){ "Sort By",

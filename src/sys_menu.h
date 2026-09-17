@@ -46,6 +46,20 @@ typedef enum {
 	SM_DISPLAY, /* SM_BUTTONS, */ SM_BOXART, SM_RESCAN, SM_ROWS
 } sm_row;
 
+/* What the Favorites shelf's menu is, which is two of those rows.
+ *
+ * Favorites is not a system: build_favorites_shelf memsets one and fills in a
+ * name, a tag, a card and an accent, leaving no core, no folder and no
+ * extensions. Four of the six rows have nothing to work with - Core is blank,
+ * Box Art and Rescan have no folder to scrape or sweep, and Display Mode is
+ * worse than blank, because launch() resolves a game's CORE through its owner
+ * and its display mode through the shelf it was started from. Setting one here
+ * would give a game a different aspect depending on which shelf launched it.
+ *
+ * Games and Sort By are both true of a shelf of favorites, so those are what
+ * it gets. Eric's call, 2026-09-17. */
+#define SM_FAV_ROWS 2
+
 #define MENU_MAX_ROWS 13
 
 /* The array every caller declares must hold every row a build can produce, and
@@ -77,6 +91,7 @@ typedef struct { char a[24], b[CFG_STR], c[16], d[40]; } menu_bufs;
  * whole situation in one initializer. */
 typedef struct {
 	bool games;              /* the system menu, rather than TortOS's own */
+	bool fav;                /* and that shelf is Favorites; see SM_FAV_ROWS */
 
 	wifi_state  wifi;        /* already cached by the caller; see menu_wifi */
 	const char *ssid;        /* the network's name when connected, else NULL */

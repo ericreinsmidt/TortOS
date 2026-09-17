@@ -360,6 +360,34 @@ static void system_menu(void)
 	ck(!rows[SM_BOXART].live, "Box Art dies with the radio");
 	ck(!strcmp(val(&rows[SM_BOXART]), "needs Wi-Fi"), "and says why");
 	ck(rows[SM_RESCAN].live, "Rescan does not need a network");
+
+	/* Favorites, which is not a system: no core and no folder, so four of the
+	 * six rows have nothing to describe and one of them - Display Mode -
+	 * would give a game a different aspect depending on the shelf it was
+	 * launched from. */
+	{
+		sys_ui f = u;
+		menu_row frows[MENU_MAX_ROWS];
+		menu_bufs fb;
+		const char *fhead = NULL;
+		int fn, k;
+
+		f.fav = true;   /* by what it has: no core, no folder */
+		f.sys_name = "Favorites";
+		f.sys_core = "";
+		fn = sys_menu_build(&f, frows, &fb, &fhead);
+		printf("the Favorites shelf's menu:\n");
+		ck(fn == SM_FAV_ROWS, "two rows and a count, not six");
+		ck(!strcmp(frows[0].label, "Games"), "how many are on it");
+		ck(!strcmp(frows[1].label, "Sort By"), "and what order they are in");
+		for (k = 0; k < fn; k++) {
+			ck(strcmp(frows[k].label, "Core") != 0, "no Core: it has none");
+			ck(strcmp(frows[k].label, "Display Mode") != 0,
+			   "no Display Mode: the owner's system decides that");
+			ck(strcmp(frows[k].label, "Box Art") != 0, "no Box Art: no folder");
+			ck(strcmp(frows[k].label, "Rescan Folder") != 0, "and nothing to rescan");
+		}
+	}
 }
 
 /* The labels, on their own. A row that reads "90s" for a minute and a half
