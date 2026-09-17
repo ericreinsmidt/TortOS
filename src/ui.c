@@ -368,17 +368,141 @@ void ui_glow(SDL_Renderer *r, const SDL_Rect *rect, unsigned rgb, int alpha,
 	SDL_RenderCopy(r, glow_tex, NULL, &dst);
 }
 
-/* One marker, cut down to its track.
+/* How much of a band the boundary between two colors eats at its widest, in
+ * band widths, half of it on each side.
+ *
+ * WIDEST IS HALFWAY THROUGH A MOVE, AND ZERO AT REST - see rail_blend. At 0
+ * throughout, the bands are hard and a crisp edge wipes across the marker as it
+ * moves; at 1 the strip is one long gradient. 0.40 gives the moving edge about
+ * 30px of a 76px marker, which reads as a blend rather than as a seam. */
+#define RAIL_BLEND 0.40f
+
+/* The blend width for a marker `index` items along, which is RAIL_BLEND only
+ * in the middle of a move and nothing at all at rest.
+ *
+ * A MARKER AT REST IS EXACTLY ONE BAND WIDE, SO ITS EDGES SIT ON THE
+ * BOUNDARIES. A blend straddling those tints a resting marker with the system
+ * before it and the system after it - about a pixel of each on the device,
+ * which Eric spotted on 2026-09-17, and no width setting can fix it because the
+ * contamination is where the marker ENDS, not how wide the ramp is.
+ *
+ * Nothing needs softening at rest either: the softening exists for the edge
+ * that sweeps across during a move, and at rest there is no edge, only one
+ * band filling the window. So the width follows the distance between bands -
+ * triangular, zero at both ends, so the ramp hardens back to nothing as the
+ * move lands, exactly as it grew out of nothing when it left. */
+static float rail_blend(float index)
+{
+	float f = index - floorf(index);
+
+	return RAIL_BLEND * (1.0f - fabsf(2.0f * f - 1.0f));
+}
+
+static unsigned rgb_mix(unsigned a, unsigned b, float t)
+{
+	unsigned out = 0;
+	int i;
+
+	for (i = 16; i >= 0; i -= 8) {
+		float x = (float)((a >> i) & 0xff);
+		float y = (float)((b >> i) & 0xff);
+
+		out |= (unsigned)(int)(x + (y - x) * t + 0.5f) << i;
+	}
+	return out;
+}
+
+/* The color the strip carries `x` items along it.
+ *
+ * THE STRIP IS FIXED TO THE TRACK AND THE MARKER IS A WINDOW ONTO IT. Eric's
+ * idea, 2026-09-17: a line made of every system's color in order, invisible
+ * except where the marker is. So the color is a function of WHERE ON THE TRACK
+ * a pixel is, never of where the marker is - which is what makes the wrap come
+ * out right for free. Mid-wrap the marker's remains at the far end still sit
+ * over the last system's band while its copy at the near end sits over the
+ * first system's, so the two stubs are correctly different colors without
+ * anything being told that a wrap is happening.
+ *
+ * Bands are one item wide and the marker is one band wide, so at rest it
+ * covers exactly its own system's band, pure to both edges. A rail whose marker
+ * is WIDER than a band, which is any long list, covers several: that is only
+ * ever the games rail, where every item carries its system's color and the
+ * whole strip is one color anyway.
+ *
+ * `blend` is a width, not a switch: at zero the bands meet at a hard edge and
+ * neither division below is reached. */
+static unsigned rail_hue_at(float x, int count, float blend,
+                            ui_rail_hue hue, void *ctx)
+{
+	int i = (int)floorf(x);
+	float f = x - (float)i;
+
+	i = ((i % count) + count) % count;
+	/* Half the blend sits above the boundary and half below it, so the mix is
+	 * exactly even where two bands meet. */
+	if (f < blend * 0.5f)
+		return rgb_mix(hue(ctx, i), hue(ctx, (i - 1 + count) % count),
+		               0.5f - f / blend);
+	if (f > 1.0f - blend * 0.5f)
+		return rgb_mix(hue(ctx, i), hue(ctx, (i + 1) % count),
+		               0.5f - (1.0f - f) / blend);
+	return hue(ctx, i);
+}
+
+/* One marker, cut down to its track and colored by what it is over.
  *
  * Clipped rather than kept inside, because the rail describes a RING: the shelf
  * wraps, so the marker has to be able to leave by one end while the copy a lap
  * behind it arrives at the other. Both are handed over as whole rectangles and
- * the track decides how much of each is seen. */
-static void rail_seg(SDL_Renderer *r, const SDL_Rect *track, SDL_Rect seg)
+ * the track decides how much of each is seen.
+ *
+ * `t0` and `dir` say where the strip's origin is relative to the rectangle:
+ * the horizontal rail counts from the track's left edge, the vertical one from
+ * its BOTTOM, because that is where its first item sits.
+ *
+ * Runs of one color are filled as one rectangle, so a rail nobody is moving -
+ * and every rail whose items share a color, which is every games rail - still
+ * costs the single fill it always did. */
+static void rail_seg(SDL_Renderer *r, const SDL_Rect *track, SDL_Rect seg,
+                     bool vertical, float step, float blend, int count,
+                     unsigned flat, ui_rail_hue hue, void *ctx)
 {
-	SDL_Rect clip;
+	SDL_Rect q;
+	int len, k, run = 0;
+	unsigned held = flat;
 
-	if (SDL_IntersectRect(track, &seg, &clip)) SDL_RenderFillRect(r, &clip);
+	if (!SDL_IntersectRect(track, &seg, &q)) return;
+	len = vertical ? q.h : q.w;
+	for (k = 0; k <= len; k++) {
+		unsigned rgb = held;
+
+		if (k < len && hue) {
+			int t = vertical ? track->y + track->h - 1 - (q.y + k)
+			                 : q.x + k - track->x;
+
+			/* THE PIXEL'S CENTER, NOT ITS NEAR EDGE, and the half is
+			 * load-bearing rather than tidy. The marker's rectangle is
+			 * rounded to whole pixels and the bands are not, so wherever
+			 * round(i * step) lands BELOW i * step - four of the eleven
+			 * systems, and the second position once Favorites makes it
+			 * twelve - the marker's first pixel starts just inside the
+			 * previous band and comes out that system's color. One pixel,
+			 * spotted on the device 2026-09-17. A pixel covers [t, t+1),
+			 * so asking what is under its middle answers for the pixel
+			 * rather than for the boundary it happens to start on. */
+			rgb = rail_hue_at(((float)t + 0.5f) / step, count, blend,
+			                  hue, ctx);
+		}
+		if (k == 0) { held = rgb; continue; }
+		if (k < len && rgb == held) continue;
+		SDL_SetRenderDrawColor(r, (Uint8)(held >> 16), (Uint8)(held >> 8),
+		                       (Uint8)held, 235);
+		SDL_RenderFillRect(r, vertical
+			? &(SDL_Rect){ q.x, q.y + run, q.w, k - run }
+			: &(SDL_Rect){ q.x + run, q.y, k - run, q.h });
+		run = k;
+		held = rgb;
+	}
 }
 
 /* How far along a track of `track_len` the marker sits, in pixels from the
@@ -412,7 +536,7 @@ static float rail_at(float index, int count, int track_len, int seg_len,
 }
 
 void ui_rail(SDL_Renderer *r, int screen_w, int screen_h, float index, int count,
-             unsigned rgb)
+             unsigned rgb, ui_rail_hue hue, void *ctx)
 {
 	/* Grown upward from where the old 3px bar's bottom edge sat, so matching
 	 * the settings line's weight did not also move the rail. */
@@ -420,12 +544,14 @@ void ui_rail(SDL_Renderer *r, int screen_w, int screen_h, float index, int count
 	int track_x = 90, track_w = screen_w - track_x * 2;
 	SDL_Rect track;
 	int seg_w, off, lap;
-	float o, fl;
+	float o, fl, step, blend;
 
 	if (count <= 1) return;
 	seg_w = track_w / count;
 	if (seg_w < 18) seg_w = 18;
 	o = rail_at(index, count, track_w, seg_w, &fl);
+	step = fl / (float)count;
+	blend = rail_blend(index);
 	/* Rounded to whole pixels HERE rather than compared as floats below: at
 	 * rest on the last item the offset is the track's far end to within a
 	 * rounding error either way, and a float comparison would draw the wrapped
@@ -441,8 +567,8 @@ void ui_rail(SDL_Renderer *r, int screen_w, int screen_h, float index, int count
 	 * drawn element rather than as the absence of one. */
 	SDL_SetRenderDrawColor(r, 255, 255, 255, 16);
 	SDL_RenderFillRect(r, &track);
-	SDL_SetRenderDrawColor(r, (Uint8)(rgb >> 16), (Uint8)(rgb >> 8), (Uint8)rgb, 235);
-	rail_seg(r, &track, (SDL_Rect){ track_x + off, y, seg_w, h });
+	rail_seg(r, &track, (SDL_Rect){ track_x + off, y, seg_w, h },
+	         false, step, blend, count, rgb, hue, ctx);
 	/* Only while the marker overhangs the far end, which is the only time the
 	 * copy has anything to show. On a shelf whose segments tile the track -
 	 * eleven systems, where a segment is one step wide - the two are exactly
@@ -451,17 +577,18 @@ void ui_rail(SDL_Renderer *r, int screen_w, int screen_h, float index, int count
 	 * length of that one move; that seam is a genuine discontinuity in the
 	 * list, and showing where it goes beats teleporting across it. */
 	if (off > track_w - seg_w)
-		rail_seg(r, &track, (SDL_Rect){ track_x + off - lap, y, seg_w, h });
+		rail_seg(r, &track, (SDL_Rect){ track_x + off - lap, y, seg_w, h },
+		         false, step, blend, count, rgb, hue, ctx);
 }
 
 void ui_rail_v(SDL_Renderer *r, int screen_w, int screen_h, float index, int count,
-               unsigned rgb)
+               unsigned rgb, ui_rail_hue hue, void *ctx)
 {
 	int w = UI_BAR_H, x = 23;
 	int track_y = 90, track_h = screen_h - track_y * 2;
 	SDL_Rect track;
 	int seg_h, off, lap, end;
-	float o, fl;
+	float o, fl, step, blend;
 
 	(void)screen_w;
 	if (count <= 1) return;
@@ -470,6 +597,8 @@ void ui_rail_v(SDL_Renderer *r, int screen_w, int screen_h, float index, int cou
 	o = rail_at(index, count, track_h, seg_h, &fl);
 	off = (int)(o + 0.5f);
 	lap = (int)(fl + 0.5f);
+	step = fl / (float)count;
+	blend = rail_blend(index);
 	/* Inverted: the first item sits at the BOTTOM and the last at the top, so
 	 * the indicator travels the same way the shelf does. A rail that runs
 	 * top-down under a shelf that runs bottom-up moves opposite the thumb.
@@ -482,10 +611,11 @@ void ui_rail_v(SDL_Renderer *r, int screen_w, int screen_h, float index, int cou
 	SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
 	SDL_SetRenderDrawColor(r, 255, 255, 255, 16);
 	SDL_RenderFillRect(r, &track);
-	SDL_SetRenderDrawColor(r, (Uint8)(rgb >> 16), (Uint8)(rgb >> 8), (Uint8)rgb, 235);
-	rail_seg(r, &track, (SDL_Rect){ x, end - off, w, seg_h });
+	rail_seg(r, &track, (SDL_Rect){ x, end - off, w, seg_h },
+	         true, step, blend, count, rgb, hue, ctx);
 	if (off > track_h - seg_h)
-		rail_seg(r, &track, (SDL_Rect){ x, end - off + lap, w, seg_h });
+		rail_seg(r, &track, (SDL_Rect){ x, end - off + lap, w, seg_h },
+		         true, step, blend, count, rgb, hue, ctx);
 }
 
 void ui_round_rect(SDL_Renderer *r, const SDL_Rect *q, int radius, SDL_Color col)

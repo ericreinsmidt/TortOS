@@ -164,19 +164,29 @@ void ui_text_marquee(SDL_Renderer *r, TTF_Font *f, const char *s,
 void ui_glow(SDL_Renderer *r, const SDL_Rect *rect, unsigned rgb, int alpha,
              float spread);
 
+/* The color of item `index` on a rail, so its marker can be a window onto a
+ * strip of every item's color rather than a bar that changes all at once. */
+typedef unsigned (*ui_rail_hue)(void *ctx, int index);
+
 /* The position rail across the bottom: a faint full-width track with a bright
  * accent segment showing where the shelf sits in a list of `count`.
  *
  * `index` is a FLOAT and wants cf.pos, the shelf's own continuous position -
  * not the cursor, which is already at the destination on the frame of the
- * press. Whole values give the resting positions exactly. See rail_at. */
+ * press. Whole values give the resting positions exactly. See rail_at.
+ *
+ * `hue` is optional and wins where it is given: the marker is then colored by
+ * what it is OVER rather than by `rgb`, so a move carries one system's color
+ * into the next instead of swapping it. Pass NULL, and `rgb` alone, for a list
+ * whose items all share a color - every games rail, since a game is drawn in
+ * its system's accent. */
 void ui_rail(SDL_Renderer *r, int screen_w, int screen_h, float index, int count,
-             unsigned rgb);
+             unsigned rgb, ui_rail_hue hue, void *ctx);
 /* The same, down the left edge, for a row that runs vertically. A horizontal
  * bar under a vertical stack says the wrong thing: the eye reads it as the
  * axis the cards move along. */
 void ui_rail_v(SDL_Renderer *r, int screen_w, int screen_h, float index, int count,
-               unsigned rgb);
+               unsigned rgb, ui_rail_hue hue, void *ctx);
 
 /* A filled rounded rectangle. SDL has no such primitive; this is the middle as
  * one rect and the two caps as one inset row each, so a panel costs a few

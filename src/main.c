@@ -2100,6 +2100,23 @@ static void draw_face_for(app *a, int sys)
 	a->sys_cursor = save;
 }
 
+/* The systems rail's strip: one band per system, in shelf order.
+ *
+ * Only the systems rails get one. A games rail's items are all one system's
+ * games and carry that system's accent, so a strip of them would be a single
+ * color with the cost of asking per pixel - those pass NULL and stay one fill.
+ *
+ * Bounded rather than trusted: ui_rail walks the ring modulo `count`, which is
+ * this array's length, but a rail drawn with a stale count during a rescan
+ * would index past it. */
+static unsigned rail_sys_hue(void *ctx, int i)
+{
+	app *a = ctx;
+
+	if (i < 0 || i >= a->sys.count) return 0;
+	return a->sys.systems[i].accent;
+}
+
 static void draw_both(app *a)
 {
 	sysview *v = &a->view[a->sys_cursor];
@@ -2218,10 +2235,10 @@ furniture:
 	 * where it always has. Both from `pos` rather than the cursor, so they
 	 * travel with the face that is turning instead of arriving before it. */
 	ui_rail_v(a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, a->cf_sys.pos,
-	          a->sys.count, s->accent);
+	          a->sys.count, s->accent, rail_sys_hue, a);
 	if (ng > 1)
 		ui_rail(a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, v->cf.pos, ng,
-		        s->accent);
+		        s->accent, NULL, NULL);
 	/* What system, and how much of it. Both are context rather than content:
 	 * left and right change neither, so neither rides a yawing face. Nothing
 	 * else names the system here - every face is a game - so the name is
@@ -2340,7 +2357,7 @@ static void draw_systems(app *a)
 	        ui_fade(UI_TEXT_DIM, label_a));
 	(CARD_DIRS[g_dir].vertical ? ui_rail_v : ui_rail)
 		(a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, a->cf_sys.pos, a->sys.count,
-		 s->accent);
+		 s->accent, rail_sys_hue, a);
 }
 
 /* Milliseconds since the focused game last changed.
@@ -2575,7 +2592,7 @@ static void draw_games(app *a)
 	draw_game_text(a, v, s, v->cursor);
 	(CARD_DIRS[g_dir].vertical ? ui_rail_v : ui_rail)
 		(a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, v->cf.pos, v->list.count,
-		 s->accent);
+		 s->accent, NULL, NULL);
 }
 
 /* The shelf, without presenting it: the options menu draws over a live one, so
