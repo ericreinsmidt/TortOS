@@ -368,52 +368,124 @@ void ui_glow(SDL_Renderer *r, const SDL_Rect *rect, unsigned rgb, int alpha,
 	SDL_RenderCopy(r, glow_tex, NULL, &dst);
 }
 
-void ui_rail(SDL_Renderer *r, int screen_w, int screen_h, int index, int count,
+/* One marker, cut down to its track.
+ *
+ * Clipped rather than kept inside, because the rail describes a RING: the shelf
+ * wraps, so the marker has to be able to leave by one end while the copy a lap
+ * behind it arrives at the other. Both are handed over as whole rectangles and
+ * the track decides how much of each is seen. */
+static void rail_seg(SDL_Renderer *r, const SDL_Rect *track, SDL_Rect seg)
+{
+	SDL_Rect clip;
+
+	if (SDL_IntersectRect(track, &seg, &clip)) SDL_RenderFillRect(r, &clip);
+}
+
+/* How far along a track of `track_len` the marker sits, in pixels from the
+ * track's start, with one lap of the ring returned in the same units.
+ *
+ * `index` IS CONTINUOUS AND COMES FROM cf.pos, not from a cursor. The cursor
+ * changes the instant a button goes down and the cards take the whole of
+ * ANIM_MS to follow, so a rail drawn from it does not merely jump - it jumps
+ * EARLY, arriving while the shelf is still setting off. The same fault the
+ * system name had before cf_label, and cf.pos is the same answer.
+ *
+ * At whole numbers this is the integer version's own answer to within the
+ * rounding - the first item against the near end, the last flush against the
+ * far one - so nothing moved at rest when it changed.
+ *
+ * Taken modulo the lap because `pos` runs PAST the ends and is put back by
+ * step_anim only once the move lands: a wrap carries the marker off the end it
+ * left by, and the caller's copy one lap behind brings it back on at the other.
+ * A lap is count steps, not the track: the last item is flush with the end, so
+ * there is one more step to travel before the first item comes round again. */
+static float rail_at(float index, int count, int track_len, int seg_len,
+                     float *lap)
+{
+	float step = (float)(track_len - seg_len) / (float)(count - 1);
+	float p = step * (float)count;
+	float o = fmodf(index * step, p);
+
+	if (o < 0.0f) o += p;
+	*lap = p;
+	return o;
+}
+
+void ui_rail(SDL_Renderer *r, int screen_w, int screen_h, float index, int count,
              unsigned rgb)
 {
 	/* Grown upward from where the old 3px bar's bottom edge sat, so matching
 	 * the settings line's weight did not also move the rail. */
 	int h = UI_BAR_H, y = screen_h - 23 - h;
 	int track_x = 90, track_w = screen_w - track_x * 2;
-	int seg_w, seg_x;
+	SDL_Rect track;
+	int seg_w, off, lap;
+	float o, fl;
 
 	if (count <= 1) return;
 	seg_w = track_w / count;
 	if (seg_w < 18) seg_w = 18;
-	seg_x = track_x + (int)((float)index / (float)(count - 1) * (track_w - seg_w));
+	o = rail_at(index, count, track_w, seg_w, &fl);
+	/* Rounded to whole pixels HERE rather than compared as floats below: at
+	 * rest on the last item the offset is the track's far end to within a
+	 * rounding error either way, and a float comparison would draw the wrapped
+	 * copy on one side of that error and not the other - a second marker
+	 * appearing at the near end of a long list for no reason. */
+	off = (int)(o + 0.5f);
+	lap = (int)(fl + 0.5f);
+	track = (SDL_Rect){ track_x, y, track_w, h };
 
 	SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
 	/* The track carries twice the weight it used to, so it takes less alpha to
 	 * say the same thing; brighter than this and an empty rail reads as a
 	 * drawn element rather than as the absence of one. */
 	SDL_SetRenderDrawColor(r, 255, 255, 255, 16);
-	SDL_RenderFillRect(r, &(SDL_Rect){ track_x, y, track_w, h });
+	SDL_RenderFillRect(r, &track);
 	SDL_SetRenderDrawColor(r, (Uint8)(rgb >> 16), (Uint8)(rgb >> 8), (Uint8)rgb, 235);
-	SDL_RenderFillRect(r, &(SDL_Rect){ seg_x, y, seg_w, h });
+	rail_seg(r, &track, (SDL_Rect){ track_x + off, y, seg_w, h });
+	/* Only while the marker overhangs the far end, which is the only time the
+	 * copy has anything to show. On a shelf whose segments tile the track -
+	 * eleven systems, where a segment is one step wide - the two are exactly
+	 * complementary and the marker crosses the seam without a break. On a long
+	 * shelf a segment is many steps wide, so a stub shows at each end for the
+	 * length of that one move; that seam is a genuine discontinuity in the
+	 * list, and showing where it goes beats teleporting across it. */
+	if (off > track_w - seg_w)
+		rail_seg(r, &track, (SDL_Rect){ track_x + off - lap, y, seg_w, h });
 }
 
-void ui_rail_v(SDL_Renderer *r, int screen_w, int screen_h, int index, int count,
+void ui_rail_v(SDL_Renderer *r, int screen_w, int screen_h, float index, int count,
                unsigned rgb)
 {
 	int w = UI_BAR_H, x = 23;
 	int track_y = 90, track_h = screen_h - track_y * 2;
-	int seg_h, seg_y;
+	SDL_Rect track;
+	int seg_h, off, lap, end;
+	float o, fl;
 
 	(void)screen_w;
 	if (count <= 1) return;
 	seg_h = track_h / count;
 	if (seg_h < 18) seg_h = 18;
+	o = rail_at(index, count, track_h, seg_h, &fl);
+	off = (int)(o + 0.5f);
+	lap = (int)(fl + 0.5f);
 	/* Inverted: the first item sits at the BOTTOM and the last at the top, so
 	 * the indicator travels the same way the shelf does. A rail that runs
-	 * top-down under a shelf that runs bottom-up moves opposite the thumb. */
-	seg_y = track_y + (int)((1.0f - (float)index / (float)(count - 1))
-	                        * (track_h - seg_h));
+	 * top-down under a shelf that runs bottom-up moves opposite the thumb.
+	 * Which is all the inversion is - the offset is still measured from the
+	 * first item, it is just subtracted from the far end rather than added to
+	 * the near one. */
+	end = track_y + track_h - seg_h;
+	track = (SDL_Rect){ x, track_y, w, track_h };
 
 	SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
 	SDL_SetRenderDrawColor(r, 255, 255, 255, 16);
-	SDL_RenderFillRect(r, &(SDL_Rect){ x, track_y, w, track_h });
+	SDL_RenderFillRect(r, &track);
 	SDL_SetRenderDrawColor(r, (Uint8)(rgb >> 16), (Uint8)(rgb >> 8), (Uint8)rgb, 235);
-	SDL_RenderFillRect(r, &(SDL_Rect){ x, seg_y, w, seg_h });
+	rail_seg(r, &track, (SDL_Rect){ x, end - off, w, seg_h });
+	if (off > track_h - seg_h)
+		rail_seg(r, &track, (SDL_Rect){ x, end - off + lap, w, seg_h });
 }
 
 void ui_round_rect(SDL_Renderer *r, const SDL_Rect *q, int radius, SDL_Color col)

@@ -191,11 +191,21 @@ int cf_landing(const coverflow *cf, int count);
  * needs no unwinding. */
 float cf_label(const coverflow *cf, int count, int *index);
 
-/* The smoothstep the shelves ease with, exposed so the shot harness can stage
- * a move at a chosen fraction and put the card exactly where the animation
- * would have. A harness that positions cards by a different curve than the
- * launcher is a harness that draws a screen nobody will ever see. */
-float cf_ease_smooth(float u);
+/* Catch a move `u` of the way through, from `from` to `to`. For the shot
+ * harness: a still frame cannot show anything that only exists DURING a move,
+ * and there are now several of those - the label crossfade, a card mid-slide,
+ * the rail between two positions.
+ *
+ * A whole move is staged rather than just a position, because the parts read
+ * different things: the rail reads `pos` and the crossfade reads the clock, so
+ * nudging one alone draws a shelf part way along with nothing moving.
+ *
+ * The curve and the duration come from the shelf's own settings rather than
+ * being named again by the caller, which is the whole reason this is here and
+ * not in the harness: a harness that positions cards by a different curve than
+ * the launcher draws a screen nobody will ever see. It replaced a copy of the
+ * smoothstep in main.c that had Vertical's duration hardcoded beside it. */
+void cf_stage(coverflow *cf, float from, float to, float u);
 
 /* Whether a cut is in flight. The caller holds off evicting while it is, or it
  * would free the very cards the departure is still drawing: the cursor is

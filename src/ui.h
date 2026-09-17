@@ -165,13 +165,17 @@ void ui_glow(SDL_Renderer *r, const SDL_Rect *rect, unsigned rgb, int alpha,
              float spread);
 
 /* The position rail across the bottom: a faint full-width track with a bright
- * accent segment showing where the cursor sits in a list of `count`. */
-void ui_rail(SDL_Renderer *r, int screen_w, int screen_h, int index, int count,
+ * accent segment showing where the shelf sits in a list of `count`.
+ *
+ * `index` is a FLOAT and wants cf.pos, the shelf's own continuous position -
+ * not the cursor, which is already at the destination on the frame of the
+ * press. Whole values give the resting positions exactly. See rail_at. */
+void ui_rail(SDL_Renderer *r, int screen_w, int screen_h, float index, int count,
              unsigned rgb);
 /* The same, down the left edge, for a row that runs vertically. A horizontal
  * bar under a vertical stack says the wrong thing: the eye reads it as the
  * axis the cards move along. */
-void ui_rail_v(SDL_Renderer *r, int screen_w, int screen_h, int index, int count,
+void ui_rail_v(SDL_Renderer *r, int screen_w, int screen_h, float index, int count,
                unsigned rgb);
 
 /* A filled rounded rectangle. SDL has no such primitive; this is the middle as

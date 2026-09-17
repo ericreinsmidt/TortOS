@@ -160,14 +160,8 @@ static float ease_out(float u)
 	return 1.0f - k * k * k;
 }
 
-/* Smoothstep: zero velocity at both ends, peak 1.5x average in the middle.
- * cf_ease_smooth below is this, published for the shot harness. */
+/* Smoothstep: zero velocity at both ends, peak 1.5x average in the middle. */
 static float ease_smooth(float u)
-{
-	return cf_ease_smooth(u);
-}
-
-float cf_ease_smooth(float u)
 {
 	if (u < 0.0f) u = 0.0f;
 	if (u > 1.0f) u = 1.0f;
@@ -364,6 +358,24 @@ float cf_label(const coverflow *cf, int count, int *index)
 	if (u <= CF_LABEL_EDGE)        return 1.0f - u / CF_LABEL_EDGE;
 	if (u >= 1.0f - CF_LABEL_EDGE) return (u - (1.0f - CF_LABEL_EDGE)) / CF_LABEL_EDGE;
 	return 0.0f;
+}
+
+void cf_stage(coverflow *cf, float from, float to, float u)
+{
+	float ms = cf->anim_ms > 0.0f ? cf->anim_ms : ANIM_MS;
+
+	if (u < 0.0f) u = 0.0f;
+	if (u > 1.0f) u = 1.0f;
+	cf->from = from;
+	cf->target = to;
+	cf->pos = from + (to - from) * ease_apply(cf->ease, u);
+	/* Backdated, so the move is already this far along by the clock the label
+	 * and step_anim both measure against. */
+	cf->t0 = SDL_GetTicks() - (Uint32)(u * ms);
+	cf->active = true;
+	cf->cutting = false;
+	cf->primed = true;
+	cf->last_cursor = (int)floorf(to + 0.5f);
 }
 
 int cf_landing(const coverflow *cf, int count)

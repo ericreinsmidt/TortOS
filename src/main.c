@@ -2215,11 +2215,12 @@ static void draw_both(app *a)
 furniture:
 	/* Two rails, because there are two positions to be in. The system rail
 	 * runs down the left on its own axis; the game rail sits under the screen
-	 * where it always has. */
-	ui_rail_v(a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, a->sys_cursor,
+	 * where it always has. Both from `pos` rather than the cursor, so they
+	 * travel with the face that is turning instead of arriving before it. */
+	ui_rail_v(a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, a->cf_sys.pos,
 	          a->sys.count, s->accent);
 	if (ng > 1)
-		ui_rail(a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, v->cursor, ng,
+		ui_rail(a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, v->cf.pos, ng,
 		        s->accent);
 	/* What system, and how much of it. Both are context rather than content:
 	 * left and right change neither, so neither rides a yawing face. Nothing
@@ -2338,7 +2339,7 @@ static void draw_systems(app *a)
 	ui_text(a->r, ui_font(UI_F_META), line, TORTOS_SCREEN_W / 2, 690, 0,
 	        ui_fade(UI_TEXT_DIM, label_a));
 	(CARD_DIRS[g_dir].vertical ? ui_rail_v : ui_rail)
-		(a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, a->sys_cursor, a->sys.count,
+		(a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, a->cf_sys.pos, a->sys.count,
 		 s->accent);
 }
 
@@ -2573,7 +2574,7 @@ static void draw_games(app *a)
 
 	draw_game_text(a, v, s, v->cursor);
 	(CARD_DIRS[g_dir].vertical ? ui_rail_v : ui_rail)
-		(a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, v->cursor, v->list.count,
+		(a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, v->cf.pos, v->list.count,
 		 s->accent);
 }
 
@@ -7239,6 +7240,27 @@ static void update_games(app *a)
 	 * the draw walks off the front of the list. */
 	if (in_repeat(&a->in, IN_L1))    v->cursor = ((v->cursor - CF_WINDOW) % n + n) % n;
 	if (in_repeat(&a->in, IN_R1))    v->cursor = (v->cursor + CF_WINDOW) % n;
+	/* HERE, AND NOT AT THE END OF THE PASS, because four of the handlers below
+	 * return without reaching the end.
+	 *
+	 * A repeat fires from the clock every REPEAT_RATE_MS while a direction is
+	 * held, and the loop passes at about 60Hz while any button is down, so
+	 * roughly one pass in five moves the cursor. Press A on one of those passes
+	 * and the shelf was never told: `target` stays a card behind `cursor`, the
+	 * game runs, the render on the way back snaps the cards to that stale
+	 * target, and the NEXT pass through here finally notices and animates the
+	 * difference. Which is exactly the report - the shelf comes back showing a
+	 * game off to the side and then slides across to the right one - and the
+	 * one-in-five is why it only happened sometimes.
+	 *
+	 * X and Y are the same shape: the info screen and a favorite toggle both
+	 * return from here too. B is the only one that got away with it, because
+	 * enter_system resets this coverflow on the way back in.
+	 *
+	 * The call is unconditional and `dir` may be 0: a letter jump and L1/R1
+	 * move the cursor without a direction, and cf_set_cursor_dir works out the
+	 * rest itself. It returns immediately when the cursor has not moved. */
+	cf_set_cursor_dir(&v->cf, v->cursor, n, dir);
 	if (a->in.pressed[IN_BACK]) {
 		a->screen = SCREEN_SYSTEMS;
 		evict_far(v, TEX_KEEP_FAR);
@@ -7261,7 +7283,6 @@ static void update_games(app *a)
 		return;
 	}
 	if (a->in.pressed[IN_ACCEPT]) { launch(a); return; }
-	cf_set_cursor_dir(&v->cf, v->cursor, n, dir);
 }
 
 /* ---------- main ---------------------------------------------------------- */
@@ -7644,6 +7665,11 @@ static int shot_cheevos_sel;
  * settled frame, so anything that only happens DURING a move - the label
  * crossfade, a card mid-slide - cannot be looked at without this. */
 static float shot_sysmove;
+/* The same for the games shelf, which is the one with a long list under it.
+ * Eleven systems make a rail whose segments tile the track; three hundred games
+ * make an 18px segment moving two and a half pixels a card, and the two do not
+ * look alike at any fraction of a move. */
+static float shot_gamemove;
 static const char *shot_cheevos_game = "Hagane: The Final Conflict";
 static int shot_syn;       /* --synopsis: the card a scraped game opens */
 static int shot_info;
@@ -7904,6 +7930,8 @@ int main(int argc, char *argv[])
 		else if (!strcmp(argv[i], "--synopsis")) shot_syn = 1;
 		else if (!strcmp(argv[i], "--sysmove") && i + 1 < argc)
 			shot_sysmove = (float)atof(argv[++i]);
+		else if (!strcmp(argv[i], "--gamemove") && i + 1 < argc)
+			shot_gamemove = (float)atof(argv[++i]);
 		else if (!strcmp(argv[i], "--info")) shot_info = 1;
 		else if (!strcmp(argv[i], "--phase") && i + 1 < argc)
 			shot_phase = atoi(argv[++i]);
@@ -8289,29 +8317,37 @@ int main(int argc, char *argv[])
 		}
 		/* A shelf nobody has moved sits at position 0, wherever its cursor
 		 * was restored to. On the device that never reaches the screen:
-		 * update_games ends every pass with cf_set_cursor_dir, which snaps an
+		 * update_games runs cf_set_cursor_dir every pass, which snaps an
 		 * unmoved shelf to its cursor. A shot draws one frame and never runs
 		 * that pass, so without this it drew the list's first card under the
 		 * selected game's title. */
 		cf_reset(&a.view[a.sys_cursor].cf, a.view[a.sys_cursor].cursor);
 		/* CAUGHT MID-MOVE, for whatever only exists while one is happening.
 		 *
-		 * A whole move is staged, not just a position: the label crossfade
-		 * reads the animation's own clock, so nudging `pos` alone would draw
-		 * a shelf part way along with nothing moving. `pos` is set to where
-		 * the ease would have put it at this fraction, so the card and the
-		 * text agree. */
+		 * The pacing is applied first and the staging reads it, rather than the
+		 * duration and the curve being named again here: they differ by
+		 * direction mode, and a harness holding its own copy of them draws a
+		 * frame the launcher never would. Cost of finding that out: --sysmove
+		 * hardcoded Vertical's 360ms, so on a horizontal shelf it backdated the
+		 * clock against a duration the draw did not use. */
 		if (shot_sysmove != 0.0f) {
-			float ms = 360.0f;      /* what shelf_pacing gives Vertical */
-			float u = shot_sysmove;
+			shelf_pacing(&a.cf_sys);
+			cf_stage(&a.cf_sys, (float)a.sys_cursor,
+			         (float)a.sys_cursor + 1.0f, shot_sysmove);
+		}
+		/* The games shelf, with the cursor ALREADY at the destination - which
+		 * is the state the device is in for the whole of a move, and the reason
+		 * anything drawn from the cursor arrives early. */
+		if (shot_gamemove != 0.0f) {
+			sysview *v = &a.view[a.sys_cursor];
 
-			a.cf_sys.from = (float)a.sys_cursor;
-			a.cf_sys.target = (float)a.sys_cursor + 1.0f;
-			a.cf_sys.anim_ms = ms;
-			a.cf_sys.active = true;
-			a.cf_sys.t0 = SDL_GetTicks() - (Uint32)(u * ms);
-			a.cf_sys.pos = a.cf_sys.from
-			             + (a.cf_sys.target - a.cf_sys.from) * cf_ease_smooth(u);
+			if (v->list.count > 1) {
+				int was = v->cursor;
+
+				v->cursor = (v->cursor + 1) % v->list.count;
+				shelf_pacing(&v->cf);
+				cf_stage(&v->cf, (float)was, (float)was + 1.0f, shot_gamemove);
+			}
 		}
 		if (a.screen == SCREEN_GAMES) prime_window(&a, a.sys_cursor);
 		take_shot(&a);
