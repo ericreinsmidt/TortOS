@@ -32,4 +32,23 @@ const ss_result *ss_run_result(void);
  * account. */
 const char *ss_run_where(void);
 
+/* ---- what a long run needs to know when to stop -------------------------
+ *
+ * Requests left on the account today, or -1 until a reply has said. Every
+ * reply carries the account's own counters, so this costs nothing and is the
+ * only number that is actually true - the day's 20,000 is shared with any
+ * other device signed in as the same person, and with the same card scraped
+ * twice.
+ *
+ * Survives ss_run_cancel: it is a fact about the account, not about the game
+ * that was being looked up. */
+int ss_run_left(void);
+
+/* Whether the last refusal was "not now" rather than "not this game": HTTP
+ * 429. The two arrive identically otherwise - curl runs with `fail`, so every
+ * refusal is one exit code and no body - and they want opposite responses. A
+ * 429 is worth waiting a beat and asking again; a 404 means they do not have
+ * this game and asking again would be rude and useless. */
+bool ss_run_too_many(void);
+
 #endif

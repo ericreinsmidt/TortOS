@@ -9,12 +9,15 @@
 #include <unistd.h>
 
 #include <sys/stat.h>
+#include <time.h>
 
 #include "artscrape.h"
 #include "artshrink.h"
 #include "config.h"
 #include "library.h"
 #include "net.h"
+#include "ss.h"
+#include "ssrun.h"
 
 #define BASE "https://thumbnails.libretro.com"
 
@@ -373,8 +376,52 @@ static char    g_romdir[LIB_PATH];
  * run over an empty library costs the same as before plus a handful of 404s.
  * Adding a few games - the ordinary case, and the one Over The Hare makes
  * ordinary - usually costs no index at all. */
-enum { P_SYSTEM, P_TRY, P_TRY_WAIT, P_INDEX, P_INDEX_WAIT, P_FUZZY,
-       P_FUZZY_WAIT, P_DAT, P_DAT_WAIT, P_CRC, P_CRC_WAIT };
+enum { P_SYSTEM, P_SS, P_SS_WAIT, P_TRY, P_TRY_WAIT, P_INDEX, P_INDEX_WAIT,
+       P_FUZZY, P_FUZZY_WAIT, P_DAT, P_DAT_WAIT, P_CRC, P_CRC_WAIT };
+
+/* ---- pass zero: ScreenScraper ------------------------------------------
+ *
+ * BACKLOG 27 settled the order and Replace Box Art has followed it for one
+ * game since 2026-09-16: ScreenScraper when the player has an account,
+ * libretro when they do not and libretro again whenever they cannot answer.
+ * This is that order over a whole shelf.
+ *
+ * It costs nothing when there is nothing to do, because P_SYSTEM has already
+ * counted what is missing and skipped the system if the answer is none. A
+ * cover it fetches lands at the same .media path libretro's would, so pass one
+ * skips that game without a request - the two sources compose rather than
+ * competing.
+ *
+ * It also brings the year and the synopsis, which libretro has none of. That
+ * is the real reason it goes first rather than being a fallback: a cover
+ * fetched from libretro is a cover, where one fetched here is a cover and a
+ * row in the games table, and asking again later for text that was in hand
+ * now would cost a second run over the whole card.
+ *
+ * WHEN IT STOPS, which is the part that had to be got right before a run over
+ * 1,708 games could exist at all:
+ *
+ *   the day is spent      every reply states the account's own counters, so
+ *                         the run reads what is left rather than discovering
+ *                         it by being refused. Under SS_DAY_FLOOR it stops and
+ *                         libretro finishes the job.
+ *   "too many at once"    a 429, which is the server saying not now rather
+ *                         than not this game. Waits SS_BUSY_WAIT and asks the
+ *                         same game once more; refused twice, it stops.
+ *   anything else         that game is one they do not have. Ordinary, and the
+ *                         run carries straight on to the next.
+ *
+ * The first two are different sentences to the same 429 status, which is why
+ * the budget is read rather than inferred: a quota that is spent does not come
+ * back in two seconds, and a client that retries it is hammering a server that
+ * has already said no. */
+#define SS_DAY_FLOOR 50    /* stop with this many of the day's requests left */
+/* Seconds before a refused game is asked about again. Overridable only so the
+ * check can pin the RULE - retry once, then stop - without spending the wait:
+ * a suite that sleeps is a suite people stop running. */
+#ifndef SS_BUSY_WAIT
+#define SS_BUSY_WAIT  2
+#endif
 static int  g_phase;
 static char g_pending[ARTPATH_MAX];       /* the image being fetched */
 
@@ -393,10 +440,24 @@ static int  g_ri;               /* which ROM inside it */
 static bool g_running;
 
 static char g_roms[ENTRIES_MAX][NAME_MAX_];
+/* The extension each stem came with, dot included, because ScreenScraper is
+ * asked by the ROM's FILE name where libretro is asked by its stem. Rebuilding
+ * it from the shelf's extension list would be a guess - a folder allows five
+ * and a game carries one - and reopening the directory per game to look is a
+ * readdir inside a frame. */
+static char g_rext[ENTRIES_MAX][12];
 static int  g_nroms;
 
 /* The one game a replace is about, or "" for an ordinary run. See art_begin. */
 static char g_only[NAME_MAX_];
+
+/* The ScreenScraper pass, for this run only. `stop` is sticky: once the
+ * account's day is spent or the server has refused twice, every remaining
+ * system goes straight to libretro rather than asking again per shelf. */
+static bool   g_ss_stop;
+static bool   g_ss_retried;       /* this game already had its one retry */
+static time_t g_ss_until;         /* not before this, after a 429 */
+static char   g_ss_note[64];
 
 static art_progress g_st;
 
@@ -444,8 +505,12 @@ static void read_roms(const char *dir, const char *exts)
 		if (!ext_allowed(e->d_name, exts)) continue;
 		if (snprintf(g_roms[g_nroms], NAME_MAX_, "%s", e->d_name)
 		    >= NAME_MAX_) continue;
+		g_rext[g_nroms][0] = '\0';
 		dot = strrchr(g_roms[g_nroms], '.');
-		if (dot) *dot = '\0';
+		if (dot) {
+			snprintf(g_rext[g_nroms], sizeof g_rext[0], "%s", dot);
+			*dot = '\0';
+		}
 		g_nroms++;
 	}
 	closedir(d);
@@ -708,6 +773,9 @@ void art_cancel(void)
 	/* Whatever was in flight is not wanted, and leaving it in flight holds
 	 * the one async slot the launcher has. */
 	net_async_abort();
+	/* The ScreenScraper pass holds the same one async slot through its own
+	 * driver, so abandoning the run has to tell that half too. */
+	ss_run_cancel();
 	g_running = false;
 	free(g_html);  g_html = NULL;
 	free(g_dat);   g_dat = NULL;
@@ -723,6 +791,9 @@ void art_begin(const systems_cfg *sys, const char *roms_dir, const char *only)
 	g_si = g_ri = 0;
 	g_nretry = g_qi = 0;
 	g_nleft = g_rem = 0;
+	g_ss_stop = g_ss_retried = false;
+	g_ss_until = 0;
+	g_ss_note[0] = '\0';
 	g_phase = P_SYSTEM;
 	g_nsys = 0;
 	snprintf(g_romdir, sizeof g_romdir, "%s", roms_dir ? roms_dir : "");
@@ -874,8 +945,73 @@ int art_step(void)
 		snprintf(g_st.now, sizeof g_st.now, "%s", g_sys[g_si].folder);
 		g_ri = 0;
 		g_nretry = 0;
-		g_phase = P_TRY;
+		/* A replace keeps its own driver in the screen for now, which asks
+		 * ScreenScraper before it ever gets here. */
+		g_phase = (!g_only[0] && !g_ss_stop && ss_signed_in()) ? P_SS : P_TRY;
 		return 1;
+
+	/* ---- pass zero: ScreenScraper, for an account that has one --------- */
+	case P_SS:
+		if (g_ss_stop || g_ri >= g_nroms) {
+			g_ri = 0;
+			g_phase = P_TRY;
+			return 1;
+		}
+		if (ss_run_left() >= 0 && ss_run_left() < SS_DAY_FLOOR) {
+			g_ss_stop = true;
+			snprintf(g_ss_note, sizeof g_ss_note,
+			         "ScreenScraper: today's quota is spent");
+			return 1;
+		}
+		if (g_ss_until && time(NULL) < g_ss_until) return 1;
+		g_ss_until = 0;
+		if (!art_paths(dir, g_roms[g_ri], media, sizeof media,
+		               dest, sizeof dest)) { g_ri++; return 1; }
+		if (stat(dest, &st) == 0 && st.st_size > 0) { g_ri++; return 1; }
+		snprintf(g_st.now, sizeof g_st.now, "%s", g_roms[g_ri]);
+		mkdir(media, 0777);
+		{
+			char file[NAME_MAX_ + 16];
+
+			snprintf(file, sizeof file, "%s%s", g_roms[g_ri], g_rext[g_ri]);
+			if (!ss_run_begin(g_sys[g_si].folder, file, g_roms[g_ri], dir,
+			                  g_sys[g_si].exts)) {
+				/* No account, or a system they have no id for. Either way
+				 * this shelf is libretro's, and asking per game would be
+				 * 337 identical refusals. */
+				g_phase = P_TRY;
+				g_ri = 0;
+				return 1;
+			}
+		}
+		g_phase = P_SS_WAIT;
+		return 1;
+
+	case P_SS_WAIT: {
+		int r = ss_run_step();
+
+		if (r == 1) return 1;
+		if (r == 0) {
+			g_st.found++;
+			g_ri++;
+			g_ss_retried = false;
+		} else if (ss_run_too_many() && !g_ss_retried) {
+			/* Not now, rather than not this game: wait a beat and ask once
+			 * more about the SAME game, which is why g_ri does not move. */
+			g_ss_retried = true;
+			g_ss_until = time(NULL) + SS_BUSY_WAIT;
+		} else if (ss_run_too_many()) {
+			g_ss_stop = true;
+			snprintf(g_ss_note, sizeof g_ss_note,
+			         "ScreenScraper: too many requests, stopped");
+		} else {
+			g_ri++;
+			g_ss_retried = false;
+		}
+		ss_run_cancel();
+		g_phase = P_SS;
+		return 1;
+	}
 
 	/* ---- pass one: ask for the name the card already has ---------------- */
 	case P_TRY:
@@ -1078,5 +1214,12 @@ int art_step(void)
 
 void art_status(art_progress *out)
 {
-	if (out) *out = g_st;
+	if (!out) return;
+	*out = g_st;
+	/* Why the second source stopped, when nothing worse has been said. It is
+	 * a run-level fact rather than a system-level one - the pass stops for
+	 * the whole run - so it cannot be written when it happens: the next
+	 * system's own report would overwrite it a moment later. */
+	if (g_ss_note[0] && !out->problem[0])
+		snprintf(out->problem, sizeof out->problem, "%s", g_ss_note);
 }

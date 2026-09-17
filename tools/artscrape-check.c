@@ -82,6 +82,18 @@ static void check_scoring(void)
 	BEATS("Contra (USA)", "Contra (USA)", "Contra");
 }
 
+/* Never called: this file exercises the matching rules, which run before any
+ * source is asked anything. Present so artscrape.c links without dragging the
+ * ScreenScraper client and its network in behind it. */
+bool ss_signed_in(void) { return false; }
+bool ss_run_begin(const char *a, const char *b, const char *c, const char *d,
+                  const char *e)
+{ (void)a; (void)b; (void)c; (void)d; (void)e; return false; }
+int  ss_run_step(void) { return -1; }
+void ss_run_cancel(void) { }
+int  ss_run_left(void) { return -1; }
+bool ss_run_too_many(void) { return false; }
+
 int main(int argc, char **argv)
 {
 	char line[512], out[512];

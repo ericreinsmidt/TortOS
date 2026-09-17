@@ -8156,6 +8156,84 @@ int main(int argc, char *argv[])
 		return bad && !wrote ? 1 : 0;
 	}
 
+	/* --scrape [folder] runs the box art scraper with no video at all.
+	 *
+	 * The same art_begin/art_step the screen drives, stepped from here instead
+	 * of from a frame loop, so a long run does not depend on somebody holding
+	 * the device - and so that BACKLOG 27's "re-scraping just those four is a
+	 * five-minute job" is a command rather than a menu to navigate over adb.
+	 *
+	 * Headless, so it must NOT touch video: the live launcher is presenting
+	 * while this runs, and two presenters wedge the display engine. It also
+	 * takes the one async network slot, which is per process, so the launcher
+	 * is unaffected either way.
+	 *
+	 * The shrinker runs inline here rather than on a worker - art_shrink falls
+	 * back to doing it on the spot when no thread was started - which is what
+	 * a run with nothing to draw wants anyway. */
+	if (argc > 1 && !strcmp(argv[1], "--scrape")) {
+		char dev[CFG_STR * 2], lib[CFG_STR * 2], cp[CFG_STR * 2], path[CFG_STR * 2];
+		const char *only_sys = argc > 2 ? argv[2] : NULL;
+		systems_cfg all, one;
+		art_progress st;
+		char seen[128] = "";
+		int r;
+
+		paths_init();
+		snprintf(path, sizeof path, "%s/systems.cfg", P_ROOT);
+		if (!cfg_load_systems(path, &all)) {
+			fprintf(stderr, "no usable %s\n", path);
+			return 1;
+		}
+		db_paths_ready(dev, sizeof dev, lib, sizeof lib, NULL, 0);
+		if (!db_init(dev, lib, NULL)) {
+			fprintf(stderr, "cannot open the databases\n");
+			return 1;
+		}
+		snprintf(cp, sizeof cp, "%s/cacert.pem", P_ROOT);
+		net_set_ca_path(cp);
+		ss_creds_load();
+		IMG_Init(IMG_INIT_PNG);
+
+		if (only_sys) {
+			int i;
+
+			memset(&one, 0, sizeof one);
+			for (i = 0; i < all.count; i++)
+				if (!strcmp(all.systems[i].folder, only_sys)) {
+					one.systems[0] = all.systems[i];
+					one.count = 1;
+					break;
+				}
+			if (!one.count) {
+				fprintf(stderr, "no shelf called %s\n", only_sys);
+				return 1;
+			}
+		}
+		fprintf(stderr, "scrape: %s, ScreenScraper %s\n",
+		        only_sys ? only_sys : "every shelf",
+		        ss_signed_in() ? "signed in" : "not signed in");
+		art_begin(only_sys ? &one : &all, P_ROMS, NULL);
+		while ((r = art_step()) == 1) {
+			art_status(&st);
+			/* One line per thing it turns to, not per step: a step is mostly
+			 * a poll of a request already in flight. Keyed on what it says it
+			 * is doing rather than on the counters, because the interesting
+			 * case - a game asked about and not found - moves no counter. */
+			if (strcmp(st.now, seen)) {
+				snprintf(seen, sizeof seen, "%s", st.now);
+				fprintf(stderr, "scrape: %-44s  %d found, %d missing, %d had one\n",
+				        st.now, st.found, st.missing, st.skipped);
+			}
+			usleep(20000);
+		}
+		art_status(&st);
+		fprintf(stderr, "scrape: done - %d found, %d missing, %d already had one%s%s\n",
+		        st.found, st.missing, st.skipped,
+		        st.problem[0] ? " - " : "", st.problem);
+		return 0;
+	}
+
 	if (argc > 1 && !strcmp(argv[1], "--dump")) {
 		char dev[CFG_STR * 2], lib[CFG_STR * 2];
 		paths_init();

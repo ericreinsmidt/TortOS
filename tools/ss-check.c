@@ -86,7 +86,10 @@ static bool env_value(const char *key, char *out, size_t n)
  * makes and a place it could quietly make the wrong one. The live half below
  * is what holds this against the real thing. */
 static const char *FIXTURE =
-"{\"response\":{\"jeu\":{"
+"{\"response\":{"
+" \"ssuser\":{\"id\":\"someone\",\"maxthreads\":\"1\","
+"            \"requeststoday\":\"20\",\"maxrequestsperday\":\"20000\"},"
+" \"jeu\":{"
 " \"noms\":[{\"region\":\"jp\",\"text\":\"Rokudenashi Blues\"},"
 "           {\"region\":\"us\",\"text\":\"Good For Nothing Blues 2\"},"
 "           {\"region\":\"eu\",\"text\":\"Nothing Blues\"}],"
@@ -132,6 +135,11 @@ static void reads_a_reply(void)
 	ck(strstr(r.meta.synopsis, "\n\n") != NULL, "the paragraph break survives");
 	ck(!strcmp(r.art, "https://x/box-us"), "the US box-2D is the cover");
 	ck(!strcmp(r.art_region, "us"), "and it says which region that is");
+	/* The account's counters, which a bulk run stops on. They arrive as
+	 * STRINGS, and js_int answers 0 for a string - which would read as a
+	 * fresh quota on every reply, so the run would never stop. */
+	ck(r.used_today == 20 && r.max_today == 20000,
+	   "the account's day is read off the same reply, strings and all");
 
 	/* A reply about a different game, which is the case the whole check
 	 * exists for: 4 of this card's 1,708 games get one. */

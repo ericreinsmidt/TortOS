@@ -80,6 +80,17 @@ int  net_async_poll(void);
  * leave half a file where a later run would find it and skip the download. */
 bool net_get_async(const char *url, const char *path, int timeout_s);
 
+/* What the server answered with, once net_async_poll has returned non-zero:
+ * an HTTP status, or 0 when the request never reached a server at all.
+ *
+ * Needed because curl runs with `fail` and so reports every refusal the same
+ * way - no body, one exit code. ScreenScraper says "we do not know this game",
+ * "too many at once" and "today's quota is spent" all as 4xx, and a bulk run
+ * has to do three different things about them: carry on, wait a beat, and stop
+ * for the day. Guessing between those either abandons a library that could
+ * have been scraped or keeps asking a server that has already said no. */
+int net_async_http(void);
+
 /* Give up on whatever is in flight: kill it, reap it, and free the slot.
  *
  * For a caller that stops caring - a screen the player closed mid-fetch. Not

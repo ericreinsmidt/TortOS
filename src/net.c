@@ -57,7 +57,8 @@ static void cfg_quote(FILE *f, const char *v)
 /* The same config, for a GET of an arbitrary URL. No fields, no token, so
  * nothing here needs hiding from a process list - but it goes through a file
  * anyway, because two ways of invoking curl is two things to keep right. */
-static bool write_get_config(const char *path, const char *url, int timeout_s)
+static bool write_get_config(const char *path, const char *url,
+                            const char *body_path, int timeout_s)
 {
 	FILE *f;
 	int fd;
@@ -73,6 +74,22 @@ static bool write_get_config(const char *path, const char *url, int timeout_s)
 	 * device log per run. The caller knows what it asked for and says so in
 	 * words; curl's exit code is enough for it to know. */
 	fprintf(f, "silent\nfail\nlocation\n");
+	/* THE STATUS, ON STDOUT, WITH THE BODY SENT TO ITS OWN FILE.
+	 *
+	 * curl runs with `fail`, so an HTTP error is an exit code and nothing
+	 * else - and the callers now need to tell one refusal from another.
+	 * ScreenScraper answers "we do not know this game" and "you have spent
+	 * today's quota" and "too many at once" all as 4xx, and a run that treats
+	 * those alike either gives up on a library it could have scraped or keeps
+	 * asking a server that has already said no.
+	 *
+	 * write-out prints whatever happened, error or not, so the code arrives
+	 * even when the body does not. It goes to stdout, which means the body
+	 * cannot: `output` names the file instead. The device carries curl 7.54,
+	 * which has neither --fail-with-body nor write-out's %%output{} - this
+	 * works on any of them. */
+	fprintf(f, "write-out = "); cfg_quote(f, "%{http_code}"); fputc('\n', f);
+	if (body_path) { fprintf(f, "output = "); cfg_quote(f, body_path); fputc('\n', f); }
 	fprintf(f, "max-time = %d\n", timeout_s);
 	if (g_ca[0]) { fprintf(f, "cacert = "); cfg_quote(f, g_ca); fputc('\n', f); }
 	fprintf(f, "user-agent = "); cfg_quote(f, "TortOS/" TORTOS_VERSION); fputc('\n', f);
@@ -264,6 +281,11 @@ bool net_post_async(const net_field *f, int n, const char *path, int timeout_s)
  * when the request in flight is a POST, which manages its own destination. */
 static char g_async_dest[512];
 static char g_async_part[520];
+/* Where curl prints the status, and the last one it printed. Kept apart from
+ * the body so that a caller can ask what happened even when there is no body
+ * to read - which is every refusal, since curl runs with `fail`. */
+static char g_async_st[560];
+static int  g_async_http;
 
 void net_async_abort(void)
 {
@@ -274,6 +296,7 @@ void net_async_abort(void)
 	g_async = -1;
 	if (g_async_cfg[0]) unlink(g_async_cfg);
 	if (g_async_part[0]) unlink(g_async_part);
+	if (g_async_st[0]) { unlink(g_async_st); g_async_st[0] = '\0'; }
 	g_async_dest[0] = '\0';
 	g_async_part[0] = '\0';
 }
@@ -298,17 +321,20 @@ bool net_get_async(const char *url, const char *path, int timeout_s)
 
 	snprintf(g_async_cfg, sizeof g_async_cfg, "/tmp/tortos-get-async-%ld.curl",
 	         (long)getpid());
-	if (!write_get_config(g_async_cfg, url, timeout_s)) return false;
-
 	snprintf(g_async_dest, sizeof g_async_dest, "%s", path);
 	if (snprintf(g_async_part, sizeof g_async_part, "%s.part", path)
 	    >= (int)sizeof g_async_part) {
-		unlink(g_async_cfg);
 		g_async_dest[0] = '\0';
 		return false;
 	}
+	if (!write_get_config(g_async_cfg, url, g_async_part, timeout_s)) {
+		g_async_dest[0] = '\0';
+		return false;
+	}
+	snprintf(g_async_st, sizeof g_async_st, "%s.http", g_async_part);
 
-	fd = open(g_async_part, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	g_async_http = 0;
+	fd = open(g_async_st, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 	if (fd < 0) { unlink(g_async_cfg); g_async_dest[0] = '\0'; return false; }
 
 	g_async = fork();
@@ -351,6 +377,18 @@ int net_async_poll(void)
 	unlink(g_async_cfg);
 	ok = (r > 0 && WIFEXITED(st) && WEXITSTATUS(st) == 0);
 
+	g_async_http = 0;
+	if (g_async_st[0]) {
+		FILE *h = fopen(g_async_st, "r");
+
+		if (h) {
+			if (fscanf(h, "%d", &g_async_http) != 1) g_async_http = 0;
+			fclose(h);
+		}
+		unlink(g_async_st);
+		g_async_st[0] = '\0';
+	}
+
 	/* A GET renames into place here rather than in the child, because only
 	 * the parent knows the request succeeded. curl -f exits non-zero on an
 	 * HTTP error but has usually already written the error body. */
@@ -360,6 +398,11 @@ int net_async_poll(void)
 		g_async_dest[0] = '\0';
 	}
 	return ok ? 1 : -1;
+}
+
+int net_async_http(void)
+{
+	return g_async_http;
 }
 
 bool net_online(void)

@@ -49,6 +49,16 @@ typedef struct {
 	game_meta meta;            /* exactly what the card's games table holds */
 	char      art[512];        /* the box-2D media URL, empty when none */
 	char      art_region[8];   /* which region that cover is from */
+	/* WHAT THE ACCOUNT HAS LEFT, WHICH THE REPLY STATES ON EVERY CALL.
+	 *
+	 * Read rather than assumed, and it is what lets a long run stop before
+	 * the server has to stop it: 20,000 a day against 1,708 games leaves
+	 * room, but a card scraped twice in a day and a second device on the same
+	 * account do not. Zero means the reply did not say - an older endpoint, or
+	 * a body that did not parse - and a run treats that as "no information",
+	 * not as "no quota". Measured 2026-09-17: requeststoday 20 of 20000,
+	 * maxthreads 1, and jeuInfos carries the same block ssuserInfos does. */
+	int       used_today, max_today;
 } ss_result;
 
 /* Read a jeuInfos reply. Pure: no network, no card, no clock.

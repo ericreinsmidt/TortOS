@@ -309,6 +309,24 @@ bool ss_parse(const char *json, size_t len, const char *file, ss_result *out)
 
 	root = js_root(json, len);
 	if (!js_member(root, "response", &resp)) return false;
+	/* The account's own counters, read before the game and kept even when the
+	 * reply turns out not to be about one. They arrive with every call, and
+	 * they are the only honest way to know how much of the day is left.
+	 *
+	 * AS STRINGS, not numbers: "requeststoday": "20". js_int answers 0 for a
+	 * string, which would have read as a fresh quota on every reply - the
+	 * worst possible direction for that mistake. */
+	{
+		jsv who, n;
+		char num[16];
+
+		if (js_member(resp, "ssuser", &who)) {
+			if (js_member(who, "requeststoday", &n) && js_str(n, num, sizeof num))
+				out->used_today = atoi(num);
+			if (js_member(who, "maxrequestsperday", &n) && js_str(n, num, sizeof num))
+				out->max_today = atoi(num);
+		}
+	}
 	if (!js_member(resp, "jeu", &jeu)) return false;
 	out->found = true;
 

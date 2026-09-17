@@ -118,6 +118,47 @@ int net_async_poll(void)
 
 void net_async_abort(void) { g_pending = false; }
 
+/* ---- ScreenScraper, stubbed the same way ---------------------------------
+ *
+ * The real client is four calls with a step machine behind them and a whole
+ * second network path; what this file needs to hold is the RUN's behaviour
+ * around it - that a hit costs libretro nothing, that a miss falls through,
+ * and that a refusal stops the pass instead of hammering the server. So the
+ * client is the thing stubbed, and the rules under test stay real. */
+static bool g_ss_on;          /* is there an account */
+static const char *g_ss_has;  /* the one stem they have a cover for, or NULL */
+static int  g_ss_busy;        /* how many more lookups answer 429 */
+static int  g_ss_left = -1;   /* what the account says is left today */
+static int  g_ss_asked;       /* lookups started */
+static char g_ss_stem[256];
+static char g_ss_dest[512];
+static bool g_ss_toomany;
+
+bool ss_signed_in(void) { return g_ss_on; }
+
+bool ss_run_begin(const char *folder, const char *file, const char *stem,
+                  const char *rom_dir, const char *exts)
+{
+	(void)folder; (void)file; (void)exts;
+	if (!g_ss_on) return false;
+	snprintf(g_ss_stem, sizeof g_ss_stem, "%s", stem);
+	snprintf(g_ss_dest, sizeof g_ss_dest, "%s/.media/%s.png", rom_dir, stem);
+	g_ss_asked++;
+	return true;
+}
+
+int ss_run_step(void)
+{
+	g_ss_toomany = false;
+	if (g_ss_busy > 0) { g_ss_busy--; g_ss_toomany = true; return -1; }
+	if (!g_ss_has || strcmp(g_ss_has, g_ss_stem)) return -1;
+	return write_file(g_ss_dest, "SS") ? 0 : -1;
+}
+
+void ss_run_cancel(void) { g_ss_stem[0] = '\0'; }
+int  ss_run_left(void) { return g_ss_left; }
+bool ss_run_too_many(void) { return g_ss_toomany; }
+
 /* ---- the card, in /tmp --------------------------------------------------- */
 
 static char g_root[256], g_shelf[320], g_media[400];
@@ -357,6 +398,80 @@ int main(void)
 		      st.missing);
 		g_index = NULL;
 		g_serve_also = NULL;
+	}
+
+	/* ---- the second source, which goes first ---------------------------
+	 *
+	 * Four rules, and the last two are the ones that had to exist before a run
+	 * over 1,708 games could: a refusal that means "not now" is worth one more
+	 * ask, and a day that is spent is worth none. */
+	{
+		char p[512];
+
+		printf("  ScreenScraper goes first, and libretro is never asked:\n");
+		snprintf(p, sizeof p, "%s/Hit Game.png", g_media);  remove(p);
+		snprintf(p, sizeof p, "%s/Other Game.png", g_media); remove(p);
+		g_ss_on = true;
+		g_ss_has = "Hit Game";
+		g_ss_busy = 0;
+		g_ss_left = -1;
+		g_ss_asked = 0;
+		g_serve_image = "Hit%20Game";
+		CHECK(run(NULL, &st) == 0, "the run did not finish");
+		CHECK(!strcmp(cover_of("Hit Game"), "SS"),
+		      "the cover reads \"%s\", wanted the ScreenScraper one",
+		      cover_of("Hit Game"));
+		CHECK(!strstr(g_urls, "Hit%20Game"),
+		      "libretro was asked for a cover ScreenScraper had already:\n%s",
+		      g_urls);
+
+		printf("  a game they have not got falls through to libretro:\n");
+		snprintf(p, sizeof p, "%s/Hit Game.png", g_media);  remove(p);
+		g_ss_has = NULL;
+		CHECK(run(NULL, &st) == 0, "the run did not finish");
+		CHECK(!strcmp(cover_of("Hit Game"), "NEW"),
+		      "the cover reads \"%s\", wanted libretro's", cover_of("Hit Game"));
+
+		printf("  \"too many at once\" is asked again, once:\n");
+		snprintf(p, sizeof p, "%s/Hit Game.png", g_media);  remove(p);
+		g_ss_has = "Hit Game";
+		g_ss_busy = 1;                  /* refuse the first ask only */
+		g_ss_asked = 0;
+		CHECK(run(NULL, &st) == 0, "the run did not finish");
+		CHECK(!strcmp(cover_of("Hit Game"), "SS"),
+		      "a 429 was not retried: the cover reads \"%s\"",
+		      cover_of("Hit Game"));
+		CHECK(g_ss_asked >= 2, "asked %d times, wanted the game asked again",
+		      g_ss_asked);
+
+		printf("  refused twice, it stops and leaves the rest to libretro:\n");
+		snprintf(p, sizeof p, "%s/Hit Game.png", g_media);  remove(p);
+		snprintf(p, sizeof p, "%s/Other Game.png", g_media); remove(p);
+		g_ss_busy = 99;                 /* refuse everything */
+		g_ss_asked = 0;
+		g_serve_image = "Hit%20Game";
+		CHECK(run(NULL, &st) == 0, "the run did not finish");
+		CHECK(g_ss_asked == 2, "asked %d times, wanted two and then a stop",
+		      g_ss_asked);
+		CHECK(!strcmp(cover_of("Hit Game"), "NEW"),
+		      "libretro did not finish the job after the pass stopped");
+		CHECK(strstr(st.problem, "too many") != NULL,
+		      "the run did not say why it stopped: \"%s\"", st.problem);
+
+		printf("  a spent day is not asked at all:\n");
+		snprintf(p, sizeof p, "%s/Hit Game.png", g_media);  remove(p);
+		g_ss_busy = 0;
+		g_ss_left = 10;                 /* under SS_DAY_FLOOR */
+		g_ss_asked = 0;
+		CHECK(run(NULL, &st) == 0, "the run did not finish");
+		CHECK(g_ss_asked == 0, "asked %d times with the day spent", g_ss_asked);
+		CHECK(!strcmp(cover_of("Hit Game"), "NEW"),
+		      "libretro did not cover for the spent quota");
+		CHECK(strstr(st.problem, "quota") != NULL,
+		      "the run did not say the quota was spent: \"%s\"", st.problem);
+
+		g_ss_on = false;
+		g_ss_left = -1;
 	}
 
 	{

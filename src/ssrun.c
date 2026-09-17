@@ -39,8 +39,15 @@ static struct {
 	char      where[64];
 } g_run;
 
+/* Outside g_run on purpose: the account's day is not the current game's
+ * business and must survive a cancel. */
+static int  g_left = -1;
+static bool g_toomany;
+
 const ss_result *ss_run_result(void) { return &g_run.got; }
 const char      *ss_run_where(void)  { return g_run.where; }
+int              ss_run_left(void)   { return g_left; }
+bool             ss_run_too_many(void) { return g_toomany; }
 
 void ss_run_cancel(void)
 {
@@ -68,6 +75,7 @@ bool ss_run_begin(const char *folder, const char *file, const char *stem,
                   const char *rom_dir, const char *exts)
 {
 	memset(&g_run, 0, sizeof g_run);
+	g_toomany = false;
 	if (!ss_signed_in() || !folder || !file || !stem) return false;
 	if (ss_system_id(folder) == 0) return false;
 
@@ -102,6 +110,9 @@ static bool read_reply(void)
 		if (fread(body, 1, (size_t)n, f) == (size_t)n) {
 			body[n] = '\0';
 			ok = ss_parse(body, (size_t)n, g_run.file, &g_run.got);
+			/* Even a reply about the wrong game states the account's day. */
+			if (g_run.got.max_today > 0)
+				g_left = g_run.got.max_today - g_run.got.used_today;
 		}
 		free(body);
 	}
@@ -123,6 +134,7 @@ int ss_run_step(void)
 	case R_RETRY:
 		poll = net_async_poll();
 		if (poll == 0) return 1;                     /* still in flight */
+		if (poll < 0) g_toomany = (net_async_http() == 429);
 		if (poll < 0 || !read_reply() || !g_run.got.found) {
 			g_run.phase = R_FAIL;
 			return -1;
