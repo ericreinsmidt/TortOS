@@ -6336,11 +6336,10 @@ static bool cheevo_detail_screen(app *a, SDL_Texture *bg, bool over_shelf,
  * Over the shelf rather than a paused frame: this is reached from the shelf,
  * where the info screen already dims the same way. */
 #define SYN_WRAP_LINES 80
-/* Room for the text twice over, plus the four blanks and the rule between the
- * copies. The rows are the wrapped lines POINTED AT twice, not wrapped twice,
+/* Room for the text twice over, plus the rule between the copies. The rows are the wrapped lines POINTED AT twice, not wrapped twice,
  * so the line buffer stays SYN_WRAP_LINES - this is the only array that has to
  * grow, and 165 menu_rows is four kilobytes. */
-#define SYN_ROWS (SYN_WRAP_LINES * 2 + 5)
+#define SYN_ROWS (SYN_WRAP_LINES * 2 + 1)
 
 /* The rows a synopsis is drawn as, and where they start repeating.
  *
@@ -6358,8 +6357,12 @@ static int syn_layout(const char *text, int fixed,
 	for (i = 0; i < n; i++)
 		rows[i] = (menu_row){ lines[i], MENU_BODY_MARK, true };
 
-	/* A SYNOPSIS TOO TALL FOR THE PANEL IS LAID OUT TWICE, with air, a rule and
-	 * air between the copies, and menu_draw is told where the repeat starts.
+	/* A SYNOPSIS TOO TALL FOR THE PANEL IS LAID OUT TWICE, with a rule between
+	 * the copies, and menu_draw is told where the repeat starts.
+	 *
+	 * The rule carries its own air: it is the bar the heading uses, with the
+	 * heading's gap under it. Two blank lines either side on top of that left
+	 * a hole in the middle of the card.
 	 *
 	 * That is what turns the scroll from a ping-pong into a scroll-through.
 	 * Running backwards is fine for a row of text too wide for its column,
@@ -6374,11 +6377,7 @@ static int syn_layout(const char *text, int fixed,
 	if (n <= menu_notes_fit()) return n;
 
 	k = n;
-	rows[k++] = MENU_BODY("");
-	rows[k++] = MENU_BODY("");
 	rows[k++] = MENU_HR;
-	rows[k++] = MENU_BODY("");
-	rows[k++] = MENU_BODY("");
 	*loop_at = k;
 	for (i = 0; i < n && k < SYN_ROWS; i++)
 		rows[k++] = (menu_row){ lines[i], MENU_BODY_MARK, true };
