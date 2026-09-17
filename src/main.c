@@ -2373,7 +2373,28 @@ static int shot_phase = -1;        /* --phase, for the shot harness only */
  * prevent, a step smaller: each would see the other's key every frame and
  * neither would ever get past the opening hold. */
 #define MQ_NOTES 2
-enum { MQ_SHELF, MQ_MENU, MQ_VALUE, MQ_NOTE0, MQ_NOTE1, MQ_VSCROLL,
+/* MQ_FIXED is for rows that move because nothing can ever select them, as
+ * distinct from the ones that move because something just did.
+ *
+ * The other slots are keyed on the cursor, which is right when the row that
+ * scrolls is the row you landed on: a new selection is a new subject and its
+ * text should start from the beginning. It is wrong for a fact. The game
+ * screen's Genre row is unselectable and scrolls whenever it is long, and
+ * stepping between Synopsis and Cheevos was restarting it - a cursor move that
+ * has nothing to do with the row it interrupted. Reported 2026-09-17, the day
+ * Genre became the first long permanently-unselectable row on a screen that
+ * also has a cursor.
+ *
+ * Keyed on the SCREEN instead - its heading and how many rows it has - which
+ * is the same value for every such row in a frame, so they still share one
+ * clock and still move together rather than resetting each other.
+ *
+ * It replaced a slot of its own for VALUES, which was the wrong axis to split
+ * on: a label and a value never move in the same row - the wider of the two
+ * takes the room and the other is laid out around it - so what needed separate
+ * clocks was never the two columns. It was the selected row against the rest,
+ * and only one row is ever selected. */
+enum { MQ_SHELF, MQ_MENU, MQ_FIXED, MQ_NOTE0, MQ_NOTE1, MQ_VSCROLL,
        MQ_HEAD, MQ_SLOTS };
 
 static int      mq_last_a[MQ_SLOTS], mq_last_b[MQ_SLOTS];
@@ -2412,6 +2433,18 @@ static unsigned mq_phase(int who, int key_a, int key_b)
 		since[who]  = now;
 	}
 	return now - since[who];
+}
+
+/* The clock a moving ROW runs on: the cursor's when the cursor put it in
+ * motion, the screen's when nothing ever will. See MQ_FIXED.
+ *
+ * The heading is measured rather than compared, because mq_phase's keys are
+ * two ints - and a length is enough to notice a different game, which is what
+ * a new screen means here. */
+static unsigned mq_row_phase(bool selected, const char *heading, int n, int sel)
+{
+	if (selected) return mq_phase(MQ_MENU, sel, 0);
+	return mq_phase(MQ_FIXED, heading ? (int)strlen(heading) : 0, n);
 }
 
 static unsigned title_phase(app *a)
@@ -3566,17 +3599,18 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 				if (room <= 0) {
 					/* No room for it at all; the label alone is the row. */
 				} else if (moves) {
-					/* Keyed on the selection alone, as a long label is below.
-					 * It was keyed on the row as well, and every row with a
-					 * long value shares this one slot - so a screen of facts
-					 * with two of them reset the clock twice a frame and
-					 * neither ever moved. Over The Hare showed it 2026-09-14:
-					 * "Transferred" and "Now" both too long, and two captures
-					 * a second apart identical. Sharing the clock, they all
-					 * move. */
+					/* One slot for every long value on the screen, never one
+					 * per row: keyed per row, a screen of facts with two of
+					 * them reset the clock twice a frame and neither ever
+					 * moved. Over The Hare showed it 2026-09-14 - "Transferred"
+					 * and "Now" both too long, and two captures a second apart
+					 * identical. Sharing the clock, they all move.
+					 *
+					 * WHICH clock depends on why this row moves, not on what
+					 * is in it. See MQ_FIXED. */
 					ui_text_marquee(a->r, fm, rows[i].value,
 					                content_x + content_w - room, ty, room,
-					                mq_phase(MQ_VALUE, sel, 0), vc);
+					                mq_row_phase(i == sel, heading, n, sel), vc);
 				} else {
 					ui_fit_text(fm, rows[i].value, val, sizeof val, room);
 					ui_text(a->r, fm, val, content_x + content_w, ty, 1, vc);
@@ -3594,7 +3628,8 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 					ui_text(a->r, fm, lbl, content_x, ty, -1, lc);
 				} else if (moves) {
 					ui_text_marquee(a->r, fm, rows[i].label, content_x, ty,
-					                room, mq_phase(MQ_MENU, sel, 0), lc);
+					                room,
+					                mq_row_phase(i == sel, heading, n, sel), lc);
 				} else {
 					ui_fit_text(fm, rows[i].label, lbl, sizeof lbl, room);
 					ui_text(a->r, fm, lbl, content_x, ty, -1, lc);
