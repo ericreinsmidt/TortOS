@@ -151,6 +151,19 @@ void ui_fit_text(TTF_Font *f, const char *src, char *dst, size_t dstn,
 void ui_text_marquee(SDL_Renderer *r, TTF_Font *f, const char *s,
                      int x, int y, int w, unsigned phase, SDL_Color col);
 
+/* The same travel, but one way and round again: hold at the top, scroll at the
+ * same pace to `cycle`, then start over from nothing.
+ *
+ * For a body that REPEATS - the caller lays the content out twice with a rule
+ * between the copies, so the wrap at `cycle` lands on a picture identical to
+ * the one at zero and cannot be seen. Ping-pong is right for a row of text too
+ * wide for its column, where running backwards is obviously a rewind; it is
+ * wrong for fifteen lines of prose, where it means reading the end backwards
+ * to get to the beginning.
+ *
+ * The hold happens once a lap, at the top, which is where a reader wants it. */
+int ui_scrollthrough(int cycle, unsigned phase);
+
 /* The panel border, in pixels. In the header because layout outside ui.c has
  * to know it: centering anything inside a panel means centering against the
  * INNER edge, since the border is a visible frame and the eye reads the space

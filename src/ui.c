@@ -227,6 +227,19 @@ int ui_pingpong(int over, unsigned phase)
 	                    * (unsigned)over / (unsigned)travel);
 }
 
+int ui_scrollthrough(int cycle, unsigned phase)
+{
+	int travel = cycle * 1000 / MQ_SPEED_PXPS;
+	unsigned lap, p;
+
+	if (cycle <= 0) return 0;
+	if (travel < 1) travel = 1;
+	lap = (unsigned)(MQ_HOLD_MS + travel);
+	p   = phase % lap;
+	if (p < MQ_HOLD_MS) return 0;
+	return (int)((p - MQ_HOLD_MS) * (unsigned)cycle / (unsigned)travel);
+}
+
 /* The same cycle as ui_pingpong, phase for phase - it has to be, or a caller
  * would wake early, costing a frame, or late, holding back a scroll that should
  * already have started. */

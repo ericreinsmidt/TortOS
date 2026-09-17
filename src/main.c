@@ -2376,11 +2376,31 @@ static int shot_phase = -1;        /* --phase, for the shot harness only */
 enum { MQ_SHELF, MQ_MENU, MQ_VALUE, MQ_NOTE0, MQ_NOTE1, MQ_VSCROLL,
        MQ_HEAD, MQ_SLOTS };
 
+static int      mq_last_a[MQ_SLOTS], mq_last_b[MQ_SLOTS];
+static unsigned mq_since[MQ_SLOTS];
+static bool     mq_primed[MQ_SLOTS];
+
+/* Start this slot's clock over on the next frame.
+ *
+ * The keys are what a slot normally restarts on - a new game, a new heading -
+ * and they are the right rule for a marquee that lives on a screen you are
+ * already looking at. They are the wrong rule for a screen you LEAVE and come
+ * back to: the keys are identical, so the clock is not reset, and a synopsis
+ * reopened resumed halfway down where it had been left. Reported 2026-09-17,
+ * and the only way to read a long one from the top was to wait out the rest.
+ *
+ * So a screen that has just opened says so, rather than the clock trying to
+ * infer it from a key that did not change. */
+static void mq_reset(int who)
+{
+	if (who >= 0 && who < MQ_SLOTS) mq_primed[who] = false;
+}
+
 static unsigned mq_phase(int who, int key_a, int key_b)
 {
-	static int      last_a[MQ_SLOTS], last_b[MQ_SLOTS];
-	static unsigned since[MQ_SLOTS];
-	static bool     primed[MQ_SLOTS];
+	int      *last_a = mq_last_a, *last_b = mq_last_b;
+	unsigned *since  = mq_since;
+	bool     *primed = mq_primed;
 	unsigned now = plat_now_ms();
 
 	if (shot_phase >= 0) return (unsigned)shot_phase;
@@ -2854,6 +2874,25 @@ static int menu_list_fit(int fixed, int rules, int notes)
 	return avail < row_h ? 1 : avail / row_h;
 }
 
+/* How many BODY lines fit in a panel that is nothing but body - a synopsis
+ * card. The same arithmetic menu_list_fit does, asked the other way round: that
+ * one reserves notes and answers in rows, and a page with no rows on it at all
+ * would get the wrong answer from it.
+ *
+ * Here rather than in the caller because the two must agree about the heading,
+ * the padding and the note height, and a screen that measured itself would
+ * drift from the panel that draws it the first time either is retuned. */
+static int menu_notes_fit(void)
+{
+	int pad = menu_pad();
+	int head_h = ui_font_line(UI_F_LABEL) + pad;
+	int note_h = ui_font_height(UI_F_MENU) + pad / 3;
+	int avail = TORTOS_SCREEN_H - MENU_MARGIN * 2
+	          - (head_h + pad / 2) - pad;
+
+	return note_h > 0 && avail > note_h ? avail / note_h : 1;
+}
+
 /* `fixed_w` is the content width to use, or 0 to size to these rows. The shelf
  * menus pass a width measured across both of them so the panel never resizes;
  * the in-game menu has no values to cycle and sizes to itself. */
@@ -2870,9 +2909,17 @@ static int menu_list_fit(int fixed, int rules, int notes)
  * than selectability. The achievement list is the one: there `live` means
  * EARNED, and the cursor walks earned and unearned alike. Everywhere else the
  * two meanings coincide and this is false. */
+/* `loop_at` is where the rows start repeating: rows[loop_at] is a second copy
+ * of rows[0], laid out by the caller with a rule between the copies, so a body
+ * too tall for its panel can scroll THROUGH and come round rather than running
+ * backwards. 0 for every screen that does not do that, which is all but one.
+ *
+ * The caller passes it rather than this inferring it, because only the caller
+ * knows the content is a repeat - and getting it wrong does not look like a
+ * bug, it looks like a scroll that jumps. */
 static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
                          int n, int sel, int fixed_w, unsigned accent,
-                         const unsigned *vcolors, bool visits_all)
+                         const unsigned *vcolors, bool visits_all, int loop_at)
 {
 	TTF_Font *fm = ui_font(UI_F_MENU), *fh = ui_font(UI_F_LABEL);
 	int row_h = menu_row_h();
@@ -3026,9 +3073,15 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 			 * split here too and nothing new has to be declared. */
 			int body = 0, j;
 
+			/* MENU_RULE only: a MENU_HR is punctuation inside the body,
+			 * and treating it as the footer split would pin half a synopsis
+			 * to the bottom of the panel. */
 			scroll_split = n;
 			for (j = 0; j < n; j++)
-				if (!rows[j].label) { scroll_split = j; break; }
+				if (!rows[j].label && !ROW_IS_HR(rows[j])) {
+					scroll_split = j;
+					break;
+				}
 			for (j = scroll_split; j < n; j++) scroll_foot += ROW_H(rows[j]);
 			for (j = 0; j < scroll_split; j++) body += ROW_H(rows[j]);
 
@@ -3036,8 +3089,21 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 			if (scroll_h < row_h) scroll_h = row_h;
 			scroll_span = body - scroll_h;
 			if (scroll_span < 0) scroll_span = 0;
-			scroll = ui_pingpong(scroll_span,
-			                     mq_phase(MQ_VSCROLL, n, rows_h));
+			if (loop_at > 0 && loop_at < n) {
+				/* One lap is everything before the repeat, so the wrap lands
+				 * on the same picture the lap started from. What keeps the
+				 * bottom of the viewport covered through a whole lap is that
+				 * the second copy is as tall as the first, which is only
+				 * worth scrolling at all when it is taller than the panel. */
+				int lap = 0;
+
+				for (j = 0; j < loop_at; j++) lap += ROW_H(rows[j]);
+				scroll = ui_scrollthrough(lap,
+				                          mq_phase(MQ_VSCROLL, n, rows_h));
+			} else {
+				scroll = ui_pingpong(scroll_span,
+				                     mq_phase(MQ_VSCROLL, n, rows_h));
+			}
 		}
 	}
 
@@ -3605,7 +3671,7 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 static void menu_draw(app *a, const char *heading, const menu_row *rows, int n,
                       int sel, int fixed_w, unsigned accent)
 {
-	menu_draw_ex(a, heading, rows, n, sel, fixed_w, accent, NULL, false);
+	menu_draw_ex(a, heading, rows, n, sel, fixed_w, accent, NULL, false, 0);
 }
 
 /* The two menus behind MENU, their row indices and their buffers: src/sys_menu.h */
@@ -4550,11 +4616,21 @@ static void gi_gather(app *a, int owner, const game_entry *g, game_info *gi)
 			gi->scraped = true;
 			gi->has_synopsis = m.synopsis[0] != '\0';
 			snprintf(gi->year, sizeof gi->year, "%.4s", m.year);
-			/* Comma separated as the scrape stored it, and read as it is:
-			 * the source already joins its English names, and re-splitting
-			 * them here to rejoin them differently would be this screen
-			 * having an opinion about somebody else's taxonomy. */
-			snprintf(gi->genre, sizeof gi->genre, "%s", m.genres);
+			/* The scrape's own English names, in its own order - but
+			 * joined with a comma AND A SPACE, which it does not do. That is
+			 * typesetting rather than an opinion about somebody else's
+			 * taxonomy: "Platform,Shoot'em Up" reads as one word with a
+			 * stumble in it. One in three games has a second genre. */
+			{
+				const char *g = m.genres;
+				size_t k = 0;
+
+				while (*g && k + 2 < sizeof gi->genre) {
+					gi->genre[k++] = *g;
+					if (*g++ == ',' && *g != ' ') gi->genre[k++] = ' ';
+				}
+				gi->genre[k] = '\0';
+			}
 		}
 	}
 }
@@ -6240,7 +6316,7 @@ static bool cheevo_detail_screen(app *a, SDL_Texture *bg, bool over_shelf,
 		}
 
 		chv_backdrop(a, bg, over_shelf);
-		menu_draw_ex(a, c->title, rows, n, -1, fixed, a->tint, vcols, false);
+		menu_draw_ex(a, c->title, rows, n, -1, fixed, a->tint, vcols, false, 0);
 		SDL_RenderPresent(a->r);
 		SDL_Delay(8);
 	}
@@ -6260,6 +6336,54 @@ static bool cheevo_detail_screen(app *a, SDL_Texture *bg, bool over_shelf,
  * Over the shelf rather than a paused frame: this is reached from the shelf,
  * where the info screen already dims the same way. */
 #define SYN_WRAP_LINES 80
+/* Room for the text twice over, plus the four blanks and the rule between the
+ * copies. The rows are the wrapped lines POINTED AT twice, not wrapped twice,
+ * so the line buffer stays SYN_WRAP_LINES - this is the only array that has to
+ * grow, and 165 menu_rows is four kilobytes. */
+#define SYN_ROWS (SYN_WRAP_LINES * 2 + 5)
+
+/* The rows a synopsis is drawn as, and where they start repeating.
+ *
+ * Shared by the screen and by --synopsis, which used to build its own: the
+ * harness then drew a card the device does not draw, which is the one thing a
+ * harness must never do. Returns the row count; `rows` must hold SYN_ROWS. */
+static int syn_layout(const char *text, int fixed,
+                      char (*lines)[CHV_WRAP_COLS], menu_row *rows,
+                      int *loop_at)
+{
+	int n, i, k;
+
+	*loop_at = 0;
+	n = wrap_text(ui_font(UI_F_MENU), text, fixed, lines, SYN_WRAP_LINES);
+	for (i = 0; i < n; i++)
+		rows[i] = (menu_row){ lines[i], MENU_BODY_MARK, true };
+
+	/* A SYNOPSIS TOO TALL FOR THE PANEL IS LAID OUT TWICE, with air, a rule and
+	 * air between the copies, and menu_draw is told where the repeat starts.
+	 *
+	 * That is what turns the scroll from a ping-pong into a scroll-through.
+	 * Running backwards is fine for a row of text too wide for its column,
+	 * where the rewind is obviously a rewind; over fifteen lines of prose it
+	 * means reading the end in reverse to get back to the beginning. Coming
+	 * round instead needs somewhere to come round FROM, which is the rule: it
+	 * says the text ended and is starting again, rather than leaving a reader
+	 * to work out that the sentence they are on is one they have read.
+	 *
+	 * Only when it does not fit. A short synopsis sits still, and doubling it
+	 * would make a page that fits scroll for no reason. */
+	if (n <= menu_notes_fit()) return n;
+
+	k = n;
+	rows[k++] = MENU_BODY("");
+	rows[k++] = MENU_BODY("");
+	rows[k++] = MENU_HR;
+	rows[k++] = MENU_BODY("");
+	rows[k++] = MENU_BODY("");
+	*loop_at = k;
+	for (i = 0; i < n && k < SYN_ROWS; i++)
+		rows[k++] = (menu_row){ lines[i], MENU_BODY_MARK, true };
+	return k;
+}
 
 static void synopsis_screen(app *a, const char *title, const char *text,
                             unsigned accent)
@@ -6267,17 +6391,20 @@ static void synopsis_screen(app *a, const char *title, const char *text,
 	char (*lines)[CHV_WRAP_COLS];
 	menu_row *rows;
 	int fixed = menu_std_width(a);
-	int n, i, done = 0;
+	int n, done = 0, loop_at = 0;
 
 	if (!text || !*text) return;
 	lines = calloc(SYN_WRAP_LINES, sizeof *lines);
-	rows  = calloc(SYN_WRAP_LINES, sizeof *rows);
+	rows  = calloc(SYN_ROWS, sizeof *rows);
 	if (!lines || !rows) { free(lines); free(rows); return; }
 
-	n = wrap_text(ui_font(UI_F_MENU), text, fixed, lines, SYN_WRAP_LINES);
-	for (i = 0; i < n; i++)
-		rows[i] = (menu_row){ lines[i], MENU_BODY_MARK, true };
+	n = syn_layout(text, fixed, lines, rows, &loop_at);
 
+	/* Opened, so its scroll starts at the top. Without this, closing a long
+	 * synopsis and opening it again resumed halfway down: the clock's keys -
+	 * the row count and the panel height - are identical on the way back in,
+	 * so nothing told it a reader had arrived. */
+	mq_reset(MQ_VSCROLL);
 	plat_input_flush();
 	memset(&a->in, 0, sizeof a->in);
 
@@ -6294,7 +6421,7 @@ static void synopsis_screen(app *a, const char *title, const char *text,
 		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
 		SDL_RenderFillRect(a->r, NULL);
-		menu_draw(a, title, rows, n, -1, fixed, accent);
+		menu_draw_ex(a, title, rows, n, -1, fixed, accent, NULL, false, loop_at);
 		SDL_RenderPresent(a->r);
 		SDL_Delay(8);
 	}
@@ -6382,7 +6509,7 @@ static void cheevos_screen(app *a, SDL_Texture *bg, bool over_shelf)
 		/* visits_all: every achievement can be opened, earned or not, so
 		 * `live` here is about color and not about reach. */
 		menu_draw_ex(a, heading, rows, n, sel, menu_std_width(a), a->tint,
-		             vcols, true);
+		             vcols, true, 0);
 		SDL_RenderPresent(a->r);
 		SDL_Delay(8);
 	}
@@ -7775,18 +7902,16 @@ static void take_shot(app *a)
 		    db_game_get(db_lib(), s->folder, v->list.items[v->cursor].file, &m) &&
 		    m.synopsis[0]) {
 			char lines[SYN_WRAP_LINES][CHV_WRAP_COLS];
-			menu_row rows[SYN_WRAP_LINES];
+			menu_row rows[SYN_ROWS];
 			int fixed = menu_std_width(a);
-			int nl = wrap_text(ui_font(UI_F_MENU), m.synopsis, fixed, lines,
-			                   SYN_WRAP_LINES), li;
+			int loop_at = 0;
+			int nl = syn_layout(m.synopsis, fixed, lines, rows, &loop_at);
 
-			for (li = 0; li < nl; li++)
-				rows[li] = (menu_row){ lines[li], MENU_BODY_MARK, true };
 			SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 			SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
 			SDL_RenderFillRect(a->r, NULL);
-			menu_draw(a, v->list.items[v->cursor].title, rows, nl, -1, fixed,
-			          s->accent);
+			menu_draw_ex(a, v->list.items[v->cursor].title, rows, nl, -1, fixed,
+			             s->accent, NULL, false, loop_at);
 		}
 	}
 	if (shot_cheevos) {
@@ -7822,7 +7947,7 @@ static void take_shot(app *a)
 		 * differently from the screen is a picture of something that does not
 		 * exist. It used to call menu_draw with a width of 0. */
 		menu_draw_ex(a, head, rows, cn, shot_cheevos_sel, menu_std_width(a),
-		             a->tint, vcols, true);
+		             a->tint, vcols, true, 0);
 	}
 	if (shot_notice) {
 		char dt[512];

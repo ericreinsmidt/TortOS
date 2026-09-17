@@ -47,6 +47,18 @@ typedef struct {
 #define ROW_IS_NOTE(r) ((r).value == MENU_NOTE_MARK || \
                         (r).value == MENU_BODY_MARK)
 
+/* A rule INSIDE a body, rather than the one that divides a list from its
+ * footer. Drawn identically - same bar, same width - and it exists as its own
+ * kind for one reason: MENU_RULE is what tells a scrolling card where its
+ * pinned footer starts, so a rule used as punctuation in the middle of some
+ * prose would pin everything after it.
+ *
+ * What it punctuates is the seam of a synopsis that scrolls through and
+ * repeats: text, air, rule, air, and the text again. */
+#define MENU_HR_MARK ((const char *)3)
+#define MENU_HR      ((menu_row){ NULL, MENU_HR_MARK, false })
+#define ROW_IS_HR(r) ((r).label == NULL && (r).value == MENU_HR_MARK)
+
 /* Move to the next live row in `dir` (+1 or -1), or stay put if none is.
  *
  * Bounded, deliberately. A menu can legitimately be all dead rows - "No
