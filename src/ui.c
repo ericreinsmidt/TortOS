@@ -24,8 +24,10 @@
  * fifteen percent, and one who wants more games on screen is not served by
  * fifteen percent either. It changed how the launcher looked without changing
  * what anyone could do, while making every panel's fit a function of a
- * variable. See BACKLOG 34 for what a real large-text mode would need, which is
- * panels that flow from the type rather than from constants.
+ * variable. The range once reached 1.50 and was cut to 1.15 because the
+ * keyboard panel did not survive it: the panels size themselves from constants,
+ * so a scale big enough to matter breaks their layout rather than stretching
+ * it. That is what a large-text mode would have to fix first.
  *
  * Written as the same product it used to be evaluated as, so every font comes
  * out at exactly the point size 115% gave and nothing moves by a rounding
