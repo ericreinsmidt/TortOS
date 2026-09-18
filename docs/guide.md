@@ -116,6 +116,7 @@ matters to you - a card is the one part of this that gets reformatted.
 | **MENU** (inside a system) | that system's menu, below |
 | **MENU** (in `Cubic`) | always the TortOS menu; B is the system's |
 | **MENU** (in game) | the in-game menu: Continue, Save, Load, Display, Cheevos, Reset, Quit |
+| **SELECT** | Muse, the music player, from anywhere but a running game - the in-game menu included. Again to close it |
 | **POWER** | powers off. In a game, the game is saved first |
 
 MENU means three different menus depending on where you are, and each one is
@@ -162,11 +163,14 @@ The system menu opens on a shelf of games and applies to that system alone:
 |---|---|
 | **Games** | how many the shelf found |
 | **Core** | which libretro core runs them |
-| **Show** | stated, not yet a setting - `All games` |
 | **Sort By** | left/right; `Name`, `Play Time`, `Last Played` or `Recently Added` |
 | **Display Mode** | left/right cycles it; saved the moment it changes |
 | **Box Art** | fetch what this system is missing, and nothing else |
 | **Rescan Folder** | read the card again, for ROMs that arrived since boot |
+
+On Favorites the menu is only Games and Sort By. The rest is about one
+console, and a game there takes its console's Display Mode wherever it was
+started from.
 
 Display Mode is per-system, because a Game Boy and a Genesis do not want the
 same answer. Set here it applies from the next launch; the same row in the
@@ -275,6 +279,47 @@ If a headset is switched off or walks out of range mid-game, sound falls back
 to the speaker within a second or two and the game keeps running. It never ends
 a game to report an audio problem. That fallback is the emulator's own - it
 does not wait for the launcher to notice the headset is gone.
+
+## Muse
+
+Muse plays the music on the card. It has a card of its own at the end of the
+shelf, and **SELECT** opens it from anywhere that is not a running game: the
+shelf, every menu, and the in-game menu, where the game waits paused
+underneath. SELECT again closes it, and the music keeps playing. The exceptions
+are Over The Hare and a Box Art fetch, which only keep working while they are
+on screen.
+
+Albums go in `Music/`, a folder per artist and one inside it per album:
+`Music/Radiohead/The Bends/01 Planet Telex.mp3`. A folder of tracks straight
+under `Music/` - a podcast, a mix - is an album of its own. MP3, M4A, M4B, AAC,
+FLAC, Ogg, Opus and WAV play. Tracks play in file-name order, and the number at
+the front of a file name is left off the name shown.
+
+With something playing or paused, SELECT goes straight to **Now Playing**: the
+cover, the track, where in it you are, and what comes next.
+
+| | |
+|---|---|
+| **A** | pause, or play |
+| **L1 / R1** | previous / next track. More than three seconds in, L1 starts the track over |
+| **Left / Right** | back or ahead ten seconds |
+| **B** | the album's tracks |
+| **SELECT** | close Muse |
+
+**While music plays, a running game is silent.** Only the game's own sound:
+the music, the volume keys and the mute switch all carry on as before. Pause
+the music, or let the album end, and the game is heard again within a tenth of
+a second. SELECT in the in-game menu is how to switch between them mid-game.
+
+The list under it is artists, then albums, then tracks, with **Now Playing** as
+the first row while something plays. A on a track plays the album from there.
+X pauses, and the shoulders and the d-pad's sides do what they do on Now
+Playing. Auto Off waits while music plays, the way it does on the charger.
+
+Covers come from the music. The first time an album is shown, Muse takes the
+picture its files carry and keeps it beside the album, in
+`Music/<artist>/.media/`, the way box art sits in `Roms/<system>/.media`. An
+album whose files carry none gets a generated card.
 
 ## The shelf
 

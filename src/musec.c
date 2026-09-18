@@ -34,6 +34,7 @@ static int     g_cov_head, g_cov_n;
 static char  **g_q;                 /* the queue, relative paths, ours */
 static int     g_qn, g_qi;
 static int     g_pending;           /* a PLAY waiting for the connection */
+static bool    g_advanced;          /* the next track is asked for; see event() */
 static int     g_skips;             /* consecutive tracks that would not open */
 static char    g_artist[128], g_album[128];
 static mu_now  g_now;
@@ -128,7 +129,7 @@ static void play_current(void)
 
 static void advance(void)
 {
-	if (g_qi + 1 < g_qn) { g_qi++; play_current(); }
+	if (g_qi + 1 < g_qn) { g_qi++; play_current(); g_advanced = true; }
 	else g_now.state = MU_STOPPED;
 }
 
@@ -160,6 +161,13 @@ static void event(const char *line)
 		if (g_pending) play_current();
 	} else if (!strncmp(line, "STATE", 5)) {
 		field(line, "state", v, sizeof v);
+		/* The track that ended says "stopped" AFTER its END, and by then the
+		 * next one has already been asked for. Taken at its word, the queue
+		 * reads as stopped for the moment between two tracks - and a game
+		 * follows musec_playing to decide whether it is heard, so its sound
+		 * came up for a tenth of a second at every track change. */
+		if (g_advanced && !strcmp(v, "stopped")) { g_advanced = false; return; }
+		g_advanced = false;
 		g_now.state = !strcmp(v, "playing") ? MU_PLAYING
 		            : !strcmp(v, "paused")  ? MU_PAUSED : MU_STOPPED;
 		if (g_now.state == MU_PLAYING) g_skips = 0;

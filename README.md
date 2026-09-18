@@ -53,6 +53,7 @@
 - **Autosave and resume,** plus six save slots for when you want a checkpoint.
 - **Turbo buttons:** X and Y press A and B for you, on the nine consoles whose controllers had two face buttons.
 - **Bluetooth headphones,** paired on the device. Plug in wired ones and they take over.
+- **Muse, a music player:** your albums from the card, with their covers. SELECT opens it from anywhere, even the in-game menu, and the music keeps playing when you close it. While it plays, the game is silent.
 - **Play Time:** how long you've played each game or console, today, this week, this month, this year or ever.
 - **Favorites and sorting:** Y favorites a game, and each console sorts by name, play time, last played or recently added.
 
@@ -140,11 +141,14 @@ None of them is a driver, and none replaces anything the system needs to run.
 | **Y** | Favorite |
 | **L1 / R1** | Jump a screenful |
 | **MENU** | Settings for the Brick, or for the console you're in |
+| **SELECT** | Muse, the music player. Press it again to close |
 | **POWER** | Turn off |
 
-**In a game,** MENU opens Continue, Save, Load, Display, Cheevos, Reset and Quit. X and Y are turbo A and B, except on Genesis and SNES, where they're the controller's own buttons. POWER saves the game and turns the Brick off.
+**In a game,** MENU opens Continue, Save, Load, Display, Cheevos, Reset and Quit, and SELECT in that menu opens Muse. While music plays the game is silent, and pausing the music brings its sound back. X and Y are turbo A and B, except on Genesis and SNES, where they're the controller's own buttons. POWER saves the game and turns the Brick off.
 
 **On the cube,** up and down change console, left and right move through its games, and B opens that console's menu.
+
+**In Muse,** A plays a track or pauses it, L1 and R1 change track, left and right skip ten seconds, and B goes back.
 
 The volume buttons and F1 / F2 (brightness) work everywhere.
 
@@ -192,6 +196,13 @@ Sign in to your RetroAchievements account under **MENU > Cheevos**. The first ti
 <summary><b>Can I use Bluetooth headphones?</b></summary>
 
 Yes. Put them in pairing mode, open **MENU > Bluetooth**, press **Y** to search and **A** to pair. They reconnect by themselves from then on. Set the volume on the headphones: the Brick's volume buttons don't reach them. Wired headphones always win when they're plugged in.
+
+</details>
+
+<details>
+<summary><b>How do I add music?</b></summary>
+
+Put it in `Music/` on the card, a folder per artist and a folder inside that per album: `Music/Radiohead/The Bends/01 Planet Telex.mp3`. MP3, M4A, M4B, AAC, FLAC, Ogg, Opus and WAV all play. Muse appears on the shelf once there's music, and each album's cover comes from its own files.
 
 </details>
 

@@ -1,11 +1,16 @@
 /* SPDX-License-Identifier: MIT */
 /* Talk to Muse by hand, over ssh, with no screen in front of it.
  *
- *   musectl [-t SECONDS] 'PLAY<TAB>path=/mnt/SDCARD/Music/x.mp3' ...
+ *   musectl [-s SOCKET] [-t SECONDS] 'PLAY<TAB>path=/mnt/SDCARD/Music/x.mp3' ...
  *
  * Each argument is sent as one line - a literal "\t" in an argument is turned
  * into a tab, since typing a real one through ssh and a shell is miserable -
  * and then whatever Muse says is printed for SECONDS (default 2).
+ *
+ * -s talks to another line socket instead: Diatom's, /tmp/diatom.sock, speaks
+ * the same shape. Mind that Diatom serves ONE client and the newest wins (its
+ * ADR-0033), so this takes the connection from the launcher, which gets it
+ * back the next time it needs the emulator.
  *
  * An instrument, like keyinject: the device's BusyBox nc cannot open a Unix
  * socket, and this is the only way to reach the daemon before the launcher
@@ -22,16 +27,21 @@
 int main(int argc, char **argv)
 {
 	struct sockaddr_un sa = { .sun_family = AF_UNIX };
+	const char *path = "/tmp/muse.sock";
 	double secs = 2.0;
 	int fd, i = 1;
 	time_t end;
 	char buf[4096];
 
-	if (argc > 2 && !strcmp(argv[1], "-t")) { secs = atof(argv[2]); i = 3; }
-	snprintf(sa.sun_path, sizeof sa.sun_path, "/tmp/muse.sock");
+	for (;;) {
+		if (argc > i + 1 && !strcmp(argv[i], "-s")) { path = argv[i + 1]; i += 2; }
+		else if (argc > i + 1 && !strcmp(argv[i], "-t")) { secs = atof(argv[i + 1]); i += 2; }
+		else break;
+	}
+	snprintf(sa.sun_path, sizeof sa.sun_path, "%s", path);
 	fd = socket(AF_UNIX, SOCK_STREAM, 0);
 	if (fd < 0 || connect(fd, (struct sockaddr *)&sa, sizeof sa) < 0) {
-		perror("muse is not listening on /tmp/muse.sock");
+		fprintf(stderr, "nothing is listening on %s\n", path);
 		return 1;
 	}
 	for (; i < argc; i++) {

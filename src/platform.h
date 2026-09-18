@@ -121,6 +121,10 @@ void plat_resident_on_unlock(void (*fn)(int id));
 void plat_resident_on_tick(void (*fn)(void));
 /* Diatom only: one protocol line (RESUME, STOP, SAVE\tpath=...), newline added. */
 bool plat_resident_line(const char *fmt, ...);
+/* Whether the game should be heard - Diatom's QUIET, its ADR-0032. Sent when it
+ * changes, and before every RUN whether it changed or not, so it is safe to
+ * call as often as the answer might have moved. */
+void plat_resident_quiet(bool on);
 /* Where Diatom says its sound actually is (its ADR-0029), which may not be
  * where it was asked to put it - a sink that will not open, or one that died,
  * makes the port fall back and report the fallback. False until it has said. */

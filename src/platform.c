@@ -17,6 +17,7 @@
 #include <string.h>
 #include <poll.h>
 #include <stdarg.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -592,7 +593,29 @@ bool plat_spawn_detached(char *const argv[], const char *const envkv[],
                          const char *workdir)
 {
 	char **env = child_environ(envkv);
+	struct rlimit rl;
+	int top = 1024, fd;
 	pid_t pid;
+
+	/* EVERYTHING ABOVE STDERR IS CLOSED IN THE CHILD, before it becomes the
+	 * program asked for.
+	 *
+	 * Fork hands a child every descriptor this process has open: the resident
+	 * emulator's socket, Muse's, the display, the GPU, four input devices,
+	 * the font. A short-lived child drops them when it exits. A DAEMON keeps
+	 * them for as long as it lives, and Muse is meant to outlive the launcher.
+	 * That froze the Brick on 2026-09-18: Muse held a dead launcher's end of
+	 * Diatom's socket, so Diatom never saw it close, and the restarted
+	 * launcher blocked in connect before its first frame. Diatom's half is
+	 * its ADR-0033; this is ours.
+	 *
+	 * By number up to the limit, not by listing /proc/self/fd: listing
+	 * allocates, and after fork in a threaded process only async-signal-safe
+	 * calls are safe - close is one. The limit is read here, before fork, for
+	 * the same reason. 1024 on the Brick, with about thirty open. stdout and
+	 * stderr stay: they are the log, and a daemon's lines belong in it. */
+	if (getrlimit(RLIMIT_NOFILE, &rl) == 0 && rl.rlim_cur != RLIM_INFINITY)
+		top = rl.rlim_cur < 65536 ? (int)rl.rlim_cur : 65536;
 
 	if (!env) return false;
 	pid = fork();
@@ -600,6 +623,7 @@ bool plat_spawn_detached(char *const argv[], const char *const envkv[],
 	if (pid == 0) {
 		if (fork() == 0) {
 			setsid();
+			for (fd = 3; fd < top; fd++) close(fd);
 			if (workdir) { if (chdir(workdir) != 0) { /* still try */ } }
 			execve(argv[0], argv, env);
 			_exit(127);
@@ -625,6 +649,9 @@ static SDL_Rect d_rect;
 static bool     d_rect_known;
 static int    d_pend_vol = -1, d_pend_vol_n;      /* LEVEL events, held until */
 static int    d_pend_bri = -1, d_pend_bri_n;      /* EXIT hands levels back  */
+/* Diatom's QUIET, its ADR-0032: what the launcher wants, and what this
+ * connection was last told. -1 is "never told", which a new connection is. */
+static int    d_quiet, d_quiet_said = -1;
 
 const char *plat_resident_socket(void)
 {
@@ -652,7 +679,12 @@ static bool dsend(const char *fmt, ...)
 	if (n < 0) return false;
 	if (n >= (int)sizeof line - 1) n = (int)sizeof line - 2;
 	if (n == 0 || line[n - 1] != '\n') line[n++] = '\n';
-	if (write(dsock, line, (size_t)n) != n) { dclose(); return false; }
+	/* send and MSG_NOSIGNAL, not write. Nothing in this process ignores
+	 * SIGPIPE, so a write into a connection Diatom had closed - it restarted,
+	 * or a newer client displaced this one (its ADR-0033) - killed the
+	 * launcher outright, and launch.sh had to bring it back. A closed socket
+	 * is an answer here, not a crash: the next call connects again. */
+	if (send(dsock, line, (size_t)n, MSG_NOSIGNAL) != n) { dclose(); return false; }
 	return true;
 }
 
@@ -737,6 +769,7 @@ static bool dconnect(void)
 	 * bump is how a caller notices the same thing without polling for it. */
 	d_audio_known = false;
 	d_audio_dev[0] = '\0';
+	d_quiet_said = -1;
 	d_generation++;
 
 	dsock = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -803,6 +836,11 @@ bool plat_resident_send(const char *tag, const char *core, const char *rom,
 
 		if (!dconnect()) return false;
 		while ((l = dline(0))) { }                 /* drop stale events */
+		/* The drain is also what finds a connection Diatom closed under us:
+		 * it reads the EOF and closes our end. Connect again rather than
+		 * send a game into nothing - which failed the first launch after
+		 * Diatom restarted, or after something displaced this connection. */
+		if (!dconnect()) return false;
 		d_preview[0] = '\0';
 		d_rect_known = false;
 		d_pend_vol = d_pend_bri = -1;
@@ -822,6 +860,12 @@ bool plat_resident_send(const char *tag, const char *core, const char *rom,
 				      (int)(eq - kv), kv, eq + 1);
 			}
 		}
+
+		/* Quiet BEFORE RUN, and on every RUN. Diatom holds it across RUN
+		 * (its ADR-0032), so sent first it is in force from the game's first
+		 * sample - a game started while music plays never makes a sound -
+		 * and sent every time, a resident that restarted cannot start loud. */
+		if (dsend("SETQUIET\ton=%d", d_quiet)) d_quiet_said = d_quiet;
 
 		/* console and cheevos on RUN rather than after it, so a set is
 		 * watched from the first frame - an achievement can fire in the
@@ -882,6 +926,16 @@ bool plat_resident_send(const char *tag, const char *core, const char *rom,
 
 }
 
+void plat_resident_quiet(bool on)
+{
+	d_quiet = on ? 1 : 0;
+	/* Only over a connection that exists. Asking to connect for this would
+	 * start nothing useful - with no connection there is no game to quiet,
+	 * and the next RUN sends it anyway. */
+	if (dsock >= 0 && d_quiet != d_quiet_said && dsend("SETQUIET\ton=%d", d_quiet))
+		d_quiet_said = d_quiet;
+}
+
 bool plat_resident_line(const char *fmt, ...)
 {
 	char line[1600];
@@ -904,6 +958,11 @@ bool plat_resident_line(const char *fmt, ...)
 	va_start(ap, fmt);
 	vsnprintf(line, sizeof line, fmt, ap);
 	va_end(ap);
+	if (dsend("%s", line)) return true;
+	/* Closed under us - Diatom restarted, or a newer client displaced this
+	 * connection (its ADR-0033). dsend has closed our end, so this is a fresh
+	 * connection, and nothing of the line reached the old one to repeat. */
+	if (!dconnect()) return false;
 	return dsend("%s", line);
 }
 

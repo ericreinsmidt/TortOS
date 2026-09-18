@@ -145,8 +145,6 @@ typedef struct {
 static void refresh_favorites_shelf(app *a);
 static void build_muse_shelf(app *a);
 static void muse_screen(app *a, bool now);
-/* SELECT, from the shelf and from every screen over it that is not a game. */
-static void muse_open(app *a);
 /* Same reason: Over The Hare is a screen up here and the scan is down there. */
 static void rescan_all(app *a);
 /* And again: Play Time can send you to a game's shelf, which is the input
@@ -1542,9 +1540,14 @@ static void on_game_tick(void)
 	int rc;
 
 	/* Muse, bounded: read what has arrived, and send at most one PLAY when a
-	 * track ends - which is what keeps an album going through a game. The
-	 * sound itself mixes at dmix and needs nothing from here. */
+	 * track ends - which is what keeps an album going through a game.
+	 *
+	 * And the game goes quiet while it plays - Diatom's ADR-0032, followed
+	 * here at ten a second, which is how pausing the music or the album
+	 * ending brings the game's sound back within a tenth of a second. Only a
+	 * change is sent. */
 	musec_poll();
+	plat_resident_quiet(musec_playing());
 
 	/* Play time. Writes at most one unsynced row and usually nothing, and
 	 * never an fsync: measured on the card, an fsync is 1.56 ms median but
@@ -4036,10 +4039,11 @@ typedef struct {
 	 * going anywhere, and the wait loop below it has to be told, or it goes
 	 * straight back to waiting on a game nobody is running. */
 	menu_result (*on_power)(app *a, void *ctx);
-	/* The in-game menu. SELECT opens Muse over every other menu; over this
-	 * one the screen and the pad are the paused game's. */
-	bool     in_game;
 } menu_style;
+
+/* SELECT: Muse, over whatever is on screen. Declared here, after menu_style,
+ * because it borrows two of its hooks. */
+static bool muse_open(app *a, const menu_style *over, void *ctx);
 
 /* Read every frame through the caller's pointer, so a screen that keeps its
  * style inside its own context can change it between frames. The info screen
@@ -4081,9 +4085,14 @@ static menu_exit menu_run_body(app *a, const menu_style *st,
 		}
 		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU])
 			return MENU_LEFT_BACK;
-		/* Rebuilt on the way back, because anything may have changed while
+		/* The in-game menu too: its game is paused underneath, and Muse
+		 * borrows its backdrop and its power rule for as long as it is up.
+		 * Rebuilt on the way back, because anything may have changed while
 		 * Muse covered it - a Bluetooth headset connecting, for one. */
-		if (a->in.pressed[IN_SELECT] && !st->in_game) { muse_open(a); continue; }
+		if (a->in.pressed[IN_SELECT]) {
+			if (muse_open(a, st, ctx)) return MENU_LEFT_GONE;
+			continue;
+		}
 
 		if (in_repeat(&a->in, IN_UP))   sel = menu_step_sel(rows, n, sel, -1);
 		if (in_repeat(&a->in, IN_DOWN)) sel = menu_step_sel(rows, n, sel, +1);
@@ -5174,7 +5183,7 @@ static void bt_screen(app *a)
 		if (a->in.quit_requested) { a->running = false; return; }
 		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); return; }
 		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = true;
-		if (a->in.pressed[IN_SELECT]) muse_open(a);
+		if (a->in.pressed[IN_SELECT]) muse_open(a, NULL, NULL);
 
 		if (in_repeat(&a->in, IN_DOWN) && sel < u.n) sel++;
 		if (in_repeat(&a->in, IN_UP)   && sel > 0)   sel--;
@@ -5449,7 +5458,7 @@ static bool stats_screen(app *a)
 		if (a->in.quit_requested) { a->running = false; return false; }
 		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); return false; }
 		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = true;
-		if (a->in.pressed[IN_SELECT]) muse_open(a);
+		if (a->in.pressed[IN_SELECT]) muse_open(a, NULL, NULL);
 
 		/* A goes to the row under the cursor: the game on its own shelf, or in
 		 * by-system mode that system's. Not a launch.
@@ -5604,7 +5613,7 @@ static void about_screen(app *a)
 		if (a->in.quit_requested) { a->running = false; return; }
 		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); return; }
 		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = true;
-		if (a->in.pressed[IN_SELECT]) muse_open(a);
+		if (a->in.pressed[IN_SELECT]) muse_open(a, NULL, NULL);
 
 		if (in_repeat(&a->in, IN_VOLUP))    plat_volume_nudge(+1);
 		if (in_repeat(&a->in, IN_VOLDN))    plat_volume_nudge(-1);
@@ -6432,8 +6441,10 @@ static bool cheevo_detail_screen(app *a, SDL_Texture *bg, bool over_shelf,
 
 		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_ACCEPT]) done = 1;
 		if (a->in.pressed[IN_MENU]) { done = 1; close_all = true; }
-		/* Over a game the pad is the game's; see muse_open. */
-		if (over_shelf && a->in.pressed[IN_SELECT]) muse_open(a);
+		/* Only over the shelf. Over a game this card is the in-game menu's,
+		 * and Muse would need that menu's power rule, which this screen does
+		 * not have to give it. SELECT from the in-game menu itself works. */
+		if (over_shelf && a->in.pressed[IN_SELECT]) muse_open(a, NULL, NULL);
 		/* Same reasoning as the list below: this screen is not inside
 		 * plat_resident_wait, so nothing else is watching power for it. Over
 		 * the shelf there is no game to stop, and stopping one is not what
@@ -6693,6 +6704,41 @@ static void np_cover(app *a, int al)
 	g_np.done = g_np.tex != NULL;
 }
 
+/* ---- Muse: what it is open over ------------------------------------------ */
+
+/* NULL is the shelf. The in-game menu hands over its style for as long as Muse
+ * is up, because a game is paused underneath: the list is drawn over that
+ * game's frame rather than a shelf it is not on, and power stops the game
+ * rather than the device - which is what that menu's power rule does, and why
+ * it has one. Muse is modal and never opens itself, so one of each is enough. */
+static const menu_style *g_muse_over;
+static void             *g_muse_over_ctx;
+static bool              g_muse_gone;    /* that rule ended what was underneath */
+
+static void muse_backdrop(app *a)
+{
+	if (g_muse_over && g_muse_over->backdrop) {
+		g_muse_over->backdrop(a, g_muse_over_ctx);
+		return;
+	}
+	draw_shelf(a);
+	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+	SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
+	SDL_RenderFillRect(a->r, NULL);
+}
+
+/* The power button or Auto Off, inside Muse. It closes Muse either way; what
+ * else it does is up to whatever Muse is open over. */
+static void muse_power(app *a)
+{
+	if (g_muse_over && g_muse_over->on_power) {
+		if (g_muse_over->on_power(a, g_muse_over_ctx) == MENU_DONE)
+			g_muse_gone = true;
+		return;
+	}
+	power_off(a);
+}
+
 /* ---- Muse: Now Playing ---------------------------------------------------- */
 
 static void mmss(char *out, size_t n, double sec)
@@ -6825,7 +6871,7 @@ static bool muse_now_screen(app *a)
 		mn = musec_now();
 		plat_input_poll(&a->in);
 		if (a->in.quit_requested) { a->running = false; break; }
-		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); close = true; break; }
+		if (a->in.pressed[IN_POWER] || idle_due(a)) { muse_power(a); close = true; break; }
 		if (a->in.pressed[IN_BACK]) break;
 		if (a->in.pressed[IN_SELECT] || a->in.pressed[IN_MENU]) { close = true; break; }
 
@@ -7064,7 +7110,7 @@ static void muse_screen(app *a, bool now)
 			else done = 1;
 		}
 		if (a->in.pressed[IN_SELECT] || a->in.pressed[IN_MENU]) done = 1;
-		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); break; }
+		if (a->in.pressed[IN_POWER] || idle_due(a)) { muse_power(a); break; }
 
 		/* Back from Now Playing onto the track it had reached, which may be
 		 * several past the one chosen. */
@@ -7074,10 +7120,7 @@ static void muse_screen(app *a, bool now)
 			continue;
 		}
 
-		draw_shelf(a);
-		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
-		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
-		SDL_RenderFillRect(a->r, NULL);
+		muse_backdrop(a);
 		menu_draw(a, heading, rows, n, sel, menu_std_width(a), MUSE_ACCENT);
 		plat_draw_osd(a->r);
 		SDL_RenderPresent(a->r);
@@ -7090,15 +7133,25 @@ static void muse_screen(app *a, bool now)
 	memset(&a->in, 0, sizeof a->in);
 }
 
-/* SELECT, from the shelf and every screen over it that is not a game: Muse,
- * and straight to Now Playing when something is playing or paused. Nothing on
- * a card with no music, which is also a card with no Muse on its shelf. */
-static void muse_open(app *a)
+/* SELECT, from anywhere but a running game - the shelf, every menu, and the
+ * in-game menu, where the game waits paused underneath: Muse, and straight to
+ * Now Playing when something is playing or paused. Nothing on a card with no
+ * music, which is also a card with no Muse on its shelf.
+ *
+ * `over` is the menu it opened over, or NULL for the shelf and the screens
+ * that draw it. True when that menu's power rule ended it too. */
+static bool muse_open(app *a, const menu_style *over, void *ctx)
 {
 	const mu_now *mn = musec_now();
 
-	if (g_muse.ntracks == 0) return;
+	if (g_muse.ntracks == 0) return false;
+	g_muse_over = over;
+	g_muse_over_ctx = ctx;
+	g_muse_gone = false;
 	muse_screen(a, mn->state == MU_PLAYING || mn->state == MU_PAUSED);
+	g_muse_over = NULL;
+	g_muse_over_ctx = NULL;
+	return g_muse_gone;
 }
 
 static void synopsis_screen(app *a, const char *title, const char *text,
@@ -7129,7 +7182,7 @@ static void synopsis_screen(app *a, const char *title, const char *text,
 		if (a->in.quit_requested) break;
 		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_ACCEPT] ||
 		    a->in.pressed[IN_X] || a->in.pressed[IN_MENU]) done = 1;
-		if (a->in.pressed[IN_SELECT]) muse_open(a);
+		if (a->in.pressed[IN_SELECT]) muse_open(a, NULL, NULL);
 		/* Nothing else watches power for this screen, the same as every other
 		 * loop the launcher runs outside plat_resident_wait. */
 		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); break; }
@@ -7199,7 +7252,7 @@ static void cheevos_screen(app *a, SDL_Texture *bg, bool over_shelf)
 		if (in_repeat(&a->in, IN_L1))   sel = sel > 8 ? sel - 8 : 0;
 		if (in_repeat(&a->in, IN_R1))   sel = sel < n - 9 ? sel + 8 : n - 1;
 		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = 1;
-		if (over_shelf && a->in.pressed[IN_SELECT]) muse_open(a);
+		if (over_shelf && a->in.pressed[IN_SELECT]) muse_open(a, NULL, NULL);
 		/* A used to close this screen. It opens the achievement instead,
 		 * which is the only thing on it there was ever anything more to say
 		 * about; BACK and MENU still close, so nothing lost a way out. */
@@ -7400,7 +7453,6 @@ static void game_menu(app *a)
 	c.st.follow_tint = true;
 	c.st.backdrop    = gm_backdrop;
 	c.st.on_power    = gm_power;
-	c.st.in_game     = true;
 
 	/* B and MENU are the runner's, and both mean Continue here. The runner has
 	 * to be the one to say so: it flushes the input on its way out, so asking
@@ -7437,6 +7489,10 @@ static void game_menu(app *a)
 		 * afterwards Diatom is drawing, and this would be a second presenter. */
 		present_black(a);
 		present_black(a);
+		/* SELECT in this menu opens Muse, so the music may have started or
+		 * stopped while the game was paused. Said before the game moves, not
+		 * a tick after it. */
+		plat_resident_quiet(musec_playing());
 		plat_resident_line("RESUME");
 	}
 	/* Nothing presents from here: the next frame on screen is the game's. */
@@ -7625,6 +7681,10 @@ static void launch(app *a)
 	 * of thing that looks like a haunting rather than a bug. */
 	want_menu = a->resume_menu;
 	a->resume_menu = false;
+
+	/* Whether this game should be heard - quiet while Muse plays, Diatom's
+	 * ADR-0032. Stated before the RUN goes out, which sends it. */
+	plat_resident_quiet(musec_playing());
 
 	if (plat_resident_ready()) {
 		/* The emulator is already up, holding its context and every core,
@@ -9500,10 +9560,10 @@ int main(int argc, char *argv[])
 		if (in_repeat(&a.in, IN_BRIGHTUP)) plat_brightness_nudge(+1);
 		if (in_repeat(&a.in, IN_BRIGHTDN)) plat_brightness_nudge(-1);
 
-		/* SELECT is Muse, on the shelf and on every screen over it that is
-		 * not a game - see muse_open. Before the shelf's own keys, which do
-		 * not use it, so every layout gets it from this one line. */
-		if (a.in.pressed[IN_SELECT]) { muse_open(&a); continue; }
+		/* SELECT is Muse, on the shelf and on every screen but a running
+		 * game - see muse_open. Before the shelf's own keys, which do not use
+		 * it, so every layout gets it from this one line. */
+		if (a.in.pressed[IN_SELECT]) { muse_open(&a, NULL, NULL); continue; }
 
 		/* MENU on the shelf is TortOS's own menu, the counterpart to the one
 		 * MENU opens in a game. It draws over the shelf and returns here.
