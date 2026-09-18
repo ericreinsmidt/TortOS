@@ -36,6 +36,8 @@
 #include "wifi.h"
 #include "audioout.h"
 #include "menu.h"
+#include "musec.h"
+#include "muselib.h"
 #include "ss.h"
 #include "ssrun.h"
 #include "sys_menu.h"
@@ -141,6 +143,8 @@ typedef struct {
 /* Defined down with the shelf building it belongs to, declared here because
  * the input loop calls it the moment a favorite changes. */
 static void refresh_favorites_shelf(app *a);
+static void build_muse_shelf(app *a);
+static void muse_screen(app *a);
 /* Same reason: Over The Hare is a screen up here and the scan is down there. */
 static void rescan_all(app *a);
 /* And again: Play Time can send you to a game's shelf, which is the input
@@ -368,6 +372,22 @@ static SDL_Texture *load_image(SDL_Renderer *r, const char *path, int *w, int *h
  * draw itself. */
 static int g_cards;
 static int g_dir;
+
+/* Muse: what the Music folder holds, read at boot and on every rescan, and
+ * the green its card is drawn in - the iPod's own, sampled from the photograph
+ * (tools/genmusecard.py draws both cards from the same value).
+ *
+ * RECOGNIZED BY ITS TAG, not by what it lacks. Favorites is the shelf with no
+ * core and no folder, and the system menu tells them apart that way; Muse has
+ * neither either, but its music is not a ROM folder at all, so an empty folder
+ * is the honest value and the tag is what says which of the two it is. */
+#define MUSE_ACCENT 0x9CD345u
+static ml_lib g_muse;
+
+static bool is_muse(const system_cfg *s)
+{
+	return s && !strcmp(s->tag, "MUSE");
+}
 
 /* The two faces a turn needs. Kept rather than made per frame: they are a
  * screen each, and a cube turns for a fifth of a second at a time. */
@@ -1500,6 +1520,11 @@ static void on_game_tick(void)
 
 	int rc;
 
+	/* Muse, bounded: read what has arrived, and send at most one PLAY when a
+	 * track ends - which is what keeps an album going through a game. The
+	 * sound itself mixes at dmix and needs nothing from here. */
+	musec_poll();
+
 	/* Play time. Writes at most one unsynced row and usually nothing, and
 	 * never an fsync: measured on the card, an fsync is 1.56 ms median but
 	 * 16.4 ms at the tail, which is a dropped frame. */
@@ -1958,7 +1983,11 @@ static bool idle_due(app *a)
 	for (b = 0; b < IN_COUNT; b++)
 		if (a->in.pressed[b] || a->in.down[b]) break;
 
-	return idle_check(&a->idle, plat_now_ms(), b < IN_COUNT, on_charger());
+	/* Music playing HOLDS the clock the way the charger does, rather than
+	 * counting as input: an album is somebody using the device with nobody
+	 * touching it, and when it stops the countdown starts fresh. */
+	return idle_check(&a->idle, plat_now_ms(), b < IN_COUNT,
+	                  on_charger() || musec_playing());
 }
 
 /* The keyboard takes callbacks rather than an app - it is deliberately
@@ -2347,7 +2376,12 @@ static void draw_systems(app *a)
 		        ui_fade(UI_TEXT, label_a));
 	}
 
-	{
+	if (is_muse(label)) {
+		/* Muse has albums rather than games, and they are not a list the
+		 * shelf holds - the Music folder is read when you go in. */
+		snprintf(line, sizeof line, "%d album%s", g_muse.nalbums,
+		         g_muse.nalbums == 1 ? "" : "s");
+	} else {
 		int gc = a->view[(int)(label - a->sys.systems)].list.count;
 
 		/* A shelf of one read "1 games". Favorites hits it first because it
@@ -6457,6 +6491,156 @@ static int syn_layout(const char *text, int fixed,
 	return k;
 }
 
+static void mmss(char *out, size_t n, double sec)
+{
+	int t = sec > 0 ? (int)(sec + 0.5) : 0;
+
+	snprintf(out, n, "%d:%02d", t / 60, t % 60);
+}
+
+/* Muse's screen: the Music folder as artists, then albums, then tracks.
+ *
+ * A list rather than a shelf of covers, for now: the covers are inside the
+ * files, and reading them needs the daemon's FFmpeg - that can come later
+ * without this screen's shape changing. What cannot wait is that the thing
+ * plays, so this is the smallest screen that gets from the shelf to a song.
+ *
+ * A opens and plays, B goes back up a level and out, X pauses, L1 and R1 are
+ * the previous and next track, left and right seek ten seconds. Leaving the
+ * screen does not stop the music - that is what the daemon is for - and the
+ * volume keys work in here, which on every other screen is the main loop's
+ * job and on this one would otherwise be the one place they did nothing. */
+static void muse_screen(app *a)
+{
+	enum { LV_ARTISTS, LV_ALBUMS, LV_TRACKS } lv = LV_ARTISTS;
+	int art = 0, alb = 0, sel = 0, done = 0, cap = 4, i;
+	menu_row *rows;
+	char (*vals)[24];
+	char heading[300], note[300], t0[16], t1[16];
+
+	for (i = 0; i < g_muse.nartists; i++)
+		if (g_muse.artists[i].n + 4 > cap) cap = g_muse.artists[i].n + 4;
+	for (i = 0; i < g_muse.nalbums; i++)
+		if (g_muse.albums[i].n + 4 > cap) cap = g_muse.albums[i].n + 4;
+	if (g_muse.nartists + 4 > cap) cap = g_muse.nartists + 4;
+	rows = calloc((size_t)cap, sizeof *rows);
+	vals = calloc((size_t)cap, sizeof *vals);
+	if (!rows || !vals || g_muse.nartists == 0) { free(rows); free(vals); return; }
+
+	plat_input_flush();
+	memset(&a->in, 0, sizeof a->in);
+
+	while (!done && !want_quit && a->running) {
+		const mu_now *mn;
+		int n = 0, items;
+
+		musec_poll();
+		mn = musec_now();
+		plat_input_poll(&a->in);
+
+		/* The rows for where we are. */
+		if (lv == LV_ARTISTS) {
+			snprintf(heading, sizeof heading, "Muse");
+			for (i = 0; i < g_muse.nartists; i++, n++) {
+				snprintf(vals[n], sizeof vals[n], "%d album%s", g_muse.artists[i].n,
+				         g_muse.artists[i].n == 1 ? "" : "s");
+				rows[n] = (menu_row){ g_muse.artists[i].name, vals[n], true };
+			}
+		} else if (lv == LV_ALBUMS) {
+			const ml_artist *ar = &g_muse.artists[art];
+
+			snprintf(heading, sizeof heading, "%s", ar->name);
+			for (i = 0; i < ar->n; i++, n++) {
+				const ml_album *al = &g_muse.albums[ar->first + i];
+
+				snprintf(vals[n], sizeof vals[n], "%d track%s", al->n,
+				         al->n == 1 ? "" : "s");
+				rows[n] = (menu_row){ al->name, vals[n], true };
+			}
+		} else {
+			const ml_album *al = &g_muse.albums[alb];
+			const char *playing = musec_path();
+
+			snprintf(heading, sizeof heading, "%s\n%s", al->name,
+			         g_muse.artists[art].name);
+			for (i = 0; i < al->n; i++, n++) {
+				const ml_track *t = &g_muse.tracks[al->first + i];
+				const char *v = NULL;
+
+				if (playing[0] && !strcmp(playing, t->path))
+					v = mn->state == MU_PAUSED ? "paused" : "playing";
+				rows[n] = (menu_row){ t->name, v, true };
+			}
+		}
+		items = n;
+		if (sel >= items) sel = items ? items - 1 : 0;
+
+		/* What is playing, under a rule, whatever level you are on - the
+		 * screen is a way to reach music, and the music is the point. */
+		if (mn->state == MU_PLAYING || mn->state == MU_PAUSED) {
+			mmss(t0, sizeof t0, mn->at);
+			mmss(t1, sizeof t1, mn->len);
+			snprintf(note, sizeof note, "%s%s  -  %s   %s / %s",
+			         mn->state == MU_PAUSED ? "Paused: " : "", mn->title,
+			         mn->artist[0] ? mn->artist : mn->album, t0, t1);
+			rows[n++] = MENU_RULE;
+			rows[n++] = MENU_NOTE(note);
+		}
+
+		if (items > 0) {
+			if (in_repeat(&a->in, IN_UP))   sel = (sel + items - 1) % items;
+			if (in_repeat(&a->in, IN_DOWN)) sel = (sel + 1) % items;
+		}
+		if (in_repeat(&a->in, IN_LEFT))  musec_seek_by(-10);
+		if (in_repeat(&a->in, IN_RIGHT)) musec_seek_by(+10);
+		if (in_repeat(&a->in, IN_L1))    musec_prev();
+		if (in_repeat(&a->in, IN_R1))    musec_next();
+		if (a->in.pressed[IN_X])         musec_toggle();
+		if (in_repeat(&a->in, IN_VOLUP)) plat_volume_nudge(+1);
+		if (in_repeat(&a->in, IN_VOLDN)) plat_volume_nudge(-1);
+
+		if (a->in.pressed[IN_ACCEPT] && items > 0) {
+			if (lv == LV_ARTISTS) {
+				art = sel; sel = 0; lv = LV_ALBUMS;
+			} else if (lv == LV_ALBUMS) {
+				alb = g_muse.artists[art].first + sel; sel = 0; lv = LV_TRACKS;
+			} else {
+				const ml_album *al = &g_muse.albums[alb];
+				const char **paths = calloc((size_t)al->n, sizeof *paths);
+
+				if (paths) {
+					for (i = 0; i < al->n; i++)
+						paths[i] = g_muse.tracks[al->first + i].path;
+					musec_play(paths, al->n, sel, g_muse.artists[art].name,
+					           al->name);
+					free(paths);
+				}
+			}
+		}
+		if (a->in.pressed[IN_BACK]) {
+			if (lv == LV_TRACKS) { sel = alb - g_muse.artists[art].first; lv = LV_ALBUMS; }
+			else if (lv == LV_ALBUMS) { sel = art; lv = LV_ARTISTS; }
+			else done = 1;
+		}
+		if (a->in.pressed[IN_MENU]) done = 1;
+		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); break; }
+
+		draw_shelf(a);
+		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
+		SDL_RenderFillRect(a->r, NULL);
+		menu_draw(a, heading, rows, n, sel, menu_std_width(a), MUSE_ACCENT);
+		plat_draw_osd(a->r);
+		SDL_RenderPresent(a->r);
+		SDL_Delay(8);
+	}
+
+	free(rows);
+	free(vals);
+	plat_input_flush();
+	memset(&a->in, 0, sizeof a->in);
+}
+
 static void synopsis_screen(app *a, const char *title, const char *text,
                             unsigned accent)
 {
@@ -7241,6 +7425,7 @@ static void launch(app *a)
 static void enter_system(app *a)
 {
 	sysview *v = &a->view[a->sys_cursor];
+	if (is_muse(&a->sys.systems[a->sys_cursor])) { muse_screen(a); return; }
 	if (v->list.count == 0) return;
 	a->screen = SCREEN_GAMES;
 	cf_reset(&v->cf, v->cursor);
@@ -7726,6 +7911,45 @@ static void refresh_favorites_shelf(app *a)
 	cf_reset(&a->cf_sys, a->sys_cursor);
 }
 
+/* Muse's card, at the end of the shelf, when there is music to play.
+ *
+ * After Favorites and after the empty systems are hidden, so it is neither
+ * compacted away for having no games nor shifted by Favorites being inserted
+ * in front: it is appended, and every later insertion moves it along with
+ * everything else. Its view stays empty - its albums are not a list the shelf
+ * holds - and A on it opens muse_screen instead of a games shelf.
+ *
+ * Hidden when the folder is empty or missing, the same rule an empty system
+ * and an empty Favorites shelf follow: a card should lead somewhere. */
+static void build_muse_shelf(app *a)
+{
+	char root[CFG_STR * 2];
+	system_cfg *s;
+	int i;
+
+	ml_free(&g_muse);
+	snprintf(root, sizeof root, "%s/Music", P_CARD);
+	if (!ml_scan(root, &g_muse) || g_muse.ntracks == 0) {
+		fprintf(stderr, "scan: %-16s no music in %s\n", "Muse", root);
+		return;
+	}
+	if (a->sys.count >= CFG_MAX_SYSTEMS) return;
+	i = a->sys.count;
+	s = &a->sys.systems[i];
+	memset(s, 0, sizeof *s);
+	snprintf(s->name, CFG_STR, "%s", "Muse");
+	snprintf(s->tag, sizeof s->tag, "%s", "MUSE");
+	snprintf(s->card, CFG_STR, "%s", "MUSE.png");
+	s->accent = MUSE_ACCENT;
+	memset(&a->view[i], 0, sizeof a->view[i]);
+	a->sys_tex[i] = NULL;
+	a->sys_w[i] = a->sys_h[i] = 0;
+	a->sys_cb[i] = 0;
+	a->sys.count++;
+	fprintf(stderr, "scan: %-16s %d artists, %d albums, %d tracks\n", "Muse",
+	        g_muse.nartists, g_muse.nalbums, g_muse.ntracks);
+}
+
 static void scan_all(app *a)
 {
 	for (int i = 0; i < a->sys.count; i++) {
@@ -7749,6 +7973,7 @@ static void scan_all(app *a)
 	}
 	hide_empty_systems(a);
 	build_favorites_shelf(a);
+	build_muse_shelf(a);
 }
 
 /* Read the card again and rebuild every shelf, for when something outside the
@@ -8494,6 +8719,13 @@ int main(int argc, char *argv[])
 		net_set_ca_path(cp);
 		ra_creds_load();
 		ss_creds_load();
+		{
+			char bin[CFG_STR * 2], music[CFG_STR * 2];
+
+			snprintf(bin, sizeof bin, "%s/muse", P_ROOT);
+			snprintf(music, sizeof music, "%s/Music", P_CARD);
+			musec_init(bin, music);
+		}
 	}
 
 	/* Scan every system now, not when one is opened: it is three directory
@@ -8722,6 +8954,10 @@ int main(int argc, char *argv[])
 
 		/* Unlocks sent in the background: apply what the account answered. */
 		ra_flush_poll();
+
+		/* What Muse said since the last pass - including END, which is how
+		 * the next track of an album starts while nobody is on its screen. */
+		musec_poll();
 
 		/* Auto Off is the same line as the power button, on every screen
 		 * that draws. Diatom watches it during a game, because it owns the

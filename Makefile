@@ -446,16 +446,20 @@ adb-log:
 # this target is for the loop you are actually in, which is the launcher and
 # what it draws.
 deploy: all
-	tar -cf - -C build tortos.elf setbright muse musectl -C ../config systems.cfg \
+	@# Silent, every line that carries $(SSH): it expands to the password, and
+	@# make echoes a recipe before running it - into a terminal, a CI log, or a
+	@# transcript. The same reason mk/cross.mk writes the ScreenScraper key
+	@# into a header rather than onto a compile line.
+	@tar -cf - -C build tortos.elf setbright muse musectl -C ../config systems.cfg \
 	    -C ../sd/tortos launch.sh bt-alsa.sh -C ../../res/fonts menu.ttf | \
 	    $(SSH) 'tar -xf - -C /mnt/SDCARD/TortOS'
-	tar -cf - -C res cards | $(SSH) 'tar -xf - -C /mnt/SDCARD/TortOS'
+	@tar -cf - -C res cards | $(SSH) 'tar -xf - -C /mnt/SDCARD/TortOS'
 
 restart:
-	$(SSH) 'killall -q tortos.elf; exit 0'
+	@$(SSH) 'killall -q tortos.elf; exit 0'
 
 logs:
-	$(SSH) 'tail -60 /mnt/SDCARD/.userdata/tg3040/logs/tortos.log 2>/dev/null'
+	@$(SSH) 'tail -60 /mnt/SDCARD/.userdata/tg3040/logs/tortos.log 2>/dev/null'
 
 clean:
 	rm -rf build build-native out

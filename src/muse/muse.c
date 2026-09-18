@@ -172,7 +172,12 @@ static void handle(const qcmd *q)
 		break;
 	case C_PLAY:
 		snprintf(S.path, sizeof S.path, "%s", q->path);
-		if (q->speed > 0) S.speed = q->speed;
+		/* A PLAY with no speed means normal speed. It used to mean "whatever
+		 * the last one was", and speed is a property of a book, not of the
+		 * daemon: a 1.5x set for one audiobook played every song after it
+		 * rushed. Found on the device 2026-09-18, the first time the launcher
+		 * rather than a test drove it. */
+		S.speed = q->speed > 0 ? q->speed : 1.0;
 		pcm_drop();
 		if (reopen(q->at)) {
 			snapshot();

@@ -30,3 +30,12 @@ FAVORITES.png is not one of these photographs, and nothing above applies to
 it. Favorites is a shelf rather than a console, so there is no hardware to
 photograph and it carries a heart instead. It was generated rather than shot,
 carries no attribution requirement, and no rights are claimed in it.
+
+## MUSE.png
+
+Not a console, and not one of the photographs above. A green iPod nano (4th
+generation) at the same 3/4 angle as the set, supplied by Eric on 2026-09-18
+for Muse's card; where the photograph came from is not recorded here. The
+original is kept outside the repository in `cards_backup_photos/muse.png`, and
+`tools/genmusecard.py` cuts this card from it: trimmed to its alpha, longest
+side 96% of 384 and centred, in the 384 canvas because it is taller than wide.
