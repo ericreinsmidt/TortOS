@@ -215,6 +215,14 @@ void ui_panel(SDL_Renderer *r, const SDL_Rect *q, int radius, unsigned border);
  * the caller. */
 SDL_Texture *ui_make_card(SDL_Renderer *r, const char *title, unsigned rgb,
                           int *w, int *h);
+/* The same, square, for an album with no cover. */
+SDL_Texture *ui_make_cover(SDL_Renderer *r, const char *title, unsigned rgb,
+                           int *w, int *h);
+
+/* Cut a picture's corners to the generated card's, in proportion to its
+ * width, so a cover drawn where a card would be has a card's corners. A 32-bit
+ * surface with alpha. */
+void ui_card_corners(SDL_Surface *s);
 
 /* rgb interpolation, for easing the background tint between systems */
 unsigned ui_mix(unsigned a, unsigned b, float t);

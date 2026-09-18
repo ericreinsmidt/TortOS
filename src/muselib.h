@@ -3,6 +3,7 @@
 #define TORTOS_MUSELIB_H
 
 #include <stdbool.h>
+#include <stddef.h>
 
 #include "library.h"
 
@@ -46,5 +47,18 @@ bool ml_is_audio(const char *name);
 /* The name a track is shown by: no extension, and no leading track number -
  * "03 High And Dry.mp3" is "High And Dry". */
 void ml_track_name(const char *file, char *out, int n);
+
+/* The album `track` - a path relative to the root - is in, or -1. By folder,
+ * not by name: two artists can each have a "Greatest Hits", and the folder is
+ * the one thing that tells them apart. */
+int ml_album_of(const ml_lib *l, const char *track);
+
+/* Where album `al`'s cover is kept, without its extension: in a .media folder
+ * beside the album's own, named after it - the way box art sits in
+ * Roms/<system>/.media. Music/Radiohead/The Bends keeps its cover in
+ * Music/Radiohead/.media/The Bends.jpg, and a folder of tracks straight under
+ * the root keeps its in Music/.media. The scan skips dot folders, so a .media
+ * is never taken for an album. "" for an album with no tracks. */
+void ml_cover_base(const char *root, const ml_lib *l, int al, char *out, size_t n);
 
 #endif

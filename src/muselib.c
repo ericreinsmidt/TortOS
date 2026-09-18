@@ -49,6 +49,48 @@ void ml_track_name(const char *file, char *out, int n)
 	out[len] = '\0';
 }
 
+/* How much of a path is its folder: "A/B/c.mp3" is 3, "c.mp3" is 0. */
+static size_t dir_len(const char *path)
+{
+	const char *s = strrchr(path, '/');
+
+	return s ? (size_t)(s - path) : 0;
+}
+
+int ml_album_of(const ml_lib *l, const char *track)
+{
+	size_t n;
+	int i;
+
+	if (!track || !track[0]) return -1;
+	n = dir_len(track);
+	for (i = 0; i < l->nalbums; i++) {
+		const char *p;
+
+		if (l->albums[i].n <= 0) continue;
+		p = l->tracks[l->albums[i].first].path;
+		/* The same length first: "Pixies/Doolittle" is a prefix of
+		 * "Pixies/Doolittle (Deluxe)", and they are two albums. */
+		if (dir_len(p) == n && !strncmp(p, track, n)) return i;
+	}
+	return -1;
+}
+
+void ml_cover_base(const char *root, const ml_lib *l, int al, char *out, size_t n)
+{
+	const char *p;
+	size_t d, cut;
+
+	out[0] = '\0';
+	if (al < 0 || al >= l->nalbums || l->albums[al].n <= 0) return;
+	p = l->tracks[l->albums[al].first].path;
+	d = dir_len(p);                         /* "Radiohead/The Bends" */
+	for (cut = d; cut > 0 && p[cut - 1] != '/'; cut--) { }
+	/* p[0..cut) is the parent with its slash, p[cut..d) the album's name. */
+	snprintf(out, n, "%s/%.*s.media/%.*s", root, (int)cut, p,
+	         (int)(d - cut), p + cut);
+}
+
 /* ---- a small growable list of names, sorted ------------------------------- */
 
 typedef struct { char **v; int n, cap; } names;

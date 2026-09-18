@@ -24,6 +24,13 @@ static size_t  g_have;
 static unsigned g_spawned_ms;
 static int     g_spawned;
 
+/* Covers the daemon has answered about and nobody has taken yet. A handful:
+ * they are asked for one screen at a time, and one dropped here is asked for
+ * again by a caller whose answer never came - see musec_cover_ask. */
+#define COVER_RING 8
+static struct { char base[LIB_PATH * 2], file[LIB_PATH * 2 + 8]; } g_cov[COVER_RING];
+static int     g_cov_head, g_cov_n;
+
 static char  **g_q;                 /* the queue, relative paths, ours */
 static int     g_qn, g_qi;
 static int     g_pending;           /* a PLAY waiting for the connection */
@@ -55,8 +62,14 @@ static void sendf(const char *fmt, ...)
 	va_start(ap, fmt);
 	n = vsnprintf(line, sizeof line - 1, fmt, ap);
 	va_end(ap);
-	if (n < 0) return;
-	if (n > (int)sizeof line - 2) n = (int)sizeof line - 2;
+	/* Not sent at all rather than sent cut short: a PLAY cut short plays a
+	 * file nobody asked for, and a COVER cut short writes a picture under a
+	 * name nobody will look for. Nothing the launcher builds is this long -
+	 * two paths of LIB_PATH each - so this is a guard, not a case. */
+	if (n < 0 || n > (int)sizeof line - 2) {
+		fprintf(stderr, "muse: a line too long to send\n");
+		return;
+	}
 	line[n++] = '\n';
 	if (send(g_fd, line, (size_t)n, MSG_NOSIGNAL | MSG_DONTWAIT) < 0 &&
 	    errno != EAGAIN)
@@ -167,6 +180,17 @@ static void event(const char *line)
 		field(line, "len", v, sizeof v); if (atof(v) > 0) g_now.len = atof(v);
 	} else if (!strncmp(line, "END", 3)) {
 		advance();
+	} else if (!strncmp(line, "COVER", 5)) {
+		int k = (g_cov_head + g_cov_n) % COVER_RING;
+
+		if (g_cov_n == COVER_RING) {           /* the oldest makes room */
+			g_cov_head = (g_cov_head + 1) % COVER_RING;
+			g_cov_n--;
+			k = (g_cov_head + g_cov_n) % COVER_RING;
+		}
+		field(line, "base", g_cov[k].base, sizeof g_cov[k].base);
+		field(line, "file", g_cov[k].file, sizeof g_cov[k].file);
+		g_cov_n++;
 	} else if (!strncmp(line, "ERROR", 5)) {
 		field(line, "why", v, sizeof v);
 		fprintf(stderr, "muse: %s\n", v);
@@ -273,6 +297,29 @@ void musec_seek_by(double delta)
 void musec_stop(void)
 {
 	sendf("STOP");
+}
+
+bool musec_cover_ask(const char *track, const char *base)
+{
+	if (strpbrk(track, "\t\n") || strpbrk(base, "\t\n")) return false;
+	if (!connected()) return false;
+	sendf("COVER\tpath=%s/%s\tbase=%s", g_root, track, base);
+	return g_fd >= 0;
+}
+
+bool musec_cover_take(char *base, size_t bn, char *file, size_t fn)
+{
+	if (g_cov_n == 0) return false;
+	snprintf(base, bn, "%s", g_cov[g_cov_head].base);
+	snprintf(file, fn, "%s", g_cov[g_cov_head].file);
+	g_cov_head = (g_cov_head + 1) % COVER_RING;
+	g_cov_n--;
+	return true;
+}
+
+const char *musec_track(int i)
+{
+	return i >= 0 && i < g_qn ? g_q[i] : NULL;
 }
 
 const mu_now *musec_now(void) { return &g_now; }

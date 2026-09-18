@@ -29,7 +29,8 @@ all: build/tortos.elf
 # exist, and check-menus was about to join eight others in that state.
 CHECKS = check-cheevos check-hare check-httpd check-idle check-rahash \
          check-raset check-xfer check-menus check-artscrape check-artrun check-audioout \
-         check-db check-stats check-sort check-bt check-backlog check-ss
+         check-db check-stats check-sort check-bt check-backlog check-ss \
+         check-muselib
 
 check:
 	@fail=0; for c in $(CHECKS); do \
@@ -356,6 +357,16 @@ build-native/bt-check: tools/bt-check.c src/bt.c src/bt.h src/bt_menu.c src/bt_m
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
 	      -o $@ tools/bt-check.c src/bt.c src/bt_menu.c
+
+# Muse's view of the Music folder: the two shapes it reads, the litter a Mac
+# leaves beside every track, and where an album's cover is kept.
+check-muselib: build-native/muselib-check
+	@./build-native/muselib-check
+
+build-native/muselib-check: tools/muselib-check.c src/muselib.c src/muselib.h FORCE
+	@mkdir -p build-native
+	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
+	      -o $@ tools/muselib-check.c src/muselib.c
 
 check-backlog:
 	@python3 tools/backlog-check.py

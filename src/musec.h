@@ -3,6 +3,7 @@
 #define TORTOS_MUSEC_H
 
 #include <stdbool.h>
+#include <stddef.h>
 
 /* The launcher's side of Muse: the connection to the daemon, and the play
  * queue.
@@ -52,5 +53,24 @@ const char *musec_path(void);
 /* Playing right now, for Auto Off: music is somebody using the device with
  * nobody touching it, the same as the charger. */
 bool musec_playing(void);
+
+/* The queue's track `i`, relative to the music root, or NULL past either end.
+ * For what comes next, which is the queue's business and not the folder's. */
+const char *musec_track(int i);
+
+/* Ask for the picture `track` (relative to the music root) carries, written to
+ * `base` plus the extension its format has. The daemon answers in a few
+ * milliseconds and the answer is collected with musec_cover_take.
+ *
+ * False when it could not be asked - the daemon is not up yet, and asking has
+ * just started it - and the caller asks again later. An answer can also be
+ * lost with the daemon, so a caller that asked and heard nothing should ask
+ * again after a while rather than wait for good. */
+bool musec_cover_ask(const char *track, const char *base);
+
+/* One answer: the `base` asked about, and the file written there - "" when the
+ * track carries no picture or it could not be written. False when none is
+ * waiting. */
+bool musec_cover_take(char *base, size_t bn, char *file, size_t fn);
 
 #endif

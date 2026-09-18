@@ -20,13 +20,15 @@
  *        SPEED   x=                          0.5-2.0, pitch preserved
  *        SINK    device=                     an ALSA name; "default" is dmix
  *        STATUS
- *   out  READY   proto=1
+ *        COVER   path=  base=                write path's picture to base.jpg|png
+ *   out  READY   proto=2
  *        STATE   state=playing|paused|stopped  path=
  *        META    title= artist= album= len= chapters=
  *        CHAPTER i= at= title=                 one per chapter, after META
  *        POS     at= len=                      about once a second while playing
  *        END     path=                         the file ran out by itself
  *        ERROR   why=
+ *        COVER   base=  file=                  what was written; "" if nothing
  */
 #include <errno.h>
 #include <fcntl.h>
@@ -42,6 +44,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "cover.h"
 #include "dec.h"
 #include "pcm.h"
 
@@ -155,6 +158,11 @@ static void snapshot(void)
 
 	snprintf(S.title, sizeof S.title, "%s", dec_tag(g_dec, "title"));
 	snprintf(S.artist, sizeof S.artist, "%s", dec_tag(g_dec, "artist"));
+	/* The album's artist when the track has none of its own, which is how
+	 * every rip on the first card was tagged: TPE2 filled, TPE1 empty. On a
+	 * compilation the two differ and the track's own wins, as it should. */
+	if (!S.artist[0])
+		snprintf(S.artist, sizeof S.artist, "%s", dec_tag(g_dec, "album_artist"));
 	snprintf(S.album, sizeof S.album, "%s", dec_tag(g_dec, "album"));
 	S.nch = dec_chapters(g_dec);
 	if (S.nch > 256) S.nch = 256;
@@ -379,6 +387,22 @@ static void command(int fd, const char *line)
 	char v[64];
 
 	memset(&q, 0, sizeof q);
+	if (!strncmp(line, "COVER", 5)) {
+		/* On this thread and not the player's. A picture is read from the
+		 * file's header in milliseconds and has nothing to do with what is
+		 * playing, and queued behind the player it would wait for a seek.
+		 * The answer goes straight back, because this thread owns the
+		 * socket. */
+		char base[PATH_MAX_], file[PATH_MAX_ + 8], a[PATH_MAX_ + 8];
+
+		arg(line, "path", q.path, sizeof q.path);
+		arg(line, "base", base, sizeof base);
+		if (!q.path[0] || !base[0]) return;
+		if (cover_extract(q.path, base, file, sizeof file) < 0)
+			say("no cover from %s", q.path);
+		send_line(fd, "COVER\tbase=%s\tfile=%s", clean(base, a, sizeof a), file);
+		return;
+	}
 	if (!strncmp(line, "PLAY", 4)) {
 		arg(line, "path", q.path, sizeof q.path);
 		arg(line, "at", v, sizeof v);    q.at = atof(v);
@@ -464,7 +488,7 @@ int main(void)
 				if (cfd >= 0) close(cfd);
 				cfd = n;
 				have = 0;
-				send_line(cfd, "READY\tproto=1");
+				send_line(cfd, "READY\tproto=2");
 				announce(cfd, 1);
 			}
 		}

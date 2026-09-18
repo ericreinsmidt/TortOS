@@ -801,14 +801,17 @@ static void draw_watermark(SDL_Surface *dst, const char *title, unsigned rgb)
 	/* Deliberately past both edges: what is wanted is the shoulder of the
 	 * letter, not the letter. */
 	SDL_BlitSurface(t, NULL, dst, &(SDL_Rect){
-		dst->w - (int)(t->w * 0.62f), CARD_H - (int)(t->h * 0.80f), 0, 0 });
+		dst->w - (int)(t->w * 0.62f), dst->h - (int)(t->h * 0.80f), 0, 0 });
 	SDL_FreeSurface(t);
 }
 
-SDL_Texture *ui_make_card(SDL_Renderer *r, const char *title, unsigned rgb,
-                          int *w, int *h)
+/* The card at any size: ui_make_card is a game's, ui_make_cover an album's.
+ * One recipe, so an album with no art reads as the same kind of thing as a
+ * game with none. */
+static SDL_Texture *make_card(SDL_Renderer *r, const char *title, unsigned rgb,
+                              int cw, int ch, int *w, int *h)
 {
-	SDL_Surface *s = SDL_CreateRGBSurfaceWithFormat(0, CARD_W, CARD_H, 32,
+	SDL_Surface *s = SDL_CreateRGBSurfaceWithFormat(0, cw, ch, 32,
 	                                                SDL_PIXELFORMAT_ARGB8888);
 	SDL_Texture *t;
 	int y;
@@ -816,10 +819,10 @@ SDL_Texture *ui_make_card(SDL_Renderer *r, const char *title, unsigned rgb,
 
 	/* A vertical gradient, darker at the foot, so a wall of generated cards
 	 * still has some depth to it. */
-	for (y = 0; y < CARD_H; y++) {
-		float k = (float)y / CARD_H;
+	for (y = 0; y < ch; y++) {
+		float k = (float)y / ch;
 		Uint8 v = (Uint8)(38 - 18 * k);
-		SDL_FillRect(s, &(SDL_Rect){ 0, y, CARD_W, 1 },
+		SDL_FillRect(s, &(SDL_Rect){ 0, y, cw, 1 },
 		             SDL_MapRGBA(s->format, (Uint8)(v * 0.86f), (Uint8)(v * 0.92f),
 		                         (Uint8)(v * 1.20f), 255));
 	}
@@ -828,7 +831,7 @@ SDL_Texture *ui_make_card(SDL_Renderer *r, const char *title, unsigned rgb,
 
 	/* The system's color as a band rather than a wash: a generated card
 	 * should read as "this system, no art" at a glance in the row. */
-	SDL_FillRect(s, &(SDL_Rect){ 0, 0, CARD_W, 6 },
+	SDL_FillRect(s, &(SDL_Rect){ 0, 0, cw, 6 },
 	             SDL_MapRGBA(s->format, (Uint8)(rgb >> 16), (Uint8)(rgb >> 8),
 	                         (Uint8)rgb, 255));
 
@@ -840,8 +843,8 @@ SDL_Texture *ui_make_card(SDL_Renderer *r, const char *title, unsigned rgb,
 		 * card empty for the one-line titles that are most of a shelf, and the
 		 * bleed does not fill it - the face darkens toward the foot and takes
 		 * the letter's tail with it. Four lines still fit below this. */
-		int y = draw_wrapped(s, fonts[UI_F_CARD], title, CARD_W - 96,
-		                     (int)(CARD_H * 0.38f), 48);
+		int y = draw_wrapped(s, fonts[UI_F_CARD], title, cw - 96,
+		                     (int)(ch * 0.38f), 48);
 
 		SDL_FillRect(s, &(SDL_Rect){ 48, y + 12, 90, 3 },
 		             SDL_MapRGBA(s->format, (Uint8)(rgb >> 16),
@@ -851,6 +854,23 @@ SDL_Texture *ui_make_card(SDL_Renderer *r, const char *title, unsigned rgb,
 	round_corners(s, CARD_RADIUS);
 	t = SDL_CreateTextureFromSurface(r, s);
 	SDL_FreeSurface(s);
-	if (t) { *w = CARD_W; *h = CARD_H; SDL_SetTextureBlendMode(t, SDL_BLENDMODE_BLEND); }
+	if (t) { *w = cw; *h = ch; SDL_SetTextureBlendMode(t, SDL_BLENDMODE_BLEND); }
 	return t;
+}
+
+SDL_Texture *ui_make_card(SDL_Renderer *r, const char *title, unsigned rgb,
+                          int *w, int *h)
+{
+	return make_card(r, title, rgb, CARD_W, CARD_H, w, h);
+}
+
+SDL_Texture *ui_make_cover(SDL_Renderer *r, const char *title, unsigned rgb,
+                           int *w, int *h)
+{
+	return make_card(r, title, rgb, CARD_W, CARD_W, w, h);
+}
+
+void ui_card_corners(SDL_Surface *s)
+{
+	round_corners(s, CARD_RADIUS * s->w / CARD_W);
 }
