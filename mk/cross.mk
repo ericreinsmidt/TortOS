@@ -54,6 +54,23 @@ $(BUILD)/tortos.elf: $(SRC) $(CREDS) $(wildcard src/*.h)
 
 # A libc-only helper with no SDL: setbright puts the panel at the configured
 # brightness before the boot animation, while the launcher is still starting.
+# Muse, the audio player's engine: a second binary, like setbright, and not
+# part of tortos.elf - SRC above is src/*.c, which does not descend into
+# src/muse/. Linked against the device's own FFmpeg 6.1 (mk/fetch-sysroot.sh
+# puts the libraries and the matching headers in the sysroot); ALSA is reached
+# with dlopen, so it needs no header and no -lasound.
+MUSE_SRC := $(wildcard src/muse/*.c)
+$(BUILD)/muse: $(MUSE_SRC) $(wildcard src/muse/*.h)
+	mkdir -p $(BUILD)
+	$(CC) -O2 -mcpu=cortex-a53 -Wall -Wextra -Wno-unused-parameter -std=gnu11 \
+	      -D_GNU_SOURCE -I$(SYSROOT)/usr/include $(LDFLAGS) -o $@ $(MUSE_SRC) \
+	      -lavformat -lavcodec -lavfilter -lswresample -lavutil -lpthread -ldl
+
+# Talks to Muse by hand over ssh; the device's BusyBox nc has no -U.
+$(BUILD)/musectl: tools/musectl.c
+	mkdir -p $(BUILD)
+	$(CC) -O2 -mcpu=cortex-a53 -Wall -Wextra -std=gnu11 -o $@ $<
+
 $(BUILD)/setbright: tools/setbright.c
 	mkdir -p $(BUILD)
 	$(CC) -O2 -mcpu=cortex-a53 -Wall -std=gnu11 -o $@ $<

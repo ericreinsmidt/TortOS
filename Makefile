@@ -42,7 +42,8 @@ check:
 # One version number: the zip name and the About page both read it from here.
 VERSION ?= 1.0
 
-build/tortos.elf: $(wildcard src/*.c) $(wildcard src/*.h) tools/setbright.c mk/cross.mk
+build/tortos.elf: $(wildcard src/*.c) $(wildcard src/*.h) tools/setbright.c mk/cross.mk \
+                  $(wildcard src/muse/*.c) $(wildcard src/muse/*.h) tools/musectl.c
 	@docker image inspect $(IMAGE) > /dev/null 2>&1 || { \
 		echo "toolchain image missing; run: make toolchain" >&2; exit 1; }
 	@[ -d sysroot/usr/include/SDL2 ] || { \
@@ -50,7 +51,7 @@ build/tortos.elf: $(wildcard src/*.c) $(wildcard src/*.h) tools/setbright.c mk/c
 	@# -e VAR with no value passes the HOST's value through, so the pair
 	@# reaches the container without appearing in this command line.
 	docker run --rm -e SS_DEVID -e SS_DEVPASS -v $(CURDIR):/work -w /work $(IMAGE) \
-		make -f mk/cross.mk SYSROOT=/work/sysroot VERSION=$(VERSION) creds build/tortos.elf build/setbright
+		make -f mk/cross.mk SYSROOT=/work/sysroot VERSION=$(VERSION) creds build/tortos.elf build/setbright build/muse build/musectl
 	@# Refuse to be quiet about an output older than its own source.
 	@#
 	@# Docker on macOS can show the container a stale mtime for a file the host
@@ -445,7 +446,7 @@ adb-log:
 # this target is for the loop you are actually in, which is the launcher and
 # what it draws.
 deploy: all
-	tar -cf - -C build tortos.elf setbright -C ../config systems.cfg \
+	tar -cf - -C build tortos.elf setbright muse musectl -C ../config systems.cfg \
 	    -C ../sd/tortos launch.sh bt-alsa.sh -C ../../res/fonts menu.ttf | \
 	    $(SSH) 'tar -xf - -C /mnt/SDCARD/TortOS'
 	tar -cf - -C res cards | $(SSH) 'tar -xf - -C /mnt/SDCARD/TortOS'

@@ -39,6 +39,14 @@ IMG_VER=2.6.3
 IMG_SHA=931c9be5bf1d7c8fae9b7dc157828b7eee874e23c7f24b44ba7eff6b4836312c
 TTF_VER=2.20.2
 TTF_SHA=9dc71ed93487521b107a2c4a9ca6bf43fb62f6bddd5c26b055e6b91418a22053
+# FFmpeg, for Muse. The firmware ships 6.1 in /usr/lib - libavcodec.so.60.31.102
+# - and these are that release's headers, which declare exactly that version:
+# LIBAVCODEC_VERSION 60.31.102 on both sides, checked 2026-09-17. Unlike SDL's
+# single-function headers these are struct layouts, so a mismatch would not be
+# a link error, it would be a wrong offset at runtime. Version-matched on
+# purpose, and pinned.
+FF_VER=6.1
+FF_SHA=938dd778baa04d353163ca5cb06c909c918850055f549205b29b1224e45a5316
 
 command -v adb  > /dev/null || { echo "need adb" >&2; exit 1; }
 command -v curl > /dev/null || { echo "need curl" >&2; exit 1; }
@@ -92,6 +100,46 @@ fetch_headers SDL2_image "$IMG_VER" "$IMG_SHA" \
 fetch_headers SDL2_ttf "$TTF_VER" "$TTF_SHA" \
 	"https://github.com/libsdl-org/SDL_ttf/releases/download/release-$TTF_VER/SDL2_ttf-$TTF_VER.tar.gz" \
 	"SDL2_ttf-$TTF_VER"
+
+# FFmpeg's libraries live in /usr/lib, not /usr/trimui/lib: they are part of
+# the stock firmware rather than TrimUI's own additions. Named, like the rest.
+echo "pulling FFmpeg from the device"
+for lib in libavformat.so.60 libavcodec.so.60 libavutil.so.58 \
+           libswresample.so.4 libavfilter.so.9; do
+	adb pull "/usr/lib/$lib" "$OUT/usr/lib/$lib" > /dev/null 2>&1 ||
+		{ echo "missing $lib on the device" >&2; exit 1; }
+	ln -sf "$lib" "$OUT/usr/lib/${lib%%.so.*}.so"
+done
+
+f="$DL/ffmpeg-$FF_VER.tar.gz"
+[ -f "$f" ] || curl -sSfL -o "$f" "https://ffmpeg.org/releases/ffmpeg-$FF_VER.tar.gz"
+got=$(shasum -a 256 "$f" | cut -d' ' -f1)
+[ "$got" = "$FF_SHA" ] || { echo "ffmpeg: hash mismatch: $got" >&2; exit 1; }
+rm -rf "${DL:?}/ffmpeg-$FF_VER"
+tar -xzf "$f" -C "$DL"
+for d in libavcodec libavformat libavutil libswresample libavfilter; do
+	mkdir -p "$OUT/usr/include/$d"
+	cp "$DL/ffmpeg-$FF_VER/$d"/*.h "$OUT/usr/include/$d/"
+done
+# Two headers the public ones include are written by FFmpeg's configure, which
+# is never run here. Their whole content for this target is below; getting
+# either wrong would be as silent as a wrong struct, so they are small on
+# purpose and say what they are.
+cat > "$OUT/usr/include/libavutil/avconfig.h" << 'EOF'
+/* Written by mk/fetch-sysroot.sh in place of FFmpeg's configure: aarch64. */
+#ifndef AVUTIL_AVCONFIG_H
+#define AVUTIL_AVCONFIG_H
+#define AV_HAVE_BIGENDIAN 0
+#define AV_HAVE_FAST_UNALIGNED 1
+#endif
+EOF
+cat > "$OUT/usr/include/libavutil/ffversion.h" << EOF
+/* Written by mk/fetch-sysroot.sh in place of FFmpeg's configure. */
+#ifndef AVUTIL_FFVERSION_H
+#define AVUTIL_FFVERSION_H
+#define FFMPEG_VERSION "$FF_VER"
+#endif
+EOF
 
 echo "sysroot ready: $OUT"
 ls "$OUT/usr/include/SDL2" | head -5
