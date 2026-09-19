@@ -1,0 +1,88 @@
+{
+ "releases": [
+  {
+   "id": "1503b2bd-071c-431a-a845-d5f908cfb870",
+   "score": 100,
+   "title": "Chunk of Change",
+   "status": "Official",
+   "track-count": 6,
+   "release-group": {
+    "id": "038e07e0-18a6-42fe-937c-45d729b605e5",
+    "title": "Chunk of Change",
+    "primary-type": "EP"
+   }
+  },
+  {
+   "id": "178fb3ec-6142-49c8-bb63-b395fcd8e6ac",
+   "score": 100,
+   "title": "Chunk of Change",
+   "status": "Official",
+   "track-count": 7,
+   "release-group": {
+    "id": "038e07e0-18a6-42fe-937c-45d729b605e5",
+    "title": "Chunk of Change",
+    "primary-type": "EP"
+   }
+  },
+  {
+   "id": "7ef6bf32-fa5d-4c63-af78-a7ef828347d2",
+   "score": 100,
+   "title": "Chunk of Change",
+   "status": "Official",
+   "track-count": 7,
+   "release-group": {
+    "id": "038e07e0-18a6-42fe-937c-45d729b605e5",
+    "title": "Chunk of Change",
+    "primary-type": "EP"
+   }
+  },
+  {
+   "id": "94d5a8a8-79ab-460e-9493-c0038706d4f4",
+   "score": 100,
+   "title": "Chunk of Change",
+   "status": "Official",
+   "track-count": 6,
+   "release-group": {
+    "id": "038e07e0-18a6-42fe-937c-45d729b605e5",
+    "title": "Chunk of Change",
+    "primary-type": "EP"
+   }
+  },
+  {
+   "id": "9301a5fd-9551-4bed-9acb-827ced14ae5c",
+   "score": 100,
+   "title": "Chunk of Change",
+   "status": "Official",
+   "track-count": 6,
+   "release-group": {
+    "id": "038e07e0-18a6-42fe-937c-45d729b605e5",
+    "title": "Chunk of Change",
+    "primary-type": "EP"
+   }
+  },
+  {
+   "id": "173a446c-1e41-431b-8960-8d690b7feee8",
+   "score": 100,
+   "title": "Chunk of Change",
+   "status": "Official",
+   "track-count": 6,
+   "release-group": {
+    "id": "038e07e0-18a6-42fe-937c-45d729b605e5",
+    "title": "Chunk of Change",
+    "primary-type": "EP"
+   }
+  },
+  {
+   "id": "8ab56257-5eec-4102-8c57-c58d4d0619aa",
+   "score": 100,
+   "title": "Chunk of Change",
+   "status": "Official",
+   "track-count": 6,
+   "release-group": {
+    "id": "038e07e0-18a6-42fe-937c-45d729b605e5",
+    "title": "Chunk of Change",
+    "primary-type": "EP"
+   }
+  }
+ ]
+}

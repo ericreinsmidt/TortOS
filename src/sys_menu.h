@@ -60,12 +60,13 @@ typedef enum {
  * it gets. Eric's call, 2026-09-17. */
 #define SM_FAV_ROWS 2
 
-/* What Muse's shelf menu is: how many albums, and Rescan Folder for music
+/* What Muse's shelf menu is: how many albums, Album Art to fetch covers for
+ * the albums that have none or only a small one, and Rescan Folder for music
  * copied onto the card while the Brick was on. Muse has no core, no ROM folder
  * and no display mode, and its cards keep the order the Music folder was read
  * in - card i's cover is album i's - so Sort By would break the shelf rather
  * than reorder it. */
-#define SM_MUSE_ROWS 2
+#define SM_MUSE_ROWS 3
 
 #define MENU_MAX_ROWS 13
 

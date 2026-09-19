@@ -403,13 +403,21 @@ static void system_menu(void)
 		m.sys_name = "Muse";
 		m.sys_core = "";
 		m.game_count = 7;
+		m.wifi = WIFI_CONNECTED;     /* the case above left the radio down */
 		mn = sys_menu_build(&m, mrows, &mb, &mhead);
 		printf("Muse's shelf menu:\n");
-		ck(mn == SM_MUSE_ROWS, "two rows, not six");
+		ck(mn == SM_MUSE_ROWS, "three rows, not six");
 		ck(!strcmp(mrows[0].label, "Albums") && !strcmp(val(&mrows[0]), "7"),
 		   "how many albums");
-		ck(!strcmp(mrows[1].label, "Rescan Folder") && mrows[1].live,
+		ck(!strcmp(mrows[1].label, "Album Art") && mrows[1].live,
+		   "covers to fetch, on a network");
+		ck(!strcmp(mrows[2].label, "Rescan Folder") && mrows[2].live,
 		   "and a rescan that works");
+		m.wifi = WIFI_OFF;
+		sys_menu_build(&m, mrows, &mb, &mhead);
+		ck(!mrows[1].live && !strcmp(val(&mrows[1]), "needs Wi-Fi"),
+		   "Album Art says why it cannot, off the network");
+		ck(mrows[2].live, "and Rescan Folder does not need one");
 		for (k = 0; k < mn; k++) {
 			ck(strcmp(mrows[k].label, "Sort By") != 0,
 			   "no Sort By: a card's place is its cover's");

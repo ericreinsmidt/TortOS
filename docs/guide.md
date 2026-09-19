@@ -334,6 +334,16 @@ picture its files carry and keeps it beside the album, in
 `Music/<artist>/.media/`, the way box art sits in `Roms/<system>/.media`. An
 album whose files carry none gets a generated card.
 
+**Album Art**, in MENU on Muse's shelf, fetches covers over Wi-Fi for every
+album with none, or with one smaller than the shelf draws it - 461px. It asks
+MusicBrainz which record the album is, from the artist and album folder names
+and the number of tracks - the track count is what tells a same-named single,
+or another band, from the album - and takes that record's front cover from
+the Cover Art Archive at 500px. An album it has supplied is remembered and not
+asked about again; one it could not find is asked about on every run, since a
+cover may be added later. MusicBrainz takes a request a second, so a large
+library takes a while: seven albums took a minute on the Brick.
+
 ## The shelf
 
 A single row of cards in perspective, with reflections - Cover Flow, carried

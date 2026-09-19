@@ -1,0 +1,40 @@
+{
+ "releases": [
+  {
+   "id": "93d46dcf-1811-4fbe-a5f6-b0ca29888230",
+   "score": 100,
+   "title": "La Strada",
+   "status": "Official",
+   "track-count": 6,
+   "release-group": {
+    "id": "7f05f461-7ac5-44af-99f9-8445dbf1547b",
+    "title": "La Strada",
+    "primary-type": "EP"
+   }
+  },
+  {
+   "id": "9b6dae77-f0f0-4160-84c6-d6c009e85fb2",
+   "score": 100,
+   "title": "La Strada",
+   "status": "Official",
+   "track-count": 11,
+   "release-group": {
+    "id": "644d08aa-19e8-3fe8-ae36-da65c9d70f9e",
+    "title": "La Strada",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "766001dc-af37-41e3-ae08-1edd14aa1eb8",
+   "score": 100,
+   "title": "La Strada",
+   "status": "Official",
+   "track-count": 7,
+   "release-group": {
+    "id": "e0714e36-bdd1-484a-9c62-c2b445e6ca90",
+    "title": "La Strada",
+    "primary-type": "Album"
+   }
+  }
+ ]
+}

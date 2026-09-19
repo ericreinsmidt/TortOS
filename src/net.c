@@ -57,6 +57,13 @@ static void cfg_quote(FILE *f, const char *v)
 /* The same config, for a GET of an arbitrary URL. No fields, no token, so
  * nothing here needs hiding from a process list - but it goes through a file
  * anyway, because two ways of invoking curl is two things to keep right. */
+/* Who is asking, on every request. MusicBrainz asks each application to name
+ * itself and a way to reach whoever runs it, and to throttle or refuse what
+ * does not; the project's address is that way, and nobody's email is. The
+ * other services are sent the same line, since one client should say one
+ * thing about itself. */
+#define NET_UA "TortOS/" TORTOS_VERSION " ( https://github.com/ericreinsmidt/TortOS )"
+
 static bool write_get_config(const char *path, const char *url,
                             const char *body_path, int timeout_s)
 {
@@ -92,7 +99,7 @@ static bool write_get_config(const char *path, const char *url,
 	if (body_path) { fprintf(f, "output = "); cfg_quote(f, body_path); fputc('\n', f); }
 	fprintf(f, "max-time = %d\n", timeout_s);
 	if (g_ca[0]) { fprintf(f, "cacert = "); cfg_quote(f, g_ca); fputc('\n', f); }
-	fprintf(f, "user-agent = "); cfg_quote(f, "TortOS/" TORTOS_VERSION); fputc('\n', f);
+	fprintf(f, "user-agent = "); cfg_quote(f, NET_UA); fputc('\n', f);
 	fprintf(f, "url = "); cfg_quote(f, url); fputc('\n', f);
 	fclose(f);
 	return true;
@@ -130,7 +137,7 @@ static bool write_config(const char *path, const char *url, bool get,
 	if (g_ca[0]) { fprintf(f, "cacert = "); cfg_quote(f, g_ca); fputc('\n', f); }
 	/* RA refuses curl's default agent with `unsupported_client`, which reads
 	 * like a permissions problem and is not one. */
-	fprintf(f, "user-agent = "); cfg_quote(f, "TortOS/" TORTOS_VERSION); fputc('\n', f);
+	fprintf(f, "user-agent = "); cfg_quote(f, NET_UA); fputc('\n', f);
 
 	for (i = 0; i < n; i++) {
 		char kv[1024];

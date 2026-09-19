@@ -1,0 +1,172 @@
+{
+ "releases": [
+  {
+   "id": "bb65a0e6-41c3-42dc-be56-1e2064eb1b2f",
+   "score": 100,
+   "title": "Little Voice",
+   "status": "Official",
+   "track-count": 15,
+   "release-group": {
+    "id": "c9b76206-b134-3ba8-a1de-265999104ec2",
+    "title": "Little Voice",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "6453109f-9083-3cdf-b7f5-9bed9aa50827",
+   "score": 100,
+   "title": "Little Voice",
+   "status": "Official",
+   "track-count": 17,
+   "release-group": {
+    "id": "c9b76206-b134-3ba8-a1de-265999104ec2",
+    "title": "Little Voice",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "af47b614-1195-4cc6-ae87-8d3952542a34",
+   "score": 100,
+   "title": "Little Voice",
+   "status": "Official",
+   "track-count": 12,
+   "release-group": {
+    "id": "c9b76206-b134-3ba8-a1de-265999104ec2",
+    "title": "Little Voice",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "6811f2a0-5552-4473-8628-cbdd50377c52",
+   "score": 100,
+   "title": "Little Voice",
+   "status": "Official",
+   "track-count": 13,
+   "release-group": {
+    "id": "c9b76206-b134-3ba8-a1de-265999104ec2",
+    "title": "Little Voice",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "e5d9274f-ffbf-4045-87f6-1a4a8535453b",
+   "score": 100,
+   "title": "Little Voice",
+   "status": "Official",
+   "track-count": 12,
+   "release-group": {
+    "id": "c9b76206-b134-3ba8-a1de-265999104ec2",
+    "title": "Little Voice",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "456eb6bf-1a9a-4a44-9510-42126e3009d5",
+   "score": 100,
+   "title": "Little Voice",
+   "status": "Official",
+   "track-count": 1,
+   "release-group": {
+    "id": "461b1dbd-49c0-49c1-89b9-97c28b4da6e3",
+    "title": "Little Voice",
+    "primary-type": "Single"
+   }
+  },
+  {
+   "id": "0a34dd0b-ea17-4a5c-94cf-22a7f4e35253",
+   "score": 100,
+   "title": "Little Voice",
+   "status": "Official",
+   "track-count": 12,
+   "release-group": {
+    "id": "c9b76206-b134-3ba8-a1de-265999104ec2",
+    "title": "Little Voice",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "2188e047-388d-42b2-a50a-8a25d33d1802",
+   "score": 100,
+   "title": "Little Voice",
+   "status": "Official",
+   "track-count": 12,
+   "release-group": {
+    "id": "c9b76206-b134-3ba8-a1de-265999104ec2",
+    "title": "Little Voice",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "b6c2dead-3a56-3101-87da-651fc521155a",
+   "score": 100,
+   "title": "Little Voice",
+   "status": "Official",
+   "track-count": 12,
+   "release-group": {
+    "id": "c9b76206-b134-3ba8-a1de-265999104ec2",
+    "title": "Little Voice",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "84f4a757-ae00-4703-88a2-ef3e4a521505",
+   "score": 100,
+   "title": "Little Voice",
+   "status": "Official",
+   "track-count": 12,
+   "release-group": {
+    "id": "c9b76206-b134-3ba8-a1de-265999104ec2",
+    "title": "Little Voice",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "8c50178c-2b6c-4c9b-b995-d809aca00a10",
+   "score": 100,
+   "title": "Little Voice",
+   "status": "Official",
+   "track-count": 12,
+   "release-group": {
+    "id": "c9b76206-b134-3ba8-a1de-265999104ec2",
+    "title": "Little Voice",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "644005fd-5e01-4f75-972e-b248c463b827",
+   "score": 79,
+   "title": "More Love: Songs From Little Voice Season One",
+   "status": "Official",
+   "track-count": 10,
+   "release-group": {
+    "id": "63712ffe-4314-4cd4-8b2c-d6538e73ebd7",
+    "title": "More Love: Songs From Little Voice Season One",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "cba31655-1e50-4cab-bf82-8978ff83b202",
+   "score": 79,
+   "title": "More Love: Songs From Little Voice Season One",
+   "status": "Official",
+   "track-count": 10,
+   "release-group": {
+    "id": "63712ffe-4314-4cd4-8b2c-d6538e73ebd7",
+    "title": "More Love: Songs From Little Voice Season One",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "bff1534a-39a0-499e-80a8-d39b0b49de8b",
+   "score": 78,
+   "title": "Little Voice, Season 1: Apple TV+ Original Series Soundtrack",
+   "status": "Official",
+   "track-count": 14,
+   "release-group": {
+    "id": "05848189-1103-4a33-92b0-ef8e11df5c17",
+    "title": "Little Voice, Season 1: Apple TV+ Original Series Soundtrack",
+    "primary-type": "Album"
+   }
+  }
+ ]
+}

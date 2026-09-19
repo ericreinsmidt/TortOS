@@ -1,0 +1,304 @@
+{
+ "releases": [
+  {
+   "id": "c50176ce-676c-4f30-a168-b333cfe1ed82",
+   "score": 100,
+   "title": "The Bends",
+   "status": "Official",
+   "track-count": 3,
+   "release-group": {
+    "id": "8ea92211-a70b-3993-9301-bb80e0d1a24a",
+    "title": "The Bends",
+    "primary-type": "Single"
+   }
+  },
+  {
+   "id": "e7e61ec9-9f7d-4235-8dfc-acc2d9b9b1b3",
+   "score": 100,
+   "title": "The Bends",
+   "status": "Official",
+   "track-count": 12,
+   "release-group": {
+    "id": "b8048f24-c026-3398-b23a-b5e50716cbc7",
+    "title": "The Bends",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "9ae924e1-8a6c-4d61-acb6-6f004adf8559",
+   "score": 100,
+   "title": "The Bends",
+   "status": "Official",
+   "track-count": 24,
+   "release-group": {
+    "id": "b8048f24-c026-3398-b23a-b5e50716cbc7",
+    "title": "The Bends",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "fc689ab9-7c35-435e-b407-b097cf9f3052",
+   "score": 100,
+   "title": "The Bends",
+   "status": "Official",
+   "track-count": 12,
+   "release-group": {
+    "id": "b8048f24-c026-3398-b23a-b5e50716cbc7",
+    "title": "The Bends",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "b2002626-ea4f-47d4-972d-1aa229335321",
+   "score": 100,
+   "title": "The Bends",
+   "status": "Official",
+   "track-count": 12,
+   "release-group": {
+    "id": "b8048f24-c026-3398-b23a-b5e50716cbc7",
+    "title": "The Bends",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "edb662c5-183e-457e-8830-0feb580a7daa",
+   "score": 100,
+   "title": "The Bends",
+   "status": "Official",
+   "track-count": 33,
+   "release-group": {
+    "id": "b8048f24-c026-3398-b23a-b5e50716cbc7",
+    "title": "The Bends",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "746bf2f6-2ba4-3902-be25-84657182bfdf",
+   "score": 100,
+   "title": "The Bends",
+   "status": "Official",
+   "track-count": 12,
+   "release-group": {
+    "id": "b8048f24-c026-3398-b23a-b5e50716cbc7",
+    "title": "The Bends",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "9c886aef-6616-4959-842d-2b3dd7fbe610",
+   "score": 100,
+   "title": "The Bends",
+   "status": "Official",
+   "track-count": 12,
+   "release-group": {
+    "id": "b8048f24-c026-3398-b23a-b5e50716cbc7",
+    "title": "The Bends",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "c9bd3da3-ee62-4c3e-a48e-a1b20ae7d0ed",
+   "score": 100,
+   "title": "The Bends",
+   "status": "Official",
+   "track-count": 3,
+   "release-group": {
+    "id": "8ea92211-a70b-3993-9301-bb80e0d1a24a",
+    "title": "The Bends",
+    "primary-type": "Single"
+   }
+  },
+  {
+   "id": "745d58fd-e1af-4cdc-a476-142218a8ba31",
+   "score": 100,
+   "title": "The Bends",
+   "status": "Official",
+   "track-count": 13,
+   "release-group": {
+    "id": "b8048f24-c026-3398-b23a-b5e50716cbc7",
+    "title": "The Bends",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "67b9366d-8ac7-4cd9-89d1-84653a679d3e",
+   "score": 100,
+   "title": "The Bends",
+   "status": "Official",
+   "track-count": 12,
+   "release-group": {
+    "id": "b8048f24-c026-3398-b23a-b5e50716cbc7",
+    "title": "The Bends",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "7bbf6233-54d6-46cb-bd79-a18972b51e13",
+   "score": 100,
+   "title": "The Bends",
+   "status": "Official",
+   "track-count": 12,
+   "release-group": {
+    "id": "b8048f24-c026-3398-b23a-b5e50716cbc7",
+    "title": "The Bends",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "ead59e92-c7ce-4da3-b8cc-9f9305edff95",
+   "score": 100,
+   "title": "The Bends",
+   "status": "Official",
+   "track-count": 12,
+   "release-group": {
+    "id": "b8048f24-c026-3398-b23a-b5e50716cbc7",
+    "title": "The Bends",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "1aca3787-184b-4c2c-8f8b-41af9a78a190",
+   "score": 100,
+   "title": "The Bends",
+   "status": "Official",
+   "track-count": 12,
+   "release-group": {
+    "id": "b8048f24-c026-3398-b23a-b5e50716cbc7",
+    "title": "The Bends",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "daa0867c-8c61-4091-bd0e-856bf5333369",
+   "score": 100,
+   "title": "The Bends",
+   "status": "Official",
+   "track-count": 12,
+   "release-group": {
+    "id": "b8048f24-c026-3398-b23a-b5e50716cbc7",
+    "title": "The Bends",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "212255d2-94c7-4afe-bd42-5911d78d27d4",
+   "score": 100,
+   "title": "The Bends",
+   "status": "Official",
+   "track-count": 12,
+   "release-group": {
+    "id": "b8048f24-c026-3398-b23a-b5e50716cbc7",
+    "title": "The Bends",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "208ca5a3-c97f-4329-86b2-85ada76bf20c",
+   "score": 100,
+   "title": "The Bends",
+   "status": "Official",
+   "track-count": 12,
+   "release-group": {
+    "id": "b8048f24-c026-3398-b23a-b5e50716cbc7",
+    "title": "The Bends",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "56c0c5d9-77bf-4f3a-b3c3-38d701135cae",
+   "score": 100,
+   "title": "The Bends",
+   "status": "Official",
+   "track-count": 12,
+   "release-group": {
+    "id": "b8048f24-c026-3398-b23a-b5e50716cbc7",
+    "title": "The Bends",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "8af759be-1495-4cc4-85a7-47edc21fa348",
+   "score": 100,
+   "title": "The Bends",
+   "status": "Official",
+   "track-count": 12,
+   "release-group": {
+    "id": "b8048f24-c026-3398-b23a-b5e50716cbc7",
+    "title": "The Bends",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "3e8e8360-aaa6-464e-831f-2cb0e1fdcf87",
+   "score": 100,
+   "title": "The Bends",
+   "status": "Official",
+   "track-count": 12,
+   "release-group": {
+    "id": "b8048f24-c026-3398-b23a-b5e50716cbc7",
+    "title": "The Bends",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "bd01ca2a-db4e-4c0f-9855-adee042c39ec",
+   "score": 100,
+   "title": "The Bends",
+   "status": "Official",
+   "track-count": 3,
+   "release-group": {
+    "id": "8ea92211-a70b-3993-9301-bb80e0d1a24a",
+    "title": "The Bends",
+    "primary-type": "Single"
+   }
+  },
+  {
+   "id": "11a5a163-b7e0-4e24-a3d6-8e9ebd213c7c",
+   "score": 100,
+   "title": "The Bends",
+   "status": "Official",
+   "track-count": 17,
+   "release-group": {
+    "id": "b8048f24-c026-3398-b23a-b5e50716cbc7",
+    "title": "The Bends",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "63b17b64-8544-48a5-9bf6-c75f1d9086b5",
+   "score": 100,
+   "title": "The Bends",
+   "status": "Withdrawn",
+   "track-count": 33,
+   "release-group": {
+    "id": "b8048f24-c026-3398-b23a-b5e50716cbc7",
+    "title": "The Bends",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "89ebb505-cf72-308c-bf72-4a64fc0ab77f",
+   "score": 100,
+   "title": "The Bends",
+   "status": "Official",
+   "track-count": 55,
+   "release-group": {
+    "id": "b8048f24-c026-3398-b23a-b5e50716cbc7",
+    "title": "The Bends",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "29dcea33-ad28-3fa3-9831-af5e520a513b",
+   "score": 100,
+   "title": "The Bends",
+   "status": "Official",
+   "track-count": 33,
+   "release-group": {
+    "id": "b8048f24-c026-3398-b23a-b5e50716cbc7",
+    "title": "The Bends",
+    "primary-type": "Album"
+   }
+  }
+ ]
+}

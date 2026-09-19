@@ -37,6 +37,7 @@
 #include "audioout.h"
 #include "menu.h"
 #include "musec.h"
+#include "museart.h"
 #include "muselib.h"
 #include "ss.h"
 #include "ssrun.h"
@@ -151,6 +152,8 @@ static void build_muse_shelf(app *a);
 static void muse_screen(app *a, bool now, int album);
 /* Whether a shelf is Muse's; sorting needs to know, well before Muse's code. */
 static bool is_muse(const system_cfg *s);
+/* Muse's menu opens it, and the menu is up here. */
+static void album_art_screen(app *a);
 /* Same reason: Over The Hare is a screen up here and the scan is down there. */
 static void rescan_all(app *a);
 /* And again: Play Time can send you to a game's shelf, which is the input
@@ -5873,10 +5876,14 @@ static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
 	(void)ctx;
 
 	if (a->screen == SCREEN_GAMES) {
-		/* Muse's menu is its own two rows - see SM_MUSE_ROWS - so the enum's
-		 * row numbers below mean nothing on it. Row 1 is Rescan Folder. */
+		/* Muse's menu is its own three rows - see SM_MUSE_ROWS - so the
+		 * enum's row numbers below mean nothing on it: row 1 is Album Art,
+		 * row 2 Rescan Folder. Album Art is a dead row off the network, and
+		 * the runner does not land on dead rows. */
 		if (is_muse(&a->sys.systems[a->sys_cursor])) {
-			if (key != IN_ACCEPT || sel != 1) return MENU_STAY;
+			if (key != IN_ACCEPT) return MENU_STAY;
+			if (sel == 1) { album_art_screen(a); return MENU_STAY; }
+			if (sel != 2) return MENU_STAY;
 			wait_panel(a, "Muse", "Scanning...");
 			rescan_all(a);
 			return MENU_DONE;
@@ -7387,6 +7394,182 @@ static bool muse_open(app *a, const menu_style *over, void *ctx)
 static void muse_album(app *a, int album)
 {
 	muse_screen(a, false, album);
+}
+
+/* ---- Muse: Album Art -------------------------------------------------------- */
+
+/* The artist an album is under, and its folder relative to the Music folder. */
+static int muse_artist_of(int al)
+{
+	int ar;
+
+	for (ar = 0; ar < g_muse.nartists - 1; ar++)
+		if (al < g_muse.artists[ar].first + g_muse.artists[ar].n) break;
+	return ar;
+}
+
+static void muse_album_dir(int al, char *out, size_t n)
+{
+	const char *p = g_muse.albums[al].n > 0 ? g_muse.tracks[g_muse.albums[al].first].path : "";
+	const char *slash = strrchr(p, '/');
+
+	snprintf(out, n, "%.*s", slash ? (int)(slash - p) : 0, p);
+}
+
+/* Which albums Album Art asks about: every one with no cover on the card, or
+ * with one smaller on its short side than the shelf draws it - the album
+ * frame's height, 461px - which the service has not already supplied. Eric's
+ * rule, 2026-09-19. A cover the service gave is remembered, because its own
+ * can be small too - La Strada's is 360px - and asking again would only fetch
+ * the same one; an album it could not find is asked about on every run. */
+static int museart_jobs(museart_job *jobs, int max)
+{
+	int crisp = (int)(TORTOS_SCREEN_H * CF_LAYOUT_ALBUMS.size + 0.5f);
+	int i, n = 0;
+
+	for (i = 0; i < g_muse.nalbums && n < max; i++) {
+		char dir[LIB_PATH], key[LIB_PATH + 16], p[LIB_PATH * 2 + 8];
+		museart_job *j = &jobs[n];
+		int w = 0, h = 0;
+		bool have;
+
+		if (g_muse.albums[i].n <= 0) continue;
+		muse_album_dir(i, dir, sizeof dir);
+		snprintf(key, sizeof key, "museart.%s", dir);
+		if (db_has(db_lib(), key)) continue;
+		ml_cover_base(g_muse_root, &g_muse, i, j->base, sizeof j->base);
+		snprintf(p, sizeof p, "%s.jpg", j->base);
+		have = file_nonempty(p);
+		if (!have) { snprintf(p, sizeof p, "%s.png", j->base); have = file_nonempty(p); }
+		if (have && museart_image_size(p, &w, &h) && (w < h ? w : h) >= crisp) continue;
+		snprintf(j->artist, sizeof j->artist, "%s", g_muse.artists[muse_artist_of(i)].name);
+		snprintf(j->album, sizeof j->album, "%s", g_muse.albums[i].name);
+		j->tracks = g_muse.albums[i].n;
+		j->id = i;
+		n++;
+	}
+	return n;
+}
+
+/* A cover arrived for album `al`: remember where it came from, and drop the old
+ * one from the shelf and from Now Playing so both draw the new one. The whole
+ * worker queue is disowned, not just this card, because a decode of the OLD
+ * file may already be in flight and would otherwise land on top. */
+static void album_art_landed(app *a, int al, const char *rg)
+{
+	char dir[LIB_PATH], key[LIB_PATH + 16];
+	int s;
+
+	if (al < 0 || al >= g_muse.nalbums) return;
+	muse_album_dir(al, dir, sizeof dir);
+	snprintf(key, sizeof key, "museart.%s", dir);
+	db_set_str(db_lib(), key, rg[0] ? rg : "fetched");
+	if (g_cov) g_cov[al].st = COV_JPG;
+	for (s = 0; s < a->sys.count; s++) {
+		sysview *v = &a->view[s];
+
+		if (!is_muse(&a->sys.systems[s]) || !v->tex || al >= v->list.count) continue;
+		if (v->tex[al]) { SDL_DestroyTexture(v->tex[al]); v->tex[al] = NULL; }
+	}
+	texload_bump();
+	faces_stale();
+	if (g_np.album == al) np_forget();
+}
+
+/* Album Art, from Muse's menu: MusicBrainz and the Cover Art Archive, for the
+ * albums museart_jobs chooses. The covers change on the shelf behind the panel
+ * as they arrive. B stops. */
+static void album_art_screen(app *a)
+{
+	museart_job *jobs;
+	museart_status st;
+	menu_row rows[3];
+	char head[300], fit[200], where[64], counts[96];
+	bool working, done = false;
+	int n;
+
+	if (!net_online()) {
+		menu_row row = { "No network", NULL, false };
+
+		draw_shelf(a);
+		menu_draw(a, "Album Art", &row, 1, -1, 0, MUSE_ACCENT);
+		plat_draw_osd(a->r);
+		SDL_RenderPresent(a->r);
+		SDL_Delay(1600);
+		plat_input_flush();
+		memset(&a->in, 0, sizeof a->in);
+		return;
+	}
+	jobs = calloc((size_t)(g_muse.nalbums > 0 ? g_muse.nalbums : 1), sizeof *jobs);
+	if (!jobs) return;
+	n = museart_jobs(jobs, g_muse.nalbums);
+	/* The one async slot, which an account answer from a game just quit may
+	 * still be holding - the same reason Box Art gives it up first. */
+	sync_abandon();
+	working = museart_begin(jobs, n, "/tmp/tortos-musicbrainz.json");
+	free(jobs);
+	fprintf(stderr, "album art: %d album%s to ask about\n", n, n == 1 ? "" : "s");
+
+	plat_input_flush();
+	memset(&a->in, 0, sizeof a->in);
+	while (!done && !want_quit && a->running) {
+		if (working && museart_step(plat_now_ms()) == 0) {
+			working = false;
+			museart_status_get(&st);
+			fprintf(stderr, "album art: %d found, %d not found, %d failed%s%s\n",
+			        st.found, st.missing, st.failed, st.problem[0] ? " - " : "",
+			        st.problem);
+		}
+		museart_status_get(&st);
+		if (st.landed >= 0) album_art_landed(a, st.landed, st.rg);
+
+		ui_fit_text(ui_font(UI_F_LABEL),
+		            working ? (st.now[0] ? st.now : "starting")
+		            : st.problem[0] ? st.problem
+		            : n == 0 ? "Every album has a crisp cover" : "Done",
+		            fit, sizeof fit, TORTOS_SCREEN_W * 3 / 4);
+		snprintf(head, sizeof head, "Album Art\n%s", fit);
+		snprintf(where, sizeof where, "%d of %d", st.done, st.n);
+		if (st.failed)
+			snprintf(counts, sizeof counts, "%d found, %d not found, %d failed",
+			         st.found, st.missing, st.failed);
+		else
+			snprintf(counts, sizeof counts, "%d found, %d not found",
+			         st.found, st.missing);
+		rows[0] = (menu_row){ "Albums", where,  false };
+		rows[1] = (menu_row){ "Covers", counts, false };
+		rows[2] = (menu_row){ working ? "B to stop" : "B to close", NULL, false };
+
+		plat_input_poll(&a->in);
+		if (a->in.quit_requested) { museart_cancel(); a->running = false; return; }
+		if (a->in.pressed[IN_POWER] || idle_due(a)) {
+			museart_cancel();
+			power_off(a);
+			return;
+		}
+		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = true;
+		if (in_repeat(&a->in, IN_VOLUP))    plat_volume_nudge(+1);
+		if (in_repeat(&a->in, IN_VOLDN))    plat_volume_nudge(-1);
+		if (in_repeat(&a->in, IN_BRIGHTUP)) plat_brightness_nudge(+1);
+		if (in_repeat(&a->in, IN_BRIGHTDN)) plat_brightness_nudge(-1);
+
+		/* Idle does not count while covers are arriving: it is the device
+		 * doing what it was asked, and powering off halfway loses the rest. */
+		if (working) a->idle.since_ms = plat_now_ms();
+
+		tick_tint(a);
+		draw_shelf(a);
+		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
+		SDL_RenderFillRect(a->r, NULL);
+		menu_draw(a, head, rows, 3, -1, menu_std_width(a), MUSE_ACCENT);
+		plat_draw_osd(a->r);
+		SDL_RenderPresent(a->r);
+		SDL_Delay(8);
+	}
+	museart_cancel();
+	plat_input_flush();
+	memset(&a->in, 0, sizeof a->in);
 }
 
 static void synopsis_screen(app *a, const char *title, const char *text,

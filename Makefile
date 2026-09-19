@@ -30,7 +30,7 @@ all: build/tortos.elf
 CHECKS = check-cheevos check-hare check-httpd check-idle check-rahash \
          check-raset check-xfer check-menus check-artscrape check-artrun check-audioout \
          check-db check-stats check-sort check-bt check-backlog check-ss \
-         check-muselib check-musequeue
+         check-muselib check-musequeue check-museart
 
 check:
 	@fail=0; for c in $(CHECKS); do \
@@ -377,6 +377,17 @@ build-native/musequeue-check: tools/musequeue-check.c src/musequeue.c src/musequ
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
 	      -o $@ tools/musequeue-check.c src/musequeue.c
+
+# Album covers from MusicBrainz: the rule that picks the record, against what
+# MusicBrainz said about the first card's albums, and a run on stubbed network.
+check-museart: build-native/museart-check
+	@./build-native/museart-check
+
+build-native/museart-check: tools/museart-check.c src/museart.c src/museart.h \
+                            src/urlenc.c src/rajson.c tools/fixtures/musicbrainz/*.json FORCE
+	@mkdir -p build-native
+	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
+	      -o $@ tools/museart-check.c src/museart.c src/urlenc.c src/rajson.c
 
 check-backlog:
 	@python3 tools/backlog-check.py

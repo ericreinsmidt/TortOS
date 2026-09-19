@@ -1,0 +1,304 @@
+{
+ "releases": [
+  {
+   "id": "5ef23cf4-5fff-4eb7-9cef-51a6ecf6bff5",
+   "score": 100,
+   "title": "xx",
+   "status": "Official",
+   "track-count": 14,
+   "release-group": {
+    "id": "23355caf-a543-4b5f-80fe-449101868fc1",
+    "title": "xx",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "18631159-91e4-45aa-aefc-4f030b5439e7",
+   "score": 100,
+   "title": "xx",
+   "status": "Official",
+   "track-count": 11,
+   "release-group": {
+    "id": "23355caf-a543-4b5f-80fe-449101868fc1",
+    "title": "xx",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "c537ac33-94c9-4cf8-b0c4-b55d3a783666",
+   "score": 100,
+   "title": "xx",
+   "status": "Withdrawn",
+   "track-count": 12,
+   "release-group": {
+    "id": "23355caf-a543-4b5f-80fe-449101868fc1",
+    "title": "xx",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "e19bc171-842b-3ea7-bf4e-bfbf0e57ab83",
+   "score": 100,
+   "title": "xx",
+   "status": "Official",
+   "track-count": 12,
+   "release-group": {
+    "id": "23355caf-a543-4b5f-80fe-449101868fc1",
+    "title": "xx",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "d1503eba-60af-49ad-98a6-970881d16e09",
+   "score": 100,
+   "title": "xx",
+   "status": "Official",
+   "track-count": 16,
+   "release-group": {
+    "id": "23355caf-a543-4b5f-80fe-449101868fc1",
+    "title": "xx",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "6c9e436d-e47d-3616-8117-097880e50ce8",
+   "score": 100,
+   "title": "xx",
+   "status": "Official",
+   "track-count": 11,
+   "release-group": {
+    "id": "23355caf-a543-4b5f-80fe-449101868fc1",
+    "title": "xx",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "d8240ffd-d299-4804-8e29-c39e84ae33bc",
+   "score": 100,
+   "title": "xx",
+   "status": "Official",
+   "track-count": 14,
+   "release-group": {
+    "id": "23355caf-a543-4b5f-80fe-449101868fc1",
+    "title": "xx",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "11824b83-072f-4d14-a704-d02109174c41",
+   "score": 100,
+   "title": "xx",
+   "status": "Withdrawn",
+   "track-count": 12,
+   "release-group": {
+    "id": "23355caf-a543-4b5f-80fe-449101868fc1",
+    "title": "xx",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "2d9f9aac-1884-3939-a3b7-01437151e495",
+   "score": 100,
+   "title": "xx",
+   "status": "Official",
+   "track-count": 11,
+   "release-group": {
+    "id": "23355caf-a543-4b5f-80fe-449101868fc1",
+    "title": "xx",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "e9164565-259f-4160-991e-3742aa81e0d9",
+   "score": 100,
+   "title": "xx",
+   "status": "Official",
+   "track-count": 11,
+   "release-group": {
+    "id": "23355caf-a543-4b5f-80fe-449101868fc1",
+    "title": "xx",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "00f57286-fafc-4f09-8918-37bc19a53bc8",
+   "score": 100,
+   "title": "xx",
+   "status": "Withdrawn",
+   "track-count": 11,
+   "release-group": {
+    "id": "23355caf-a543-4b5f-80fe-449101868fc1",
+    "title": "xx",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "7dd55ae2-8ba9-48a9-8854-b81cd550c683",
+   "score": 100,
+   "title": "xx",
+   "status": "Official",
+   "track-count": 11,
+   "release-group": {
+    "id": "23355caf-a543-4b5f-80fe-449101868fc1",
+    "title": "xx",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "8e12a163-d952-4ce2-a34b-fc3fb484455f",
+   "score": 100,
+   "title": "xx",
+   "status": "Official",
+   "track-count": 16,
+   "release-group": {
+    "id": "23355caf-a543-4b5f-80fe-449101868fc1",
+    "title": "xx",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "679896ce-6af0-4d99-b463-0a99ccc80104",
+   "score": 100,
+   "title": "xx",
+   "status": "Withdrawn",
+   "track-count": 11,
+   "release-group": {
+    "id": "23355caf-a543-4b5f-80fe-449101868fc1",
+    "title": "xx",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "cda5f5bd-a788-460e-a7c8-96a23efdfce0",
+   "score": 100,
+   "title": "xx",
+   "status": "Official",
+   "track-count": 11,
+   "release-group": {
+    "id": "23355caf-a543-4b5f-80fe-449101868fc1",
+    "title": "xx",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "a490fc82-6bc3-43e5-9cfa-cf793e0bdb2b",
+   "score": 100,
+   "title": "xx",
+   "status": "Withdrawn",
+   "track-count": 12,
+   "release-group": {
+    "id": "23355caf-a543-4b5f-80fe-449101868fc1",
+    "title": "xx",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "69834745-048d-49f8-85a5-0b2a6385187a",
+   "score": 100,
+   "title": "xx",
+   "status": "Official",
+   "track-count": 16,
+   "release-group": {
+    "id": "23355caf-a543-4b5f-80fe-449101868fc1",
+    "title": "xx",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "0e93062a-e3f2-4ffd-bb77-a9f8d4f4dc9b",
+   "score": 100,
+   "title": "xx",
+   "status": "Official",
+   "track-count": 11,
+   "release-group": {
+    "id": "23355caf-a543-4b5f-80fe-449101868fc1",
+    "title": "xx",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "8dfe0083-30f6-4929-9400-b566f3c03b9a",
+   "score": 100,
+   "title": "xx",
+   "status": "Official",
+   "track-count": 11,
+   "release-group": {
+    "id": "23355caf-a543-4b5f-80fe-449101868fc1",
+    "title": "xx",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "b6319141-cccc-43cb-884b-38f94b1931c3",
+   "score": 93,
+   "title": "xx (Deluxe)",
+   "status": "Official",
+   "track-count": 16,
+   "release-group": {
+    "id": "23355caf-a543-4b5f-80fe-449101868fc1",
+    "title": "xx",
+    "primary-type": "Album"
+   }
+  },
+  {
+   "id": "5fe61a1c-b5f0-4380-b3c8-af4c9888b6d3",
+   "score": 88,
+   "title": "Jamie xx Edits",
+   "status": "Official",
+   "track-count": 2,
+   "release-group": {
+    "id": "73116459-0fc6-489a-b078-115e923f59f9",
+    "title": "Jamie xx Edits",
+    "primary-type": "Single"
+   }
+  },
+  {
+   "id": "84c010c5-c348-48d6-a995-ada2c6426051",
+   "score": 80,
+   "title": "On Hold (Jamie xx remix)",
+   "status": "Official",
+   "track-count": 1,
+   "release-group": {
+    "id": "db736567-ef1d-4d41-bc20-0107db876233",
+    "title": "On Hold (Jamie xx remix)",
+    "primary-type": "Single"
+   }
+  },
+  {
+   "id": "3c8a1108-275e-4e5f-9e21-9ab3865c7676",
+   "score": 80,
+   "title": "On Hold (Jamie xx Remix)",
+   "status": "Official",
+   "track-count": 1,
+   "release-group": {
+    "id": "db736567-ef1d-4d41-bc20-0107db876233",
+    "title": "On Hold (Jamie xx remix)",
+    "primary-type": "Single"
+   }
+  },
+  {
+   "id": "fb7264e0-d550-4dd1-8b08-db3e386a40f7",
+   "score": 80,
+   "title": "FACT Mix 70: The xx",
+   "status": "Official",
+   "track-count": 1,
+   "release-group": {
+    "id": "367c8244-5eb6-40a5-967f-c709303dd38d",
+    "title": "FACT Mix 70: The xx",
+    "primary-type": "Broadcast"
+   }
+  },
+  {
+   "id": "bd1eacd9-9cd0-4108-a6c9-e4ac2c354011",
+   "score": 78,
+   "title": "Sunset / Reconsider (Jamie xx edits)",
+   "status": "Official",
+   "track-count": 2,
+   "release-group": {
+    "id": "73116459-0fc6-489a-b078-115e923f59f9",
+    "title": "Jamie xx Edits",
+    "primary-type": "Single"
+   }
+  }
+ ]
+}
