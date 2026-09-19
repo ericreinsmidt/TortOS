@@ -3799,8 +3799,24 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 		} else {
 			char lbl[192];
 
-			ui_fit_text(fm, rows[i].label, lbl, sizeof lbl, content_w);
-			ui_text(a->r, fm, lbl, cx, ty, 0, lc);
+			/* A centered list's row, under the two-column rule: the row that
+			 * moves slides when it does not fit, rather than losing its end
+			 * to an ellipsis. Left-aligned while it slides, the way a long
+			 * note is - wider than the box, it has nothing to be centered in.
+			 *
+			 * This branch only ever cut. Found on Muse's track list
+			 * 2026-09-19: "Bird Dream Of The Olympus Mons" ended in "M..."
+			 * - and slid the moment a track of that album was playing,
+			 * because the "playing" value put the list in two columns. */
+			if (ui_text_width(fm, rows[i].label) > content_w &&
+			    menu_row_moves(rows[i], i == sel, visits_all)) {
+				ui_text_marquee(a->r, fm, rows[i].label, content_x, ty,
+				                content_w,
+				                mq_row_phase(i == sel, heading, n, sel), lc);
+			} else {
+				ui_fit_text(fm, rows[i].label, lbl, sizeof lbl, content_w);
+				ui_text(a->r, fm, lbl, cx, ty, 0, lc);
+			}
 		}
 	}
 	if (vis < n) SDL_RenderSetClipRect(a->r, NULL);
@@ -7247,7 +7263,14 @@ static void muse_screen(app *a, bool now, int album)
 			         g_muse.artists[art].name);
 			for (i = 0; i < al->n; i++, n++) {
 				const ml_track *t = &g_muse.tracks[al->first + i];
-				const char *v = NULL;
+				/* Every row a value, if only an empty one: a list with a
+				 * value anywhere is laid out in two columns, left-aligned,
+				 * and one without is centered. So the track list sat centered
+				 * until one of its tracks played and then jumped left, every
+				 * name moving the moment A was pressed - and the artist and
+				 * album lists, which always carry a count, were always left.
+				 * Left, like them. Eric, 2026-09-19. */
+				const char *v = "";
 
 				if (playing[0] && !strcmp(playing, t->path))
 					v = mn->state == MU_PAUSED ? "paused" : "playing";
