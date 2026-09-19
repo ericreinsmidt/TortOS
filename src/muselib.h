@@ -61,4 +61,26 @@ int ml_album_of(const ml_lib *l, const char *track);
  * is never taken for an album. "" for an album with no tracks. */
 void ml_cover_base(const char *root, const ml_lib *l, int al, char *out, size_t n);
 
+/* The orders Muse's shelf can be in, which its menu's Sort By steps through.
+ *
+ * By artist is the folder's own order, the scan's: artists alphabetically,
+ * then each one's albums. By album is the same albums by their own titles, the
+ * artist breaking a tie - two artists can each have a "Greatest Hits". Case
+ * does not count and leading articles do, in both, as on a games shelf.
+ *
+ * Nothing here orders by date or by listening. Muse keeps no record of what
+ * was played, and the card knows no release years - the tags that carry them
+ * are read by the daemon, not the scan. */
+typedef enum { ML_BY_ARTIST, ML_BY_ALBUM, ML_ORDERS } ml_order;
+
+/* What the setting stores, and what the menu row shows. */
+const char *ml_order_name(ml_order o);
+const char *ml_order_label(ml_order o);
+/* The order a stored name is. By artist for one it does not know. */
+ml_order ml_order_index(const char *name);
+
+/* The shelf in order `by`: out[k] is the album card k is, for every album.
+ * Out of memory it is the scan's order, which is a shelf and not a wrong one. */
+void ml_shelf_order(const ml_lib *l, ml_order by, int *out);
+
 #endif

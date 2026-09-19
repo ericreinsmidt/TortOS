@@ -4,9 +4,10 @@
  *     make check-muselib
  *
  * A folder is built under /tmp in both shapes muselib understands, with the
- * litter a Mac leaves on a card copied from it, and read back. Then the two
- * questions the screens ask of it: which album is this track in, and where is
- * that album's cover kept.
+ * litter a Mac leaves on a card copied from it, and read back. Then the
+ * questions the screens ask of it: which album is this track in, where is that
+ * album's cover kept, and which album is each card on the shelf in either of
+ * its orders.
  *
  * No SDL, no daemon, no device.
  */
@@ -136,6 +137,60 @@ static void scan(void)
 	ml_free(&l);
 }
 
+/* The shelf's two orders, on a folder where they differ: two artists with a
+ * "Greatest Hits" each, and an album named in lower case, which has to sort
+ * where its letters say and not after every capital. */
+static void orders(void)
+{
+	static const char *const want[] = {
+		"amnesiac", "Greatest Hits", "Greatest Hits", "Parklife", "The Bends"
+	};
+	char sub[300];
+	ml_lib l;
+	int out[8], k;
+
+	printf("the shelf's orders\n");
+	CHECK(ml_order_index("album") == ML_BY_ALBUM, "album is stored as \"album\"");
+	CHECK(ml_order_index("artist") == ML_BY_ARTIST, "artist as \"artist\"");
+	CHECK(ml_order_index("name") == ML_BY_ARTIST && ml_order_index(NULL) == ML_BY_ARTIST,
+	      "anything else is the folder's own order");
+	CHECK(!strcmp(ml_order_label(ML_BY_ALBUM), "Album") &&
+	      !strcmp(ml_order_label(ML_BY_ARTIST), "Artist"), "what the menu says");
+	CHECK(!strcmp(ml_order_name((ml_order)ML_ORDERS), "artist"),
+	      "a number out of range reads as the first order, not past the table");
+
+	dir("o");
+	dir("o/Blur");
+	dir("o/Blur/Parklife");
+	dir("o/Blur/Greatest Hits");
+	dir("o/Queen");
+	dir("o/Queen/Greatest Hits");
+	dir("o/Radiohead");
+	dir("o/Radiohead/The Bends");
+	dir("o/Radiohead/amnesiac");
+	touch("o/Blur/Parklife/01 Girls And Boys.mp3");
+	touch("o/Blur/Greatest Hits/01 Beetlebum.mp3");
+	touch("o/Queen/Greatest Hits/01 Bohemian Rhapsody.mp3");
+	touch("o/Radiohead/The Bends/01 Planet Telex.mp3");
+	touch("o/Radiohead/amnesiac/01 Packt.mp3");
+	snprintf(sub, sizeof sub, "%s/o", root);
+	CHECK(ml_scan(sub, &l) && l.nalbums == 5, "five albums: %d", l.nalbums);
+	if (l.nalbums != 5) { ml_free(&l); return; }
+
+	ml_shelf_order(&l, ML_BY_ARTIST, out);
+	for (k = 0; k < 5; k++)
+		CHECK(out[k] == k, "by artist is the scan's order: card %d is album %d", k, out[k]);
+
+	ml_shelf_order(&l, ML_BY_ALBUM, out);
+	for (k = 0; k < 5; k++)
+		CHECK(!strcmp(l.albums[out[k]].name, want[k]),
+		      "by album, card %d: want %s, got %s", k, want[k], l.albums[out[k]].name);
+	CHECK(!strncmp(l.tracks[l.albums[out[1]].first].path, "Blur/", 5) &&
+	      !strncmp(l.tracks[l.albums[out[2]].first].path, "Queen/", 6),
+	      "two of one title go in their artists' order");
+	ml_free(&l);
+}
+
 int main(void)
 {
 	char cmd[300];
@@ -146,6 +201,7 @@ int main(void)
 	printf("muselib: the Music folder\n");
 	names();
 	scan();
+	orders();
 
 	snprintf(cmd, sizeof cmd, "rm -rf '%s'", root);
 	if (system(cmd) != 0) { }

@@ -134,13 +134,13 @@ None of them is a driver, and none replaces anything the system needs to run.
 
 | Button | On the shelf |
 |---|---|
-| **D-pad** | Move. On a game shelf, the other direction jumps by letter |
+| **D-pad** | Move. On a shelf of games or albums, the other direction jumps by letter |
 | **A** | Open a console, or start or continue a game |
 | **B** | Back |
 | **X** | The game's details |
 | **Y** | Favorite |
 | **L1 / R1** | Jump a screenful |
-| **MENU** | Settings for the Brick, or for the console you're in |
+| **MENU** | Settings for the Brick, or for the shelf you're in |
 | **SELECT** | Muse, the music player. Press it again to close |
 | **POWER** | Turn off |
 
@@ -158,6 +158,10 @@ The volume buttons and F1 / F2 (brightness) work everywhere.
 **The TortOS menu,** MENU on the consoles row: Play Time, Wi-Fi, Bluetooth, Audio Output, Over The Hare, Auto Off, UI Theme, UI Direction, Box Art, Cheevos, ScreenScraper, About TortOS.
 
 **A console's menu,** MENU inside it: Sort By, Display Mode, Box Art for that console alone, and Rescan Folder for games copied since the Brick was turned on.
+
+**Favorites' menu:** Sort By, with a console's four orders.
+
+**Muse's menu,** MENU on its shelf of albums: Sort By (artist or album title), Album Art, and Rescan Folder for music copied since the Brick was turned on.
 
 **The in-game menu:** Continue, Save, Load, Display, Cheevos, Reset, Quit.
 

@@ -82,7 +82,8 @@ typedef struct {
 	 * note on DMODES itself. */
 	int dmode;
 	/* Index into SORTS. Zero is by name, which is what every shelf was
-	 * before this existed and what an untouched one still is. */
+	 * before this existed and what an untouched one still is. On Muse's
+	 * shelf an ml_order instead, whose zero is by artist. */
 	int sort;
 	coverflow cf;
 	/* NULL on a real shelf, where every game belongs to the system whose
@@ -91,9 +92,15 @@ typedef struct {
 	 * is under, the accent, and where the save state lives all follow from
 	 * it, and every one of them would be wrong if taken from the shelf. */
 	int *owner;
-	/* The letter jump groups by `name` instead of `title`. Muse's shelf is
-	 * albums in artist order, with the artist in `name`: grouped by album
-	 * title, up and down would land somewhere that looks arbitrary. */
+	/* Muse's shelf only, NULL on every other: the album card k is. A card's
+	 * cover, a fetched cover landing on it, and A on it all go by the album,
+	 * and with two orders a card's place is no longer its album's number. */
+	int *album;
+	/* The letter jump groups by `name` instead of `title`. Muse's shelf in
+	 * artist order has the artist in `name`: grouped by album title there,
+	 * up and down would land somewhere that looks arbitrary. In album order
+	 * the title is the order, and the jump goes by it as a games shelf's
+	 * does. */
 	bool jump_by_name;
 } sysview;
 
@@ -150,8 +157,10 @@ typedef struct {
 static void refresh_favorites_shelf(app *a);
 static void build_muse_shelf(app *a);
 static void muse_screen(app *a, bool now, int album);
-/* Whether a shelf is Muse's; sorting needs to know, well before Muse's code. */
+/* Whether a shelf is Muse's; sorting needs to know, well before Muse's code.
+ * And sorting puts Muse's shelf in order by its own. */
 static bool is_muse(const system_cfg *s);
+static void muse_order_view(sysview *v);
 /* Muse's menu opens it, and the menu is up here. */
 static void album_art_screen(app *a);
 /* Same reason: Over The Hare is a screen up here and the scan is down there. */
@@ -275,7 +284,10 @@ static void display_save(app *a)
 
 /* Keyed on the tag for the same reason display.<TAG> is, and stored beside it.
  * Loading does NOT re-sort: it runs before the scan on a rescan and after it
- * at startup, and the shelf is put in order by sort_all once both are done. */
+ * at startup, and the shelf is put in order by sort_all once both are done.
+ *
+ * Muse's shelf has orders of its own, by artist and by album, stored by their
+ * own names under the same key - sort.MUSE. */
 static void sort_load(app *a)
 {
 	char key[CFG_STR + 16], name[CFG_STR];
@@ -284,7 +296,8 @@ static void sort_load(app *a)
 	for (i = 0; i < a->sys.count; i++) {
 		snprintf(key, sizeof key, "sort.%s", a->sys.systems[i].tag);
 		if (!db_get_str(db_dev(), key, name, sizeof name, NULL)) continue;
-		a->view[i].sort = sort_index(name);
+		a->view[i].sort = is_muse(&a->sys.systems[i]) ? (int)ml_order_index(name)
+		                                              : sort_index(name);
 	}
 }
 
@@ -295,7 +308,9 @@ static void sort_save(app *a)
 
 	for (i = 0; i < a->sys.count; i++) {
 		snprintf(key, sizeof key, "sort.%s", a->sys.systems[i].tag);
-		db_set_str(db_dev(), key, SORTS[a->view[i].sort].name);
+		db_set_str(db_dev(), key,
+		           is_muse(&a->sys.systems[i]) ? ml_order_name((ml_order)a->view[i].sort)
+		                                       : SORTS[a->view[i].sort].name);
 	}
 }
 
@@ -315,14 +330,13 @@ static void sort_save(app *a)
  * any other order would have launched some favorites under another system's
  * core.
  *
- * Not Muse at all: its cards are albums in the order the Music folder was
- * read, and a card's place IS its album's number - card i's cover is album
- * i's. */
+ * Muse by its own orders, in muse_order_view: its cards are albums, and which
+ * album each card is has to move with it. */
 static void sort_shelf(app *a, int sys)
 {
 	sysview *v = &a->view[sys];
 
-	if (is_muse(&a->sys.systems[sys])) return;
+	if (is_muse(&a->sys.systems[sys])) { muse_order_view(v); return; }
 	if (v->owner) {
 		const char *tags[CFG_MAX_SYSTEMS];
 		int i;
@@ -3950,7 +3964,8 @@ static int menu_build(app *a, screen_id screen, int sys,
 		u.fav        = !u.muse && sc->core[0] == '\0' && sc->folder[0] == '\0';
 		u.game_count = a->view[sys].list.count;
 		u.dmode      = DMODES[a->view[sys].dmode].label;
-		u.sort       = SORTS[a->view[sys].sort].label;
+		u.sort       = u.muse ? ml_order_label((ml_order)a->view[sys].sort)
+		                      : SORTS[a->view[sys].sort].label;
 	} else {
 		aout_state ao = aout_now();
 
@@ -5783,19 +5798,28 @@ static int menu_shelf_width(app *a)
 	/* Every value that can be cycled on this menu, at its widest, so the
 	 * panel does not resize under the row being cycled. Sort By joined
 	 * Display Mode in that category the moment it stopped being a
-	 * placeholder - "Recently Added" is 187px wider than "Name". */
+	 * placeholder - "Recently Added" is 187px wider than "Name".
+	 *
+	 * Muse's menu and Favorites' are their own rows, Sort By second and no
+	 * Display Mode, so the enum's row numbers are only the rest's. Written
+	 * through them on Muse's, this measured Rescan Folder carrying a sort
+	 * order, a row no menu has. */
 	for (i = 0; i < a->sys.count; i++) {
+		bool muse = is_muse(&a->sys.systems[i]);
+		bool own  = muse || a->view[i].owner;
+		int  srow = own ? 1 : SM_SORT;
+
 		n = menu_build(a, SCREEN_GAMES, i, rows, &bufs, &heading);
-		for (k = 0; k < DMODE_COUNT; k++) {
+		for (k = 0; !own && k < DMODE_COUNT; k++) {
 			int mw;
 			rows[SM_DISPLAY].value = DMODES[k].label;
 			mw = menu_measure(rows, n, heading);
 			if (mw > w) w = mw;
 		}
-		rows[SM_DISPLAY].value = DMODES[0].label;
-		for (k = 0; k < SORT_COUNT; k++) {
+		if (!own) rows[SM_DISPLAY].value = DMODES[0].label;
+		for (k = 0; k < (muse ? ML_ORDERS : SORT_COUNT); k++) {
 			int mw;
-			rows[SM_SORT].value = SORTS[k].label;
+			rows[srow].value = muse ? ml_order_label((ml_order)k) : SORTS[k].label;
 			mw = menu_measure(rows, n, heading);
 			if (mw > w) w = mw;
 		}
@@ -5891,19 +5915,24 @@ static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
 	(void)ctx;
 
 	if (a->screen == SCREEN_GAMES) {
-		/* Muse's menu is its own three rows - see SM_MUSE_ROWS - so the
-		 * enum's row numbers below mean nothing on it: row 1 is Album Art,
-		 * row 2 Rescan Folder. Album Art is a dead row off the network, and
-		 * the runner does not land on dead rows. */
+		/* Muse's menu is its own four rows - see SM_MUSE_ROWS - so the
+		 * enum's row numbers below mean nothing on it: row 1 is Sort By,
+		 * which goes on to the Sort By below like any shelf's, row 2 Album
+		 * Art and row 3 Rescan Folder. Album Art is a dead row off the
+		 * network, and the runner does not land on dead rows. */
 		if (is_muse(&a->sys.systems[a->sys_cursor])) {
-			if (key != IN_ACCEPT) return MENU_STAY;
-			if (sel == 1) { album_art_screen(a); return MENU_STAY; }
-			if (sel != 2) return MENU_STAY;
-			wait_panel(a, "Muse", "Scanning...");
-			rescan_all(a);
-			return MENU_DONE;
+			if (sel == 1) {
+				sel = SM_SORT;
+			} else {
+				if (key != IN_ACCEPT) return MENU_STAY;
+				if (sel == 2) { album_art_screen(a); return MENU_STAY; }
+				if (sel != 3) return MENU_STAY;
+				wait_panel(a, "Muse", "Scanning...");
+				rescan_all(a);
+				return MENU_DONE;
+			}
 		}
-		/* Favorites' menu is two rows too, Games and Sort By - see
+		/* Favorites' menu is its own rows too, Games and Sort By - see
 		 * SM_FAV_ROWS - so its Sort By is row 1 and not SM_SORT. Nothing here
 		 * knew that from the day the menu was cut to two rows, and left and
 		 * right on Favorites' Sort By did nothing at all. */
@@ -5924,7 +5953,8 @@ static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
 		 * game than the one that was selected when it opened - the shelf
 		 * would appear to have jumped on its own. Which game you were
 		 * looking at is the thing that survives a reorder; where it happened
-		 * to sit in the old order is not. */
+		 * to sit in the old order is not. On Muse's shelf the same goes for
+		 * the album, whose folder is its `file`. */
 		if (d && sel == SM_SORT) {
 			sysview *v = &a->view[a->sys_cursor];
 			char keep[LIB_PATH];
@@ -5939,7 +5969,9 @@ static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
 				if (v->owner) keep_owner = v->owner[v->cursor];
 			}
 
-			v->sort = sort_step(v->sort, d);
+			v->sort = is_muse(&a->sys.systems[a->sys_cursor])
+			        ? (v->sort + d + ML_ORDERS) % ML_ORDERS
+			        : sort_step(v->sort, d);
 			sort_shelf(a, a->sys_cursor);
 			sort_save(a);
 
@@ -6798,7 +6830,7 @@ static void np_cover(app *a, int al)
 	g_np.done = g_np.tex != NULL;
 }
 
-/* Album `i`'s card on Muse's shelf - game_get_tex's half for Muse. Its cover
+/* Card `i` on Muse's shelf - game_get_tex's half for Muse. Its album's cover
  * when the card holds one, decoded on the worker like any box art; the
  * generated card when the music carries none; nothing yet while the daemon is
  * being asked, which cover_answers settles a few milliseconds later. */
@@ -6806,9 +6838,12 @@ static void muse_card_want(app *a, int s, int i)
 {
 	sysview *v = &a->view[s];
 	char path[LIB_PATH * 2 + 8];
+	int al;
 
-	if (i < 0 || i >= g_muse.nalbums) return;
-	if (cover_file(i, path, sizeof path)) {
+	if (!v->album || i < 0 || i >= v->list.count) return;
+	al = v->album[i];
+	if (al < 0 || al >= g_muse.nalbums) return;
+	if (cover_file(al, path, sizeof path)) {
 		if (texload_want(s, i, path, NULL)) return;
 		/* No worker - a shot - so here, as game_get_tex does without one. */
 		v->tex[i] = load_cover(a->r, path);
@@ -6817,9 +6852,9 @@ static void muse_card_want(app *a, int s, int i)
 			v->cb[i] = 1.0f;
 			return;
 		}
-		g_cov[i].st = COV_NONE;              /* there, and not a picture */
+		g_cov[al].st = COV_NONE;             /* there, and not a picture */
 	}
-	if (g_cov && g_cov[i].st == COV_NONE) {
+	if (g_cov && g_cov[al].st == COV_NONE) {
 		v->tex[i] = ui_make_cover(a->r, v->list.items[i].title, MUSE_ACCENT,
 		                          &v->tw[i], &v->th[i]);
 		v->cb[i] = 1.0f;
@@ -7384,10 +7419,10 @@ static bool muse_open(app *a, const menu_style *over, void *ctx)
 	return g_muse_gone;
 }
 
-/* A on a card on Muse's shelf: that album's tracks, over the shelf. */
-static void muse_album(app *a, int album)
+/* A on card `k` of Muse's shelf: its album's tracks, over the shelf. */
+static void muse_album(app *a, const sysview *v, int k)
 {
-	muse_screen(a, false, album);
+	if (v->album && k >= 0 && k < v->list.count) muse_screen(a, false, v->album[k]);
 }
 
 /* ---- Muse: Album Art -------------------------------------------------------- */
@@ -7461,9 +7496,14 @@ static void album_art_landed(app *a, int al, const char *rg)
 	if (g_cov) g_cov[al].st = COV_JPG;
 	for (s = 0; s < a->sys.count; s++) {
 		sysview *v = &a->view[s];
+		int k;
 
-		if (!is_muse(&a->sys.systems[s]) || !v->tex || al >= v->list.count) continue;
-		if (v->tex[al]) { SDL_DestroyTexture(v->tex[al]); v->tex[al] = NULL; }
+		if (!is_muse(&a->sys.systems[s]) || !v->tex || !v->album) continue;
+		for (k = 0; k < v->list.count; k++)
+			if (v->album[k] == al && v->tex[k]) {
+				SDL_DestroyTexture(v->tex[k]);
+				v->tex[k] = NULL;
+			}
 	}
 	texload_bump();
 	faces_stale();
@@ -8410,7 +8450,7 @@ static void update_both(app *a)
 
 	/* Muse's face, as on its shelf: see update_games. */
 	if (is_muse(&a->sys.systems[a->sys_cursor])) {
-		if (a->in.pressed[IN_ACCEPT]) muse_album(a, v->cursor);
+		if (a->in.pressed[IN_ACCEPT]) muse_album(a, v, v->cursor);
 		else if (a->in.pressed[IN_Y]) muse_cycle_mode();
 		return;
 	}
@@ -8600,7 +8640,7 @@ static void update_games(app *a)
 	 * play mode, as it does everywhere in Muse. X has nothing to say that the
 	 * tracks do not, and an album is not a favorite. */
 	if (is_muse(&a->sys.systems[a->sys_cursor])) {
-		if (a->in.pressed[IN_ACCEPT]) muse_album(a, v->cursor);
+		if (a->in.pressed[IN_ACCEPT]) muse_album(a, v, v->cursor);
 		else if (a->in.pressed[IN_Y]) muse_cycle_mode();
 		return;
 	}
@@ -8880,13 +8920,12 @@ static void refresh_favorites_shelf(app *a)
 	cf_reset(&a->cf_sys, a->sys_cursor);
 }
 
-/* Muse's shelf: a card per album, in the Music folder's order - by artist,
- * then album - so card i is album i and its cover is album i's. The artist
- * goes in `name`, which the letter jump reads on this shelf; the album in
- * `title`, which the card is called; its folder in `file`. */
+/* Muse's shelf: a card per album, and which album each card is. Built in the
+ * folder's own order, by artist; the order chosen for it is put on it by
+ * sort_all once the setting has been read, the way every shelf's is. */
 static void muse_fill_view(sysview *v)
 {
-	int n = g_muse.nalbums, k, ar = 0;
+	int n = g_muse.nalbums;
 
 	if (n <= 0) return;
 	v->list.items = calloc((size_t)n, sizeof *v->list.items);
@@ -8894,27 +8933,39 @@ static void muse_fill_view(sysview *v)
 	v->tw = calloc((size_t)n, sizeof *v->tw);
 	v->th = calloc((size_t)n, sizeof *v->th);
 	v->cb = calloc((size_t)n, sizeof *v->cb);
-	if (!v->list.items || !v->tex || !v->tw || !v->th || !v->cb) {
+	v->album = calloc((size_t)n, sizeof *v->album);
+	if (!v->list.items || !v->tex || !v->tw || !v->th || !v->cb || !v->album) {
 		free(v->list.items); free(v->tex); free(v->tw); free(v->th); free(v->cb);
+		free(v->album);
 		memset(v, 0, sizeof *v);
 		return;
 	}
-	for (k = 0; k < n; k++) {
-		game_entry *e = &v->list.items[k];
-		const ml_album *al = &g_muse.albums[k];
-		const char *p = al->n > 0 ? g_muse.tracks[al->first].path : "";
-		const char *slash = strrchr(p, '/');
-
-		while (ar + 1 < g_muse.nartists &&
-		       k >= g_muse.artists[ar].first + g_muse.artists[ar].n)
-			ar++;
-		snprintf(e->name, sizeof e->name, "%s", g_muse.artists[ar].name);
-		snprintf(e->title, sizeof e->title, "%s", al->name);
-		snprintf(e->file, sizeof e->file, "%.*s", slash ? (int)(slash - p) : 0, p);
-	}
 	v->list.count = n;
 	v->list.scanned = true;
-	v->jump_by_name = true;
+	muse_order_view(v);
+}
+
+/* Muse's shelf in its order, v->sort: which album each card is, and each
+ * card's entry from its album - the artist in `name`, the album in `title`,
+ * which the card is called, and its folder in `file`, which is how a change
+ * of order finds the album that was selected. Filled afresh rather than
+ * sorted in place: an entry is only ever a copy of the library's names. The
+ * letter jump goes by whatever the shelf is in order of. */
+static void muse_order_view(sysview *v)
+{
+	int k;
+
+	if (!v->album || v->list.count != g_muse.nalbums) return;
+	ml_shelf_order(&g_muse, (ml_order)v->sort, v->album);
+	for (k = 0; k < v->list.count; k++) {
+		game_entry *e = &v->list.items[k];
+		int al = v->album[k];
+
+		snprintf(e->name, sizeof e->name, "%s", g_muse.artists[muse_artist_of(al)].name);
+		snprintf(e->title, sizeof e->title, "%s", g_muse.albums[al].name);
+		muse_album_dir(al, e->file, sizeof e->file);
+	}
+	v->jump_by_name = v->sort == ML_BY_ARTIST;
 }
 
 /* Muse's card, at the end of the shelf, when there is music to play.
@@ -9020,6 +9071,7 @@ static void rescan_all(app *a)
 	for (i = 0; i < a->sys.count; i++) {
 		free(a->view[i].tex); free(a->view[i].tw); free(a->view[i].th);
 		free(a->view[i].cb);
+		free(a->view[i].album);                         /* Muse's, else NULL */
 		lib_free(&a->view[i].list);
 		memset(&a->view[i], 0, sizeof a->view[i]);
 	}

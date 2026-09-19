@@ -284,9 +284,13 @@ does not wait for the launcher to notice the headset is gone.
 
 Muse plays the music on the card. Its card at the end of the shelf opens onto a
 shelf of album covers, the way a console's opens onto its games - in all three
-layouts, in artist order, with the other axis jumping from one artist's initial
-to the next. A on an album opens its tracks. MENU there has the album count and
-Rescan Folder, for music copied on while the Brick was running.
+layouts, with the other axis jumping from one initial to the next. A on an
+album opens its tracks. MENU there has the album count, Sort By, Album Art
+(below), and Rescan Folder for music copied on while the Brick was running.
+
+**Sort By** puts the shelf in order by artist, the way the folders are, or by
+album title, two of the same title going in their artists' order. The jump
+goes by the initial of whichever it is: an artist's, or an album's.
 
 **SELECT** opens Muse from anywhere that is not a running game: the
 shelf, every menu, and the in-game menu, where the game waits paused

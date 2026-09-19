@@ -245,3 +245,62 @@ void ml_free(ml_lib *lib)
 	free(lib->tracks);
 	memset(lib, 0, sizeof *lib);
 }
+
+/* ---- the shelf's orders ----------------------------------------------------- */
+
+static const struct { const char *name, *label; } ORDERS[ML_ORDERS] = {
+	[ML_BY_ARTIST] = { "artist", "Artist" },
+	[ML_BY_ALBUM]  = { "album",  "Album"  },
+};
+
+const char *ml_order_name(ml_order o)
+{
+	return ORDERS[(unsigned)o < ML_ORDERS ? o : ML_BY_ARTIST].name;
+}
+
+const char *ml_order_label(ml_order o)
+{
+	return ORDERS[(unsigned)o < ML_ORDERS ? o : ML_BY_ARTIST].label;
+}
+
+ml_order ml_order_index(const char *name)
+{
+	int i;
+
+	for (i = 0; name && i < ML_ORDERS; i++)
+		if (!strcmp(ORDERS[i].name, name)) return (ml_order)i;
+	return ML_BY_ARTIST;
+}
+
+/* An album as the album order compares it: its title, pointed at rather than
+ * copied, and its number in the scan. The number is the tie-break, and it is
+ * the artist one - the scan reads artists in order, so of two albums with the
+ * same title the one whose artist comes first has the lower number. It is also
+ * what keeps the order a function of the folder rather than of qsort. */
+typedef struct { const char *album; int al; } shelf_key;
+
+static int by_album(const void *a, const void *b)
+{
+	const shelf_key *x = a, *y = b;
+	int c = strcasecmp(x->album, y->album);
+
+	return c ? c : x->al - y->al;
+}
+
+void ml_shelf_order(const ml_lib *l, ml_order by, int *out)
+{
+	shelf_key *k;
+	int i;
+
+	for (i = 0; i < l->nalbums; i++) out[i] = i;      /* the scan's, by artist */
+	if (by != ML_BY_ALBUM || l->nalbums < 2) return;
+	k = malloc(sizeof *k * (size_t)l->nalbums);
+	if (!k) return;
+	for (i = 0; i < l->nalbums; i++) {
+		k[i].album = l->albums[i].name;
+		k[i].al    = i;
+	}
+	qsort(k, (size_t)l->nalbums, sizeof *k, by_album);
+	for (i = 0; i < l->nalbums; i++) out[i] = k[i].al;
+	free(k);
+}

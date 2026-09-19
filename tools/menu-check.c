@@ -389,9 +389,9 @@ static void system_menu(void)
 		}
 	}
 
-	/* Muse, which is not a system either: no core, no ROM folder, and cards
-	 * whose order is their covers' - so no Sort By. What it does have is a
-	 * folder of music, and Rescan Folder is how music copied in comes up. */
+	/* Muse, which is not a system either: no core, no ROM folder, no display
+	 * mode. What it does have is a folder of music, two orders to see it in,
+	 * and Rescan Folder for music copied in. */
 	{
 		sys_ui m = u;
 		menu_row mrows[MENU_MAX_ROWS];
@@ -403,25 +403,31 @@ static void system_menu(void)
 		m.sys_name = "Muse";
 		m.sys_core = "";
 		m.game_count = 7;
+		m.sort = NULL;
 		m.wifi = WIFI_CONNECTED;     /* the case above left the radio down */
 		mn = sys_menu_build(&m, mrows, &mb, &mhead);
 		printf("Muse's shelf menu:\n");
-		ck(mn == SM_MUSE_ROWS, "three rows, not six");
+		ck(mn == SM_MUSE_ROWS, "four rows, not six");
 		ck(!strcmp(mrows[0].label, "Albums") && !strcmp(val(&mrows[0]), "7"),
 		   "how many albums");
-		ck(!strcmp(mrows[1].label, "Album Art") && mrows[1].live,
+		ck(!strcmp(mrows[1].label, "Sort By") && mrows[1].live &&
+		   !strcmp(val(&mrows[1]), "Artist"),
+		   "Sort By, and by artist when nothing says otherwise");
+		ck(!strcmp(mrows[2].label, "Album Art") && mrows[2].live,
 		   "covers to fetch, on a network");
-		ck(!strcmp(mrows[2].label, "Rescan Folder") && mrows[2].live,
+		ck(!strcmp(mrows[3].label, "Rescan Folder") && mrows[3].live,
 		   "and a rescan that works");
+		m.sort = "Album";
 		m.wifi = WIFI_OFF;
 		sys_menu_build(&m, mrows, &mb, &mhead);
-		ck(!mrows[1].live && !strcmp(val(&mrows[1]), "needs Wi-Fi"),
+		ck(!strcmp(val(&mrows[1]), "Album"), "the order it is in");
+		ck(!mrows[2].live && !strcmp(val(&mrows[2]), "needs Wi-Fi"),
 		   "Album Art says why it cannot, off the network");
-		ck(mrows[2].live, "and Rescan Folder does not need one");
+		ck(mrows[1].live && mrows[3].live,
+		   "and neither Sort By nor Rescan Folder needs one");
 		for (k = 0; k < mn; k++) {
-			ck(strcmp(mrows[k].label, "Sort By") != 0,
-			   "no Sort By: a card's place is its cover's");
 			ck(strcmp(mrows[k].label, "Core") != 0, "no Core: it has none");
+			ck(strcmp(mrows[k].label, "Display Mode") != 0, "no Display Mode");
 		}
 	}
 }
