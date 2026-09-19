@@ -94,6 +94,11 @@ extern const cf_layout CF_LAYOUT_GAMES;
 extern const cf_layout CF_LAYOUT_SINGLE;
 /* The same idea for the games shelf, whose text sits differently. */
 extern const cf_layout CF_LAYOUT_GAME_FACE;
+/* Muse's shelf, row and column and cube face: square frames for album covers.
+ * See coverflow.c. */
+extern const cf_layout CF_LAYOUT_ALBUMS;
+extern const cf_layout CF_LAYOUT_ALBUMS_V;
+extern const cf_layout CF_LAYOUT_ALBUM_FACE;
 
 /* Turn two full-screen faces of a cube about a horizontal axis.
  *

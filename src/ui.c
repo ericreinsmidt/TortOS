@@ -810,9 +810,10 @@ static void draw_watermark(SDL_Surface *dst, const char *title, unsigned rgb)
 
 /* The card at any size: ui_make_card is a game's, ui_make_cover an album's.
  * One recipe, so an album with no art reads as the same kind of thing as a
- * game with none. */
+ * game with none - except the corners, which an album's does not round: it
+ * stands among square sleeves, where a game's stands among cards. */
 static SDL_Texture *make_card(SDL_Renderer *r, const char *title, unsigned rgb,
-                              int cw, int ch, int *w, int *h)
+                              int cw, int ch, bool round, int *w, int *h)
 {
 	SDL_Surface *s = SDL_CreateRGBSurfaceWithFormat(0, cw, ch, 32,
 	                                                SDL_PIXELFORMAT_ARGB8888);
@@ -854,7 +855,7 @@ static SDL_Texture *make_card(SDL_Renderer *r, const char *title, unsigned rgb,
 		                         (Uint8)(rgb >> 8), (Uint8)rgb, 220));
 	}
 
-	round_corners(s, CARD_RADIUS);
+	if (round) round_corners(s, CARD_RADIUS);
 	t = SDL_CreateTextureFromSurface(r, s);
 	SDL_FreeSurface(s);
 	if (t) { *w = cw; *h = ch; SDL_SetTextureBlendMode(t, SDL_BLENDMODE_BLEND); }
@@ -864,19 +865,15 @@ static SDL_Texture *make_card(SDL_Renderer *r, const char *title, unsigned rgb,
 SDL_Texture *ui_make_card(SDL_Renderer *r, const char *title, unsigned rgb,
                           int *w, int *h)
 {
-	return make_card(r, title, rgb, CARD_W, CARD_H, w, h);
+	return make_card(r, title, rgb, CARD_W, CARD_H, true, w, h);
 }
 
 SDL_Texture *ui_make_cover(SDL_Renderer *r, const char *title, unsigned rgb,
                            int *w, int *h)
 {
-	return make_card(r, title, rgb, CARD_W, CARD_W, w, h);
+	return make_card(r, title, rgb, CARD_W, CARD_W, false, w, h);
 }
 
-void ui_card_corners(SDL_Surface *s)
-{
-	round_corners(s, CARD_RADIUS * s->w / CARD_W);
-}
 
 /* ---- the play modes' marks ---------------------------------------------- */
 

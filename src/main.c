@@ -2743,12 +2743,14 @@ static void draw_games_face(app *a, sysview *v, const system_cfg *s, int idx)
 	SDL_RenderClear(a->r);
 	draw_background(a);
 
-	cf_focus_rect(&CF_LAYOUT_GAME_FACE, TORTOS_SCREEN_W, TORTOS_SCREEN_H, &focus);
+	const cf_layout *lay = is_muse(s) ? &CF_LAYOUT_ALBUM_FACE : &CF_LAYOUT_GAME_FACE;
+
+	cf_focus_rect(lay, TORTOS_SCREEN_W, TORTOS_SCREEN_H, &focus);
 	ui_glow(a->r, &focus, s->accent, 100, 2.3f);
 	if (v->list.count > 0) {
 		cf_reset(&one, idx);
 		cf_draw(&one, a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, v->list.count,
-		        game_get_tex, a, &CF_LAYOUT_GAME_FACE);
+		        game_get_tex, a, lay);
 	}
 	draw_game_text(a, v, s, idx);
 }
@@ -2761,13 +2763,16 @@ static void draw_games(app *a)
 
 	sysview *v = &a->view[a->sys_cursor];
 	const system_cfg *s = &a->sys.systems[a->sys_cursor];
+	bool albums = is_muse(s);
+	const cf_layout *row = albums ? &CF_LAYOUT_ALBUMS : &CF_LAYOUT_GAMES;
 	SDL_Rect focus;
 
-	cf_focus_rect(&CF_LAYOUT_GAMES, TORTOS_SCREEN_W, TORTOS_SCREEN_H, &focus);
+	cf_focus_rect(row, TORTOS_SCREEN_W, TORTOS_SCREEN_H, &focus);
 	ui_glow(a->r, &focus, s->accent, 100, 2.3f);
 	if (cf_draw(&v->cf, a->r, TORTOS_SCREEN_W, TORTOS_SCREEN_H, v->list.count,
 	            game_get_tex, a,
-	            CARD_DIRS[g_dir].vertical ? &CF_LAYOUT_GAMES_V : &CF_LAYOUT_GAMES))
+	            !CARD_DIRS[g_dir].vertical ? row
+	            : albums ? &CF_LAYOUT_ALBUMS_V : &CF_LAYOUT_GAMES_V))
 		redraw_now();
 	/* Warm where the move is about to cut to, one card per frame, underneath
 	 * the departure that is still being drawn. Eviction waits: the cursor is
@@ -6734,9 +6739,9 @@ static unsigned cover_rgb(const SDL_Surface *s)
 	return (unsigned)(r * k) << 16 | (unsigned)(g * k) << 8 | (unsigned)(b * k);
 }
 
-/* A cover's shape, wherever it is drawn: square, with the generated card's
- * corners, so an album with art and one without match. An ARGB8888 surface,
- * replaced when it had to be cropped.
+/* A cover's shape, wherever it is drawn: square, and square-cornered - Eric's
+ * call, 2026-09-18; a sleeve is a square. An ARGB8888 surface, replaced when
+ * it had to be cropped.
  *
  * Square by taking the middle of it. Covers are square nearly always, and the
  * ones that are not are a scan with a few pixels of scanner either side - the
@@ -6754,9 +6759,8 @@ static void cover_shape(SDL_Surface **ps)
 		SDL_BlitSurface(s, &(SDL_Rect){ (s->w - side) / 2, (s->h - side) / 2,
 		                                side, side }, sq, NULL);
 		SDL_FreeSurface(s);
-		*ps = s = sq;
+		*ps = sq;
 	}
-	ui_card_corners(s);
 }
 
 /* A cover as Now Playing draws it, and the color it gives off in `rgb`. NULL

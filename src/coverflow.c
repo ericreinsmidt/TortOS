@@ -121,6 +121,31 @@ const cf_layout CF_LAYOUT_GAMES = {
 	.equal_area = true,
 };
 
+/* Muse's shelf: album covers, which are square, where the games layouts are
+ * frames for tall boxes. A square contained in a 0.72 frame gets the frame's
+ * WIDTH, 391px of a 461px-tall frame - covers came out smaller than the box
+ * art around them, and Eric asked for them larger. A square frame the same
+ * height gives them all of it, 461px, and the centre moves down so the top
+ * clears the artist line under the album's name. Otherwise the games rows'
+ * own numbers, since a shelf of albums should move like a shelf of games. */
+const cf_layout CF_LAYOUT_ALBUMS = {
+	.size = 0.60f, .aspect = 1.00f, .step = 0.74f, .side_scale = 0.62f,
+	.center_y = 0.54f, .tilt = 0.82f, .reflect = 1.52f,
+	.side_alpha = 150, .strips = 16,
+};
+
+const cf_layout CF_LAYOUT_ALBUMS_V = {
+	.size = 0.60f, .aspect = 1.00f, .step = 1.50f, .side_scale = 1.00f,
+	.center_y = 0.54f, .tilt = 0.0f, .reflect = 1.52f,
+	.vertical = true, .side_alpha = 255, .strips = 16,
+};
+
+const cf_layout CF_LAYOUT_ALBUM_FACE = {
+	.size = 0.60f, .aspect = 1.00f, .step = 3.20f, .side_scale = 1.00f,
+	.center_y = 0.54f, .tilt = 0.0f, .reflect = 1.52f,
+	.side_alpha = 255, .strips = 16,
+};
+
 void cf_focus_rect(const cf_layout *lay, int screen_w, int screen_h, SDL_Rect *out)
 {
 	float ch = screen_h * lay->size;
