@@ -13,7 +13,7 @@
  * READ FROM THE FOLDERS, NOT THE TAGS. The launcher does not link FFmpeg - the
  * daemon does, and asking it about every file on the card would be a request
  * per track on the way into a screen. Folder and file names are what the card
- * is organised by anyway, and they are what the person who filled it chose.
+ * is organized by anyway, and they are what the person who filled it chose.
  *
  * Two shapes are understood:
  *

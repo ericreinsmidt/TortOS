@@ -73,8 +73,8 @@ typedef struct {
 	 * 0 leaves them contained; 1.0 gives them the whole frame's area.
 	 *
 	 * A dial because the two shelves want different answers. The vertical one
-	 * shows a single card with its neighbours pushed off screen, so it can
-	 * take the whole area and does. The horizontal row has a neighbour either
+	 * shows a single card with its neighbors pushed off screen, so it can
+	 * take the whole area and does. The horizontal row has a neighbor either
 	 * side to overlap, and full area buries them. See CF_WIDE_ART. */
 	float wide_area;
 	int side_alpha;   /* alpha of fully off-center cards (center is 255) */

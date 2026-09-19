@@ -125,7 +125,7 @@ const cf_layout CF_LAYOUT_GAMES = {
  * frames for tall boxes. A square contained in a 0.72 frame gets the frame's
  * WIDTH, 391px of a 461px-tall frame - covers came out smaller than the box
  * art around them, and Eric asked for them larger. A square frame the same
- * height gives them all of it, 461px, and the centre moves down so the top
+ * height gives them all of it, 461px, and the center moves down so the top
  * clears the artist line under the album's name. Otherwise the games rows'
  * own numbers, since a shelf of albums should move like a shelf of games. */
 const cf_layout CF_LAYOUT_ALBUMS = {
@@ -512,7 +512,7 @@ static void draw_card(SDL_Renderer *r, SDL_Texture *tex, int tw, int th,
 		/* A CONSOLE LYING DOWN GETS THE FRAME'S AREA TOO, for the same
 		 * reason a wide box cover does, and it took cropping the art before
 		 * anything could see it. Every fancy card was a 384x384 canvas with
-		 * the console centred in transparent padding, so the shelf
+		 * the console centered in transparent padding, so the shelf
 		 * contain-fitted a SQUARE and never learned the console's shape: a
 		 * Master System drew 466x227 inside a 485x622 frame, two thirds the
 		 * area of a Game Boy Color, with 395px of frame height unused.

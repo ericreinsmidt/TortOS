@@ -537,7 +537,7 @@ bool db_write_boot_env(void)
 	 * the database was meant to take it off: measured at 3.03 ms median and
 	 * 9.27 ms at the tail, against a 16.7 ms frame. */
 	/* Unless it is not there. The memo is about avoiding a rewrite, not about
-	 * refusing to create the file: this thing's whole licence to be a cache is
+	 * refusing to create the file: this thing's whole license to be a cache is
 	 * that deleting it costs nothing, and skipping here would make a deleted
 	 * boot.env stay deleted until some unrelated setting moved. */
 	{

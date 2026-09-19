@@ -1686,7 +1686,7 @@ static void on_game_tick(void)
 	 * for A Boy and His Blob, an NES game fetched earlier the same evening.
 	 * The active set was not poisoned that time, which is luck, not a guard.
 	 *
-	 * Dropped rather than cancelled: there is no ra_fetch_abort, and
+	 * Dropped rather than canceled: there is no ra_fetch_abort, and
 	 * ra_fetch_step only runs while g_pending_set is set, so clearing it on
 	 * game end - the fix this looked like it wanted - would abandon a live
 	 * state machine with nobody to drive it. The fetch has already written the
@@ -3314,7 +3314,7 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 		 * pad is there to keep list ITEMS off the border; a note is already
 		 * held off the list by its rule and is meant to sit low.
 		 *
-		 * The gap under the footer text is pad/6 from centring plus whatever
+		 * The gap under the footer text is pad/6 from centering plus whatever
 		 * bottom pad is left. Set by eye on the device 2026-09-04, not derived:
 		 * the full pad gives 1.17 and floats, 0.50 is too tight, and 0.75 is
 		 * where Eric called it. 5/12 is the subtraction that leaves 0.75.
@@ -6962,7 +6962,7 @@ static unsigned np_draw(app *a, const mu_now *mn, const char *next)
 		/* Where in the queue, and the mode it is playing in beside it. The
 		 * count is the order being HEARD, so shuffled it still runs 1 to n.
 		 *
-		 * The mark half again the text's height, centred on it: at the
+		 * The mark half again the text's height, centered on it: at the
 		 * text's own height the 1 in repeat one and shuffle's crossing were
 		 * too small to read at arm's length. Eric, 2026-09-19. */
 		int th = ui_font_height(UI_F_META), gs = th * 3 / 2, gx = NP_TX;

@@ -121,7 +121,7 @@ void net_async_abort(void) { g_pending = false; }
 /* ---- ScreenScraper, stubbed the same way ---------------------------------
  *
  * The real client is four calls with a step machine behind them and a whole
- * second network path; what this file needs to hold is the RUN's behaviour
+ * second network path; what this file needs to hold is the RUN's behavior
  * around it - that a hit costs libretro nothing, that a miss falls through,
  * and that a refusal stops the pass instead of hammering the server. So the
  * client is the thing stubbed, and the rules under test stay real. */

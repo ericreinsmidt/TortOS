@@ -19,7 +19,7 @@ back to the card stock rather than outlined, because the deck has no strokes
 anywhere and a stroked mark thins to nothing at the 62% a side card is drawn at.
 
 FANCY follows res/cards/fancy/SOURCE.md: trimmed to its own alpha, longest side
-96% of a 384 frame, centred - and KEPT IN THE 384 CANVAS, because it is taller
+96% of a 384 frame, centered - and KEPT IN THE 384 CANVAS, because it is taller
 than it is wide. src/cards.h says why that is load-bearing: cropped, contain-fit
 would grow it through the system name at y=618. Game Boy Color's ink is 369px
 tall in the same canvas, and so is this.
@@ -49,7 +49,7 @@ SS = 4                      # supersample, so the curves are not ragged
 
 def mark(d, cx, cy, fill, stock):
     """An iPod in three flat shapes: the body, then the screen and the click
-    wheel punched through it, then the wheel's centre button left standing.
+    wheel punched through it, then the wheel's center button left standing.
 
     Sized to sit where the Favorites ribbon sits - that is 232x330 - so the two
     special cards read as the same kind of thing at the ends of the shelf."""
@@ -64,7 +64,7 @@ def mark(d, cx, cy, fill, stock):
     wr = 70 * SS                               # the wheel
     wy = y0 + bh - 26 * SS - wr
     d.ellipse([cx - wr, wy - wr, cx + wr, wy + wr], fill=stock)
-    br = 26 * SS                               # its centre button
+    br = 26 * SS                               # its center button
     d.ellipse([cx - br, wy - br, cx + br, wy + br], fill=fill)
 
 

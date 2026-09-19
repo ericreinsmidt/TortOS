@@ -19,7 +19,7 @@
  *
  * The shelf reads a texture's shape to decide how big to draw it
  * (cf_layout.wide_area, CF_WIDE_ART), and padding lies about shape. Every
- * fancy card used to be a 384x384 canvas with the console centred in
+ * fancy card used to be a 384x384 canvas with the console centered in
  * transparency, so a Master System - 369x180 of actual console - was drawn as
  * a SQUARE: 466x227 inside a 485x622 frame, two thirds the area of a Game Boy
  * Color, with 395px of frame height empty. Cropping the nine wide ones on
