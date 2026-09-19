@@ -22,14 +22,18 @@
 
 <table>
   <tr>
-    <td align="center"><img src="res/readme/systems.png" width="240" alt="The consoles row"><br><sub>Scroll horizontally</sub></td>
-    <td align="center"><img src="res/readme/vertical.png" width="240" alt="The shelf standing on end"><br><sub>Vertically</sub></td>
-    <td align="center"><img src="res/readme/cubic.png" width="240" alt="The cube"><br><sub>Or as a cube</sub></td>
+    <td align="center" colspan="2"><img src="res/readme/systems.png" width="240" alt="The consoles row"><br><sub>Scroll horizontally</sub></td>
+    <td align="center" colspan="2"><img src="res/readme/vertical.png" width="240" alt="The shelf standing on end"><br><sub>Vertically</sub></td>
+    <td align="center" colspan="2"><img src="res/readme/cubic.png" width="240" alt="The cube"><br><sub>Or as a cube</sub></td>
   </tr>
   <tr>
-    <td align="center"><img src="res/readme/info.png" width="240" alt="A game's details"><br><sub>A game's details, one button away</sub></td>
-    <td align="center"><img src="res/readme/cheevos.png" width="240" alt="An achievements list"><br><sub>RetroAchievements on the device</sub></td>
-    <td align="center"><img src="res/readme/menu.png" width="240" alt="The TortOS menu"><br><sub>The Brick's settings in one menu</sub></td>
+    <td align="center" colspan="2"><img src="res/readme/info.png" width="240" alt="A game's details"><br><sub>A game's details, one button away</sub></td>
+    <td align="center" colspan="2"><img src="res/readme/cheevos.png" width="240" alt="An achievements list"><br><sub>RetroAchievements on the device</sub></td>
+    <td align="center" colspan="2"><img src="res/readme/menu.png" width="240" alt="The TortOS menu"><br><sub>The Brick's settings in one menu</sub></td>
+  </tr>
+  <tr>
+    <td align="center" colspan="3"><img src="res/readme/muse.png" width="240" alt="Muse's shelf of albums, with The Bends in focus"><br><sub>Your albums, in Muse</sub></td>
+    <td align="center" colspan="3"><img src="res/readme/nowplaying.png" width="240" alt="Muse's Now Playing"><br><sub>Now Playing, on SELECT from anywhere</sub></td>
   </tr>
 </table>
 
