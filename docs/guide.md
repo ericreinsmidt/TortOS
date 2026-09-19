@@ -325,9 +325,9 @@ the music, or let the album end, and the game is heard again within a tenth of
 a second. SELECT in the in-game menu is how to switch between them mid-game.
 
 The list under it is artists, then albums, then tracks, with **Now Playing** as
-the first row while something plays. A on a track plays the album from there.
-X pauses, and the shoulders and the d-pad's sides do what they do on Now
-Playing. Auto Off waits while music plays, the way it does on the charger.
+the first row while something plays. A on a track plays the album from there,
+and the shoulders and the d-pad's sides do what they do on Now Playing. Auto
+Off waits while music plays, the way it does on the charger.
 
 Covers come from the music. The first time an album is shown, Muse takes the
 picture its files carry and keeps it beside the album, in

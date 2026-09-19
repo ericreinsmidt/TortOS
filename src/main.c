@@ -444,15 +444,14 @@ static const struct { const char *key, *label; int glyph; } MUSE_MODES[MUQ_MODES
 };
 
 /* The cover on the Now Playing screen, kept between visits so that opening it
- * is not a decode: the album it is for, its texture, and the color it gives
- * off. `done` means this is what the album will show - its art, or the card
- * made for one with none - and nothing more needs asking. */
+ * is not a decode: the album it is for and its texture. `done` means this is
+ * what the album will show - its art, or the card made for one with none - and
+ * nothing more needs asking. */
 static struct {
 	int          album;
 	bool         done;
 	SDL_Texture *tex;
-	unsigned     rgb;
-} g_np = { .album = -1, .rgb = MUSE_ACCENT };
+} g_np = { .album = -1 };
 
 /* The two faces a turn needs. Kept rather than made per frame: they are a
  * screen each, and a cube turns for a fifth of a second at a time. */
@@ -6710,42 +6709,6 @@ static bool cover_answers(void)
 	return landed;
 }
 
-/* The color a cover gives off, for the light around it: its pixels averaged,
- * each weighted by how colorful it is, so a grey sleeve with a red title glows
- * red and not grey - then brought up to one brightness, so a dark sleeve still
- * lights the screen. A sleeve with too little color to go on glows in Muse's
- * own green. */
-static unsigned cover_rgb(const SDL_Surface *s)
-{
-	double r = 0, g = 0, b = 0, sum = 0, hi, lo, k;
-	int x, y, n = 0, step = s->w > 96 ? s->w / 96 : 1;
-
-	for (y = 0; y < s->h; y += step) {
-		const Uint32 *row = (const Uint32 *)((const Uint8 *)s->pixels +
-		                                     (size_t)y * s->pitch);
-
-		for (x = 0; x < s->w; x += step, n++) {
-			int pr = (int)(row[x] >> 16 & 255), pg = (int)(row[x] >> 8 & 255);
-			int pb = (int)(row[x] & 255);
-			int mx = pr > pg ? (pr > pb ? pr : pb) : (pg > pb ? pg : pb);
-			int mn = pr < pg ? (pr < pb ? pr : pb) : (pg < pb ? pg : pb);
-			double w = (double)(mx - mn) * (mx - mn);
-
-			r += pr * w; g += pg * w; b += pb * w; sum += w;
-		}
-	}
-	/* A root-mean-square color of 20 across the whole sleeve: less than that
-	 * is a black-and-white cover with a little noise in it, or one small
-	 * sticker, and neither is the color the album is. */
-	if (n == 0 || sum / n < 20.0 * 20.0) return MUSE_ACCENT;
-	r /= sum; g /= sum; b /= sum;
-	hi = r > g ? (r > b ? r : b) : (g > b ? g : b);
-	lo = r < g ? (r < b ? r : b) : (g < b ? g : b);
-	if (hi - lo < 40) return MUSE_ACCENT;
-	k = 230.0 / hi;
-	return (unsigned)(r * k) << 16 | (unsigned)(g * k) << 8 | (unsigned)(b * k);
-}
-
 /* A cover's shape, wherever it is drawn: square, and square-cornered - Eric's
  * call, 2026-09-18; a sleeve is a square. An ARGB8888 surface, replaced when
  * it had to be cropped.
@@ -6770,9 +6733,8 @@ static void cover_shape(SDL_Surface **ps)
 	}
 }
 
-/* A cover as Now Playing draws it, and the color it gives off in `rgb`. NULL
- * when the file will not decode. */
-static SDL_Texture *load_cover(SDL_Renderer *r, const char *path, unsigned *rgb)
+/* A cover as Now Playing draws it. NULL when the file will not decode. */
+static SDL_Texture *load_cover(SDL_Renderer *r, const char *path)
 {
 	SDL_Surface *raw = IMG_Load(path), *s;
 	SDL_Texture *t;
@@ -6781,7 +6743,6 @@ static SDL_Texture *load_cover(SDL_Renderer *r, const char *path, unsigned *rgb)
 	s = SDL_ConvertSurfaceFormat(raw, SDL_PIXELFORMAT_ARGB8888, 0);
 	SDL_FreeSurface(raw);
 	if (!s) return NULL;
-	*rgb = cover_rgb(s);
 	cover_shape(&s);
 	t = SDL_CreateTextureFromSurface(r, s);
 	SDL_FreeSurface(s);
@@ -6795,7 +6756,6 @@ static void np_forget(void)
 	g_np.tex = NULL;
 	g_np.album = -1;
 	g_np.done = false;
-	g_np.rgb = MUSE_ACCENT;
 }
 
 /* Bring the Now Playing cover up to date with album `al`, which may be -1 for
@@ -6810,7 +6770,7 @@ static void np_cover(app *a, int al)
 	if (cover_file(al, path, sizeof path)) {
 		unsigned t0 = plat_now_ms();
 
-		g_np.tex = load_cover(a->r, path, &g_np.rgb);
+		g_np.tex = load_cover(a->r, path);
 		fprintf(stderr, "muse: cover for %s in %u ms\n", g_muse.albums[al].name,
 		        plat_now_ms() - t0);
 		/* There, and not a picture: the card, as for an album with none. */
@@ -6818,7 +6778,6 @@ static void np_cover(app *a, int al)
 	}
 	if (!g_np.tex && g_cov[al].st == COV_NONE) {
 		g_np.tex = ui_make_cover(a->r, g_muse.albums[al].name, MUSE_ACCENT, &w, &h);
-		g_np.rgb = MUSE_ACCENT;
 	}
 	g_np.done = g_np.tex != NULL;
 }
@@ -6834,11 +6793,9 @@ static void muse_card_want(app *a, int s, int i)
 
 	if (i < 0 || i >= g_muse.nalbums) return;
 	if (cover_file(i, path, sizeof path)) {
-		unsigned rgb;
-
 		if (texload_want(s, i, path, NULL)) return;
 		/* No worker - a shot - so here, as game_get_tex does without one. */
-		v->tex[i] = load_cover(a->r, path, &rgb);
+		v->tex[i] = load_cover(a->r, path);
 		if (v->tex[i]) {
 			SDL_QueryTexture(v->tex[i], NULL, NULL, &v->tw[i], &v->th[i]);
 			v->cb[i] = 1.0f;
@@ -6974,7 +6931,12 @@ static unsigned np_draw(app *a, const mu_now *mn, const char *next)
 	SDL_Renderer *r = a->r;
 	SDL_Rect cov = { NP_X, NP_Y, NP_SIDE, NP_SIDE };
 	TTF_Font *fs = ui_font(UI_F_META);
-	unsigned rgb = g_np.rgb, wait = (unsigned)-1, phase;
+	/* Muse's green for everything that is not the cover or the words - the
+	 * light, the bar, the mode's mark - the same green its shelf card, its
+	 * menus and the mode notice wear. It was the cover's own most vivid color
+	 * once, which made one mark two colors a screen apart; Eric's call,
+	 * 2026-09-19. */
+	unsigned rgb = MUSE_ACCENT, wait = (unsigned)-1, phase;
 	SDL_Color acc = { (Uint8)(rgb >> 16), (Uint8)(rgb >> 8), (Uint8)rgb, 255 };
 	const char *state = mn->state == MU_PLAYING ? NULL
 	                  : mn->state == MU_PAUSED  ? "Paused" : "Stopped";
@@ -6985,8 +6947,8 @@ static unsigned np_draw(app *a, const mu_now *mn, const char *next)
 	SDL_SetRenderDrawColor(r, UI_BG_R, UI_BG_G, UI_BG_B, 255);
 	SDL_RenderClear(r);
 	SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-	/* The shelf's wash along the foot, in the album's color rather than a
-	 * system's, and the focused card's glow around the cover. */
+	/* The shelf's wash along the foot, and the focused card's glow around
+	 * the cover. */
 	ui_glow(r, &(SDL_Rect){ 0, TORTOS_SCREEN_H - 240, TORTOS_SCREEN_W, 480 },
 	        rgb, 34, 1.7f);
 	ui_glow(r, &cov, rgb, 90, 1.7f);
@@ -6998,17 +6960,23 @@ static unsigned np_draw(app *a, const mu_now *mn, const char *next)
 	y = NP_Y + 36;
 	{
 		/* Where in the queue, and the mode it is playing in beside it. The
-		 * count is the order being HEARD, so shuffled it still runs 1 to n. */
-		int gx = NP_TX, gs = ui_font_height(UI_F_META);
+		 * count is the order being HEARD, so shuffled it still runs 1 to n.
+		 *
+		 * The mark half again the text's height, centred on it: at the
+		 * text's own height the 1 in repeat one and shuffle's crossing were
+		 * too small to read at arm's length. Eric, 2026-09-19. */
+		int th = ui_font_height(UI_F_META), gs = th * 3 / 2, gx = NP_TX;
 		int g = MUSE_MODES[musec_mode()].glyph;
 
 		if (mn->count > 1) {
 			snprintf(line, sizeof line, "%d of %d", mn->index + 1, mn->count);
-			gx += ui_text(r, fs, line, NP_TX, y, -1, UI_TEXT_DIM) + 16;
+			gx += ui_text(r, fs, line, NP_TX, y, -1, UI_TEXT_DIM) + 18;
 		}
-		if (g >= 0) ui_glyph_draw(r, (ui_glyph)g, gx + gs / 2, y + gs / 2, gs, acc);
+		if (g >= 0) ui_glyph_draw(r, (ui_glyph)g, gx + gs / 2, y + th / 2, gs, acc);
 	}
-	y += ui_font_line(UI_F_META) + 6;
+	/* Room under it for the larger mark and for the title to stand clear of
+	 * the line above - which read as one block with it at 6px. */
+	y += ui_font_line(UI_F_META) + 24;
 	np_line(r, ui_font(UI_F_TITLE), mn->title, y, phase, UI_TEXT, &wait);
 	y += ui_font_line(UI_F_TITLE) + 10;
 	np_line(r, ui_font(UI_F_MENU), mn->artist, y, phase, UI_TEXT_SOFT, &wait);
@@ -7082,7 +7050,10 @@ static bool muse_now_screen(app *a)
 		if (a->in.pressed[IN_BACK]) break;
 		if (a->in.pressed[IN_SELECT] || a->in.pressed[IN_MENU]) { close = true; break; }
 
-		if (a->in.pressed[IN_ACCEPT] || a->in.pressed[IN_X]) musec_toggle();
+		/* A, and only A. X did the same thing here and pausing in the list,
+		 * which made one button mean two things a screen apart; it is left
+		 * free in Muse for something that needs it. Eric's call, 2026-09-19. */
+		if (a->in.pressed[IN_ACCEPT])       musec_toggle();
 		if (a->in.pressed[IN_Y])            muse_cycle_mode();
 		if (in_repeat(&a->in, IN_L1))       musec_prev();
 		if (in_repeat(&a->in, IN_R1))       musec_next();
@@ -7187,8 +7158,9 @@ static bool muse_follow(muse_level *lv, int *art, int *alb, int *sel)
  * A opens, and on a track plays the album from there and goes to Now Playing.
  * B goes back up a level, and out. SELECT and MENU close Muse from anywhere in
  * it, which with SELECT opening it from anywhere makes one button in and out.
- * X pauses, L1 and R1 are the previous and next track, left and right seek ten
- * seconds. Leaving does not stop the music - that is what the daemon is for.
+ * L1 and R1 are the previous and next track, left and right seek ten seconds,
+ * and X does nothing - kept free. Leaving does not stop the music - that is
+ * what the daemon is for.
  *
  * `now` opens straight onto Now Playing, with the list underneath already on
  * the album that is playing, so B from there lands on its tracks.
@@ -7305,7 +7277,6 @@ static void muse_screen(app *a, bool now, int album)
 		if (in_repeat(&a->in, IN_RIGHT))    musec_seek_by(+10);
 		if (in_repeat(&a->in, IN_L1))       musec_prev();
 		if (in_repeat(&a->in, IN_R1))       musec_next();
-		if (a->in.pressed[IN_X])            musec_toggle();
 		if (a->in.pressed[IN_Y])            muse_cycle_mode();
 		if (in_repeat(&a->in, IN_VOLUP))    plat_volume_nudge(+1);
 		if (in_repeat(&a->in, IN_VOLDN))    plat_volume_nudge(-1);
