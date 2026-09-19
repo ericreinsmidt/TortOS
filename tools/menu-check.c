@@ -388,6 +388,34 @@ static void system_menu(void)
 			ck(strcmp(frows[k].label, "Rescan Folder") != 0, "and nothing to rescan");
 		}
 	}
+
+	/* Muse, which is not a system either: no core, no ROM folder, and cards
+	 * whose order is their covers' - so no Sort By. What it does have is a
+	 * folder of music, and Rescan Folder is how music copied in comes up. */
+	{
+		sys_ui m = u;
+		menu_row mrows[MENU_MAX_ROWS];
+		menu_bufs mb;
+		const char *mhead = NULL;
+		int mn, k;
+
+		m.muse = true;
+		m.sys_name = "Muse";
+		m.sys_core = "";
+		m.game_count = 7;
+		mn = sys_menu_build(&m, mrows, &mb, &mhead);
+		printf("Muse's shelf menu:\n");
+		ck(mn == SM_MUSE_ROWS, "two rows, not six");
+		ck(!strcmp(mrows[0].label, "Albums") && !strcmp(val(&mrows[0]), "7"),
+		   "how many albums");
+		ck(!strcmp(mrows[1].label, "Rescan Folder") && mrows[1].live,
+		   "and a rescan that works");
+		for (k = 0; k < mn; k++) {
+			ck(strcmp(mrows[k].label, "Sort By") != 0,
+			   "no Sort By: a card's place is its cover's");
+			ck(strcmp(mrows[k].label, "Core") != 0, "no Core: it has none");
+		}
+	}
 }
 
 /* The labels, on their own. A row that reads "90s" for a minute and a half

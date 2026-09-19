@@ -53,7 +53,7 @@
 - **Autosave and resume,** plus six save slots for when you want a checkpoint.
 - **Turbo buttons:** X and Y press A and B for you, on the nine consoles whose controllers had two face buttons.
 - **Bluetooth headphones,** paired on the device. Plug in wired ones and they take over.
-- **Muse, a music player:** your albums from the card, with their covers. SELECT opens it from anywhere, even the in-game menu, and the music keeps playing when you close it. While it plays, the game is silent.
+- **Muse, a music player:** your albums on a shelf of their own covers. SELECT opens it from anywhere, even the in-game menu, and the music keeps playing when you close it. While it plays, the game is silent.
 - **Play Time:** how long you've played each game or console, today, this week, this month, this year or ever.
 - **Favorites and sorting:** Y favorites a game, and each console sorts by name, play time, last played or recently added.
 
@@ -148,7 +148,7 @@ None of them is a driver, and none replaces anything the system needs to run.
 
 **On the cube,** up and down change console, left and right move through its games, and B opens that console's menu.
 
-**In Muse,** A plays a track or pauses it, L1 and R1 change track, left and right skip ten seconds, and B goes back.
+**In Muse,** A opens an album, plays a track or pauses it, L1 and R1 change track, left and right skip ten seconds, and B goes back. Y changes the play mode: in order, repeat all, repeat one or shuffle.
 
 The volume buttons and F1 / F2 (brightness) work everywhere.
 

@@ -5,6 +5,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "musequeue.h"
+
 /* The launcher's side of Muse: the connection to the daemon, and the play
  * queue.
  *
@@ -24,7 +26,9 @@ typedef struct {
 	mu_state state;
 	char     title[128], artist[128], album[128];
 	double   at, len;
-	int      index, count;      /* where in the queue, and how long it is */
+	/* Where in the queue, and how long it is. The PLAY order's place, so
+	 * shuffled it counts the order being heard rather than album order. */
+	int      index, count;
 } mu_now;
 
 /* Where the daemon lives, and the folder paths are relative to. Starting it
@@ -54,9 +58,19 @@ const char *musec_path(void);
  * nobody touching it, the same as the charger. */
 bool musec_playing(void);
 
-/* The queue's track `i`, relative to the music root, or NULL past either end.
- * For what comes next, which is the queue's business and not the folder's. */
+/* The queue's track `i` in PLAY order - shuffled, the i-th to be heard -
+ * relative to the music root, or NULL past either end. */
 const char *musec_track(int i);
+
+/* What plays when this track finishes, or NULL when that is nothing or not yet
+ * decided - see muq_upcoming. For "Next:", which has to follow the mode. */
+const char *musec_upcoming(void);
+
+/* The play mode, src/musequeue.h. Applied to the queue playing now without
+ * changing its track, and kept for every queue after it; saving it is the
+ * caller's. */
+void     musec_set_mode(muq_mode m);
+muq_mode musec_mode(void);
 
 /* Ask for the picture `track` (relative to the music root) carries, written to
  * `base` plus the extension its format has. The daemon answers in a few

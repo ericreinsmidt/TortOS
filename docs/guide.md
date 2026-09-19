@@ -109,7 +109,7 @@ matters to you - a card is the one part of this that gets reformatted.
 | **A** | open a system, or start a game. In `Cubic`, start it |
 | **B** | back to the systems row. In `Cubic`, this system's menu |
 | **X** | game info for the card under the cursor |
-| **Y** | favorite it - Favorites is a shelf of its own |
+| **Y** | favorite it - Favorites is a shelf of its own. On Muse's shelf, the play mode |
 | **Volume rocker** | volume, everywhere, including in game |
 | **F1 / F2** | brightness, everywhere, including in game |
 | **MENU** (on the systems row) | the TortOS menu - settings that are about the firmware |
@@ -282,8 +282,13 @@ does not wait for the launcher to notice the headset is gone.
 
 ## Muse
 
-Muse plays the music on the card. It has a card of its own at the end of the
-shelf, and **SELECT** opens it from anywhere that is not a running game: the
+Muse plays the music on the card. Its card at the end of the shelf opens onto a
+shelf of album covers, the way a console's opens onto its games - in all three
+layouts, in artist order, with the other axis jumping from one artist's initial
+to the next. A on an album opens its tracks. MENU there has the album count and
+Rescan Folder, for music copied on while the Brick was running.
+
+**SELECT** opens Muse from anywhere that is not a running game: the
 shelf, every menu, and the in-game menu, where the game waits paused
 underneath. SELECT again closes it, and the music keeps playing. The exceptions
 are Over The Hare and a Box Art fetch, which only keep working while they are
@@ -303,8 +308,16 @@ cover, the track, where in it you are, and what comes next.
 | **A** | pause, or play |
 | **L1 / R1** | previous / next track. More than three seconds in, L1 starts the track over |
 | **Left / Right** | back or ahead ten seconds |
+| **Y** | the play mode |
 | **B** | the album's tracks |
 | **SELECT** | close Muse |
+
+**Y changes the play mode**, anywhere in Muse: in order, then repeat all, then
+repeat one, then shuffle, and round again. Its mark sits beside the track count
+on Now Playing, and its name shows for a moment when it changes. Shuffle
+starts from the track you chose and plays the rest in a random order, and when
+it runs out it shuffles again and carries on - never starting the new round
+with the song that ended the last. The mode is kept across restarts.
 
 **While music plays, a running game is silent.** Only the game's own sound:
 the music, the volume keys and the mute switch all carry on as before. Pause

@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 #include "muselib.h"
+#include "musequeue.h"
 #include "platform.h"
 
 #define MUSE_SOCK "/tmp/muse.sock"
@@ -32,7 +33,9 @@ static struct { char base[LIB_PATH * 2], file[LIB_PATH * 2 + 8]; } g_cov[COVER_R
 static int     g_cov_head, g_cov_n;
 
 static char  **g_q;                 /* the queue, relative paths, ours */
-static int     g_qn, g_qi;
+static int     g_qn;
+static muq     g_order;             /* which of them plays when: the mode */
+static muq_mode g_mode = MUQ_IN_ORDER;
 static int     g_pending;           /* a PLAY waiting for the connection */
 static bool    g_advanced;          /* the next track is asked for; see event() */
 static int     g_skips;             /* consecutive tracks that would not open */
@@ -112,25 +115,35 @@ static int connected(void)
 
 static void play_current(void)
 {
-	if (g_qi < 0 || g_qi >= g_qn) return;
+	int t = muq_current(&g_order);
+	const char *q;
+
+	if (t < 0 || t >= g_qn) return;
+	q = g_q[t];
 	if (!connected()) { g_pending = 1; return; }
 	g_pending = 0;
-	sendf("PLAY\tpath=%s/%s", g_root, g_q[g_qi]);
+	sendf("PLAY\tpath=%s/%s", g_root, q);
 	/* Until META says otherwise, the name the file has. */
-	ml_track_name(strrchr(g_q[g_qi], '/') ? strrchr(g_q[g_qi], '/') + 1 : g_q[g_qi],
+	ml_track_name(strrchr(q, '/') ? strrchr(q, '/') + 1 : q,
 	              g_now.title, sizeof g_now.title);
 	snprintf(g_now.artist, sizeof g_now.artist, "%s", g_artist);
 	snprintf(g_now.album, sizeof g_now.album, "%s", g_album);
 	g_now.at = 0;
 	g_now.len = 0;
-	g_now.index = g_qi;
+	g_now.index = g_order.pos;
 	g_now.count = g_qn;
 }
 
-static void advance(void)
+/* The next track the queue's mode names, or the end. `failed` is a track that
+ * would not play rather than one that finished - see muq_failed. */
+static void advance(bool failed)
 {
-	if (g_qi + 1 < g_qn) { g_qi++; play_current(); g_advanced = true; }
-	else g_now.state = MU_STOPPED;
+	if ((failed ? muq_failed(&g_order) : muq_ended(&g_order)) >= 0) {
+		play_current();
+		g_advanced = true;
+	} else {
+		g_now.state = MU_STOPPED;
+	}
 }
 
 /* `key=` in a tab-separated line, or "". */
@@ -187,7 +200,7 @@ static void event(const char *line)
 		field(line, "at", v, sizeof v);  g_now.at = atof(v);
 		field(line, "len", v, sizeof v); if (atof(v) > 0) g_now.len = atof(v);
 	} else if (!strncmp(line, "END", 3)) {
-		advance();
+		advance(false);
 	} else if (!strncmp(line, "COVER", 5)) {
 		int k = (g_cov_head + g_cov_n) % COVER_RING;
 
@@ -205,7 +218,7 @@ static void event(const char *line)
 		/* A track that will not open is skipped rather than ending the
 		 * album - but not forever: a whole album of files that fail is a
 		 * folder problem, and walking it at a frame a track says nothing. */
-		if (++g_skips < 8) advance(); else g_now.state = MU_STOPPED;
+		if (++g_skips < 8) advance(true); else g_now.state = MU_STOPPED;
 	}
 }
 
@@ -253,7 +266,7 @@ void musec_play(const char *const *paths, int n, int start,
 	for (i = 0; i < g_qn; i++) free(g_q[i]);
 	free(g_q);
 	g_q = calloc((size_t)(n > 0 ? n : 1), sizeof *g_q);
-	g_qn = g_qi = 0;
+	g_qn = 0;
 	if (!g_q) return;
 	for (i = 0; i < n; i++) {
 		/* A tab or a newline is structure on the wire; a name holding one
@@ -264,7 +277,9 @@ void musec_play(const char *const *paths, int n, int start,
 		if (g_q[k]) k++;
 	}
 	g_qn = k;
-	g_qi = start >= 0 && start < k ? start : 0;
+	muq_free(&g_order);
+	muq_init(&g_order, k, start >= 0 && start < k ? start : 0, g_mode,
+	         plat_now_ms() * 2654435761u + 1);
 	g_skips = 0;
 	snprintf(g_artist, sizeof g_artist, "%s", artist ? artist : "");
 	snprintf(g_album, sizeof g_album, "%s", album ? album : "");
@@ -280,15 +295,16 @@ void musec_toggle(void)
 
 void musec_next(void)
 {
-	if (g_qi + 1 < g_qn) { g_qi++; play_current(); }
+	if (muq_next(&g_order) >= 0) play_current();
 }
 
 void musec_prev(void)
 {
 	/* The way every player does it: three seconds in, "back" means the start
-	 * of this track; before that it means the one before. */
-	if (g_now.at > 3.0 || g_qi == 0) sendf("SEEK\tat=0");
-	else { g_qi--; play_current(); }
+	 * of this track; before that it means the one before - and where there is
+	 * none before, the start of this one again. */
+	if (g_now.at > 3.0 || muq_prev(&g_order) < 0) sendf("SEEK\tat=0");
+	else play_current();
 }
 
 void musec_seek_by(double delta)
@@ -327,15 +343,34 @@ bool musec_cover_take(char *base, size_t bn, char *file, size_t fn)
 
 const char *musec_track(int i)
 {
-	return i >= 0 && i < g_qn ? g_q[i] : NULL;
+	return i >= 0 && i < g_qn ? g_q[g_order.order[i]] : NULL;
 }
+
+const char *musec_upcoming(void)
+{
+	int t = muq_upcoming(&g_order);
+
+	return t >= 0 && t < g_qn ? g_q[t] : NULL;
+}
+
+void musec_set_mode(muq_mode m)
+{
+	if ((int)m < 0 || m >= MUQ_MODES) m = MUQ_IN_ORDER;
+	g_mode = m;
+	muq_set_mode(&g_order, m);
+	g_now.index = g_order.pos;
+}
+
+muq_mode musec_mode(void) { return g_mode; }
 
 const mu_now *musec_now(void) { return &g_now; }
 
 const char *musec_path(void)
 {
+	int t = muq_current(&g_order);
+
 	if (g_now.state == MU_OFF || g_now.state == MU_STOPPED) return "";
-	return g_qi >= 0 && g_qi < g_qn ? g_q[g_qi] : "";
+	return t >= 0 && t < g_qn ? g_q[t] : "";
 }
 
 bool musec_playing(void) { return g_now.state == MU_PLAYING; }

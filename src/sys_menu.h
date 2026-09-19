@@ -60,6 +60,13 @@ typedef enum {
  * it gets. Eric's call, 2026-09-17. */
 #define SM_FAV_ROWS 2
 
+/* What Muse's shelf menu is: how many albums, and Rescan Folder for music
+ * copied onto the card while the Brick was on. Muse has no core, no ROM folder
+ * and no display mode, and its cards keep the order the Music folder was read
+ * in - card i's cover is album i's - so Sort By would break the shelf rather
+ * than reorder it. */
+#define SM_MUSE_ROWS 2
+
 #define MENU_MAX_ROWS 13
 
 /* The array every caller declares must hold every row a build can produce, and
@@ -92,6 +99,7 @@ typedef struct { char a[24], b[CFG_STR], c[16], d[40]; } menu_bufs;
 typedef struct {
 	bool games;              /* the system menu, rather than TortOS's own */
 	bool fav;                /* and that shelf is Favorites; see SM_FAV_ROWS */
+	bool muse;               /* or Muse's; see SM_MUSE_ROWS */
 
 	wifi_state  wifi;        /* already cached by the caller; see menu_wifi */
 	const char *ssid;        /* the network's name when connected, else NULL */

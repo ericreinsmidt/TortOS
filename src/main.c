@@ -90,6 +90,10 @@ typedef struct {
 	 * is under, the accent, and where the save state lives all follow from
 	 * it, and every one of them would be wrong if taken from the shelf. */
 	int *owner;
+	/* The letter jump groups by `name` instead of `title`. Muse's shelf is
+	 * albums in artist order, with the artist in `name`: grouped by album
+	 * title, up and down would land somewhere that looks arbitrary. */
+	bool jump_by_name;
 } sysview;
 
 /* Diatom's display modes, in the order TortOS offers them: the sensible
@@ -144,7 +148,9 @@ typedef struct {
  * the input loop calls it the moment a favorite changes. */
 static void refresh_favorites_shelf(app *a);
 static void build_muse_shelf(app *a);
-static void muse_screen(app *a, bool now);
+static void muse_screen(app *a, bool now, int album);
+/* Whether a shelf is Muse's; sorting needs to know, well before Muse's code. */
+static bool is_muse(const system_cfg *s);
 /* Same reason: Over The Hare is a screen up here and the scan is down there. */
 static void rescan_all(app *a);
 /* And again: Play Time can send you to a game's shelf, which is the input
@@ -297,13 +303,40 @@ static void sort_save(app *a)
  * The favorites shelf is built elsewhere and keeps its own order: it is a
  * shelf of games from many systems and has no single tag to hang a setting
  * off. */
+/* One shelf in its own order.
+ *
+ * Favorites through sort_apply_owned: its games are several systems', and each
+ * one's owner has to come with it and its play time has to be read under its
+ * own system's tag. This ran the plain sort on Favorites as well, which only
+ * held because Favorites was always sorted by name, the order it is built in -
+ * any other order would have launched some favorites under another system's
+ * core.
+ *
+ * Not Muse at all: its cards are albums in the order the Music folder was
+ * read, and a card's place IS its album's number - card i's cover is album
+ * i's. */
+static void sort_shelf(app *a, int sys)
+{
+	sysview *v = &a->view[sys];
+
+	if (is_muse(&a->sys.systems[sys])) return;
+	if (v->owner) {
+		const char *tags[CFG_MAX_SYSTEMS];
+		int i;
+
+		for (i = 0; i < a->sys.count && i < CFG_MAX_SYSTEMS; i++)
+			tags[i] = a->sys.systems[i].tag;
+		sort_apply_owned(v->list.items, v->owner, v->list.count, v->sort, tags);
+		return;
+	}
+	sort_apply(v->list.items, v->list.count, v->sort, a->sys.systems[sys].tag);
+}
+
 static void sort_all(app *a)
 {
 	int i;
 
-	for (i = 0; i < a->sys.count; i++)
-		sort_apply(a->view[i].list.items, a->view[i].list.count,
-		           a->view[i].sort, a->sys.systems[i].tag);
+	for (i = 0; i < a->sys.count; i++) sort_shelf(a, i);
 }
 
 /* ---------- textures ----------------------------------------------------- */
@@ -396,6 +429,16 @@ static bool is_muse(const system_cfg *s)
 enum { COV_UNKNOWN, COV_ASKED, COV_JPG, COV_PNG, COV_NONE };
 typedef struct { unsigned char st; unsigned asked_ms; } cover_state;
 static cover_state *g_cov;
+
+/* The play modes as the player meets them: the name saved in the settings,
+ * the name shown, and the mark. In order has no mark: it is what plays when
+ * nothing has been asked for, and a mark meaning "nothing special" is noise. */
+static const struct { const char *key, *label; int glyph; } MUSE_MODES[MUQ_MODES] = {
+	[MUQ_IN_ORDER]   = { "in order",   "In order",   -1 },
+	[MUQ_REPEAT_ALL] = { "repeat all", "Repeat all", UI_GLYPH_REPEAT },
+	[MUQ_REPEAT_ONE] = { "repeat one", "Repeat one", UI_GLYPH_REPEAT_ONE },
+	[MUQ_SHUFFLE]    = { "shuffle",    "Shuffle",    UI_GLYPH_SHUFFLE },
+};
 
 /* The cover on the Now Playing screen, kept between visits so that opening it
  * is not a decode: the album it is for, its texture, and the color it gives
@@ -640,6 +683,13 @@ static bool has_box_art(const char *folder, const char *name)
 	return stat(p, &st) == 0 && st.st_size > 0;
 }
 
+/* Muse's half of the card machinery, defined with the rest of Muse. */
+static void muse_card_want(app *a, int s, int i);
+static void cover_shape(SDL_Surface **s);
+static void muse_mode_hud(app *a);
+static bool muse_mode_hud_on(void);
+static unsigned g_mode_hud_until;
+
 static SDL_Texture *game_get_tex(void *ctx, int i, int *w, int *h, float *cb)
 {
 	app *a = ctx;
@@ -650,7 +700,9 @@ static SDL_Texture *game_get_tex(void *ctx, int i, int *w, int *h, float *cb)
 	 * folder, the wrong state directory and the wrong accent. */
 	int o = shelf_owner(a, s, i);
 
-	if (!v->tex[i]) {
+	if (!v->tex[i] && is_muse(&a->sys.systems[s])) {
+		muse_card_want(a, s, i);
+	} else if (!v->tex[i]) {
 		char art[LIB_PATH * 3], prev[LIB_PATH * 3];
 
 		box_art_path(a->sys.systems[o].folder, v->list.items[i].name,
@@ -711,6 +763,9 @@ static void texload_drain(app *a)
 			if (surf) SDL_FreeSurface(surf);
 			continue;
 		}
+		/* A cover is squared and given a card's corners, the way Now
+		 * Playing draws it, so one album looks the same in both places. */
+		if (surf && is_muse(&a->sys.systems[s])) cover_shape(&surf);
 		if (surf) {
 			v->cb[i] = content_bottom(surf);
 			v->tex[i] = SDL_CreateTextureFromSurface(a->r, surf);
@@ -723,7 +778,10 @@ static void texload_drain(app *a)
 			 * that needs the renderer, which is why it is made here and not
 			 * on the worker. */
 			int o = shelf_owner(a, s, i);
-			v->tex[i] = ui_make_card(a->r, v->list.items[i].title,
+			v->tex[i] = is_muse(&a->sys.systems[s])
+			          ? ui_make_cover(a->r, v->list.items[i].title,
+			                          a->sys.systems[o].accent, &v->tw[i], &v->th[i])
+			          : ui_make_card(a->r, v->list.items[i].title,
 			                         a->sys.systems[o].accent,
 			                         &v->tw[i], &v->th[i]);
 			v->cb[i] = 1.0f;
@@ -2621,6 +2679,17 @@ static void draw_game_text(app *a, sysview *v, const system_cfg *s, int idx)
 		} else {
 			ui_text(a->r, ft2, g->title, tx, 40, 0, UI_TEXT);
 		}
+		/* An album is two names, and on Muse's shelf the artist is the one
+		 * the letter jump goes by - so it is said, a step quieter, under the
+		 * album's. Fitted rather than slid: the album's title already slides
+		 * on this clock, and two lines moving at once is a lot of motion. */
+		if (is_muse(s)) {
+			char afit[192];
+
+			ui_fit_text(ui_font(UI_F_MENU), g->name, afit, sizeof afit, boxw);
+			ui_text(a->r, ui_font(UI_F_MENU), afit, tx, 40 + line + 4, 0,
+			        UI_TEXT_DIM);
+		}
 		/* Where you are in the list, not what this game is - the same kind
 		 * of thing the rail says, so it goes where the rail is.
 		 *
@@ -2764,6 +2833,11 @@ static void render(app *a)
 {
 	g_redraw_at = REDRAW_NEVER;
 	draw_shelf(a);
+	/* Y on Muse's shelf changes the play mode, and says so here. */
+	if (muse_mode_hud_on()) {
+		muse_mode_hud(a);
+		redraw_at(g_mode_hud_until);
+	}
 	plat_draw_osd(a->r);
 	/* The tint lands exactly on its target now (see tick_tint), so this is a
 	 * test that ends rather than one that is true forever. */
@@ -3849,7 +3923,8 @@ static int menu_build(app *a, screen_id screen, int sys,
 		/* By what it HAS, not by its name or its position: a shelf with no
 		 * core and no folder is the built one, and a check can hand that
 		 * over without inventing a flag day. */
-		u.fav        = sc->core[0] == '\0' && sc->folder[0] == '\0';
+		u.muse       = is_muse(sc);
+		u.fav        = !u.muse && sc->core[0] == '\0' && sc->folder[0] == '\0';
 		u.game_count = a->view[sys].list.count;
 		u.dmode      = DMODES[a->view[sys].dmode].label;
 		u.sort       = SORTS[a->view[sys].sort].label;
@@ -5793,6 +5868,19 @@ static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
 	(void)ctx;
 
 	if (a->screen == SCREEN_GAMES) {
+		/* Muse's menu is its own two rows - see SM_MUSE_ROWS - so the enum's
+		 * row numbers below mean nothing on it. Row 1 is Rescan Folder. */
+		if (is_muse(&a->sys.systems[a->sys_cursor])) {
+			if (key != IN_ACCEPT || sel != 1) return MENU_STAY;
+			wait_panel(a, "Muse", "Scanning...");
+			rescan_all(a);
+			return MENU_DONE;
+		}
+		/* Favorites' menu is two rows too, Games and Sort By - see
+		 * SM_FAV_ROWS - so its Sort By is row 1 and not SM_SORT. Nothing here
+		 * knew that from the day the menu was cut to two rows, and left and
+		 * right on Favorites' Sort By did nothing at all. */
+		if (a->view[a->sys_cursor].owner) sel = sel == 1 ? SM_SORT : SM_GAMES;
 		/* Display mode, saved the moment it changes because there is no
 		 * confirm step to hang the write off. */
 		if (d && sel == SM_DISPLAY) {
@@ -5813,16 +5901,19 @@ static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
 		if (d && sel == SM_SORT) {
 			sysview *v = &a->view[a->sys_cursor];
 			char keep[LIB_PATH];
-			int i;
+			int i, keep_owner = -1;
 
 			keep[0] = '\0';
-			if (v->cursor >= 0 && v->cursor < v->list.count)
+			if (v->cursor >= 0 && v->cursor < v->list.count) {
 				snprintf(keep, sizeof keep, "%s",
 				         v->list.items[v->cursor].file);
+				/* On Favorites a file name is not enough: the same one can
+				 * be on the shelf twice, from two systems. */
+				if (v->owner) keep_owner = v->owner[v->cursor];
+			}
 
 			v->sort = sort_step(v->sort, d);
-			sort_apply(v->list.items, v->list.count, v->sort,
-			           a->sys.systems[a->sys_cursor].tag);
+			sort_shelf(a, a->sys_cursor);
 			sort_save(a);
 
 			/* The textures are indexed by position, so they moved with
@@ -5832,7 +5923,11 @@ static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
 
 			v->cursor = 0;
 			for (i = 0; i < v->list.count; i++)
-				if (!strcmp(v->list.items[i].file, keep)) { v->cursor = i; break; }
+				if (!strcmp(v->list.items[i].file, keep) &&
+				    (!v->owner || v->owner[i] == keep_owner)) {
+					v->cursor = i;
+					break;
+				}
 			cf_reset(&v->cf, v->cursor);
 			return MENU_STAY;
 		}
@@ -6580,14 +6675,17 @@ static bool cover_file(int al, char *out, size_t n)
 
 /* What the daemon said about the covers it was asked for. Matched by path, not
  * by album number, so an answer that lands after a rescan finds the album it
- * was about or none at all. */
-static void cover_answers(void)
+ * was about or none at all. True when anything landed, so a shelf that only
+ * draws when something changes knows it has. */
+static bool cover_answers(void)
 {
 	char base[LIB_PATH * 2], file[LIB_PATH * 2 + 8], b[LIB_PATH * 2];
+	bool landed = false;
 	size_t fl;
 	int i;
 
 	while (musec_cover_take(base, sizeof base, file, sizeof file)) {
+		landed = true;
 		fl = strlen(file);
 		for (i = 0; g_cov && i < g_muse.nalbums; i++) {
 			ml_cover_base(g_muse_root, &g_muse, i, b, sizeof b);
@@ -6597,6 +6695,7 @@ static void cover_answers(void)
 			break;
 		}
 	}
+	return landed;
 }
 
 /* The color a cover gives off, for the light around it: its pixels averaged,
@@ -6635,24 +6734,19 @@ static unsigned cover_rgb(const SDL_Surface *s)
 	return (unsigned)(r * k) << 16 | (unsigned)(g * k) << 8 | (unsigned)(b * k);
 }
 
-/* A cover as Now Playing draws it: square, with the generated card's corners,
- * and the color it gives off in `rgb`. NULL when the file will not decode.
+/* A cover's shape, wherever it is drawn: square, with the generated card's
+ * corners, so an album with art and one without match. An ARGB8888 surface,
+ * replaced when it had to be cropped.
  *
  * Square by taking the middle of it. Covers are square nearly always, and the
  * ones that are not are a scan with a few pixels of scanner either side - the
  * first card has one, 245 by 225 - which cropping loses and stretching would
  * put into the picture. */
-static SDL_Texture *load_cover(SDL_Renderer *r, const char *path, unsigned *rgb)
+static void cover_shape(SDL_Surface **ps)
 {
-	SDL_Surface *raw = IMG_Load(path), *s, *sq;
-	SDL_Texture *t;
-	int side;
+	SDL_Surface *s = *ps, *sq;
+	int side = s->w < s->h ? s->w : s->h;
 
-	if (!raw) return NULL;
-	s = SDL_ConvertSurfaceFormat(raw, SDL_PIXELFORMAT_ARGB8888, 0);
-	SDL_FreeSurface(raw);
-	if (!s) return NULL;
-	side = s->w < s->h ? s->w : s->h;
 	if (s->w != s->h &&
 	    (sq = SDL_CreateRGBSurfaceWithFormat(0, side, side, 32,
 	                                         SDL_PIXELFORMAT_ARGB8888))) {
@@ -6660,10 +6754,24 @@ static SDL_Texture *load_cover(SDL_Renderer *r, const char *path, unsigned *rgb)
 		SDL_BlitSurface(s, &(SDL_Rect){ (s->w - side) / 2, (s->h - side) / 2,
 		                                side, side }, sq, NULL);
 		SDL_FreeSurface(s);
-		s = sq;
+		*ps = s = sq;
 	}
-	*rgb = cover_rgb(s);
 	ui_card_corners(s);
+}
+
+/* A cover as Now Playing draws it, and the color it gives off in `rgb`. NULL
+ * when the file will not decode. */
+static SDL_Texture *load_cover(SDL_Renderer *r, const char *path, unsigned *rgb)
+{
+	SDL_Surface *raw = IMG_Load(path), *s;
+	SDL_Texture *t;
+
+	if (!raw) return NULL;
+	s = SDL_ConvertSurfaceFormat(raw, SDL_PIXELFORMAT_ARGB8888, 0);
+	SDL_FreeSurface(raw);
+	if (!s) return NULL;
+	*rgb = cover_rgb(s);
+	cover_shape(&s);
 	t = SDL_CreateTextureFromSurface(r, s);
 	SDL_FreeSurface(s);
 	if (t) SDL_SetTextureBlendMode(t, SDL_BLENDMODE_BLEND);
@@ -6702,6 +6810,86 @@ static void np_cover(app *a, int al)
 		g_np.rgb = MUSE_ACCENT;
 	}
 	g_np.done = g_np.tex != NULL;
+}
+
+/* Album `i`'s card on Muse's shelf - game_get_tex's half for Muse. Its cover
+ * when the card holds one, decoded on the worker like any box art; the
+ * generated card when the music carries none; nothing yet while the daemon is
+ * being asked, which cover_answers settles a few milliseconds later. */
+static void muse_card_want(app *a, int s, int i)
+{
+	sysview *v = &a->view[s];
+	char path[LIB_PATH * 2 + 8];
+
+	if (i < 0 || i >= g_muse.nalbums) return;
+	if (cover_file(i, path, sizeof path)) {
+		unsigned rgb;
+
+		if (texload_want(s, i, path, NULL)) return;
+		/* No worker - a shot - so here, as game_get_tex does without one. */
+		v->tex[i] = load_cover(a->r, path, &rgb);
+		if (v->tex[i]) {
+			SDL_QueryTexture(v->tex[i], NULL, NULL, &v->tw[i], &v->th[i]);
+			v->cb[i] = 1.0f;
+			return;
+		}
+		g_cov[i].st = COV_NONE;              /* there, and not a picture */
+	}
+	if (g_cov && g_cov[i].st == COV_NONE) {
+		v->tex[i] = ui_make_cover(a->r, v->list.items[i].title, MUSE_ACCENT,
+		                          &v->tw[i], &v->th[i]);
+		v->cb[i] = 1.0f;
+	}
+}
+
+/* ---- Muse: the play mode --------------------------------------------------- */
+
+static bool muse_mode_hud_on(void)
+{
+	return g_mode_hud_until && (int)(plat_now_ms() - g_mode_hud_until) < 0;
+}
+
+/* Y, anywhere in Muse: the next mode, kept for next time, and named for a
+ * moment - a mark on its own is a new shape to learn, and a name is not. */
+static void muse_cycle_mode(void)
+{
+	muq_mode m = (muq_mode)((musec_mode() + 1) % MUQ_MODES);
+
+	musec_set_mode(m);
+	db_set_str(db_dev(), "muse.mode", MUSE_MODES[m].key);
+	g_mode_hud_until = plat_now_ms() + 1400;
+	if (!g_mode_hud_until) g_mode_hud_until = 1;
+}
+
+/* That moment: the mark and the name, on a panel in the middle of whatever
+ * Muse is showing. */
+static void muse_mode_hud(app *a)
+{
+	muq_mode m = musec_mode();
+	TTF_Font *f = ui_font(UI_F_MENU);
+	SDL_Color acc = { (Uint8)(MUSE_ACCENT >> 16), (Uint8)(MUSE_ACCENT >> 8),
+	                  (Uint8)MUSE_ACCENT, 255 };
+	int gs = 48, pad = 32, gap = 20, h = 104, w, x;
+	SDL_Rect box;
+
+	if (!muse_mode_hud_on()) return;
+	w = pad * 2 + ui_text_width(f, MUSE_MODES[m].label) +
+	    (MUSE_MODES[m].glyph >= 0 ? gs + gap : 0);
+	box = (SDL_Rect){ (TORTOS_SCREEN_W - w) / 2, (TORTOS_SCREEN_H - h) / 2, w, h };
+	/* A hairline of Muse's green round a dark pill. ui_panel's frame is sized
+	 * for a menu, and on a notice this small it was most of what showed. */
+	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+	ui_round_rect(a->r, &box, 20, acc);
+	ui_round_rect(a->r, &(SDL_Rect){ box.x + 2, box.y + 2, box.w - 4, box.h - 4 },
+	              18, (SDL_Color){ UI_BG_R, UI_BG_G, UI_BG_B, 240 });
+	x = box.x + pad;
+	if (MUSE_MODES[m].glyph >= 0) {
+		ui_glyph_draw(a->r, (ui_glyph)MUSE_MODES[m].glyph, x + gs / 2,
+		              box.y + h / 2, gs, acc);
+		x += gs + gap;
+	}
+	ui_text(a->r, f, MUSE_MODES[m].label, x,
+	        box.y + (h - ui_font_height(UI_F_MENU)) / 2, -1, UI_TEXT);
 }
 
 /* ---- Muse: what it is open over ------------------------------------------ */
@@ -6797,9 +6985,17 @@ static unsigned np_draw(app *a, const mu_now *mn, const char *next)
 	 * clock that starts over with each track. */
 	phase = mq_phase(MQ_NP, mn->index, (int)strlen(mn->title));
 	y = NP_Y + 36;
-	if (mn->count > 1) {
-		snprintf(line, sizeof line, "%d of %d", mn->index + 1, mn->count);
-		ui_text(r, fs, line, NP_TX, y, -1, UI_TEXT_DIM);
+	{
+		/* Where in the queue, and the mode it is playing in beside it. The
+		 * count is the order being HEARD, so shuffled it still runs 1 to n. */
+		int gx = NP_TX, gs = ui_font_height(UI_F_META);
+		int g = MUSE_MODES[musec_mode()].glyph;
+
+		if (mn->count > 1) {
+			snprintf(line, sizeof line, "%d of %d", mn->index + 1, mn->count);
+			gx += ui_text(r, fs, line, NP_TX, y, -1, UI_TEXT_DIM) + 16;
+		}
+		if (g >= 0) ui_glyph_draw(r, (ui_glyph)g, gx + gs / 2, y + gs / 2, gs, acc);
 	}
 	y += ui_font_line(UI_F_META) + 6;
 	np_line(r, ui_font(UI_F_TITLE), mn->title, y, phase, UI_TEXT, &wait);
@@ -6833,8 +7029,8 @@ static unsigned np_draw(app *a, const mu_now *mn, const char *next)
 		        UI_TEXT_DIM);
 	}
 
-	ui_text(r, fs, state ? "A: play    L1 / R1: track    Left / Right: seek"
-	                     : "A: pause    L1 / R1: track    Left / Right: seek",
+	ui_text(r, fs, state ? "A: play    L1 / R1: track    Left / Right: seek    Y: mode"
+	                     : "A: pause    L1 / R1: track    Left / Right: seek    Y: mode",
 	        TORTOS_SCREEN_W / 2, TORTOS_SCREEN_H - 72, 0, UI_TEXT_DIM);
 	if (battery_low()) draw_low_battery_dot(r);
 	return wait;
@@ -6846,7 +7042,7 @@ static bool muse_now_screen(app *a)
 {
 	struct {
 		mu_state st;
-		int at, len, index, count;
+		int at, len, index, count, mode, hud;
 		char title[128], artist[128], album[128];
 		SDL_Texture *tex;
 	} shown, drawn;
@@ -6876,6 +7072,7 @@ static bool muse_now_screen(app *a)
 		if (a->in.pressed[IN_SELECT] || a->in.pressed[IN_MENU]) { close = true; break; }
 
 		if (a->in.pressed[IN_ACCEPT] || a->in.pressed[IN_X]) musec_toggle();
+		if (a->in.pressed[IN_Y])            muse_cycle_mode();
 		if (in_repeat(&a->in, IN_L1))       musec_prev();
 		if (in_repeat(&a->in, IN_R1))       musec_next();
 		if (in_repeat(&a->in, IN_LEFT))     musec_seek_by(-10);
@@ -6888,7 +7085,9 @@ static bool muse_now_screen(app *a)
 		/* The queue's track, not musec_path: that goes blank when an album
 		 * ends, and the screen should still show the album that just did. */
 		np_cover(a, ml_album_of(&g_muse, musec_track(mn->index)));
-		if ((nt = musec_track(mn->index + 1)))
+		/* What the mode will actually play next. Repeat one says so with
+		 * its mark, and "Next:" naming the same song reads as a mistake. */
+		if (musec_mode() != MUQ_REPEAT_ONE && (nt = musec_upcoming()))
 			ml_track_name(strrchr(nt, '/') ? strrchr(nt, '/') + 1 : nt,
 			              next, sizeof next);
 
@@ -6906,6 +7105,8 @@ static bool muse_now_screen(app *a)
 		memcpy(shown.artist, mn->artist, sizeof shown.artist);
 		memcpy(shown.album, mn->album, sizeof shown.album);
 		shown.tex = g_np.tex;
+		shown.mode = (int)musec_mode();
+		shown.hud = muse_mode_hud_on();
 		for (b = 0; b < IN_COUNT && !touched; b++)
 			touched = a->in.pressed[b] || a->in.down[b];
 		now = plat_now_ms();
@@ -6913,6 +7114,8 @@ static bool muse_now_screen(app *a)
 		if (touched || memcmp(&shown, &drawn, sizeof shown) || (int)(now - due) >= 0) {
 			unsigned wait = np_draw(a, mn, next);
 			Uint32 osd;
+
+			muse_mode_hud(a);
 
 			/* Asked after the draw, which is what retires a line whose
 			 * time is up - asked before, it names a moment already past. */
@@ -6925,6 +7128,8 @@ static bool muse_now_screen(app *a)
 			 * at the moment it is due to go. */
 			due = now + (wait < 1000 ? wait : 1000);
 			if (osd != UINT32_MAX && (int)(osd - due) < 0) due = osd;
+			if (muse_mode_hud_on() && (int)(g_mode_hud_until - due) < 0)
+				due = g_mode_hud_until;
 			SDL_Delay(8);
 		} else {
 			SDL_Delay(16);
@@ -6975,8 +7180,12 @@ static bool muse_follow(muse_level *lv, int *art, int *alb, int *sel)
  * seconds. Leaving does not stop the music - that is what the daemon is for.
  *
  * `now` opens straight onto Now Playing, with the list underneath already on
- * the album that is playing, so B from there lands on its tracks. */
-static void muse_screen(app *a, bool now)
+ * the album that is playing, so B from there lands on its tracks.
+ *
+ * `album`, when it is not -1, is that album's tracks and nothing above them:
+ * A on a card on Muse's shelf, where the shelf is the level above and B goes
+ * back to it. Y changes the play mode, here as everywhere in Muse. */
+static void muse_screen(app *a, bool now, int album)
 {
 	muse_level lv = LV_ARTISTS;
 	int art = 0, alb = 0, sel = 0, done = 0, cap = 4, i;
@@ -6992,6 +7201,19 @@ static void muse_screen(app *a, bool now)
 	rows = calloc((size_t)cap, sizeof *rows);
 	vals = calloc((size_t)cap, sizeof *vals);
 	if (!rows || !vals || g_muse.nartists == 0) { free(rows); free(vals); return; }
+
+	if (album >= 0 && album < g_muse.nalbums) {
+		/* On the track that is playing, if it is one of these. */
+		if (!muse_follow(&lv, &art, &alb, &sel) || alb != album) {
+			for (art = 0; art < g_muse.nartists - 1; art++)
+				if (album < g_muse.artists[art].first + g_muse.artists[art].n) break;
+			alb = album;
+			sel = 0;
+		}
+		lv = LV_TRACKS;
+	} else {
+		album = -1;
+	}
 
 	if (now && muse_follow(&lv, &art, &alb, &sel)) {
 		if (muse_now_screen(a)) done = 1;
@@ -7073,6 +7295,7 @@ static void muse_screen(app *a, bool now)
 		if (in_repeat(&a->in, IN_L1))       musec_prev();
 		if (in_repeat(&a->in, IN_R1))       musec_next();
 		if (a->in.pressed[IN_X])            musec_toggle();
+		if (a->in.pressed[IN_Y])            muse_cycle_mode();
 		if (in_repeat(&a->in, IN_VOLUP))    plat_volume_nudge(+1);
 		if (in_repeat(&a->in, IN_VOLDN))    plat_volume_nudge(-1);
 		if (in_repeat(&a->in, IN_BRIGHTUP)) plat_brightness_nudge(+1);
@@ -7105,7 +7328,8 @@ static void muse_screen(app *a, bool now)
 			}
 		}
 		if (a->in.pressed[IN_BACK]) {
-			if (lv == LV_TRACKS) { sel = alb - g_muse.artists[art].first; lv = LV_ALBUMS; }
+			if (lv == LV_TRACKS && album >= 0) done = 1;
+			else if (lv == LV_TRACKS) { sel = alb - g_muse.artists[art].first; lv = LV_ALBUMS; }
 			else if (lv == LV_ALBUMS) { sel = art + (loaded ? 1 : 0); lv = LV_ARTISTS; }
 			else done = 1;
 		}
@@ -7122,6 +7346,7 @@ static void muse_screen(app *a, bool now)
 
 		muse_backdrop(a);
 		menu_draw(a, heading, rows, n, sel, menu_std_width(a), MUSE_ACCENT);
+		muse_mode_hud(a);
 		plat_draw_osd(a->r);
 		SDL_RenderPresent(a->r);
 		SDL_Delay(8);
@@ -7148,10 +7373,16 @@ static bool muse_open(app *a, const menu_style *over, void *ctx)
 	g_muse_over = over;
 	g_muse_over_ctx = ctx;
 	g_muse_gone = false;
-	muse_screen(a, mn->state == MU_PLAYING || mn->state == MU_PAUSED);
+	muse_screen(a, mn->state == MU_PLAYING || mn->state == MU_PAUSED, -1);
 	g_muse_over = NULL;
 	g_muse_over_ctx = NULL;
 	return g_muse_gone;
+}
+
+/* A on a card on Muse's shelf: that album's tracks, over the shelf. */
+static void muse_album(app *a, int album)
+{
+	muse_screen(a, false, album);
 }
 
 static void synopsis_screen(app *a, const char *title, const char *text,
@@ -7948,7 +8179,8 @@ static void launch(app *a)
 static void enter_system(app *a)
 {
 	sysview *v = &a->view[a->sys_cursor];
-	if (is_muse(&a->sys.systems[a->sys_cursor])) { muse_screen(a, false); return; }
+	/* Muse too: its cards are albums, and opening one is the games shelf's
+	 * own A - see update_games. */
 	if (v->list.count == 0) return;
 	a->screen = SCREEN_GAMES;
 	cf_reset(&v->cf, v->cursor);
@@ -7994,6 +8226,13 @@ static void update_both(app *a)
 	if (in_repeat(&a->in, IN_L1))    { v->cursor = ((v->cursor - CF_WINDOW) % ng + ng) % ng; gdir = -1; }
 	if (in_repeat(&a->in, IN_R1))    { v->cursor = (v->cursor + CF_WINDOW) % ng; gdir = +1; }
 	if (gdir) cf_set_cursor_dir(&v->cf, v->cursor, ng, gdir);
+
+	/* Muse's face, as on its shelf: see update_games. */
+	if (is_muse(&a->sys.systems[a->sys_cursor])) {
+		if (a->in.pressed[IN_ACCEPT]) muse_album(a, v->cursor);
+		else if (a->in.pressed[IN_Y]) muse_cycle_mode();
+		return;
+	}
 
 	if (a->in.pressed[IN_X]) { game_info_screen(a); return; }
 	if (a->in.pressed[IN_Y]) {
@@ -8078,15 +8317,21 @@ static char shelf_initial(const char *s)
 }
 
 /* The first game sharing idx's initial, walking backwards from it. */
+/* What the letter jump reads: the title, or on Muse's shelf the artist. */
+static const char *shelf_key(const sysview *v, int i)
+{
+	return v->jump_by_name ? v->list.items[i].name : v->list.items[i].title;
+}
+
 static int shelf_group_start(sysview *v, int idx)
 {
 	int n = v->list.count, i = idx;
-	char c = shelf_initial(v->list.items[idx].title);
+	char c = shelf_initial(shelf_key(v, idx));
 
 	for (;;) {
 		int p = (i - 1 + n) % n;
 		if (p == idx) return idx;             /* one initial, the whole shelf */
-		if (shelf_initial(v->list.items[p].title) != c) break;
+		if (shelf_initial(shelf_key(v, p)) != c) break;
 		i = p;
 	}
 	return i;
@@ -8100,13 +8345,13 @@ static int shelf_group_start(sysview *v, int idx)
 static int shelf_letter_jump(sysview *v, int dir)
 {
 	int n = v->list.count, i, cur = v->cursor;
-	char c0 = shelf_initial(v->list.items[cur].title);
+	char c0 = shelf_initial(shelf_key(v, cur));
 
 	if (n <= 1) return cur;
 	if (dir > 0) {
 		for (i = 1; i < n; i++) {
 			int k = (cur + i) % n;
-			if (shelf_initial(v->list.items[k].title) != c0) return k;
+			if (shelf_initial(shelf_key(v, k)) != c0) return k;
 		}
 		return cur;                           /* every name starts alike */
 	}
@@ -8116,7 +8361,7 @@ static int shelf_letter_jump(sysview *v, int dir)
 	 * then the shelf is one group and there is nowhere to go - the same answer
 	 * down gives, rather than shuffling back by one. */
 	i = (cur - 1 + n) % n;
-	if (shelf_initial(v->list.items[i].title) == c0) return cur;
+	if (shelf_initial(shelf_key(v, i)) == c0) return cur;
 	return shelf_group_start(v, i);
 }
 
@@ -8168,6 +8413,14 @@ static void update_games(app *a)
 	if (a->in.pressed[IN_BACK]) {
 		a->screen = SCREEN_SYSTEMS;
 		evict_far(v, TEX_KEEP_FAR);
+		return;
+	}
+	/* Muse's cards are albums: A opens one onto its tracks, and Y changes the
+	 * play mode, as it does everywhere in Muse. X has nothing to say that the
+	 * tracks do not, and an album is not a favorite. */
+	if (is_muse(&a->sys.systems[a->sys_cursor])) {
+		if (a->in.pressed[IN_ACCEPT]) muse_album(a, v->cursor);
+		else if (a->in.pressed[IN_Y]) muse_cycle_mode();
 		return;
 	}
 	/* X opens the game. Y marks it. The pair sits together because they are
@@ -8404,14 +8657,26 @@ static void refresh_favorites_shelf(app *a)
 	/* Favorites is rebuilt in place, so its indices now name other games. */
 	texload_bump();
 	char tag[sizeof a->sys.systems[0].tag];
-	int cur, i;
+	int cur, i, order = 0;
 
 	if (a->sys.count <= 0) return;
 	snprintf(tag, sizeof tag, "%s", a->sys.systems[a->sys_cursor].tag);
 	cur = a->view[a->sys_cursor].cursor;
+	for (i = 0; i < a->sys.count; i++)
+		if (a->view[i].owner) { order = a->view[i].sort; break; }
 
 	drop_favorites_shelf(a);
 	build_favorites_shelf(a);
+	/* Built in name order with its setting cleared, so the order chosen for
+	 * it is put back: without this, favoriting a game turned the shelf back
+	 * to Name, and the menu said Name, until the next boot read the setting
+	 * again. */
+	for (i = 0; i < a->sys.count; i++)
+		if (a->view[i].owner) {
+			a->view[i].sort = order;
+			sort_shelf(a, i);
+			break;
+		}
 
 	for (i = 0; i < a->sys.count; i++)
 		if (strcmp(a->sys.systems[i].tag, tag) == 0) break;
@@ -8434,13 +8699,51 @@ static void refresh_favorites_shelf(app *a)
 	cf_reset(&a->cf_sys, a->sys_cursor);
 }
 
+/* Muse's shelf: a card per album, in the Music folder's order - by artist,
+ * then album - so card i is album i and its cover is album i's. The artist
+ * goes in `name`, which the letter jump reads on this shelf; the album in
+ * `title`, which the card is called; its folder in `file`. */
+static void muse_fill_view(sysview *v)
+{
+	int n = g_muse.nalbums, k, ar = 0;
+
+	if (n <= 0) return;
+	v->list.items = calloc((size_t)n, sizeof *v->list.items);
+	v->tex = calloc((size_t)n, sizeof *v->tex);
+	v->tw = calloc((size_t)n, sizeof *v->tw);
+	v->th = calloc((size_t)n, sizeof *v->th);
+	v->cb = calloc((size_t)n, sizeof *v->cb);
+	if (!v->list.items || !v->tex || !v->tw || !v->th || !v->cb) {
+		free(v->list.items); free(v->tex); free(v->tw); free(v->th); free(v->cb);
+		memset(v, 0, sizeof *v);
+		return;
+	}
+	for (k = 0; k < n; k++) {
+		game_entry *e = &v->list.items[k];
+		const ml_album *al = &g_muse.albums[k];
+		const char *p = al->n > 0 ? g_muse.tracks[al->first].path : "";
+		const char *slash = strrchr(p, '/');
+
+		while (ar + 1 < g_muse.nartists &&
+		       k >= g_muse.artists[ar].first + g_muse.artists[ar].n)
+			ar++;
+		snprintf(e->name, sizeof e->name, "%s", g_muse.artists[ar].name);
+		snprintf(e->title, sizeof e->title, "%s", al->name);
+		snprintf(e->file, sizeof e->file, "%.*s", slash ? (int)(slash - p) : 0, p);
+	}
+	v->list.count = n;
+	v->list.scanned = true;
+	v->jump_by_name = true;
+}
+
 /* Muse's card, at the end of the shelf, when there is music to play.
  *
  * After Favorites and after the empty systems are hidden, so it is neither
  * compacted away for having no games nor shifted by Favorites being inserted
  * in front: it is appended, and every later insertion moves it along with
- * everything else. Its view stays empty - its albums are not a list the shelf
- * holds - and A on it opens muse_screen instead of a games shelf.
+ * everything else. Its view holds the albums - see muse_fill_view - so A on
+ * the card opens a shelf of their covers, the way a console's opens its
+ * games.
  *
  * Hidden when the folder is empty or missing, the same rule an empty system
  * and an empty Favorites shelf follow: a card should lead somewhere. */
@@ -8470,6 +8773,7 @@ static void build_muse_shelf(app *a)
 	snprintf(s->card, CFG_STR, "%s", "MUSE.png");
 	s->accent = MUSE_ACCENT;
 	memset(&a->view[i], 0, sizeof a->view[i]);
+	muse_fill_view(&a->view[i]);
 	a->sys_tex[i] = NULL;
 	a->sys_w[i] = a->sys_h[i] = 0;
 	a->sys_cb[i] = 0;
@@ -8639,6 +8943,10 @@ static int shot_jump;               /* letter-jumps to apply before drawing */
 /* --nowplaying ALBUM [TRACK [SECONDS]], and --paused with it. */
 static int   shot_np = -1, shot_np_track, shot_np_paused;
 static float shot_np_at = 83.0f;
+/* --mode NAME plays whatever the shot shows in that play mode; --hud draws
+ * the notice Y puts up when it changes one. */
+static const char *shot_mode;
+static int   shot_hud;
 static float shot_slot_aspect = 4.0f / 3.0f;
 
 /* A stand-in for a paused game frame, at whatever shape was asked for: the
@@ -8727,11 +9035,29 @@ static void np_shot(app *a)
 	np_draw(a, &mn, next);
 }
 
+/* For a shot: every cover not on the card is a cover the music does not
+ * carry, since there is no daemon to ask - so those albums draw their
+ * generated card rather than an empty slot. */
+static void muse_covers_settle(void)
+{
+	char base[LIB_PATH * 2], p[LIB_PATH * 2 + 8];
+	int i;
+
+	for (i = 0; g_cov && i < g_muse.nalbums; i++) {
+		ml_cover_base(g_muse_root, &g_muse, i, base, sizeof base);
+		snprintf(p, sizeof p, "%s.jpg", base);
+		if (file_nonempty(p)) continue;
+		snprintf(p, sizeof p, "%s.png", base);
+		if (!file_nonempty(p)) g_cov[i].st = COV_NONE;
+	}
+}
+
 static void take_shot(app *a)
 {
 	SDL_Surface *out = SDL_CreateRGBSurfaceWithFormat(0, TORTOS_SCREEN_W,
 	                                                  TORTOS_SCREEN_H, 32,
 	                                                  SDL_PIXELFORMAT_RGBA32);
+	muse_covers_settle();
 	draw_shelf(a);
 	if (shot_menu) tortos_menu_draw(a, shot_menu_sel);
 	if (shot_slots) shot_draw_slots(a);
@@ -8755,6 +9081,10 @@ static void take_shot(app *a)
 	}
 	if (shot_info) info_preview(a, true);
 	if (shot_np >= 0) np_shot(a);
+	if (shot_hud) {
+		g_mode_hud_until = plat_now_ms() + 5000;
+		muse_mode_hud(a);
+	}
 	if (shot_art)
 		art_preview(a, shot_art_now, "4 of 10 systems",
 		            "37 found, 2 missing, 61 already", true);
@@ -8930,6 +9260,8 @@ int main(int argc, char *argv[])
 				shot_np_at = (float)atof(argv[++i]);
 		}
 		else if (!strcmp(argv[i], "--paused")) shot_np_paused = 1;
+		else if (!strcmp(argv[i], "--mode") && i + 1 < argc) shot_mode = argv[++i];
+		else if (!strcmp(argv[i], "--hud")) shot_hud = 1;
 		else if (!strcmp(argv[i], "--sysmove") && i + 1 < argc)
 			shot_sysmove = (float)atof(argv[++i]);
 		else if (!strcmp(argv[i], "--gamemove") && i + 1 < argc)
@@ -9307,7 +9639,20 @@ int main(int argc, char *argv[])
 
 			snprintf(bin, sizeof bin, "%s/muse", P_ROOT);
 			snprintf(music, sizeof music, "%s/Music", P_CARD);
-			musec_init(bin, music);
+			/* A shot starts no daemon: it draws one frame and exits, and a
+			 * cover it would ask for is drawn as missing instead - see
+			 * muse_covers_settle. */
+			musec_init(shot_path ? "" : bin, music);
+		}
+		/* The play mode the player left it in. */
+		{
+			char m[32];
+			int k;
+
+			db_get_str(db_dev(), "muse.mode", m, sizeof m, "in order");
+			if (shot_mode) snprintf(m, sizeof m, "%s", shot_mode);
+			for (k = 0; k < MUQ_MODES; k++)
+				if (!strcmp(m, MUSE_MODES[k].key)) musec_set_mode((muq_mode)k);
 		}
 	}
 
@@ -9539,8 +9884,11 @@ int main(int argc, char *argv[])
 		ra_flush_poll();
 
 		/* What Muse said since the last pass - including END, which is how
-		 * the next track of an album starts while nobody is on its screen. */
+		 * the next track of an album starts while nobody is on its screen -
+		 * and the covers it was asked for by Muse's shelf, which that shelf
+		 * has to be drawn again to ask the worker for. */
 		musec_poll();
+		if (cover_answers()) redraw_now();
 
 		/* Auto Off is the same line as the power button, on every screen
 		 * that draws. Diatom watches it during a game, because it owns the

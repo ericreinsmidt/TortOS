@@ -105,8 +105,11 @@ bool ui_init(SDL_Renderer *r, const char *font_path)
 	return fonts[UI_F_TITLE] != NULL;
 }
 
+static void glyphs_free(void);
+
 void ui_quit(void)
 {
+	glyphs_free();
 	for (int i = 0; i < TEXT_CACHE; i++)
 		if (cache[i].tex) { SDL_DestroyTexture(cache[i].tex); cache[i].tex = NULL; }
 	if (glow_tex) { SDL_DestroyTexture(glow_tex); glow_tex = NULL; }
@@ -873,4 +876,187 @@ SDL_Texture *ui_make_cover(SDL_Renderer *r, const char *title, unsigned rgb,
 void ui_card_corners(SDL_Surface *s)
 {
 	round_corners(s, CARD_RADIUS * s->w / CARD_W);
+}
+
+/* ---- the play modes' marks ---------------------------------------------- */
+
+/* Each mark is a few strokes and a few arrowheads in a unit square, y down,
+ * rendered into a white texture with 4x4 supersampling - which is the whole of
+ * the antialiasing - and tinted when drawn. Strokes are segments with round
+ * ends; a curve is a few of them. */
+
+typedef struct { float x0, y0, x1, y1; } g_seg;
+typedef struct { float ax, ay, bx, by, cx, cy; } g_tri;
+
+#define G_W   0.055f            /* half a stroke */
+#define G_MAX 24
+
+typedef struct {
+	g_seg seg[G_MAX];
+	g_tri tri[4];
+	int   nseg, ntri;
+	float w[G_MAX];              /* each stroke's half width */
+} g_shape;
+
+static void g_line(g_shape *s, float x0, float y0, float x1, float y1, float w)
+{
+	if (s->nseg == G_MAX) return;
+	s->w[s->nseg] = w;
+	s->seg[s->nseg++] = (g_seg){ x0, y0, x1, y1 };
+}
+
+/* A quarter of a circle as six strokes, from angle a0 to a1 (radians, y down). */
+static void g_arc(g_shape *s, float cx, float cy, float r, float a0, float a1)
+{
+	int i;
+
+	for (i = 0; i < 6; i++) {
+		float t0 = a0 + (a1 - a0) * (float)i / 6.0f;
+		float t1 = a0 + (a1 - a0) * (float)(i + 1) / 6.0f;
+
+		g_line(s, cx + r * cosf(t0), cy + r * sinf(t0),
+		       cx + r * cosf(t1), cy + r * sinf(t1), G_W);
+	}
+}
+
+/* An arrowhead with its tip at (tx, ty), pointing along (dx, dy), a unit
+ * vector. */
+static void g_head(g_shape *s, float tx, float ty, float dx, float dy)
+{
+	float bx = tx - dx * 0.17f, by = ty - dy * 0.17f;
+	float px = -dy * 0.13f, py = dx * 0.13f;
+
+	if (s->ntri == 4) return;
+	s->tri[s->ntri++] = (g_tri){ tx, ty, bx + px, by + py, bx - px, by - py };
+}
+
+static void g_build(ui_glyph g, g_shape *s)
+{
+	const float pi = 3.14159265f;
+
+	memset(s, 0, sizeof *s);
+	if (g == UI_GLYPH_SHUFFLE) {
+		/* Two paths that cross, both arriving on the right. */
+		g_line(s, 0.10f, 0.32f, 0.30f, 0.32f, G_W);
+		g_line(s, 0.30f, 0.32f, 0.60f, 0.68f, G_W);
+		g_line(s, 0.60f, 0.68f, 0.72f, 0.68f, G_W);
+		g_head(s, 0.89f, 0.68f, 1.0f, 0.0f);
+		g_line(s, 0.10f, 0.68f, 0.30f, 0.68f, G_W);
+		g_line(s, 0.30f, 0.68f, 0.60f, 0.32f, G_W);
+		g_line(s, 0.60f, 0.32f, 0.72f, 0.32f, G_W);
+		g_head(s, 0.89f, 0.32f, 1.0f, 0.0f);
+		return;
+	}
+	/* The loop: two arrows chasing each other round a rounded rectangle, one
+	 * up the left and along the top, one down the right and along the
+	 * bottom. */
+	g_line(s, 0.12f, 0.60f, 0.12f, 0.42f, G_W);
+	g_arc(s, 0.30f, 0.42f, 0.18f, pi, 1.5f * pi);
+	g_line(s, 0.30f, 0.24f, 0.68f, 0.24f, G_W);
+	g_head(s, 0.86f, 0.24f, 1.0f, 0.0f);
+	g_line(s, 0.88f, 0.40f, 0.88f, 0.58f, G_W);
+	g_arc(s, 0.70f, 0.58f, 0.18f, 0.0f, 0.5f * pi);
+	g_line(s, 0.70f, 0.76f, 0.32f, 0.76f, G_W);
+	g_head(s, 0.14f, 0.76f, -1.0f, 0.0f);
+	if (g == UI_GLYPH_REPEAT_ONE) {
+		/* A 1 in the middle, lighter than the loop and clear of it. */
+		g_line(s, 0.50f, 0.38f, 0.50f, 0.62f, 0.04f);
+		g_line(s, 0.50f, 0.38f, 0.445f, 0.43f, 0.04f);
+	}
+}
+
+static int g_inside(const g_shape *s, float x, float y)
+{
+	int i;
+
+	for (i = 0; i < s->nseg; i++) {
+		const g_seg *g = &s->seg[i];
+		float vx = g->x1 - g->x0, vy = g->y1 - g->y0;
+		float len2 = vx * vx + vy * vy;
+		float t = len2 > 0 ? ((x - g->x0) * vx + (y - g->y0) * vy) / len2 : 0;
+		float dx, dy;
+
+		if (t < 0) t = 0;
+		if (t > 1) t = 1;
+		dx = x - (g->x0 + t * vx);
+		dy = y - (g->y0 + t * vy);
+		if (dx * dx + dy * dy <= s->w[i] * s->w[i]) return 1;
+	}
+	for (i = 0; i < s->ntri; i++) {
+		const g_tri *t = &s->tri[i];
+		float d1 = (x - t->bx) * (t->ay - t->by) - (t->ax - t->bx) * (y - t->by);
+		float d2 = (x - t->cx) * (t->by - t->cy) - (t->bx - t->cx) * (y - t->cy);
+		float d3 = (x - t->ax) * (t->cy - t->ay) - (t->cx - t->ax) * (y - t->ay);
+		int neg = d1 < 0 || d2 < 0 || d3 < 0, pos = d1 > 0 || d2 > 0 || d3 > 0;
+
+		if (!(neg && pos)) return 1;
+	}
+	return 0;
+}
+
+static SDL_Texture *g_render(SDL_Renderer *r, ui_glyph g, int size)
+{
+	SDL_Surface *s = SDL_CreateRGBSurfaceWithFormat(0, size, size, 32,
+	                                                SDL_PIXELFORMAT_ARGB8888);
+	SDL_Texture *t;
+	g_shape shape;
+	int x, y, i, j;
+
+	if (!s) return NULL;
+	g_build(g, &shape);
+	for (y = 0; y < size; y++) {
+		Uint32 *row = (Uint32 *)((Uint8 *)s->pixels + (size_t)y * s->pitch);
+
+		for (x = 0; x < size; x++) {
+			int hit = 0;
+
+			for (j = 0; j < 4; j++)
+				for (i = 0; i < 4; i++)
+					hit += g_inside(&shape, ((float)x + ((float)i + 0.5f) / 4.0f) / (float)size,
+					                ((float)y + ((float)j + 0.5f) / 4.0f) / (float)size);
+			row[x] = (Uint32)(hit * 255 / 16) << 24 | 0x00FFFFFFu;
+		}
+	}
+	t = SDL_CreateTextureFromSurface(r, s);
+	SDL_FreeSurface(s);
+	if (t) SDL_SetTextureBlendMode(t, SDL_BLENDMODE_BLEND);
+	return t;
+}
+
+/* A handful of (mark, size) pairs is all a screen asks for. */
+static struct { ui_glyph g; int size; SDL_Texture *tex; } g_cache[8];
+
+static void glyphs_free(void)
+{
+	int i;
+
+	for (i = 0; i < 8; i++)
+		if (g_cache[i].tex) { SDL_DestroyTexture(g_cache[i].tex); g_cache[i].tex = NULL; }
+}
+
+void ui_glyph_draw(SDL_Renderer *r, ui_glyph g, int cx, int cy, int size,
+                   SDL_Color col)
+{
+	SDL_Texture *t = NULL;
+	int i, free_slot = -1;
+
+	if (g < 0 || g >= UI_GLYPH_COUNT || size <= 0) return;
+	for (i = 0; i < 8; i++) {
+		if (g_cache[i].tex && g_cache[i].g == g && g_cache[i].size == size) {
+			t = g_cache[i].tex;
+			break;
+		}
+		if (!g_cache[i].tex && free_slot < 0) free_slot = i;
+	}
+	if (!t) {
+		if (free_slot < 0) { glyphs_free(); free_slot = 0; }
+		t = g_render(r, g, size);
+		if (!t) return;
+		g_cache[free_slot].g = g;
+		g_cache[free_slot].size = size;
+		g_cache[free_slot].tex = t;
+	}
+	SDL_SetTextureColorMod(t, col.r, col.g, col.b);
+	SDL_SetTextureAlphaMod(t, col.a);
+	SDL_RenderCopy(r, t, NULL, &(SDL_Rect){ cx - size / 2, cy - size / 2, size, size });
 }

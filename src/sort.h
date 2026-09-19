@@ -143,4 +143,47 @@ static inline void sort_apply(game_entry *v, int n, int order, const char *tag)
 	}
 }
 
+/* The same, for a shelf whose games come from several systems - Favorites.
+ *
+ * Two things differ, and getting either wrong is silent. A game's play time is
+ * under ITS OWN system's tag, `tags[owner[i]]`, and never under the shelf's:
+ * asked by the shelf's tag, every Favorites game has none, and the play-time
+ * orders fall back to name without saying so. And `owner` runs parallel to the
+ * games and is the only record of which core runs each one, so it has to move
+ * with them: sorted apart, a game launches under another system's core.
+ *
+ * qsort moves elements, not pairs, so for the length of the sort each game
+ * rides in a pair with its owner, the game first - which is what lets the
+ * ordinary comparators read a pair as the game it starts with. False when
+ * there was no memory, and nothing moved. */
+static inline bool sort_apply_owned(game_entry *v, int *owner, int n, int order,
+                                    const char *const *tags)
+{
+	struct pair { game_entry e; int owner; } *p;
+	int i;
+
+	if (!v || !owner || n <= 0) return true;
+	if (order < 0 || order >= SORT_COUNT) order = 0;
+
+	if (sort_needs_stats(order)) {
+		stats_summarize(STATS_ALL, false, (long)time(NULL));
+		for (i = 0; i < n; i++) {
+			v[i].play_secs = 0;
+			v[i].last_played = 0;
+			stats_lookup(tags[owner[i]], v[i].file,
+			             &v[i].play_secs, &v[i].last_played);
+		}
+	}
+
+	p = malloc(sizeof *p * (size_t)n);
+	if (!p) return false;
+	for (i = 0; i < n; i++) { p[i].e = v[i]; p[i].owner = owner[i]; }
+	qsort(p, (size_t)n, sizeof *p,
+	      order == 1 ? sort_by_played : order == 2 ? sort_by_recent
+	    : order == 3 ? sort_by_added  : sort_by_name);
+	for (i = 0; i < n; i++) { v[i] = p[i].e; owner[i] = p[i].owner; }
+	free(p);
+	return true;
+}
+
 #endif

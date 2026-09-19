@@ -200,6 +200,36 @@ static void nothing_to_sort(void)
 	ck(!strcmp(first(&one), "Solo"), "and an order that does not exist is name");
 }
 
+/* Favorites: games from several systems on one shelf. Each one's play time is
+ * under its own system's tag, and its owner has to travel with it - see
+ * sort_apply_owned. `added` is set from the owner, so a game that arrives at
+ * the end paired with the wrong owner shows it. */
+static void favorites_carry_their_owners(void)
+{
+	const char *tags[] = { "FAV", "NES", "SNES", "GB" };
+	game_entry v[3];
+	int owner[3] = { 1, 2, 3 }, order, i, paired;
+
+	printf("favorites:\n");
+	scrub();
+	seed(1000000, "NES", "Contra.zip", 100);
+	seed(1000000, "SNES", "Contra.zip", 900);   /* the same file, another system */
+	seed(1000000, "GB", "Tetris.zip", 500);
+	put(&v[0], "Contra", 1000);
+	put(&v[1], "Contra", 2000);
+	put(&v[2], "Tetris", 3000);
+
+	sort_apply_owned(v, owner, 3, 1, tags);
+	ck(owner[0] == 2 && owner[1] == 3 && owner[2] == 1,
+	   "by play time, each game's own system's time, not the shelf's");
+	for (order = 0; order < SORT_COUNT; order++) {
+		sort_apply_owned(v, owner, 3, order, tags);
+		for (i = 0, paired = 1; i < 3; i++)
+			if (v[i].added != owner[i] * 1000) paired = 0;
+		ck(paired, SORTS[order].label);
+	}
+}
+
 int main(void)
 {
 	if (!db_available()) {
@@ -213,6 +243,7 @@ int main(void)
 	by_recently_added();
 	sorting_twice_changes_nothing();
 	nothing_to_sort();
+	favorites_carry_their_owners();
 	db_shutdown();
 
 	if (fails) { printf("\n%d sort check(s) failed\n", fails); return 1; }

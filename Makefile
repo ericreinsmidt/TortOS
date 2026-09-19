@@ -30,7 +30,7 @@ all: build/tortos.elf
 CHECKS = check-cheevos check-hare check-httpd check-idle check-rahash \
          check-raset check-xfer check-menus check-artscrape check-artrun check-audioout \
          check-db check-stats check-sort check-bt check-backlog check-ss \
-         check-muselib
+         check-muselib check-musequeue
 
 check:
 	@fail=0; for c in $(CHECKS); do \
@@ -367,6 +367,16 @@ build-native/muselib-check: tools/muselib-check.c src/muselib.c src/muselib.h FO
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
 	      -o $@ tools/muselib-check.c src/muselib.c
+
+# The play modes: the last track, the first, a shuffle running out, a track
+# that will not open, and a mode changed under a playing track.
+check-musequeue: build-native/musequeue-check
+	@./build-native/musequeue-check
+
+build-native/musequeue-check: tools/musequeue-check.c src/musequeue.c src/musequeue.h FORCE
+	@mkdir -p build-native
+	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
+	      -o $@ tools/musequeue-check.c src/musequeue.c
 
 check-backlog:
 	@python3 tools/backlog-check.py

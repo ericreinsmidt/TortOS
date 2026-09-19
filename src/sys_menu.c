@@ -35,6 +35,11 @@ int sys_menu_build(const sys_ui *u, menu_row *out, menu_bufs *b,
 			out[1] = (menu_row){ "Sort By", u->sort ? u->sort : "Name", true };
 			return SM_FAV_ROWS;
 		}
+		if (u->muse) {
+			out[0] = (menu_row){ "Albums",        b->a, false };
+			out[1] = (menu_row){ "Rescan Folder", NULL, true  };
+			return SM_MUSE_ROWS;
+		}
 		out[SM_GAMES]   = (menu_row){ "Games",         b->a,        false };
 		out[SM_CORE]    = (menu_row){ "Core",          b->b,        false };
 		out[SM_SORT]    = (menu_row){ "Sort By",
