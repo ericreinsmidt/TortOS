@@ -143,7 +143,7 @@ None of them is a driver, and none replaces anything the system needs to run.
 | **B** | Back |
 | **X** | The game's details |
 | **Y** | Favorite |
-| **L1 / R1** | Jump a screenful |
+| **L1/R1** | Jump a screenful |
 | **MENU** | Settings for the Brick, or for the shelf you're in |
 | **SELECT** | Muse, the music player. Press it again to close |
 | **POWER** | Turn off |
@@ -154,7 +154,7 @@ None of them is a driver, and none replaces anything the system needs to run.
 
 **In Muse,** A opens an album, plays a track or pauses it, L1 and R1 change track, left and right skip ten seconds, and B goes back. On Now Playing, Y changes the play mode: in order, repeat all, repeat one or shuffle.
 
-The volume buttons and F1 / F2 (brightness) work everywhere.
+The volume buttons and F1/F2 (brightness) work everywhere.
 
 **The Brick lists all of this itself,** under **MENU > Controls**: five pages, stepped through with left and right, so you never need this page to look a button up.
 

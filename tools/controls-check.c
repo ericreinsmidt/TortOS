@@ -27,11 +27,11 @@ static void ck(int cond, const char *what)
 }
 
 /* Every button on the Brick that TortOS reads, by the name the pages use.
- * D-pad axes are named as pairs because that is how they are pressed and how
- * every page in the project writes them. */
+ * D-pad axes are named as pairs because that is how they are pressed, and
+ * written with no air around the slash - "L1/R1", not "L1 / R1". */
 static const char *const BUTTONS[] = {
-	"Up / Down", "Left / Right", "A", "B", "X", "Y", "L1 / R1", "X / Y",
-	"MENU", "SELECT", "POWER", "Volume rocker", "F1 / F2",
+	"Up/Down", "Left/Right", "A", "B", "X", "Y", "L1/R1", "X/Y",
+	"MENU", "SELECT", "POWER", "Volume rocker", "F1/F2",
 };
 #define NBUTTONS ((int)(sizeof BUTTONS / sizeof BUTTONS[0]))
 
@@ -46,9 +46,15 @@ static const char *const BUTTONS[] = {
  * what settles it. */
 #define VALUE_MAX 22
 
-/* Rows a page can have, footer included, before the panel runs out. Seven, and
- * the eighth is drawn half off the bottom - see rows_fit. */
-#define PAGE_MAX 7
+/* Rows of TEXT a page can have - its buttons, any note, and the footer - before
+ * the panel runs out. The rule is not counted: it is a couple of pixels and the
+ * air around them rather than a row's full height.
+ *
+ * Six, measured 2026-09-19 and again on 2026-09-20 with the rule in place.
+ * Eight drew the footer half off the panel; seven with a rule left the last
+ * row faded at the window's edge, which is a page that scrolls itself while
+ * somebody is reading a button off it. */
+#define PAGE_MAX 6
 
 /* A note runs the panel's width and is cut at about here: "On Genesis and
  * SNES, X and Y are the pad's own buttons" showed thirty characters of
@@ -175,15 +181,15 @@ static void rows_fit(void)
 				         ctl_page_name((ctl_page)p), rows[i].label);
 				ck(!rows[i].live, msg);
 			}
-			snprintf(msg, sizeof msg, "%s: a footer and no rule, got %d and %d",
-			         ctl_page_name((ctl_page)p), notes, rules);
-			ck(rules == 0 && notes >= 1, msg);
+			snprintf(msg, sizeof msg, "%s: one rule and a footer, got %d and %d",
+			         ctl_page_name((ctl_page)p), rules, notes);
+			ck(rules == 1 && notes >= 1, msg);
 			/* The panel's own ceiling. Over this and the page scrolls
 			 * itself while somebody is reading it - measured 2026-09-19,
 			 * where eight rows drew the footer half off the panel. */
-			snprintf(msg, sizeof msg, "%s: %d rows, and %d fit the panel",
-			         ctl_page_name((ctl_page)p), n, PAGE_MAX);
-			ck(n <= PAGE_MAX, msg);
+			snprintf(msg, sizeof msg, "%s: %d rows of text, and %d fit the panel",
+			         ctl_page_name((ctl_page)p), n - rules, PAGE_MAX);
+			ck(n - rules <= PAGE_MAX, msg);
 		}
 }
 
@@ -199,9 +205,9 @@ static void direction_changes_the_shelf(void)
 
 	printf("the moving page follows UI Direction\n");
 	ck(nh == nv, "horizontal and vertical list the same buttons");
-	ck(!strcmp(h[0].label, "Left / Right") && !strcmp(h[0].value, "Move"),
+	ck(!strcmp(h[0].label, "Left/Right") && !strcmp(h[0].value, "Move"),
 	   "horizontal moves along the row");
-	ck(!strcmp(v[0].label, "Up / Down") && !strcmp(v[0].value, "Move"),
+	ck(!strcmp(v[0].label, "Up/Down") && !strcmp(v[0].value, "Move"),
 	   "vertical moves up and down");
 	ck(!strcmp(h[1].value, "Jump by letter") && !strcmp(v[1].value, "Jump by letter"),
 	   "and the other axis jumps by letter");

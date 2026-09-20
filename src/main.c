@@ -7080,8 +7080,8 @@ static unsigned np_draw(app *a, const mu_now *mn, const char *next)
 		        UI_TEXT_DIM);
 	}
 
-	ui_text(r, fs, state ? "A: play    L1 / R1: track    Left / Right: seek    Y: mode"
-	                     : "A: pause    L1 / R1: track    Left / Right: seek    Y: mode",
+	ui_text(r, fs, state ? "A: play    L1/R1: track    Left/Right: seek    Y: mode"
+	                     : "A: pause    L1/R1: track    Left/Right: seek    Y: mode",
 	        TORTOS_SCREEN_W / 2, TORTOS_SCREEN_H - 72, 0, UI_TEXT_DIM);
 	if (battery_low()) draw_low_battery_dot(r);
 	return wait;

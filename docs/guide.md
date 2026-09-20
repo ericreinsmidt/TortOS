@@ -102,16 +102,16 @@ matters to you - a card is the one part of this that gets reformatted.
 
 | | |
 |---|---|
-| **Left / Right** | move along the row, when the shelf runs horizontally. In `Cubic`, always the games |
-| **Up / Down** | move along the shelf when it runs vertically - **up advances**. In `Cubic`, always the systems |
+| **Left/Right** | move along the row, when the shelf runs horizontally. In `Cubic`, always the games |
+| **Up/Down** | move along the shelf when it runs vertically - **up advances**. In `Cubic`, always the systems |
 | **the other axis** | jump to the previous / next initial (games). Not in `Cubic`, where both axes are taken |
-| **L1 / R1** | jump a screenful (games) |
+| **L1/R1** | jump a screenful (games) |
 | **A** | open a system, or start a game. In `Cubic`, start it |
 | **B** | back to the systems row. In `Cubic`, this system's menu |
 | **X** | game info for the card under the cursor |
 | **Y** | favorite it - Favorites is a shelf of its own. Nothing on Muse's shelf |
 | **Volume rocker** | volume, everywhere, including in game |
-| **F1 / F2** | brightness, everywhere, including in game |
+| **F1/F2** | brightness, everywhere, including in game |
 | **MENU** (on the systems row) | the TortOS menu - settings that are about the firmware |
 | **MENU** (inside a system) | that system's menu, below |
 | **MENU** (in `Cubic`) | always the TortOS menu; B is the system's |
@@ -319,8 +319,8 @@ cover, the track, where in it you are, and what comes next.
 | | |
 |---|---|
 | **A** | pause, or play |
-| **L1 / R1** | previous / next track. More than three seconds in, L1 starts the track over |
-| **Left / Right** | back or ahead ten seconds |
+| **L1/R1** | previous / next track. More than three seconds in, L1 starts the track over |
+| **Left/Right** | back or ahead ten seconds |
 | **Y** | the play mode |
 | **B** | the album's tracks |
 | **SELECT** | close Muse |
