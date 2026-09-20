@@ -152,7 +152,7 @@ None of them is a driver, and none replaces anything the system needs to run.
 
 **On the cube,** up and down change console, left and right move through its games, and B opens that console's menu.
 
-**In Muse,** A opens an album, plays a track or pauses it, L1 and R1 change track, left and right skip ten seconds, and B goes back. Y changes the play mode: in order, repeat all, repeat one or shuffle.
+**In Muse,** A opens an album, plays a track or pauses it, L1 and R1 change track, left and right skip ten seconds, and B goes back. On Now Playing, Y changes the play mode: in order, repeat all, repeat one or shuffle.
 
 The volume buttons and F1 / F2 (brightness) work everywhere.
 

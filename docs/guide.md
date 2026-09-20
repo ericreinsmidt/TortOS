@@ -109,7 +109,7 @@ matters to you - a card is the one part of this that gets reformatted.
 | **A** | open a system, or start a game. In `Cubic`, start it |
 | **B** | back to the systems row. In `Cubic`, this system's menu |
 | **X** | game info for the card under the cursor |
-| **Y** | favorite it - Favorites is a shelf of its own. On Muse's shelf, the play mode |
+| **Y** | favorite it - Favorites is a shelf of its own. Nothing on Muse's shelf |
 | **Volume rocker** | volume, everywhere, including in game |
 | **F1 / F2** | brightness, everywhere, including in game |
 | **MENU** (on the systems row) | the TortOS menu - settings that are about the firmware |
@@ -316,10 +316,11 @@ cover, the track, where in it you are, and what comes next.
 | **B** | the album's tracks |
 | **SELECT** | close Muse |
 
-**Y changes the play mode**, anywhere in Muse: in order, then repeat all, then
-repeat one, then shuffle, and round again. Its mark sits beside the track count
-on Now Playing, and its name shows for a moment when it changes. Shuffle
-starts from the track you chose and plays the rest in a random order, and when
+**Y changes the play mode on Now Playing**, and only there: in order, then
+repeat all, then repeat one, then shuffle, and round again. Its mark sits
+beside the track count on that screen, which is the one place a mode is shown -
+so the mode is set where it can be read. Shuffle starts from the track you
+chose and plays the rest in a random order, and when
 it runs out it shuffles again and carries on - never starting the new round
 with the song that ended the last. The mode is kept across restarts.
 

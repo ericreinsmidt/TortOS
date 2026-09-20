@@ -447,14 +447,18 @@ enum { COV_UNKNOWN, COV_ASKED, COV_JPG, COV_PNG, COV_NONE };
 typedef struct { unsigned char st; unsigned asked_ms; } cover_state;
 static cover_state *g_cov;
 
-/* The play modes as the player meets them: the name saved in the settings,
- * the name shown, and the mark. In order has no mark: it is what plays when
- * nothing has been asked for, and a mark meaning "nothing special" is noise. */
-static const struct { const char *key, *label; int glyph; } MUSE_MODES[MUQ_MODES] = {
-	[MUQ_IN_ORDER]   = { "in order",   "In order",   -1 },
-	[MUQ_REPEAT_ALL] = { "repeat all", "Repeat all", UI_GLYPH_REPEAT },
-	[MUQ_REPEAT_ONE] = { "repeat one", "Repeat one", UI_GLYPH_REPEAT_ONE },
-	[MUQ_SHUFFLE]    = { "shuffle",    "Shuffle",    UI_GLYPH_SHUFFLE },
+/* The play modes as the player meets them: the name saved in the settings and
+ * the mark. In order has no mark: it is what plays when nothing has been asked
+ * for, and a mark meaning "nothing special" is noise.
+ *
+ * The name each mode was SHOWN by went with the notice that showed it - see
+ * muse_cycle_mode. Nothing spells a mode out now; the mark beside the track
+ * count on Now Playing is the whole of it. */
+static const struct { const char *key; int glyph; } MUSE_MODES[MUQ_MODES] = {
+	[MUQ_IN_ORDER]   = { "in order",   -1 },
+	[MUQ_REPEAT_ALL] = { "repeat all", UI_GLYPH_REPEAT },
+	[MUQ_REPEAT_ONE] = { "repeat one", UI_GLYPH_REPEAT_ONE },
+	[MUQ_SHUFFLE]    = { "shuffle",    UI_GLYPH_SHUFFLE },
 };
 
 /* The cover on the Now Playing screen, kept between visits so that opening it
@@ -702,9 +706,6 @@ static bool has_box_art(const char *folder, const char *name)
 /* Muse's half of the card machinery, defined with the rest of Muse. */
 static void muse_card_want(app *a, int s, int i);
 static void cover_shape(SDL_Surface **s);
-static void muse_mode_hud(app *a);
-static bool muse_mode_hud_on(void);
-static unsigned g_mode_hud_until;
 
 static SDL_Texture *game_get_tex(void *ctx, int i, int *w, int *h, float *cb)
 {
@@ -2854,11 +2855,6 @@ static void render(app *a)
 {
 	g_redraw_at = REDRAW_NEVER;
 	draw_shelf(a);
-	/* Y on Muse's shelf changes the play mode, and says so here. */
-	if (muse_mode_hud_on()) {
-		muse_mode_hud(a);
-		redraw_at(g_mode_hud_until);
-	}
 	plat_draw_osd(a->r);
 	/* The tint lands exactly on its target now (see tick_tint), so this is a
 	 * test that ends rather than one that is true forever. */
@@ -6863,52 +6859,24 @@ static void muse_card_want(app *a, int s, int i)
 
 /* ---- Muse: the play mode --------------------------------------------------- */
 
-static bool muse_mode_hud_on(void)
-{
-	return g_mode_hud_until && (int)(plat_now_ms() - g_mode_hud_until) < 0;
-}
-
-/* Y, anywhere in Muse: the next mode, kept for next time, and named for a
- * moment - a mark on its own is a new shape to learn, and a name is not. */
+/* Y ON NOW PLAYING, AND NOWHERE ELSE IN MUSE. Eric's call, 2026-09-19.
+ *
+ * Y used to cycle the mode on every Muse screen, and because a mark on its own
+ * is a new shape to learn, each press named the mode on a pill in the middle
+ * of the screen for 1400 ms. On Now Playing that pill said what the mark
+ * beside the track count was already saying, a moment later and larger.
+ *
+ * The mode is now set where it is shown. That leaves the shelf and the lists
+ * with nothing to announce, so the pill is gone with them, and Y is free there
+ * the way X is. The cost is that the mode cannot be changed before something
+ * plays, since Now Playing is a screen about a track - and it is kept across
+ * restarts, so it is not a thing anyone sets often. */
 static void muse_cycle_mode(void)
 {
 	muq_mode m = (muq_mode)((musec_mode() + 1) % MUQ_MODES);
 
 	musec_set_mode(m);
 	db_set_str(db_dev(), "muse.mode", MUSE_MODES[m].key);
-	g_mode_hud_until = plat_now_ms() + 1400;
-	if (!g_mode_hud_until) g_mode_hud_until = 1;
-}
-
-/* That moment: the mark and the name, on a panel in the middle of whatever
- * Muse is showing. */
-static void muse_mode_hud(app *a)
-{
-	muq_mode m = musec_mode();
-	TTF_Font *f = ui_font(UI_F_MENU);
-	SDL_Color acc = { (Uint8)(MUSE_ACCENT >> 16), (Uint8)(MUSE_ACCENT >> 8),
-	                  (Uint8)MUSE_ACCENT, 255 };
-	int gs = 48, pad = 32, gap = 20, h = 104, w, x;
-	SDL_Rect box;
-
-	if (!muse_mode_hud_on()) return;
-	w = pad * 2 + ui_text_width(f, MUSE_MODES[m].label) +
-	    (MUSE_MODES[m].glyph >= 0 ? gs + gap : 0);
-	box = (SDL_Rect){ (TORTOS_SCREEN_W - w) / 2, (TORTOS_SCREEN_H - h) / 2, w, h };
-	/* A hairline of Muse's green round a dark pill. ui_panel's frame is sized
-	 * for a menu, and on a notice this small it was most of what showed. */
-	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
-	ui_round_rect(a->r, &box, 20, acc);
-	ui_round_rect(a->r, &(SDL_Rect){ box.x + 2, box.y + 2, box.w - 4, box.h - 4 },
-	              18, (SDL_Color){ UI_BG_R, UI_BG_G, UI_BG_B, 240 });
-	x = box.x + pad;
-	if (MUSE_MODES[m].glyph >= 0) {
-		ui_glyph_draw(a->r, (ui_glyph)MUSE_MODES[m].glyph, x + gs / 2,
-		              box.y + h / 2, gs, acc);
-		x += gs + gap;
-	}
-	ui_text(a->r, f, MUSE_MODES[m].label, x,
-	        box.y + (h - ui_font_height(UI_F_MENU)) / 2, -1, UI_TEXT);
 }
 
 /* ---- Muse: what it is open over ------------------------------------------ */
@@ -6983,10 +6951,9 @@ static unsigned np_draw(app *a, const mu_now *mn, const char *next)
 	SDL_Rect cov = { NP_X, NP_Y, NP_SIDE, NP_SIDE };
 	TTF_Font *fs = ui_font(UI_F_META);
 	/* Muse's green for everything that is not the cover or the words - the
-	 * light, the bar, the mode's mark - the same green its shelf card, its
-	 * menus and the mode notice wear. It was the cover's own most vivid color
-	 * once, which made one mark two colors a screen apart; Eric's call,
-	 * 2026-09-19. */
+	 * light, the bar, the mode's mark - the same green its shelf card and its
+	 * menus wear. It was the cover's own most vivid color once, which made one
+	 * mark two colors a screen apart; Eric's call, 2026-09-19. */
 	unsigned rgb = MUSE_ACCENT, wait = (unsigned)-1, phase;
 	SDL_Color acc = { (Uint8)(rgb >> 16), (Uint8)(rgb >> 8), (Uint8)rgb, 255 };
 	const char *state = mn->state == MU_PLAYING ? NULL
@@ -7072,7 +7039,7 @@ static bool muse_now_screen(app *a)
 {
 	struct {
 		mu_state st;
-		int at, len, index, count, mode, hud;
+		int at, len, index, count, mode;
 		char title[128], artist[128], album[128];
 		SDL_Texture *tex;
 	} shown, drawn;
@@ -7139,7 +7106,6 @@ static bool muse_now_screen(app *a)
 		memcpy(shown.album, mn->album, sizeof shown.album);
 		shown.tex = g_np.tex;
 		shown.mode = (int)musec_mode();
-		shown.hud = muse_mode_hud_on();
 		for (b = 0; b < IN_COUNT && !touched; b++)
 			touched = a->in.pressed[b] || a->in.down[b];
 		now = plat_now_ms();
@@ -7147,8 +7113,6 @@ static bool muse_now_screen(app *a)
 		if (touched || memcmp(&shown, &drawn, sizeof shown) || (int)(now - due) >= 0) {
 			unsigned wait = np_draw(a, mn, next);
 			Uint32 osd;
-
-			muse_mode_hud(a);
 
 			/* Asked after the draw, which is what retires a line whose
 			 * time is up - asked before, it names a moment already past. */
@@ -7161,8 +7125,6 @@ static bool muse_now_screen(app *a)
 			 * at the moment it is due to go. */
 			due = now + (wait < 1000 ? wait : 1000);
 			if (osd != UINT32_MAX && (int)(osd - due) < 0) due = osd;
-			if (muse_mode_hud_on() && (int)(g_mode_hud_until - due) < 0)
-				due = g_mode_hud_until;
 			SDL_Delay(8);
 		} else {
 			SDL_Delay(16);
@@ -7335,7 +7297,6 @@ static void muse_screen(app *a, bool now, int album)
 		if (in_repeat(&a->in, IN_RIGHT))    musec_seek_by(+10);
 		if (in_repeat(&a->in, IN_L1))       musec_prev();
 		if (in_repeat(&a->in, IN_R1))       musec_next();
-		if (a->in.pressed[IN_Y])            muse_cycle_mode();
 		if (in_repeat(&a->in, IN_VOLUP))    plat_volume_nudge(+1);
 		if (in_repeat(&a->in, IN_VOLDN))    plat_volume_nudge(-1);
 		if (in_repeat(&a->in, IN_BRIGHTUP)) plat_brightness_nudge(+1);
@@ -7386,7 +7347,6 @@ static void muse_screen(app *a, bool now, int album)
 
 		muse_backdrop(a);
 		menu_draw(a, heading, rows, n, sel, menu_std_width(a), MUSE_ACCENT);
-		muse_mode_hud(a);
 		plat_draw_osd(a->r);
 		SDL_RenderPresent(a->r);
 		SDL_Delay(8);
@@ -8451,7 +8411,6 @@ static void update_both(app *a)
 	/* Muse's face, as on its shelf: see update_games. */
 	if (is_muse(&a->sys.systems[a->sys_cursor])) {
 		if (a->in.pressed[IN_ACCEPT]) muse_album(a, v, v->cursor);
-		else if (a->in.pressed[IN_Y]) muse_cycle_mode();
 		return;
 	}
 
@@ -8636,12 +8595,12 @@ static void update_games(app *a)
 		evict_far(v, TEX_KEEP_FAR);
 		return;
 	}
-	/* Muse's cards are albums: A opens one onto its tracks, and Y changes the
-	 * play mode, as it does everywhere in Muse. X has nothing to say that the
-	 * tracks do not, and an album is not a favorite. */
+	/* Muse's cards are albums: A opens one onto its tracks. X and Y are both
+	 * free here - X has nothing to say that the tracks do not, an album is
+	 * not a favorite, and the play mode is set where it is shown, on Now
+	 * Playing. Eric's call, 2026-09-19. */
 	if (is_muse(&a->sys.systems[a->sys_cursor])) {
 		if (a->in.pressed[IN_ACCEPT]) muse_album(a, v, v->cursor);
-		else if (a->in.pressed[IN_Y]) muse_cycle_mode();
 		return;
 	}
 	/* X opens the game. Y marks it. The pair sits together because they are
@@ -9176,10 +9135,9 @@ static int shot_jump;               /* letter-jumps to apply before drawing */
 /* --nowplaying ALBUM [TRACK [SECONDS]], and --paused with it. */
 static int   shot_np = -1, shot_np_track, shot_np_paused;
 static float shot_np_at = 83.0f;
-/* --mode NAME plays whatever the shot shows in that play mode; --hud draws
- * the notice Y puts up when it changes one. */
+/* --mode NAME plays whatever the shot shows in that play mode: the mark beside
+ * the track count is drawn from it. */
 static const char *shot_mode;
-static int   shot_hud;
 static float shot_slot_aspect = 4.0f / 3.0f;
 
 /* A stand-in for a paused game frame, at whatever shape was asked for: the
@@ -9314,10 +9272,6 @@ static void take_shot(app *a)
 	}
 	if (shot_info) info_preview(a, true);
 	if (shot_np >= 0) np_shot(a);
-	if (shot_hud) {
-		g_mode_hud_until = plat_now_ms() + 5000;
-		muse_mode_hud(a);
-	}
 	if (shot_art)
 		art_preview(a, shot_art_now, "4 of 10 systems",
 		            "37 found, 2 missing, 61 already", true);
@@ -9494,7 +9448,6 @@ int main(int argc, char *argv[])
 		}
 		else if (!strcmp(argv[i], "--paused")) shot_np_paused = 1;
 		else if (!strcmp(argv[i], "--mode") && i + 1 < argc) shot_mode = argv[++i];
-		else if (!strcmp(argv[i], "--hud")) shot_hud = 1;
 		else if (!strcmp(argv[i], "--sysmove") && i + 1 < argc)
 			shot_sysmove = (float)atof(argv[++i]);
 		else if (!strcmp(argv[i], "--gamemove") && i + 1 < argc)
