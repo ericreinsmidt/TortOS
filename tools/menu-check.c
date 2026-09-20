@@ -295,6 +295,15 @@ static void tortos_menu_online(void)
 	ck(!strcmp(val(&rows[PM_SS]), "someone"), "an account shows its name");
 	ck(rows[PM_SS].live, "and stays open, to change it");
 	ck(n == PM_ROWS, "and none of that changes the row count");
+
+	/* Controls needs nothing of the device - no network, no account, no
+	 * card - so it is live in every state this menu can be in, and it sits
+	 * with About at the end where the rows you only read live. */
+	printf("the Controls row:\n");
+	ck(!strcmp(rows[PM_CONTROLS].label, "Controls"), "it is there");
+	ck(rows[PM_CONTROLS].live, "and live with the radio down and nobody signed in");
+	ck(!rows[PM_CONTROLS].value, "and says nothing in the value column");
+	ck(PM_CONTROLS == PM_ABOUT - 1, "and sits just above About TortOS");
 }
 
 /* Connecting and idle are not the same as off, and the row must not flatten

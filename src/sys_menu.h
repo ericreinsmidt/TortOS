@@ -29,11 +29,13 @@
  * Bluetooth and Audio Output are setup: you use them when something is wrong
  * or new, and then never again. A menu ordered by what a device needs on its
  * first day puts the thing you actually come back to five rows down. */
+/* Controls and About are the two rows you only read, so they sit together at
+ * the end, after everything that changes something. */
 typedef enum {
 	PM_STATS,
 	PM_WIFI, PM_BT, PM_AUDIO, PM_XFER,
 	PM_SLEEP, PM_THEME, PM_DIR, PM_SCRAPE, PM_ACHIEVEMENTS, PM_SS,
-	PM_ABOUT, PM_ROWS
+	PM_CONTROLS, PM_ABOUT, PM_ROWS
 } pm_row;
 
 /* The system menu. Games and Core carry real values rather than invented ones,

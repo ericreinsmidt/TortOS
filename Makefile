@@ -30,7 +30,7 @@ all: build/tortos.elf
 CHECKS = check-cheevos check-hare check-httpd check-idle check-rahash \
          check-raset check-xfer check-menus check-artscrape check-artrun check-audioout \
          check-db check-stats check-sort check-bt check-backlog check-ss \
-         check-muselib check-musequeue check-museart
+         check-muselib check-musequeue check-museart check-controls
 
 check:
 	@fail=0; for c in $(CHECKS); do \
@@ -151,6 +151,18 @@ build-native/audioout-check: tools/audioout-check.c src/audioout.c \
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
 	      -o $@ tools/audioout-check.c src/audioout.c
+
+# What MENU > Controls says: every button on exactly one page, and rows short
+# enough to sit still. The page is the device's own copy of the controls list,
+# so what it omits is invisible until somebody goes looking for a button.
+check-controls: build-native/controls-check
+	@./build-native/controls-check
+
+build-native/controls-check: tools/controls-check.c src/controls.c \
+                            src/controls.h src/menu.h FORCE
+	@mkdir -p build-native
+	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
+	      -o $@ tools/controls-check.c src/controls.c
 
 build-native/menu-check: tools/menu-check.c src/wifi_menu.c src/wifi.c \
                         src/sys_menu.c src/menu.c src/game_menu.c \

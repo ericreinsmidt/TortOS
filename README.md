@@ -156,10 +156,12 @@ None of them is a driver, and none replaces anything the system needs to run.
 
 The volume buttons and F1 / F2 (brightness) work everywhere.
 
+**The Brick lists all of this itself,** under **MENU > Controls**: five pages, stepped through with left and right, so you never need this page to look a button up.
+
 <details>
 <summary>What's in each menu</summary>
 
-**The TortOS menu,** MENU on the consoles row: Play Time, Wi-Fi, Bluetooth, Audio Output, Over The Hare, Auto Off, UI Theme, UI Direction, Box Art, Cheevos, ScreenScraper, About TortOS.
+**The TortOS menu,** MENU on the consoles row: Play Time, Wi-Fi, Bluetooth, Audio Output, Over The Hare, Auto Off, UI Theme, UI Direction, Box Art, Cheevos, ScreenScraper, Controls, About TortOS.
 
 **A console's menu,** MENU inside it: Sort By, Display Mode, Box Art for that console alone, and Rescan Folder for games copied since the Brick was turned on.
 

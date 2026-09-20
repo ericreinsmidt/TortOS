@@ -123,6 +123,13 @@ MENU means three different menus depending on where you are, and each one is
 about the thing you are looking at: the firmware on the systems row, one
 console inside it, the running game in a game.
 
+**The Brick carries this table itself**, under **MENU > Controls**: five pages
+that left and right step through - moving, the shelf, a game, Muse, and the
+buttons that work anywhere. It is the copy that is always to hand, and the one
+that follows your UI Direction, so the page shows the axes as they are on your
+device rather than all three at once. This guide is the long version of the
+same thing.
+
 The TortOS menu opens from the systems row and is about the device rather
 than any one console:
 
@@ -138,6 +145,8 @@ than any one console:
 | **UI Direction** | `Horizontal`, `Vertical` or `Cubic` - see below |
 | **Box Art** | fetch what the whole library is missing |
 | **Cheevos** | the RetroAchievements account, or `sign in` |
+| **ScreenScraper** | the box-art account, `sign in`, or `not in this build` |
+| **Controls** | every button and what it does, a page per place |
 | **About TortOS** | version, address, battery, uptime |
 
 Over The Hare and Box Art need a network, and go quiet without one rather than

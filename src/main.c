@@ -42,6 +42,7 @@
 #include "ss.h"
 #include "ssrun.h"
 #include "sys_menu.h"
+#include "controls.h"
 #include "cards.h"
 #include "game_menu.h"
 #include "ui.h"
@@ -5741,6 +5742,58 @@ static void about_screen(app *a)
 	}
 }
 
+/* Which page the shelf's controls are described on. See controls.h: the page
+ * follows UI Direction, because which axis moves is what that setting does. */
+static ctl_dir controls_dir(void)
+{
+	if (CARD_DIRS[g_dir].both)     return CTL_CUBIC;
+	if (CARD_DIRS[g_dir].vertical) return CTL_VERTICAL;
+	return CTL_HORIZONTAL;
+}
+
+/* MENU > Controls: what every button does, a page per place. Read-only like
+ * About, and paged with left and right the way Play Time changes its window -
+ * the whole list at once is thirty rows nobody reads. */
+static void controls_screen(app *a)
+{
+	ctl_page page = CTL_SHELF;
+	bool done = false;
+
+	while (!done && !want_quit && a->running) {
+		menu_row rows[CTL_MAX_ROWS];
+		char head[80];
+		int n = ctl_rows(page, controls_dir(), rows);
+
+		snprintf(head, sizeof head, "Controls: %s", ctl_page_name(page));
+
+		plat_input_poll(&a->in);
+		if (a->in.quit_requested) { a->running = false; return; }
+		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); return; }
+		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = true;
+		/* SELECT opens Muse here as it does on every other menu screen -
+		 * which is one of the things this page exists to tell you. */
+		if (a->in.pressed[IN_SELECT]) muse_open(a, NULL, NULL);
+
+		if (in_repeat(&a->in, IN_RIGHT)) page = (ctl_page)((page + 1) % CTL_PAGES);
+		if (in_repeat(&a->in, IN_LEFT))
+			page = (ctl_page)((page + CTL_PAGES - 1) % CTL_PAGES);
+		if (in_repeat(&a->in, IN_VOLUP))    plat_volume_nudge(+1);
+		if (in_repeat(&a->in, IN_VOLDN))    plat_volume_nudge(-1);
+		if (in_repeat(&a->in, IN_BRIGHTUP)) plat_brightness_nudge(+1);
+		if (in_repeat(&a->in, IN_BRIGHTDN)) plat_brightness_nudge(-1);
+
+		tick_tint(a);
+		draw_shelf(a);
+		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
+		SDL_RenderFillRect(a->r, NULL);
+		menu_draw(a, head, rows, n, -1, menu_std_width(a), MENU_ACCENT);
+		plat_draw_osd(a->r);
+		SDL_RenderPresent(a->r);
+		SDL_Delay(8);
+	}
+}
+
 /* The widest row of one built menu. */
 static int menu_measure(const menu_row *rows, int n, const char *heading)
 {
@@ -6074,6 +6127,7 @@ static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
 	case PM_SS:           ss_signin_screen(a); break;
 	case PM_BT:           bt_screen(a); break;
 	case PM_STATS:        if (stats_screen(a)) return MENU_DONE; break;
+	case PM_CONTROLS:     controls_screen(a); break;
 	case PM_ABOUT:        about_screen(a); break;
 	default: break;
 	}
@@ -9118,6 +9172,10 @@ static float shot_gamemove;
 static const char *shot_cheevos_game = "Hagane: The Final Conflict";
 static int shot_syn;       /* --synopsis: the card a scraped game opens */
 static int shot_info;
+/* --controls [page] draws MENU > Controls, page 0-3, over whichever screen
+ * --screen asked for: the page follows UI Direction, so this is the only way
+ * to look at all three without setting the device three times. */
+static int shot_controls = -1;
 static int shot_art;
 static const char *shot_art_now = "Legend of Zelda, The - A Link to the Past (USA)";
 static int shot_hare;
@@ -9271,6 +9329,18 @@ static void take_shot(app *a)
 		menu_draw(a, shot_wait, &row, 1, -1, 0, MENU_ACCENT);
 	}
 	if (shot_info) info_preview(a, true);
+	if (shot_controls >= 0) {
+		menu_row rows[CTL_MAX_ROWS];
+		char head[80];
+		ctl_page p = (ctl_page)(shot_controls % CTL_PAGES);
+		int n = ctl_rows(p, controls_dir(), rows);
+
+		snprintf(head, sizeof head, "Controls: %s", ctl_page_name(p));
+		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
+		SDL_RenderFillRect(a->r, NULL);
+		menu_draw(a, head, rows, n, -1, menu_std_width(a), MENU_ACCENT);
+	}
 	if (shot_np >= 0) np_shot(a);
 	if (shot_art)
 		art_preview(a, shot_art_now, "4 of 10 systems",
@@ -9453,6 +9523,11 @@ int main(int argc, char *argv[])
 		else if (!strcmp(argv[i], "--gamemove") && i + 1 < argc)
 			shot_gamemove = (float)atof(argv[++i]);
 		else if (!strcmp(argv[i], "--info")) shot_info = 1;
+		else if (!strcmp(argv[i], "--controls")) {
+			shot_controls = 0;
+			if (i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9')
+				shot_controls = atoi(argv[++i]);
+		}
 		else if (!strcmp(argv[i], "--phase") && i + 1 < argc)
 			shot_phase = atoi(argv[++i]);
 		else if (!strcmp(argv[i], "--art")) {

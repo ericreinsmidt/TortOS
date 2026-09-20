@@ -135,6 +135,10 @@ int sys_menu_build(const sys_ui *u, menu_row *out, menu_bufs *b,
 	                                   !u->ss_have ? "not in this build"
 	                                   : u->ss_in ? u->ss_name : "sign in",
 	                                   u->ss_have };
+	/* What every button does, per screen. Needs nothing of the device, which
+	 * is the point: it is the page you reach when the thing you have forgotten
+	 * is which button opens Muse. See src/controls.h. */
+	out[PM_CONTROLS]     = (menu_row){ "Controls",    NULL,   true  };
 	out[PM_ABOUT]        = (menu_row){ "About TortOS", NULL,   true  };
 	return PM_ROWS;
 }
