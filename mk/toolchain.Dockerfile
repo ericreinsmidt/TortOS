@@ -19,7 +19,20 @@
 #   docker build -f mk/toolchain.Dockerfile -t tortos-toolchain mk
 FROM debian:bullseye-slim@sha256:f313b4bd62667092a59b3a664d7d3ab8b5e65f41675f48e81455a15dc5abe792
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# apt reads from a fixed snapshot, not the live mirror. Bullseye is past end
+# of life: by 2026-09-23 its security updates had left deb.debian.org's pool
+# while the index still named them, so a plain apt-get install failed on 404s.
+# A snapshot also gets the same packages on every build, for the same reason
+# the base is pinned by digest. Valid-Until is off because a snapshot's Release
+# file is past its own expiry by design; the signatures are still checked.
+ARG DEBIAN_SNAPSHOT=20260901T000000Z
+RUN printf '%s\n' \
+        "deb http://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT} bullseye main" \
+        "deb http://snapshot.debian.org/archive/debian-security/${DEBIAN_SNAPSHOT} bullseye-security main" \
+        "deb http://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT} bullseye-updates main" \
+        > /etc/apt/sources.list
+
+RUN apt-get -o Acquire::Check-Valid-Until=false update && apt-get install -y --no-install-recommends \
         gcc-aarch64-linux-gnu \
         libc6-dev-arm64-cross \
         binutils-aarch64-linux-gnu \
