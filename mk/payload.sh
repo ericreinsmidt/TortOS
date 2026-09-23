@@ -32,7 +32,7 @@ cp "$ROOT/sd/tortos/bt-alsa.sh" "$P/"     # sourced by launch.sh, run by the lau
 # down reads it to create the ROM folders. Both run on the host, before any
 # database exists.
 cp "$ROOT/config/systems.cfg" "$P/"
-cp "$ROOT/res/cards/"*.png "$P/cards/"
+cp -R "$ROOT/res/cards/." "$P/cards/"     # the classic/ and fancy/ sets, as adb-deploy.sh pushes them
 cp "$ROOT/res/fonts/menu.ttf" "$P/"       # the UI face, and the in-game menu's
 # Over The Hare's page. The launcher serves these off the card at P_WEB, so a
 # payload without them is a card whose transfer screen starts a server and then
