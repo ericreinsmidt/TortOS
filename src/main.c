@@ -157,7 +157,12 @@ typedef struct {
  * the input loop calls it the moment a favorite changes. */
 static void refresh_favorites_shelf(app *a);
 static void build_muse_shelf(app *a);
-static void muse_screen(app *a, bool now, int album);
+static void muse_tracks(app *a, int album, bool now);
+/* Muse's shelf borrows the games shelf's cards and its letter jump, both of
+ * which live down with the shelf code. */
+static void muse_shelf_screen(app *a, bool now);
+static int  muse_artist_of(int al);
+static int  shelf_letter_jump(sysview *v, int dir);
 /* Whether a shelf is Muse's; sorting needs to know, well before Muse's code.
  * And sorting puts Muse's shelf in order by its own. */
 static bool is_muse(const system_cfg *s);
@@ -6946,10 +6951,6 @@ static bool              g_muse_gone;    /* that rule ended what was underneath 
 
 static void muse_backdrop(app *a)
 {
-	if (g_muse_over && g_muse_over->backdrop) {
-		g_muse_over->backdrop(a, g_muse_over_ctx);
-		return;
-	}
 	draw_shelf(a);
 	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 	SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
@@ -7190,84 +7191,62 @@ static bool muse_now_screen(app *a)
 	return close;
 }
 
-/* ---- Muse: the list ------------------------------------------------------- */
+/* ---- Muse: an album's tracks ---------------------------------------------- */
 
-typedef enum { LV_ARTISTS, LV_ALBUMS, LV_TRACKS } muse_level;
-
-/* Put the list on the track the queue is at: its artist, its album, its row.
- * False, and nothing moved, when there is none. */
-static bool muse_follow(muse_level *lv, int *art, int *alb, int *sel)
+/* The album the queue is on, and the row its track sits at. -1 when nothing
+ * is loaded, or when what is loaded is not on the card any more. */
+static int muse_playing_album(int *row)
 {
 	const char *t = musec_track(musec_now()->index);
 	int al = ml_album_of(&g_muse, t), i;
 
-	if (al < 0) return false;
-	for (i = 0; i < g_muse.nartists; i++)
-		if (al >= g_muse.artists[i].first &&
-		    al < g_muse.artists[i].first + g_muse.artists[i].n)
-			break;
-	if (i == g_muse.nartists) return false;
-	*art = i;
-	*alb = al;
-	*lv = LV_TRACKS;
-	*sel = 0;
-	for (i = 0; i < g_muse.albums[al].n; i++)
-		if (!strcmp(g_muse.tracks[g_muse.albums[al].first + i].path, t)) *sel = i;
-	return true;
+	if (row) *row = 0;
+	if (al < 0) return -1;
+	if (row)
+		for (i = 0; i < g_muse.albums[al].n; i++)
+			if (!strcmp(g_muse.tracks[g_muse.albums[al].first + i].path, t))
+				*row = i;
+	return al;
 }
 
-/* Muse's list: the Music folder as artists, then albums, then tracks, with
- * Now Playing over it.
+/* One album's tracks, over the shelf its cover sits on.
  *
- * Still a list over the shelf, until the covers it browses by can be a shelf of
- * their own. Now Playing was the part that could not wait to stop being one.
+ * THIS USED TO BE THE WHOLE OF MUSE: artists, then their albums, then tracks,
+ * with Now Playing as a row at the top, because the covers it browsed by had
+ * no shelf of their own yet. They have one now - see muse_shelf_screen - and
+ * SELECT lands there, so the two levels above this one had nothing left to
+ * do. Eric's, 2026-09-20: the rest of the launcher is pictures, and a list
+ * was the wrong front door for the one screen that is all covers.
  *
- * A opens, and on a track plays the album from there and goes to Now Playing.
- * B goes back up a level, and out. SELECT and MENU close Muse from anywhere in
- * it, which with SELECT opening it from anywhere makes one button in and out.
- * L1 and R1 are the previous and next track, left and right seek ten seconds,
- * and X does nothing - kept free. Leaving does not stop the music - that is
- * what the daemon is for.
+ * A plays a track and opens Now Playing; on the track already playing it just
+ * opens Now Playing, rather than starting it over. B goes back to the shelf.
+ * SELECT and MENU close Muse from here. L1 and R1 are the previous and next
+ * track, left and right seek ten seconds. X and Y are free. Leaving does not
+ * stop the music - that is what the daemon is for.
  *
- * `now` opens straight onto Now Playing, with the list underneath already on
- * the album that is playing, so B from there lands on its tracks.
- *
- * `album`, when it is not -1, is that album's tracks and nothing above them:
- * A on a card on Muse's shelf, where the shelf is the level above and B goes
- * back to it. Y changes the play mode, here as everywhere in Muse. */
-static void muse_screen(app *a, bool now, int album)
+ * `now` opens straight onto Now Playing, with these tracks underneath, so B
+ * from there lands on the album it is playing. */
+static void muse_tracks(app *a, int album, bool now)
 {
-	muse_level lv = LV_ARTISTS;
-	int art = 0, alb = 0, sel = 0, done = 0, cap = 4, i;
+	int sel = 0, done = 0, art, i;
 	menu_row *rows;
 	char (*vals)[24];
 	char heading[300], note[300], t0[16], t1[16];
+	const ml_album *al;
 
-	for (i = 0; i < g_muse.nartists; i++)
-		if (g_muse.artists[i].n + 4 > cap) cap = g_muse.artists[i].n + 4;
-	for (i = 0; i < g_muse.nalbums; i++)
-		if (g_muse.albums[i].n + 4 > cap) cap = g_muse.albums[i].n + 4;
-	if (g_muse.nartists + 4 > cap) cap = g_muse.nartists + 4;
-	rows = calloc((size_t)cap, sizeof *rows);
-	vals = calloc((size_t)cap, sizeof *vals);
-	if (!rows || !vals || g_muse.nartists == 0) { free(rows); free(vals); return; }
+	if (album < 0 || album >= g_muse.nalbums || g_muse.nartists == 0) return;
+	al = &g_muse.albums[album];
+	art = muse_artist_of(album);
+	rows = calloc((size_t)al->n + 4, sizeof *rows);
+	vals = calloc((size_t)al->n + 4, sizeof *vals);
+	if (!rows || !vals) { free(rows); free(vals); return; }
 
-	if (album >= 0 && album < g_muse.nalbums) {
-		/* On the track that is playing, if it is one of these. */
-		if (!muse_follow(&lv, &art, &alb, &sel) || alb != album) {
-			for (art = 0; art < g_muse.nartists - 1; art++)
-				if (album < g_muse.artists[art].first + g_muse.artists[art].n) break;
-			alb = album;
-			sel = 0;
-		}
-		lv = LV_TRACKS;
-	} else {
-		album = -1;
-	}
+	/* On the track that is playing, when it is one of these. */
+	if (muse_playing_album(&i) == album) sel = i;
 
-	if (now && muse_follow(&lv, &art, &alb, &sel)) {
+	if (now) {
 		if (muse_now_screen(a)) done = 1;
-		else muse_follow(&lv, &art, &alb, &sel);
+		else if (muse_playing_album(&i) == album) sel = i;
 	}
 
 	plat_input_flush();
@@ -7276,63 +7255,36 @@ static void muse_screen(app *a, bool now, int album)
 	while (!done && !want_quit && a->running) {
 		const mu_now *mn;
 		bool loaded, open_now = false;
-		int n = 0, items, off = 0;
+		int n = 0, items;
+		const char *playing;
 
 		musec_poll();
 		cover_answers();
 		mn = musec_now();
 		loaded = mn->state == MU_PLAYING || mn->state == MU_PAUSED;
+		playing = musec_path();
 		plat_input_poll(&a->in);
 
-		/* The rows for where we are. */
-		if (lv == LV_ARTISTS) {
-			snprintf(heading, sizeof heading, "Muse");
-			/* Where the iPod put it: first, and only while there is
-			 * something to go back to. */
-			if (loaded) { rows[n++] = (menu_row){ "Now Playing", NULL, true }; off = 1; }
-			for (i = 0; i < g_muse.nartists; i++, n++) {
-				snprintf(vals[n], sizeof vals[n], "%d album%s", g_muse.artists[i].n,
-				         g_muse.artists[i].n == 1 ? "" : "s");
-				rows[n] = (menu_row){ g_muse.artists[i].name, vals[n], true };
-			}
-		} else if (lv == LV_ALBUMS) {
-			const ml_artist *ar = &g_muse.artists[art];
+		snprintf(heading, sizeof heading, "%s\n%s", al->name,
+		         g_muse.artists[art].name);
+		for (i = 0; i < al->n; i++, n++) {
+			const ml_track *t = &g_muse.tracks[al->first + i];
+			/* Every row a value, if only an empty one: a list with a value
+			 * anywhere is laid out in two columns, left-aligned, and one
+			 * without is centered. Without this the list sat centered until
+			 * one of its tracks played and then jumped left, every name
+			 * moving the moment A was pressed. Eric, 2026-09-19. */
+			const char *v = "";
 
-			snprintf(heading, sizeof heading, "%s", ar->name);
-			for (i = 0; i < ar->n; i++, n++) {
-				const ml_album *al = &g_muse.albums[ar->first + i];
-
-				snprintf(vals[n], sizeof vals[n], "%d track%s", al->n,
-				         al->n == 1 ? "" : "s");
-				rows[n] = (menu_row){ al->name, vals[n], true };
-			}
-		} else {
-			const ml_album *al = &g_muse.albums[alb];
-			const char *playing = musec_path();
-
-			snprintf(heading, sizeof heading, "%s\n%s", al->name,
-			         g_muse.artists[art].name);
-			for (i = 0; i < al->n; i++, n++) {
-				const ml_track *t = &g_muse.tracks[al->first + i];
-				/* Every row a value, if only an empty one: a list with a
-				 * value anywhere is laid out in two columns, left-aligned,
-				 * and one without is centered. So the track list sat centered
-				 * until one of its tracks played and then jumped left, every
-				 * name moving the moment A was pressed - and the artist and
-				 * album lists, which always carry a count, were always left.
-				 * Left, like them. Eric, 2026-09-19. */
-				const char *v = "";
-
-				if (playing[0] && !strcmp(playing, t->path))
-					v = mn->state == MU_PAUSED ? "paused" : "playing";
-				rows[n] = (menu_row){ t->name, v, true };
-			}
+			if (playing[0] && !strcmp(playing, t->path))
+				v = mn->state == MU_PAUSED ? "paused" : "playing";
+			rows[n] = (menu_row){ t->name, v, true };
 		}
 		items = n;
 		if (sel >= items) sel = items ? items - 1 : 0;
 
-		/* What is playing, under a rule, whatever level you are on - the
-		 * list is a way to reach music, and the music is the point. */
+		/* What is playing, under a rule, even when it is another album's -
+		 * the list is a way to reach music, and the music is the point. */
 		if (loaded) {
 			mmss(t0, sizeof t0, mn->at);
 			mmss(t1, sizeof t1, mn->len);
@@ -7357,37 +7309,22 @@ static void muse_screen(app *a, bool now, int album)
 		if (in_repeat(&a->in, IN_BRIGHTDN)) plat_brightness_nudge(-1);
 
 		if (a->in.pressed[IN_ACCEPT] && items > 0) {
-			if (lv == LV_ARTISTS && off && sel == 0) {
-				open_now = muse_follow(&lv, &art, &alb, &sel);
-			} else if (lv == LV_ARTISTS) {
-				art = sel - off; sel = 0; lv = LV_ALBUMS;
-			} else if (lv == LV_ALBUMS) {
-				alb = g_muse.artists[art].first + sel; sel = 0; lv = LV_TRACKS;
-			} else {
-				const ml_album *al = &g_muse.albums[alb];
+			/* The track already playing is not started over: A on it is the
+			 * way to its Now Playing, the same as the row. */
+			if (!loaded || strcmp(playing, g_muse.tracks[al->first + sel].path)) {
+				const char **paths = calloc((size_t)al->n, sizeof *paths);
 
-				/* The track already playing is not started over: A on it
-				 * is the way to its Now Playing, the same as the row. */
-				if (!loaded || strcmp(musec_path(), g_muse.tracks[al->first + sel].path)) {
-					const char **paths = calloc((size_t)al->n, sizeof *paths);
-
-					if (paths) {
-						for (i = 0; i < al->n; i++)
-							paths[i] = g_muse.tracks[al->first + i].path;
-						musec_play(paths, al->n, sel, g_muse.artists[art].name,
-						           al->name);
-						free(paths);
-					}
+				if (paths) {
+					for (i = 0; i < al->n; i++)
+						paths[i] = g_muse.tracks[al->first + i].path;
+					musec_play(paths, al->n, sel, g_muse.artists[art].name,
+					           al->name);
+					free(paths);
 				}
-				open_now = true;
 			}
+			open_now = true;
 		}
-		if (a->in.pressed[IN_BACK]) {
-			if (lv == LV_TRACKS && album >= 0) done = 1;
-			else if (lv == LV_TRACKS) { sel = alb - g_muse.artists[art].first; lv = LV_ALBUMS; }
-			else if (lv == LV_ALBUMS) { sel = art + (loaded ? 1 : 0); lv = LV_ARTISTS; }
-			else done = 1;
-		}
+		if (a->in.pressed[IN_BACK]) done = 1;
 		if (a->in.pressed[IN_SELECT] || a->in.pressed[IN_MENU]) done = 1;
 		if (a->in.pressed[IN_POWER] || idle_due(a)) { muse_power(a); break; }
 
@@ -7395,7 +7332,7 @@ static void muse_screen(app *a, bool now, int album)
 		 * several past the one chosen. */
 		if (open_now) {
 			if (muse_now_screen(a)) break;
-			muse_follow(&lv, &art, &alb, &sel);
+			if (muse_playing_album(&i) == album) sel = i;
 			continue;
 		}
 
@@ -7427,7 +7364,7 @@ static bool muse_open(app *a, const menu_style *over, void *ctx)
 	g_muse_over = over;
 	g_muse_over_ctx = ctx;
 	g_muse_gone = false;
-	muse_screen(a, mn->state == MU_PLAYING || mn->state == MU_PAUSED, -1);
+	muse_shelf_screen(a, mn->state == MU_PLAYING || mn->state == MU_PAUSED);
 	g_muse_over = NULL;
 	g_muse_over_ctx = NULL;
 	return g_muse_gone;
@@ -7436,7 +7373,123 @@ static bool muse_open(app *a, const menu_style *over, void *ctx)
 /* A on card `k` of Muse's shelf: its album's tracks, over the shelf. */
 static void muse_album(app *a, const sysview *v, int k)
 {
-	if (v->album && k >= 0 && k < v->list.count) muse_screen(a, false, v->album[k]);
+	if (v->album && k >= 0 && k < v->list.count) muse_tracks(a, v->album[k], false);
+}
+
+/* Which card on Muse's shelf is that album, or -1. */
+static int muse_card_of(const sysview *v, int album)
+{
+	int k;
+
+	for (k = 0; v->album && k < v->list.count; k++)
+		if (v->album[k] == album) return k;
+	return -1;
+}
+
+/* MUSE'S SHELF, OPENED ON TOP OF WHATEVER WAS ON SCREEN. Eric's, 2026-09-20.
+ *
+ * SELECT used to open a list of artists, because this shelf belongs to the
+ * main loop - it is the games shelf, drawn for Muse's own view - and SELECT
+ * can be pressed inside a menu, on Play Time, or in the in-game menu over a
+ * paused game, none of which the main loop is driving. A list could draw over
+ * any of those and the shelf could not, so the front door to a screen made
+ * entirely of covers was text. The rest of the launcher is pictures.
+ *
+ * So the shelf is driven from here as well: the same view, the same cards, the
+ * same movement, and draw_shelf doing the drawing - the one loop in this file
+ * that borrows another screen's. What it does NOT borrow is update_games'
+ * input, because B has to come back here rather than walk out to the systems
+ * row, and MENU has to survive a Rescan rebuilding every view underneath it.
+ *
+ * The screen and the cursor are put back on the way out, so whatever opened
+ * Muse is still there when it closes. */
+static void muse_shelf_screen(app *a, bool now)
+{
+	int prev_screen = a->screen, prev_sys = a->sys_cursor;
+	bool vert = CARD_DIRS[g_dir].vertical;
+	in_button back = vert ? IN_DOWN : IN_LEFT, fwd = vert ? IN_UP : IN_RIGHT;
+	in_button jup = vert ? IN_LEFT : IN_UP, jdn = vert ? IN_RIGHT : IN_DOWN;
+	sysview *v;
+	int muse = -1, i, playing;
+	bool done = false;
+
+	for (i = 0; i < a->sys.count; i++)
+		if (is_muse(&a->sys.systems[i])) { muse = i; break; }
+	if (muse < 0 || a->view[muse].list.count <= 0) return;
+
+	a->sys_cursor = muse;
+	enter_system(a);                      /* the screen, the coverflow, the window */
+	v = &a->view[muse];
+
+	/* On the album that is playing, so SELECT lands where the music is. */
+	playing = muse_playing_album(NULL);
+	if (playing >= 0) {
+		int k = muse_card_of(v, playing);
+
+		if (k >= 0) { v->cursor = k; cf_reset(&v->cf, k); }
+	}
+	if (now && playing >= 0) {
+		muse_tracks(a, playing, true);
+		if (g_muse_gone) done = true;
+	}
+
+	while (!done && !want_quit && a->running) {
+		int n = v->list.count, dir = 0;
+
+		musec_poll();
+		cover_answers();
+		plat_input_poll(&a->in);
+		if (a->in.quit_requested) { a->running = false; break; }
+		if (a->in.pressed[IN_POWER] || idle_due(a)) { muse_power(a); break; }
+		/* B and SELECT both leave, which is the rule everywhere in Muse: one
+		 * button in, the same button out, and B for the level below. */
+		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_SELECT]) break;
+
+		if (n > 0) {
+			if (in_repeat(&a->in, back)) { v->cursor = (v->cursor - 1 + n) % n; dir = -1; }
+			if (in_repeat(&a->in, fwd))  { v->cursor = (v->cursor + 1) % n; dir = +1; }
+			if (in_repeat(&a->in, jdn))  v->cursor = shelf_letter_jump(v, +1);
+			if (in_repeat(&a->in, jup))  v->cursor = shelf_letter_jump(v, -1);
+			if (in_repeat(&a->in, IN_L1)) v->cursor = ((v->cursor - CF_WINDOW) % n + n) % n;
+			if (in_repeat(&a->in, IN_R1)) v->cursor = (v->cursor + CF_WINDOW) % n;
+			cf_set_cursor_dir(&v->cf, v->cursor, n, dir);
+		}
+		if (in_repeat(&a->in, IN_VOLUP))    plat_volume_nudge(+1);
+		if (in_repeat(&a->in, IN_VOLDN))    plat_volume_nudge(-1);
+		if (in_repeat(&a->in, IN_BRIGHTUP)) plat_brightness_nudge(+1);
+		if (in_repeat(&a->in, IN_BRIGHTDN)) plat_brightness_nudge(-1);
+
+		if (a->in.pressed[IN_ACCEPT]) {
+			muse_album(a, v, v->cursor);
+			if (g_muse_gone) break;
+		} else if (a->in.pressed[IN_MENU]) {
+			/* Muse's own menu, and Rescan Folder inside it rebuilds every
+			 * view on the card - so the shelf this loop is holding is found
+			 * again afterwards rather than trusted. */
+			tortos_menu_for(a, SCREEN_GAMES);
+			muse = -1;
+			for (i = 0; i < a->sys.count; i++)
+				if (is_muse(&a->sys.systems[i])) { muse = i; break; }
+			if (muse < 0 || a->view[muse].list.count <= 0) break;
+			a->sys_cursor = muse;
+			a->screen = SCREEN_GAMES;
+			v = &a->view[muse];
+			if (v->cursor >= v->list.count) v->cursor = v->list.count - 1;
+			cf_reset(&v->cf, v->cursor);
+		}
+
+		tick_tint(a);
+		draw_shelf(a);
+		plat_draw_osd(a->r);
+		SDL_RenderPresent(a->r);
+		SDL_Delay(8);
+	}
+
+	evict_far(v, TEX_KEEP_FAR);
+	a->screen = prev_screen;
+	a->sys_cursor = prev_sys;
+	plat_input_flush();
+	memset(&a->in, 0, sizeof a->in);
 }
 
 /* ---- Muse: Album Art -------------------------------------------------------- */
