@@ -7037,15 +7037,27 @@ static unsigned np_draw(app *a, const mu_now *mn, const char *next)
 		 *
 		 * The mark half again the text's height, centered on it: at the
 		 * text's own height the 1 in repeat one and shuffle's crossing were
-		 * too small to read at arm's length. Eric, 2026-09-19. */
+		 * too small to read at arm's length. Eric, 2026-09-19.
+		 *
+		 * Centered on the ink, not the em box: the box keeps a descender's
+		 * depth below the baseline that "1 of 12" never uses, so its middle
+		 * sat the mark 3.5px low on the device. Cap height from 'H', as the
+		 * Wi-Fi panel does. */
 		int th = ui_font_height(UI_F_META), gs = th * 3 / 2, gx = NP_TX;
 		int g = MUSE_MODES[musec_mode()].glyph;
+		int asc = fs ? TTF_FontAscent(fs) : th, cap = asc;
 
+		if (fs) {
+			int mnx, mxx, mny, mxy, adv;
+
+			if (TTF_GlyphMetrics(fs, 'H', &mnx, &mxx, &mny, &mxy, &adv) == 0)
+				cap = mxy;
+		}
 		if (mn->count > 1) {
 			snprintf(line, sizeof line, "%d of %d", mn->index + 1, mn->count);
 			gx += ui_text(r, fs, line, NP_TX, y, -1, UI_TEXT_DIM) + 18;
 		}
-		if (g >= 0) ui_glyph_draw(r, (ui_glyph)g, gx + gs / 2, y + th / 2, gs, acc);
+		if (g >= 0) ui_glyph_draw(r, (ui_glyph)g, gx + gs / 2, y + asc - cap / 2, gs, acc);
 	}
 	/* Room under it for the larger mark and for the title to stand clear of
 	 * the line above - which read as one block with it at 6px. */
