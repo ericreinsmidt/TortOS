@@ -106,6 +106,16 @@ behind it and power there stops the game.
 Continue there, so it has to send RESUME, and it cannot look at `a->in` to find
 out because the runner flushes the input on its way out.
 
+**MENU closes the whole menu; B goes back one screen.** A screen that sees MENU
+raises `g_menu_closing` and leaves, and every screen under it leaves on its
+next pass, so MENU from Play Time or Wi-Fi goes straight back to the shelf (or,
+in the in-game menu, to Continue). The runner does this itself; a screen with
+its own loop asks `menu_leaving(a)` for its way out instead of testing B and
+MENU, which is how all of them used to treat MENU as a second B. The flag is
+put down only outside the menus - the shelf's loop, `game_menu`, Muse - and
+never when a menu opens, so a screen that opens a second one after the first
+came back sees it still raised.
+
 ## Cheevos is not a menu, and should not be made one
 
 `cheevos_screen` draws with `menu_draw` and is not on the runner. That is

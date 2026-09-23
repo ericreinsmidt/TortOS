@@ -116,12 +116,15 @@ matters to you - a card is the one part of this that gets reformatted.
 | **MENU** (inside a system) | that system's menu, below |
 | **MENU** (in `Cubic`) | always the TortOS menu; B is the system's |
 | **MENU** (in game) | the in-game menu: Continue, Save, Load, Display, Cheevos, Reset, Quit |
+| **MENU** (inside any menu) | closes the whole menu, however deep in it you are. B goes back one screen |
 | **SELECT** | Muse, the music player, from anywhere but a running game - the in-game menu included. Again to close it |
 | **POWER** | powers off. In a game, the game is saved first |
 
 MENU means three different menus depending on where you are, and each one is
 about the thing you are looking at: the firmware on the systems row, one
-console inside it, the running game in a game.
+console inside it, the running game in a game. Inside any of them MENU closes
+the whole menu at once - from Play Time or Wi-Fi straight back to where you
+were, or back into the game - and B goes back one screen at a time.
 
 **The Brick carries this table itself**, under **MENU > Controls**: five pages
 that left and right step through - moving, the shelf, a game, Muse, and the
@@ -291,11 +294,14 @@ does not wait for the launcher to notice the headset is gone.
 
 ## Muse
 
-Muse plays the music on the card. Its card at the end of the shelf opens onto a
-shelf of album covers, the way a console's opens onto its games - in all three
-layouts, with the other axis jumping from one initial to the next. A on an
-album opens its tracks. MENU there has the album count, Sort By, Album Art
-(below), and Rescan Folder for music copied on while the Brick was running.
+Muse plays the music on the card. Its card at the end of the shelf opens Muse,
+the same as SELECT does: Now Playing when something is playing or paused, and
+otherwise a shelf of album covers, the way a console's opens onto its games -
+in all three layouts, with the other axis jumping from one initial to the
+next. A on an
+album opens its tracks. MENU, anywhere in Muse, has the album count, Sort By,
+Album Art (below), and Rescan Folder for music copied on while the Brick was
+running.
 
 **Sort By** puts the shelf in order by artist, the way the folders are, or by
 album title, two of the same title going in their artists' order. The jump
@@ -303,9 +309,10 @@ goes by the initial of whichever it is: an artist's, or an album's.
 
 **SELECT** opens Muse from anywhere that is not a running game: the
 shelf, every menu, and the in-game menu, where the game waits paused
-underneath. SELECT again closes it, and the music keeps playing. The exceptions
-are Over The Hare and a Box Art fetch, which only keep working while they are
-on screen.
+underneath. SELECT again closes it from any screen in Muse, and the music keeps
+playing. B goes back one screen: Now Playing to the album's tracks, the tracks
+to the shelf, and the shelf out of Muse. The exceptions are Over The Hare and a
+Box Art fetch, which only keep working while they are on screen.
 
 Albums go in `Music/`, a folder per artist and one inside it per album:
 `Music/Radiohead/The Bends/01 Planet Telex.mp3`. A folder of tracks straight
@@ -323,6 +330,7 @@ cover, the track, where in it you are, and what comes next.
 | **Left/Right** | back or ahead ten seconds |
 | **Y** | the play mode |
 | **B** | the album's tracks |
+| **MENU** | Muse's menu |
 | **SELECT** | close Muse |
 
 **Y changes the play mode on Now Playing**, and only there: in order, then
@@ -338,10 +346,11 @@ the music, the volume keys and the mute switch all carry on as before. Pause
 the music, or let the album end, and the game is heard again within a tenth of
 a second. SELECT in the in-game menu is how to switch between them mid-game.
 
-The list under it is artists, then albums, then tracks, with **Now Playing** as
-the first row while something plays. A on a track plays the album from there,
-and the shoulders and the d-pad's sides do what they do on Now Playing. Auto
-Off waits while music plays, the way it does on the charger.
+An album's tracks are a list over its shelf, with what is playing under a rule
+at the foot. A on a track plays the album from there and opens Now Playing; on
+the track already playing it just opens Now Playing. The shoulders and the
+d-pad's sides do what they do on Now Playing. Auto Off waits while music plays,
+the way it does on the charger.
 
 Covers come from the music. The first time an album is shown, Muse takes the
 picture its files carry and keeps it beside the album, in

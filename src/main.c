@@ -157,7 +157,11 @@ typedef struct {
  * the input loop calls it the moment a favorite changes. */
 static void refresh_favorites_shelf(app *a);
 static void build_muse_shelf(app *a);
-static void muse_tracks(app *a, int album, bool now);
+/* How a Muse screen was left: back one level, Muse closed altogether, or the
+ * library rebuilt under it by Rescan Folder, so every album index it held is
+ * stale and the shelf has to find itself again. */
+typedef enum { MUSE_BACK, MUSE_CLOSE, MUSE_REBUILT } muse_exit;
+static muse_exit muse_tracks(app *a, int album, bool now);
 /* Muse's shelf borrows the games shelf's cards and its letter jump, both of
  * which live down with the shelf code. */
 static void muse_shelf_screen(app *a, bool now);
@@ -440,6 +444,9 @@ static int g_dir;
 #define MUSE_ACCENT 0x9CD345u
 static ml_lib g_muse;
 static char   g_muse_root[CFG_STR * 2];      /* where the scan read it from */
+/* Bumped by every build of the library, so a Muse screen can tell that MENU's
+ * Rescan Folder replaced it while its menu was open - see muse_menu. */
+static unsigned g_muse_gen;
 
 static bool is_muse(const system_cfg *s)
 {
@@ -4045,6 +4052,25 @@ static void wait_panel(app *a, const char *heading, const char *msg)
 	SDL_RenderPresent(a->r);
 }
 
+/* MENU CLOSES THE WHOLE MENU, from any depth in it. B is back one level.
+ * Eric's call, 2026-09-23: MENU used to mean exactly what B meant, so from
+ * Play Time or Wi-Fi it went back one screen instead of out, the same button
+ * doing one thing to open the menu and another inside it.
+ *
+ * A menu screen that sees MENU raises this and leaves; every screen under it
+ * then leaves on its next pass, until the one MENU opened is gone. It is put
+ * down again only OUTSIDE the menus - the shelf's loop, game_menu, Muse - and
+ * never when a menu opens: a screen that opens a second one after the first
+ * came back has to see it still up, or that second one would stay open. */
+static bool g_menu_closing;
+
+/* True when a menu screen should leave: B, MENU, or a MENU pressed deeper in. */
+static bool menu_leaving(app *a)
+{
+	if (a->in.pressed[IN_MENU]) g_menu_closing = true;
+	return a->in.pressed[IN_BACK] || g_menu_closing;
+}
+
 /* A yes/no panel, drawn like wait_panel but answerable.
  *
  * Defaults to "no": the selection starts on the safe row, so a stray press of
@@ -4069,7 +4095,7 @@ static bool confirm_panel(app *a, const char *heading, const char *msg,
 		plat_input_poll(&a->in);
 		if (a->in.quit_requested) { a->running = false; return false; }
 		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); return false; }
-		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) return false;
+		if (menu_leaving(a)) return false;
 
 		/* Only the two answerable rows are reachable; row 0 is the question. */
 		if (in_repeat(&a->in, IN_UP) || in_repeat(&a->in, IN_DOWN))
@@ -4198,7 +4224,7 @@ static menu_exit menu_run_body(app *a, const menu_style *st,
 			if (!st->on_power) { power_off(a); return MENU_LEFT_GONE; }
 			if (st->on_power(a, ctx) == MENU_DONE) return MENU_LEFT_GONE;
 		}
-		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU])
+		if (menu_leaving(a))
 			return MENU_LEFT_BACK;
 		/* The in-game menu too: its game is paused underneath, and Muse
 		 * borrows its backdrop and its power rule for as long as it is up.
@@ -4248,6 +4274,9 @@ static menu_exit menu_run_body(app *a, const menu_style *st,
 			if (on_key && on_key(a, ctx, (in_button)b, sel) == MENU_DONE)
 				return MENU_LEFT_SCREEN;
 			if (!a->running) return MENU_LEFT_GONE;
+			/* The screen it opened was left with MENU: out of this one too,
+			 * without drawing it again first. */
+			if (g_menu_closing) return MENU_LEFT_BACK;
 			/* A handler may have run a modal and changed everything under
 			 * us; rebuild before drawing rather than drawing stale rows. */
 			break;
@@ -4725,7 +4754,7 @@ static void xfer_screen(app *a)
 			power_off(a);
 			return;
 		}
-		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = true;
+		if (menu_leaving(a)) done = true;
 
 		if (in_repeat(&a->in, IN_VOLUP))    plat_volume_nudge(+1);
 		if (in_repeat(&a->in, IN_VOLDN))    plat_volume_nudge(-1);
@@ -4949,7 +4978,7 @@ static void art_screen(app *a, const char *only, const char *one,
 					power_off(a);
 					return;
 				}
-				if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) {
+				if (menu_leaving(a)) {
 					ss_run_cancel();
 					plat_input_flush();
 					memset(&a->in, 0, sizeof a->in);
@@ -5070,7 +5099,7 @@ static void art_screen(app *a, const char *only, const char *one,
 			power_off(a);
 			return;
 		}
-		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) {
+		if (menu_leaving(a)) {
 			art_cancel();
 			done = true;
 		}
@@ -5297,7 +5326,7 @@ static void bt_screen(app *a)
 		plat_input_poll(&a->in);
 		if (a->in.quit_requested) { a->running = false; return; }
 		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); return; }
-		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = true;
+		if (menu_leaving(a)) done = true;
 		if (a->in.pressed[IN_SELECT]) muse_open(a, NULL, NULL);
 
 		if (in_repeat(&a->in, IN_DOWN) && sel < u.n) sel++;
@@ -5572,7 +5601,7 @@ static bool stats_screen(app *a)
 		plat_input_poll(&a->in);
 		if (a->in.quit_requested) { a->running = false; return false; }
 		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); return false; }
-		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = true;
+		if (menu_leaving(a)) done = true;
 		if (a->in.pressed[IN_SELECT]) muse_open(a, NULL, NULL);
 
 		/* A goes to the row under the cursor: the game on its own shelf, or in
@@ -5727,7 +5756,7 @@ static void about_screen(app *a)
 		plat_input_poll(&a->in);
 		if (a->in.quit_requested) { a->running = false; return; }
 		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); return; }
-		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = true;
+		if (menu_leaving(a)) done = true;
 		if (a->in.pressed[IN_SELECT]) muse_open(a, NULL, NULL);
 
 		if (in_repeat(&a->in, IN_VOLUP))    plat_volume_nudge(+1);
@@ -5774,7 +5803,7 @@ static void controls_screen(app *a)
 		plat_input_poll(&a->in);
 		if (a->in.quit_requested) { a->running = false; return; }
 		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); return; }
-		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = true;
+		if (menu_leaving(a)) done = true;
 		/* SELECT opens Muse here as it does on every other menu screen -
 		 * which is one of the things this page exists to tell you. */
 		if (a->in.pressed[IN_SELECT]) muse_open(a, NULL, NULL);
@@ -6445,7 +6474,7 @@ static int slot_strip(app *a, SDL_Texture *bg, int saving)
 			} while ((saving ? next == 0 : !sv.have[next]) && next != sel);
 			sel = next;
 		}
-		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = -1;
+		if (menu_leaving(a)) done = -1;
 		/* SLOT_AUTO, not 9. Commit 4208619 renamed the resume slot from
 		 * MinUI's number to `auto` and replaced it everywhere the constant
 		 * was used - but here the old number was written out rather than
@@ -6649,7 +6678,7 @@ static bool cheevo_detail_screen(app *a, SDL_Texture *bg, bool over_shelf,
 		plat_input_poll(&a->in);
 
 		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_ACCEPT]) done = 1;
-		if (a->in.pressed[IN_MENU]) { done = 1; close_all = true; }
+		if (a->in.pressed[IN_MENU]) { done = 1; close_all = true; g_menu_closing = true; }
 		/* Only over the shelf. Over a game this card is the in-game menu's,
 		 * and Muse would need that menu's power rule, which this screen does
 		 * not have to give it. SELECT from the in-game menu itself works. */
@@ -7100,9 +7129,32 @@ static unsigned np_draw(app *a, const mu_now *mn, const char *next)
 	return wait;
 }
 
-/* True when Muse should close altogether - SELECT, MENU or the power button -
- * and false for B, which is back to the list underneath. */
-static bool muse_now_screen(app *a)
+/* MENU, from any Muse screen: Muse's own menu, the one its shelf has always
+ * had. One button, one meaning, wherever in Muse it is pressed - it used to
+ * close Muse from Now Playing and the tracks, and open this on the shelf.
+ * Eric's call, 2026-09-23.
+ *
+ * Rescan Folder inside it rebuilds the library, and every album index with it,
+ * so a screen holding one cannot carry on: MUSE_REBUILT tells it to let go,
+ * and the shelf finds itself again the way it does after its own MENU. */
+static muse_exit muse_menu(app *a)
+{
+	unsigned gen = g_muse_gen;
+
+	tortos_menu_for(a, SCREEN_GAMES);
+	/* MENU inside it closed it, and only it: Muse is still up, and may itself
+	 * be over a menu SELECT opened it from, which has to stay open. */
+	g_menu_closing = false;
+	plat_input_flush();
+	memset(&a->in, 0, sizeof a->in);
+	if (want_quit || !a->running) return MUSE_CLOSE;
+	return g_muse_gen != gen ? MUSE_REBUILT : MUSE_BACK;
+}
+
+/* MUSE_CLOSE for SELECT and the power button, which leave Muse altogether;
+ * MUSE_BACK for B, which is the album's tracks underneath; MUSE_REBUILT when
+ * MENU's Rescan Folder replaced the library. MENU otherwise comes back here. */
+static muse_exit muse_now_screen(app *a)
 {
 	struct {
 		mu_state st;
@@ -7111,7 +7163,7 @@ static bool muse_now_screen(app *a)
 		SDL_Texture *tex;
 	} shown, drawn;
 	unsigned due = 0;
-	bool close = false;
+	muse_exit how = MUSE_BACK;
 
 	mq_reset(MQ_NP);
 	memset(&drawn, 0, sizeof drawn);
@@ -7130,10 +7182,16 @@ static bool muse_now_screen(app *a)
 		cover_answers();
 		mn = musec_now();
 		plat_input_poll(&a->in);
-		if (a->in.quit_requested) { a->running = false; break; }
-		if (a->in.pressed[IN_POWER] || idle_due(a)) { muse_power(a); close = true; break; }
+		if (a->in.quit_requested) { a->running = false; how = MUSE_CLOSE; break; }
+		if (a->in.pressed[IN_POWER] || idle_due(a)) { muse_power(a); how = MUSE_CLOSE; break; }
 		if (a->in.pressed[IN_BACK]) break;
-		if (a->in.pressed[IN_SELECT] || a->in.pressed[IN_MENU]) { close = true; break; }
+		if (a->in.pressed[IN_SELECT]) { how = MUSE_CLOSE; break; }
+		if (a->in.pressed[IN_MENU]) {
+			how = muse_menu(a);
+			if (how != MUSE_BACK) break;
+			memset(&drawn, 0, sizeof drawn);     /* the menu drew over it */
+			continue;
+		}
 
 		/* A, and only A. X did the same thing here and pausing in the list,
 		 * which made one button mean two things a screen apart; it is left
@@ -7200,7 +7258,7 @@ static bool muse_now_screen(app *a)
 
 	plat_input_flush();
 	memset(&a->in, 0, sizeof a->in);
-	return close;
+	return how;
 }
 
 /* ---- Muse: an album's tracks ---------------------------------------------- */
@@ -7232,32 +7290,37 @@ static int muse_playing_album(int *row)
  *
  * A plays a track and opens Now Playing; on the track already playing it just
  * opens Now Playing, rather than starting it over. B goes back to the shelf.
- * SELECT and MENU close Muse from here. L1 and R1 are the previous and next
- * track, left and right seek ten seconds. X and Y are free. Leaving does not
- * stop the music - that is what the daemon is for.
+ * SELECT closes Muse from here, and MENU is Muse's menu, as everywhere in Muse.
+ * L1 and R1 are the previous and next track, left and right seek ten seconds.
+ * X and Y are free. Leaving does not stop the music - that is what the daemon
+ * is for.
  *
  * `now` opens straight onto Now Playing, with these tracks underneath, so B
- * from there lands on the album it is playing. */
-static void muse_tracks(app *a, int album, bool now)
+ * from there lands on the album it is playing. Returns how it was left, so
+ * the shelf can close too when SELECT closed Muse - it used to be told
+ * nothing, and SELECT from Now Playing landed on the shelf instead. */
+static muse_exit muse_tracks(app *a, int album, bool now)
 {
 	int sel = 0, done = 0, art, i;
+	muse_exit how = MUSE_BACK;
 	menu_row *rows;
 	char (*vals)[24];
 	char heading[300], note[300], t0[16], t1[16];
 	const ml_album *al;
 
-	if (album < 0 || album >= g_muse.nalbums || g_muse.nartists == 0) return;
+	if (album < 0 || album >= g_muse.nalbums || g_muse.nartists == 0) return MUSE_BACK;
 	al = &g_muse.albums[album];
 	art = muse_artist_of(album);
 	rows = calloc((size_t)al->n + 4, sizeof *rows);
 	vals = calloc((size_t)al->n + 4, sizeof *vals);
-	if (!rows || !vals) { free(rows); free(vals); return; }
+	if (!rows || !vals) { free(rows); free(vals); return MUSE_BACK; }
 
 	/* On the track that is playing, when it is one of these. */
 	if (muse_playing_album(&i) == album) sel = i;
 
 	if (now) {
-		if (muse_now_screen(a)) done = 1;
+		how = muse_now_screen(a);
+		if (how != MUSE_BACK) done = 1;
 		else if (muse_playing_album(&i) == album) sel = i;
 	}
 
@@ -7337,13 +7400,21 @@ static void muse_tracks(app *a, int album, bool now)
 			open_now = true;
 		}
 		if (a->in.pressed[IN_BACK]) done = 1;
-		if (a->in.pressed[IN_SELECT] || a->in.pressed[IN_MENU]) done = 1;
-		if (a->in.pressed[IN_POWER] || idle_due(a)) { muse_power(a); break; }
+		if (a->in.pressed[IN_SELECT]) { how = MUSE_CLOSE; break; }
+		if (a->in.pressed[IN_POWER] || idle_due(a)) { muse_power(a); how = MUSE_CLOSE; break; }
+		/* After a rescan `al` is gone with the old library: not one more
+		 * frame from it. */
+		if (a->in.pressed[IN_MENU]) {
+			how = muse_menu(a);
+			if (how != MUSE_BACK) break;
+			continue;
+		}
 
 		/* Back from Now Playing onto the track it had reached, which may be
 		 * several past the one chosen. */
 		if (open_now) {
-			if (muse_now_screen(a)) break;
+			how = muse_now_screen(a);
+			if (how != MUSE_BACK) break;
 			if (muse_playing_album(&i) == album) sel = i;
 			continue;
 		}
@@ -7359,6 +7430,7 @@ static void muse_tracks(app *a, int album, bool now)
 	free(vals);
 	plat_input_flush();
 	memset(&a->in, 0, sizeof a->in);
+	return how;
 }
 
 /* SELECT, from anywhere but a running game - the shelf, every menu, and the
@@ -7379,13 +7451,35 @@ static bool muse_open(app *a, const menu_style *over, void *ctx)
 	muse_shelf_screen(a, mn->state == MU_PLAYING || mn->state == MU_PAUSED);
 	g_muse_over = NULL;
 	g_muse_over_ctx = NULL;
+	/* Nothing Muse did closes the menu it may have been opened over. */
+	g_menu_closing = false;
 	return g_muse_gone;
 }
 
 /* A on card `k` of Muse's shelf: its album's tracks, over the shelf. */
-static void muse_album(app *a, const sysview *v, int k)
+static muse_exit muse_album(app *a, const sysview *v, int k)
 {
-	if (v->album && k >= 0 && k < v->list.count) muse_tracks(a, v->album[k], false);
+	if (v->album && k >= 0 && k < v->list.count) return muse_tracks(a, v->album[k], false);
+	return MUSE_BACK;
+}
+
+/* Muse's shelf again after its menu, whose Rescan Folder rebuilds every view
+ * on the card, so the view being held is found again rather than trusted.
+ * NULL when there is no Muse left to show. */
+static sysview *muse_shelf_refind(app *a)
+{
+	sysview *v;
+	int i, muse = -1;
+
+	for (i = 0; i < a->sys.count; i++)
+		if (is_muse(&a->sys.systems[i])) { muse = i; break; }
+	if (muse < 0 || a->view[muse].list.count <= 0) return NULL;
+	a->sys_cursor = muse;
+	a->screen = SCREEN_GAMES;
+	v = &a->view[muse];
+	if (v->cursor >= v->list.count) v->cursor = v->list.count - 1;
+	cf_reset(&v->cf, v->cursor);
+	return v;
 }
 
 /* Which card on Muse's shelf is that album, or -1. */
@@ -7441,8 +7535,14 @@ static void muse_shelf_screen(app *a, bool now)
 		if (k >= 0) { v->cursor = k; cf_reset(&v->cf, k); }
 	}
 	if (now && playing >= 0) {
-		muse_tracks(a, playing, true);
-		if (g_muse_gone) done = true;
+		muse_exit how = muse_tracks(a, playing, true);
+
+		if (how == MUSE_CLOSE || g_muse_gone) done = true;
+		else if (how == MUSE_REBUILT) {
+			sysview *nv = muse_shelf_refind(a);
+
+			if (nv) v = nv; else done = true;
+		}
 	}
 
 	while (!done && !want_quit && a->running) {
@@ -7472,22 +7572,25 @@ static void muse_shelf_screen(app *a, bool now)
 		if (in_repeat(&a->in, IN_BRIGHTDN)) plat_brightness_nudge(-1);
 
 		if (a->in.pressed[IN_ACCEPT]) {
-			muse_album(a, v, v->cursor);
-			if (g_muse_gone) break;
+			/* SELECT from the tracks or Now Playing closes all of Muse, and
+			 * a rescan from their MENU leaves this shelf to be found again. */
+			muse_exit how = muse_album(a, v, v->cursor);
+
+			if (how == MUSE_CLOSE || g_muse_gone) break;
+			if (how == MUSE_REBUILT) {
+				sysview *nv = muse_shelf_refind(a);
+
+				if (!nv) break;
+				v = nv;
+			}
 		} else if (a->in.pressed[IN_MENU]) {
-			/* Muse's own menu, and Rescan Folder inside it rebuilds every
-			 * view on the card - so the shelf this loop is holding is found
-			 * again afterwards rather than trusted. */
-			tortos_menu_for(a, SCREEN_GAMES);
-			muse = -1;
-			for (i = 0; i < a->sys.count; i++)
-				if (is_muse(&a->sys.systems[i])) { muse = i; break; }
-			if (muse < 0 || a->view[muse].list.count <= 0) break;
-			a->sys_cursor = muse;
-			a->screen = SCREEN_GAMES;
-			v = &a->view[muse];
-			if (v->cursor >= v->list.count) v->cursor = v->list.count - 1;
-			cf_reset(&v->cf, v->cursor);
+			/* Muse's own menu. Sort By reorders this shelf and Rescan
+			 * Folder rebuilds it, so it is found again either way. */
+			sysview *nv;
+
+			if (muse_menu(a) == MUSE_CLOSE) break;
+			if (!(nv = muse_shelf_refind(a))) break;
+			v = nv;
 		}
 
 		tick_tint(a);
@@ -7660,7 +7763,7 @@ static void album_art_screen(app *a)
 			power_off(a);
 			return;
 		}
-		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = true;
+		if (menu_leaving(a)) done = true;
 		if (in_repeat(&a->in, IN_VOLUP))    plat_volume_nudge(+1);
 		if (in_repeat(&a->in, IN_VOLDN))    plat_volume_nudge(-1);
 		if (in_repeat(&a->in, IN_BRIGHTUP)) plat_brightness_nudge(+1);
@@ -7711,8 +7814,7 @@ static void synopsis_screen(app *a, const char *title, const char *text,
 	while (!done && !want_quit && a->running) {
 		plat_input_poll(&a->in);
 		if (a->in.quit_requested) break;
-		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_ACCEPT] ||
-		    a->in.pressed[IN_X] || a->in.pressed[IN_MENU]) done = 1;
+		if (menu_leaving(a) || a->in.pressed[IN_ACCEPT] || a->in.pressed[IN_X]) done = 1;
 		if (a->in.pressed[IN_SELECT]) muse_open(a, NULL, NULL);
 		/* Nothing else watches power for this screen, the same as every other
 		 * loop the launcher runs outside plat_resident_wait. */
@@ -7782,7 +7884,7 @@ static void cheevos_screen(app *a, SDL_Texture *bg, bool over_shelf)
 		 * page it the same way they page a shelf. */
 		if (in_repeat(&a->in, IN_L1))   sel = sel > 8 ? sel - 8 : 0;
 		if (in_repeat(&a->in, IN_R1))   sel = sel < n - 9 ? sel + 8 : n - 1;
-		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) done = 1;
+		if (menu_leaving(a)) done = 1;
 		if (over_shelf && a->in.pressed[IN_SELECT]) muse_open(a, NULL, NULL);
 		/* A used to close this screen. It opens the achievement instead,
 		 * which is the only thing on it there was ever anything more to say
@@ -7987,9 +8089,13 @@ static void game_menu(app *a)
 
 	/* B and MENU are the runner's, and both mean Continue here. The runner has
 	 * to be the one to say so: it flushes the input on its way out, so asking
-	 * a->in afterwards would always say no button was pressed. */
+	 * a->in afterwards would always say no button was pressed. MENU from a
+	 * screen this menu opened - the save slots, Achievements - comes back as
+	 * MENU_LEFT_BACK too, so it is Continue from there as well. */
+	g_menu_closing = false;
 	if (menu_run(a, &c.st, gm_menu_build, gm_key, &c) == MENU_LEFT_BACK)
 		c.resume = true;
+	g_menu_closing = false;
 
 	if (c.bg) SDL_DestroyTexture(c.bg);
 
@@ -8527,7 +8633,10 @@ static void update_both(app *a)
 	if (in_repeat(&a->in, IN_R1))    { v->cursor = (v->cursor + CF_WINDOW) % ng; gdir = +1; }
 	if (gdir) cf_set_cursor_dir(&v->cf, v->cursor, ng, gdir);
 
-	/* Muse's face, as on its shelf: see update_games. */
+	/* Muse's row: its cards are albums, and A opens one onto its tracks, as on
+	 * Muse's own shelf (muse_shelf_screen). X and Y are free - an album is not
+	 * a favorite, and the play mode is set on Now Playing. SELECT and B from
+	 * the tracks come back to this row. */
 	if (is_muse(&a->sys.systems[a->sys_cursor])) {
 		if (a->in.pressed[IN_ACCEPT]) muse_album(a, v, v->cursor);
 		return;
@@ -8594,7 +8703,11 @@ static void update_systems(app *a)
 	if (in_repeat(&a->in, back)) { a->sys_cursor = (a->sys_cursor - 1 + n) % n; dir = -1; }
 	if (in_repeat(&a->in, fwd))  { a->sys_cursor = (a->sys_cursor + 1) % n; dir = +1; }
 	if (dir) load_ahead(a);
-	if (a->in.pressed[IN_ACCEPT])    enter_system(a);
+	/* Muse's card opens Muse, the one SELECT opens - see update_games. */
+	if (a->in.pressed[IN_ACCEPT]) {
+		if (is_muse(&a->sys.systems[a->sys_cursor])) muse_open(a, NULL, NULL);
+		else enter_system(a);
+	}
 	cf_set_cursor_dir(&a->cf_sys, a->sys_cursor, n, dir);
 }
 
@@ -8669,6 +8782,18 @@ static void update_games(app *a)
 	sysview *v = &a->view[a->sys_cursor];
 	int n = v->list.count;
 	if (n <= 0) { a->screen = SCREEN_SYSTEMS; return; }
+	/* MUSE HAS ONE DOOR. Its card used to open its shelf HERE, in the main
+	 * loop, as if it were a console: a second Muse beside the one SELECT
+	 * opens, so SELECT on it opened that one on top, and the two looked
+	 * alike. Eric's call, 2026-09-23: the card opens the same Muse SELECT
+	 * does. Whatever lands the main loop on Muse's shelf - A on its card, a
+	 * jump to it, a screen put back at boot - hands over to muse_open, which
+	 * comes back to the card on the systems row. */
+	if (is_muse(&a->sys.systems[a->sys_cursor])) {
+		a->screen = SCREEN_SYSTEMS;
+		muse_open(a, NULL, NULL);
+		return;
+	}
 	/* The two axes trade roles with the shelf rather than one of them being
 	 * reassigned onto the other: stepping always runs along the row, and the
 	 * letter jump always runs across it. Turning the shelf turns the d-pad
@@ -8712,14 +8837,6 @@ static void update_games(app *a)
 	if (a->in.pressed[IN_BACK]) {
 		a->screen = SCREEN_SYSTEMS;
 		evict_far(v, TEX_KEEP_FAR);
-		return;
-	}
-	/* Muse's cards are albums: A opens one onto its tracks. X and Y are both
-	 * free here - X has nothing to say that the tracks do not, an album is
-	 * not a favorite, and the play mode is set where it is shown, on Now
-	 * Playing. Eric's call, 2026-09-19. */
-	if (is_muse(&a->sys.systems[a->sys_cursor])) {
-		if (a->in.pressed[IN_ACCEPT]) muse_album(a, v, v->cursor);
 		return;
 	}
 	/* X opens the game. Y marks it. The pair sits together because they are
@@ -9064,6 +9181,7 @@ static void build_muse_shelf(app *a)
 
 	/* Everything indexed by album goes with the albums: a rescan can put a
 	 * different album at every index. */
+	g_muse_gen++;
 	ml_free(&g_muse);
 	free(g_cov);
 	g_cov = NULL;
@@ -10233,6 +10351,10 @@ int main(int argc, char *argv[])
 		if (in_repeat(&a.in, IN_VOLDN))    plat_volume_nudge(-1);
 		if (in_repeat(&a.in, IN_BRIGHTUP)) plat_brightness_nudge(+1);
 		if (in_repeat(&a.in, IN_BRIGHTDN)) plat_brightness_nudge(-1);
+
+		/* Back on the shelf, so any menu MENU closed is closed: put the flag
+		 * down before anything here can open another. See menu_leaving. */
+		g_menu_closing = false;
 
 		/* SELECT is Muse, on the shelf and on every screen but a running
 		 * game - see muse_open. Before the shelf's own keys, which do not use
