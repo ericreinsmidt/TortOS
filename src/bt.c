@@ -460,18 +460,62 @@ static bool info_says(const char *mac, const char *needle)
 	return strstr(out, needle) != NULL;
 }
 
+/* Whether BlueZ wrote a link key for this device, which is the only thing
+ * that makes a bond survive bluetoothd restarting. `Paired: yes` does not say
+ * so: it is true of a key held in memory too. */
+static bool bond_has_key(const char *mac)
+{
+	DIR *ad;
+	struct dirent *a;
+	bool found = false;
+
+	if (!(ad = opendir(BONDS))) return false;
+	while (!found && (a = readdir(ad))) {
+		char path[700], line[64];
+		FILE *f;
+
+		if (a->d_name[0] == '.') continue;
+		snprintf(path, sizeof path, "%s/%s/%.17s/info", BONDS, a->d_name, mac);
+		if (!(f = fopen(path, "r"))) continue;
+		while (fgets(line, sizeof line, f))
+			if (!strncmp(line, "[LinkKey]", 9)) { found = true; break; }
+		fclose(f);
+	}
+	closedir(ad);
+	return found;
+}
+
 bool bt_pair(const char *mac, char *err, size_t n)
 {
-	char out[1024];
+	char out[1024], scratch[256];
 
 	if (err && n) err[0] = '\0';
 	if (!bt_mac_valid(mac)) { if (err) snprintf(err, n, "not an address"); return false; }
 
+	/* Bondable for the pairing and no longer. The adapter comes up
+	 * non-bondable, and then the kernel negotiates no-bonding: the pairing
+	 * succeeds, the link encrypts, `Paired: yes`, and the key arrives with
+	 * store_hint 0, so BlueZ never writes it. Everything works until
+	 * bluetoothd restarts, and then the headset is a trust record with no key
+	 * that connects and drops every 25 seconds. Measured 2026-09-24; every
+	 * pairing made from this screen before then was memory-only. Left on
+	 * permanently, anything that knows the address could bond at any time. */
+	btctl(scratch, sizeof scratch, BT_ASK_S, "pairable", "on");
 	btctl(out, sizeof out, BT_ACT_S, "pair", mac);
+	btctl(scratch, sizeof scratch, BT_ASK_S, "pairable", "off");
+
 	if (!info_says(mac, "Paired: yes")) {
 		if (err) snprintf(err, n, "%s", strstr(out, "AuthenticationFailed")
 		                  ? "the headset refused the pairing"
 		                  : "pairing did not complete");
+		return false;
+	}
+	/* Judged by the key on disk, not by `Paired: yes`, which was the check
+	 * that let a memory-only pairing through. Removed rather than left, or a
+	 * retry finds it already paired and never gets a new key. */
+	if (!bond_has_key(mac)) {
+		btctl(scratch, sizeof scratch, BT_ASK_S, "remove", mac);
+		if (err) snprintf(err, n, "the pairing was not saved");
 		return false;
 	}
 	/* Trusted, or it will not reconnect on its own at the next boot - which
