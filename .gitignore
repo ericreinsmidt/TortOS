@@ -9,6 +9,10 @@
 # taken from DIATOM_ELF at payload time.
 /vendor/
 
+# ScreenScraper credentials: the developer pair the build compiles in, and the
+# account check-ss logs in with. Read by the Makefile and tools/ss-check.c.
+/.screenscraper.env
+
 # Python
 __pycache__/
 *.pyc

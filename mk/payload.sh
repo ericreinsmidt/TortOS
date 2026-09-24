@@ -10,6 +10,19 @@ OUT=$ROOT/out/sd
 P=$OUT/TortOS
 
 [ -f "$ROOT/build/tortos.elf" ] || { echo "run make first"; exit 1; }
+# A release ships with the ScreenScraper developer pair built in, or box art
+# quietly falls back to libretro for everyone who installs it. A build without
+# one is fine for development; it is not fine to package. The pair comes from
+# .screenscraper.env (see the Makefile). ALLOW_NO_SS=1 packages one anyway.
+if grep -q '^#define SS_DEVID *""' "$ROOT/build/ss_creds.h" 2>/dev/null ||
+   [ ! -f "$ROOT/build/ss_creds.h" ]; then
+	if [ "${ALLOW_NO_SS:-0}" != 1 ]; then
+		echo "payload: build/tortos.elf has no ScreenScraper developer pair." >&2
+		echo "payload: add .screenscraper.env, rebuild, or set ALLOW_NO_SS=1" >&2
+		exit 1
+	fi
+	echo "payload: WARNING: packaging without the ScreenScraper developer pair" >&2
+fi
 DIATOM_ELF=${DIATOM_ELF:-$ROOT/../diatom/build/brick/diatom}
 [ -f "$DIATOM_ELF" ] || { echo "no diatom at $DIATOM_ELF (set DIATOM_ELF)"; exit 1; }
 [ -f "$ROOT/vendor/cores/fceumm_libretro.so" ] || { echo "run mk/fetch-vendor.sh first"; exit 1; }

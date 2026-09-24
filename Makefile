@@ -43,8 +43,25 @@ check:
 # One version number: the zip name and the About page both read it from here.
 VERSION ?= 1.0
 
+# The ScreenScraper developer pair, from .screenscraper.env in this directory
+# (gitignored, never committed). A value already in the environment wins, and
+# no file is still a supported build: the defines come out empty and art falls
+# back to libretro. payload.sh is what refuses to ship a build like that.
+SS_ENV := .screenscraper.env
+ss_value = $(shell [ -f $(SS_ENV) ] && sed -n 's/^$(1)=//p' $(SS_ENV) | head -1)
+SS_DEVID ?= $(call ss_value,SS_DEVID)
+SS_DEVPASS ?= $(call ss_value,SS_DEVPASS)
+export SS_DEVID SS_DEVPASS
+
+# The header the pair is compiled from, regenerated on the host every run.
+# mk/cross.mk's creds target only replaces it when the contents change, so the
+# elf relinks exactly when the pair does - not when the file's date says so.
+build/ss_creds.h: FORCE
+	@$(MAKE) --no-print-directory -f mk/cross.mk creds
+
 build/tortos.elf: $(wildcard src/*.c) $(wildcard src/*.h) tools/setbright.c mk/cross.mk \
-                  $(wildcard src/muse/*.c) $(wildcard src/muse/*.h) tools/musectl.c
+                  $(wildcard src/muse/*.c) $(wildcard src/muse/*.h) tools/musectl.c \
+                  build/ss_creds.h
 	@docker image inspect $(IMAGE) > /dev/null 2>&1 || { \
 		echo "toolchain image missing; run: make toolchain" >&2; exit 1; }
 	@[ -d sysroot/usr/include/SDL2 ] || { \
@@ -66,7 +83,7 @@ build/tortos.elf: $(wildcard src/*.c) $(wildcard src/*.h) tools/setbright.c mk/c
 	@# Diatom's tools/brick-make.sh has carried this check since 2026-08-25,
 	@# where the same thing cost an hour twice. A comment here used to claim
 	@# mk/cross.mk carried one too. It did not.
-	@for src in $(wildcard src/*.c) $(wildcard src/*.h) mk/cross.mk; do \
+	@for src in $(wildcard src/*.c) $(wildcard src/*.h) mk/cross.mk build/ss_creds.h; do \
 		if [ "$$src" -nt build/tortos.elf ]; then \
 			echo "STALE: build/tortos.elf is older than $$src" >&2; \
 			echo "  the container did not rebuild. rm build/tortos.elf and try again." >&2; \
@@ -235,7 +252,7 @@ build-native/raset-check: tools/raset-check.c src/rafetch.c src/rajson.c src/rah
 	      -o $@ tools/raset-check.c src/rafetch.c src/rajson.c src/rahash.c src/net.c src/atomic.c src/db.c
 
 # Whether this build can reach ScreenScraper, and whether an account survives
-# a restart. The live half needs a network and ~/.screenscraper.env, and skips
+# a restart. The live half needs a network and .screenscraper.env, and skips
 # cleanly without them - the same bargain check-raset makes.
 check-ss: build-native/ss-check
 	@./build-native/ss-check

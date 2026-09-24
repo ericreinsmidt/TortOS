@@ -9,8 +9,8 @@
  * the same way check-raset does. It is the only place the real request is
  * exercised: a sign-in that cannot be tested is a sign-in nobody finds out
  * about until a player types their password into it. Credentials come from
- * ~/.screenscraper.env, are never printed, and the password is wiped from
- * memory here as well as in the module.
+ * .screenscraper.env (the working copy's, else ~/'s), are never printed, and
+ * the password is wiped from memory here as well as in the module.
  *
  * Links src/ss.c, src/db.c, src/net.c and src/rajson.c, and NOT SDL.
  */
@@ -46,8 +46,9 @@ static void scrub(void)
 	}
 }
 
-/* One value out of ~/.screenscraper.env, which is the host-side scaffolding's
- * file and is not in the repository. Absent is not a failure. */
+/* One value out of .screenscraper.env: the working copy's (gitignored, and where
+ * the Makefile reads the developer pair from) if there is one, else ~/'s. make
+ * runs this from the repository root. Absent is not a failure. */
 static bool env_value(const char *key, char *out, size_t n)
 {
 	char path[512], line[512];
@@ -56,9 +57,11 @@ static bool env_value(const char *key, char *out, size_t n)
 	size_t klen = strlen(key);
 
 	out[0] = '\0';
-	if (!home) return false;
-	snprintf(path, sizeof path, "%s/.screenscraper.env", home);
-	f = fopen(path, "r");
+	f = fopen(".screenscraper.env", "r");
+	if (!f && home) {
+		snprintf(path, sizeof path, "%s/.screenscraper.env", home);
+		f = fopen(path, "r");
+	}
 	if (!f) return false;
 	while (fgets(line, sizeof line, f)) {
 		char *nl = strchr(line, '\n');
@@ -241,7 +244,7 @@ int main(void)
 	if (!ss_have_dev() || !have_account) {
 		printf("the live sign-in:\n  skipped - %s\n",
 		       !ss_have_dev() ? "this build has no developer pair"
-		                      : "no SS_USER and SS_PASS in ~/.screenscraper.env");
+		                      : "no SS_USER and SS_PASS in .screenscraper.env");
 		db_shutdown();
 		scrub();
 		printf("\nok: ScreenScraper reports what it can do\n");
