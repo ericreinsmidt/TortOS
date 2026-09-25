@@ -22,6 +22,15 @@ export USERDATA_PATH=$SDCARD/.userdata/tg3040
 export SHARED_USERDATA_PATH=$SDCARD/.userdata/shared
 export LOGS_PATH=$USERDATA_PATH/logs
 export HOME=$USERDATA_PATH
+# .asoundrc named as a top-level ALSA config file, and not only reached through
+# alsa.conf's @hooks load. alsa-lib 1.1.8 re-reads its config at the next open
+# when a file in this list changes, and it never checks files a hook loaded -
+# so a headset paired after Diatom or Muse started, whose PCM bt_write_asoundrc
+# has just added, was `Unknown PCM` to both until they restarted. Measured
+# 2026-09-25 with a probe that opens once, waits, and opens a PCM added in
+# between: not found without this, found with it, and a missing or empty
+# .asoundrc at start is fine either way.
+export ALSA_CONFIG_PATH=/usr/share/alsa/alsa.conf:$HOME/.asoundrc
 export LD_LIBRARY_PATH=/usr/trimui/lib:$LD_LIBRARY_PATH
 export PATH=/usr/trimui/bin:$PATH
 

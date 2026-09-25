@@ -121,12 +121,12 @@ bool bt_forget(const char *mac);
  * bt-alsa.sh says why there is one now. Waits for the shell to finish, and its
  * errors go to the log.
  *
- * It also arrives too late to help the emulator that is already running.
- * alsa-lib loads its config once and never notices a file written afterwards,
- * measured 2026-09-05: a config written when a headset connects failed in
- * place and worked immediately on restarting the emulator with the file
- * already there. So a device paired now carries game audio from the next
- * emulator start, and the screen has to say so rather than look broken. */
+ * A running emulator or Muse picks it up at its next open, because launch.sh
+ * names .asoundrc in ALSA_CONFIG_PATH. Without that it arrived too late:
+ * alsa-lib 1.1.8 re-reads only the top-level files on that list and never
+ * one loaded through alsa.conf's @hooks, which is how .asoundrc was reached,
+ * so a new headset was `Unknown PCM` to both until they restarted. Measured
+ * 2026-09-05 and again, with the cause, 2026-09-25. */
 bool bt_asoundrc(const char *tortos_dir, const char *userdata_dir);
 
 /* Delete every cached device that is not bonded, and return how many went.

@@ -5522,10 +5522,9 @@ static void bt_screen(app *a)
 							snprintf(u.note, sizeof u.note, "%s", err);
 							note_until = now + 4000;
 						} else {
-							/* A PCM for the new bond, so the NEXT emulator
-							 * start can reach it. It cannot help the one
-							 * already running: alsa-lib reads its config
-							 * once. See bt.h. */
+							/* A PCM for the new bond. The emulator and
+							 * Muse already running see it at their next
+							 * open - see bt.h. */
 							bt_asoundrc(P_ROOT, P_USERDATA);
 						}
 					}
@@ -5534,7 +5533,7 @@ static void bt_screen(app *a)
 						if (bt_connect(d->mac, err, sizeof err)) {
 							d->connected = true;
 							snprintf(u.note, sizeof u.note,
-							         "Connected. Game audio from the next launch"); note_until = now + 4000;
+							         "Connected"); note_until = now + 4000;
 						} else {
 							snprintf(u.note, sizeof u.note, "%s", err); note_until = now + 4000;
 						}
