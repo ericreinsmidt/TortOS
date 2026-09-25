@@ -61,6 +61,7 @@ build/ss_creds.h: FORCE
 
 build/tortos.elf: $(wildcard src/*.c) $(wildcard src/*.h) tools/setbright.c mk/cross.mk \
                   $(wildcard src/muse/*.c) $(wildcard src/muse/*.h) tools/musectl.c \
+                  tools/btplayer.c \
                   build/ss_creds.h
 	@docker image inspect $(IMAGE) > /dev/null 2>&1 || { \
 		echo "toolchain image missing; run: make toolchain" >&2; exit 1; }
@@ -69,7 +70,7 @@ build/tortos.elf: $(wildcard src/*.c) $(wildcard src/*.h) tools/setbright.c mk/c
 	@# -e VAR with no value passes the HOST's value through, so the pair
 	@# reaches the container without appearing in this command line.
 	docker run --rm -e SS_DEVID -e SS_DEVPASS -v $(CURDIR):/work -w /work $(IMAGE) \
-		make -f mk/cross.mk SYSROOT=/work/sysroot VERSION=$(VERSION) creds build/tortos.elf build/setbright build/muse build/musectl
+		make -f mk/cross.mk SYSROOT=/work/sysroot VERSION=$(VERSION) creds build/tortos.elf build/setbright build/muse build/musectl build/btplayer
 	@# Refuse to be quiet about an output older than its own source.
 	@#
 	@# Docker on macOS can show the container a stale mtime for a file the host
@@ -511,7 +512,7 @@ deploy: all
 	@# make echoes a recipe before running it - into a terminal, a CI log, or a
 	@# transcript. The same reason mk/cross.mk writes the ScreenScraper key
 	@# into a header rather than onto a compile line.
-	@tar -cf - -C build tortos.elf setbright muse musectl -C ../config systems.cfg \
+	@tar -cf - -C build tortos.elf setbright muse musectl btplayer -C ../config systems.cfg \
 	    -C ../sd/tortos launch.sh bt-alsa.sh -C ../../res/fonts menu.ttf | \
 	    $(SSH) 'tar -xf - -C /mnt/SDCARD/TortOS'
 	@tar -cf - -C res cards | $(SSH) 'tar -xf - -C /mnt/SDCARD/TortOS'

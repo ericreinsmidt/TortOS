@@ -34,6 +34,7 @@ mkdir -p "$P/cards" "$P/cores" "$P/res/web" \
 
 cp "$ROOT/build/tortos.elf" "$P/"
 cp "$ROOT/build/setbright" "$P/"          # brightness before the boot animation
+cp "$ROOT/build/btplayer" "$P/"           # lets a headset's volume through BlueZ
 cp "$ROOT/sd/tortos/launch.sh" "$P/"
 cp "$ROOT/sd/tortos/bt-alsa.sh" "$P/"     # sourced by launch.sh, run by the launcher
 # Only systems.cfg is shipped now. tortos.cfg, turbo.cfg and coreopts.cfg are
@@ -90,7 +91,7 @@ cp "$ROOT/sd/trimui/app/MainUI" "$ROOT/sd/trimui/app/runtrimui.sh" "$OUT/trimui/
 
 chmod +x "$OUT/.tmp_update/updater" "$OUT/.tmp_update/tg3040.sh" \
          "$OUT/trimui/app/MainUI" "$OUT/trimui/app/runtrimui.sh" \
-         "$P/launch.sh" "$P/tortos.elf" "$P/diatom" "$P/setbright"
+         "$P/launch.sh" "$P/tortos.elf" "$P/diatom" "$P/setbright" "$P/btplayer"
 
 # One ROM folder per system, with the .media folder box art goes in. Read from
 # systems.cfg (awk, not sed: folder names contain spaces).

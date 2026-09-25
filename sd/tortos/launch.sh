@@ -342,10 +342,19 @@ bt_off() {
 	# would fall back and say so (ADR-0029), but a launcher showing the wrong
 	# answer for twenty seconds is a thing to avoid, not to recover from.
 	rm -f /tmp/tortos_btsink
-	killall -q bluealsa bluetoothd hciattach 2> /dev/null
+	# btplayer too: a bluetoothd started again later has forgotten its
+	# registration, so bt_on starts a fresh one.
+	killall -q btplayer bluealsa bluetoothd hciattach 2> /dev/null
 	/etc/init.d/bluetooth stop 2> /dev/null
 	rfkill block bluetooth 2> /dev/null
 	echo 0 > /sys/class/rfkill/rfkill0/state 2> /dev/null
+}
+
+# Not start-stop-daemon, which would lose its log line: this is launch.sh and
+# not an adb session, so `&` outlives nothing it should not.
+bt_player() {
+	pidof btplayer > /dev/null && return 0
+	"$TORTOS_DIR/btplayer" >> "$LOGS_PATH/tortos.log" 2>&1 &
 }
 
 bt_on() {
@@ -400,6 +409,13 @@ bt_on() {
 		-S -p a2dp-source -p hfp-ag --a2dp-volume > /dev/null 2>&1
 	sleep 3          # let both profiles register with BlueZ before any connect
 
+	# A media player registered with BlueZ, which does nothing else: without
+	# one, BlueZ 5.54 drops the volume a headset reports and the transport
+	# never gets a Volume, so no headset's volume can be set from here. See
+	# tools/btplayer.c. Before bt_reconnect, so it is registered by the time a
+	# headset connects: the headset only reports its volume at that moment.
+	bt_player
+
 	bt_reconnect &
 }
 
@@ -438,6 +454,10 @@ bt_reconnect() {
 	adapter=$(hciconfig hci0 2> /dev/null | sed -n 's/.*BD Address: \([0-9A-F:]*\).*/\1/p')
 	[ -n "$adapter" ] || return 0
 	while :; do
+		# Back if it died. A restarted player is attached to the sessions that
+		# exist, but a headset already connected reports its volume again only
+		# when it reconnects.
+		bt_player
 		connected=
 		bonds=
 		for d in /etc/lib/bluetooth/"$adapter"/*:*; do

@@ -71,6 +71,12 @@ $(BUILD)/musectl: tools/musectl.c
 	mkdir -p $(BUILD)
 	$(CC) -O2 -mcpu=cortex-a53 -Wall -Wextra -std=gnu11 -o $@ $<
 
+# Registers a do-nothing media player with BlueZ so a headset's absolute
+# volume is not dropped; see the file. libdbus by dlopen, like ALSA in Muse.
+$(BUILD)/btplayer: tools/btplayer.c
+	mkdir -p $(BUILD)
+	$(CC) -O2 -mcpu=cortex-a53 -Wall -Wextra -std=gnu11 -o $@ $< -ldl
+
 $(BUILD)/setbright: tools/setbright.c
 	mkdir -p $(BUILD)
 	$(CC) -O2 -mcpu=cortex-a53 -Wall -std=gnu11 -o $@ $<

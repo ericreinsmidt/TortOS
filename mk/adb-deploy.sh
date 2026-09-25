@@ -50,6 +50,7 @@ case $WHAT in elf|all)
 	# stopped.
 	$A push "$ROOT/build/muse"              "$P/" > /dev/null
 	$A push "$ROOT/build/musectl"           "$P/" > /dev/null
+	$A push "$ROOT/build/btplayer"          "$P/" > /dev/null
 	# systems.cfg only. tortos.cfg, coreopts.cfg and turbo.cfg are compiled
 	# into the launcher and seed the settings database, so there is nothing
 	# left to push - and pushing a stale copy would leave a file on the card
@@ -59,7 +60,7 @@ case $WHAT in elf|all)
 	$A push "$ROOT/sd/tortos/bt-alsa.sh"    "$P/" > /dev/null
 	$A push "$ROOT/sd/.tmp_update/updater"   /mnt/SDCARD/.tmp_update/ > /dev/null
 	$A push "$ROOT/sd/.tmp_update/tg3040.sh" /mnt/SDCARD/.tmp_update/ > /dev/null
-	$A shell "chmod +x $P/tortos.elf $P/setbright $P/muse $P/musectl $P/launch.sh \
+	$A shell "chmod +x $P/tortos.elf $P/setbright $P/muse $P/musectl $P/btplayer $P/launch.sh \
 	          /mnt/SDCARD/.tmp_update/updater /mnt/SDCARD/.tmp_update/tg3040.sh"
 	echo "  + launcher"
 esac
