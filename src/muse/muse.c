@@ -27,6 +27,9 @@
  *        CHAPTER i= at= title=                 one per chapter, after META
  *        POS     at= len=                      about once a second while playing
  *        END     path=                         the file ran out by itself
+ *        SINK    device=                       the one in use, after each SINK
+ *                                              and on STATUS; "default" when a
+ *                                              device would not open
  *        ERROR   why=
  *        COVER   base=  file=                  what was written; "" if nothing
  */
@@ -73,9 +76,11 @@ static struct {
 	int    nch;
 	double ch_at[256];
 	char   ch_title[256][96];
-	int    ev_meta, ev_end, ev_state;   /* for the main thread to announce */
+	int    ev_meta, ev_end, ev_state, ev_sink;   /* for the main thread to announce */
 	char   ev_err[160];
-} S = { .mu = PTHREAD_MUTEX_INITIALIZER, .cv = PTHREAD_COND_INITIALIZER };
+	char   sink[128];                 /* g_dev, for the main thread to report */
+} S = { .mu = PTHREAD_MUTEX_INITIALIZER, .cv = PTHREAD_COND_INITIALIZER,
+        .sink = "default" };
 
 /* Commands waiting for the player thread, in order.
  *
@@ -221,15 +226,46 @@ static void handle(const qcmd *q)
 		pcm_drop();
 		reopen(S.heard);
 		break;
-	case C_SINK:
+	case C_SINK: {
+		/* Tried for up to a second before falling back, because a headset
+		 * is handed over rather than shared. bluealsa 3.1 gives an A2DP PCM
+		 * to one client at a time - measured 2026-09-25, a second open fails
+		 * in hw_params - so Muse can only have it once Diatom has let go,
+		 * and the launcher tells Diatom first but cannot see when it has.
+		 * `default` is dmix and always opens, so it is tried once. */
+		int tries = strcmp(q->dev, "default") ? 10 : 1, i;
+		struct timespec t0, t1;
+
+		clock_gettime(CLOCK_MONOTONIC, &t0);
 		snprintf(g_dev, sizeof g_dev, "%s", q->dev);
-		if (!pcm_open(g_dev)) {
+		for (i = 0; i < tries; i++) {
+			if (pcm_open(g_dev)) break;
+			if (i + 1 < tries) {
+				/* Unlocked while it waits, so the socket thread can still
+				 * take commands and answer STATUS. */
+				pthread_mutex_unlock(&S.mu);
+				usleep(100000);
+				pthread_mutex_lock(&S.mu);
+			}
+		}
+		clock_gettime(CLOCK_MONOTONIC, &t1);
+		if (i == tries) {
 			say("%s; falling back to default", pcm_error());
 			snprintf(g_dev, sizeof g_dev, "default");
 			pcm_open(g_dev);
+		} else {
+			/* Logged every time: it happens only at a handover, and how long
+			 * the other side took to let go is the number worth having. */
+			say("sink %s after %ld ms, %d tr%s", g_dev,
+			    (t1.tv_sec - t0.tv_sec) * 1000 + (t1.tv_nsec - t0.tv_nsec) / 1000000,
+			    i + 1, i ? "ies" : "y");
 		}
+		snprintf(S.sink, sizeof S.sink, "%s", g_dev);
+		S.ev_sink = 1;
+		wake();
 		if (S.state == ST_PLAYING) reopen(S.heard);
 		break;
+	}
 	case C_STOP:
 		pcm_drop();
 		dec_close(g_dec);
@@ -376,7 +412,8 @@ static void announce(int fd, int all)
 		          clean(S.path, a, sizeof a));
 	if (all || S.state == ST_PLAYING)
 		send_line(fd, "POS\tat=%.1f\tlen=%.1f", S.heard, S.len);
-	S.ev_meta = S.ev_end = S.ev_state = 0;
+	if (S.ev_sink || all) send_line(fd, "SINK\tdevice=%s", clean(S.sink, a, sizeof a));
+	S.ev_meta = S.ev_end = S.ev_state = S.ev_sink = 0;
 	S.ev_err[0] = '\0';
 	pthread_mutex_unlock(&S.mu);
 }

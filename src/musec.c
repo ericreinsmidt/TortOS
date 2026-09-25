@@ -42,6 +42,15 @@ static int     g_skips;             /* consecutive tracks that would not open */
 static char    g_artist[128], g_album[128];
 static mu_now  g_now;
 
+/* The output, which Muse holds for its whole life and has to be HANDED a
+ * headset: see musec_sink in musec.h. */
+static char     g_sink_sent[128];   /* what it was last asked for, "" unknown */
+static char     g_sink_said[128];   /* what it last reported, "" not yet */
+static unsigned g_sink_ms;          /* when the ask went */
+static bool     g_sink_waiting;     /* asked, and no answer yet */
+static bool     g_asked;            /* PLAY or RESUME sent, not yet answered */
+static void   (*g_before_heard)(void);
+
 void musec_init(const char *muse_bin, const char *music_root)
 {
 	snprintf(g_bin, sizeof g_bin, "%s", muse_bin);
@@ -54,6 +63,10 @@ static void drop(void)
 	g_fd = -1;
 	g_have = 0;
 	if (g_now.state != MU_OFF) g_now.state = MU_OFF;
+	/* A new connection may be a new daemon, so its output is not known
+	 * until it says; its READY announcement does. */
+	g_sink_sent[0] = g_sink_said[0] = '\0';
+	g_sink_waiting = g_asked = false;
 }
 
 static void sendf(const char *fmt, ...)
@@ -120,8 +133,16 @@ static void play_current(void)
 
 	if (t < 0 || t >= g_qn) return;
 	q = g_q[t];
-	if (!connected()) { g_pending = 1; return; }
+	/* Held until the daemon has said which output it is on - its READY
+	 * announcement ends with SINK - or the route below has nothing to go by
+	 * and the first track of a fresh daemon starts on the speaker. */
+	if (!connected() || !g_sink_said[0]) { g_pending = 1; return; }
 	g_pending = 0;
+	/* Routed BEFORE the PLAY goes, so the track starts where it is heard
+	 * rather than on the speaker for however long the route takes. The
+	 * daemon runs its commands in order, so a SINK sent now lands first. */
+	g_asked = true;
+	if (g_before_heard) g_before_heard();
 	sendf("PLAY\tpath=%s/%s", g_root, q);
 	/* Until META says otherwise, the name the file has. */
 	ml_track_name(strrchr(q, '/') ? strrchr(q, '/') + 1 : q,
@@ -181,6 +202,7 @@ static void event(const char *line)
 		 * came up for a tenth of a second at every track change. */
 		if (g_advanced && !strcmp(v, "stopped")) { g_advanced = false; return; }
 		g_advanced = false;
+		g_asked = false;
 		g_now.state = !strcmp(v, "playing") ? MU_PLAYING
 		            : !strcmp(v, "paused")  ? MU_PAUSED : MU_STOPPED;
 		if (g_now.state == MU_PLAYING) g_skips = 0;
@@ -201,6 +223,16 @@ static void event(const char *line)
 		field(line, "len", v, sizeof v); if (atof(v) > 0) g_now.len = atof(v);
 	} else if (!strncmp(line, "END", 3)) {
 		advance(false);
+	} else if (!strncmp(line, "SINK", 4)) {
+		field(line, "device", g_sink_said, sizeof g_sink_said);
+		g_sink_waiting = false;
+		/* Taken as the starting point only when nothing has been asked of
+		 * this daemon yet. After that, what was ASKED stands: re-asking
+		 * because Muse fell back would retry a dead headset every tick,
+		 * which is the loop aout_apply's comment in main.c describes. */
+		if (!g_sink_sent[0])
+			snprintf(g_sink_sent, sizeof g_sink_sent, "%s", g_sink_said);
+		if (g_pending) play_current();
 	} else if (!strncmp(line, "COVER", 5)) {
 		int k = (g_cov_head + g_cov_n) % COVER_RING;
 
@@ -289,8 +321,42 @@ void musec_play(const char *const *paths, int n, int start,
 void musec_toggle(void)
 {
 	if (g_now.state == MU_PLAYING) sendf("PAUSE");
-	else if (g_now.state == MU_PAUSED) sendf("RESUME");
+	else if (g_now.state == MU_PAUSED) {
+		g_asked = true;
+		if (g_before_heard) g_before_heard();   /* see play_current */
+		sendf("RESUME");
+	}
 	else if (g_qn > 0) play_current();
+}
+
+void musec_on_before_heard(void (*fn)(void)) { g_before_heard = fn; }
+
+bool musec_heard(void) { return g_now.state == MU_PLAYING || g_asked; }
+
+void musec_sink(const char *device)
+{
+	const char *dev = device && device[0] ? device : "default";
+
+	if (g_fd < 0 || !g_sink_said[0]) return;   /* not connected, or not heard from */
+	if (!strcmp(dev, g_sink_sent)) return;
+	snprintf(g_sink_sent, sizeof g_sink_sent, "%s", dev);
+	g_sink_ms = plat_now_ms();
+	g_sink_waiting = true;
+	sendf("SINK\tdevice=%s", dev);
+	fprintf(stderr, "muse: sink -> %s\n", dev);
+}
+
+bool musec_sink_settled(void)
+{
+	/* The daemon answers a SINK after its retries, which are a second at
+	 * most; a little over that, and it is taken as done either way. */
+	if (g_fd < 0 || !g_sink_waiting) return true;
+	return plat_now_ms() - g_sink_ms > 1200;
+}
+
+const char *musec_sink_now(void)
+{
+	return g_fd >= 0 && g_sink_said[0] ? g_sink_said : "";
 }
 
 void musec_next(void)

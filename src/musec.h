@@ -17,8 +17,9 @@
  * Polled, never waited on: musec_poll reads whatever has arrived and returns.
  * It is called from the shelf's main loop, from Muse's own screen, and from
  * the 10 Hz tick the launcher gets while a game runs - which is what lets an
- * album carry on through a game, the way EROS's Muse did. The mixing itself
- * needs nothing from anybody: both processes open `default`, which is dmix. */
+ * album carry on through a game, the way EROS's Muse did. On the speaker and
+ * the jack the mixing needs nothing from anybody: both processes open
+ * `default`, which is dmix. A Bluetooth headset is different - see musec_sink. */
 
 typedef enum { MU_OFF, MU_STOPPED, MU_PLAYING, MU_PAUSED } mu_state;
 
@@ -57,6 +58,28 @@ const char *musec_path(void);
 /* Playing right now, for Auto Off: music is somebody using the device with
  * nobody touching it, the same as the charger. */
 bool musec_playing(void);
+
+/* Playing, or asked to and not yet answered. What decides who holds a
+ * Bluetooth headset, which has to be true from the moment a PLAY is sent:
+ * musec_playing only turns true when the daemon says so, and in between the
+ * route would hand the headset back. */
+bool musec_heard(void);
+
+/* The output. bluealsa here gives a headset to one process at a time, so it
+ * is handed between Diatom and Muse rather than shared: whoever may be heard
+ * holds it (ADR-0032 already quiets a game while music plays). `device` is an
+ * ALSA name, or "" for the default. Sent only when it changes; the daemon
+ * tries a headset for up to a second, while the other side lets go, and falls
+ * back to the default if it never does. */
+void musec_sink(const char *device);
+/* Whether the last musec_sink has been answered, or given up on - so the
+ * launcher can hand the headset to Diatom only once Muse has let go. */
+bool musec_sink_settled(void);
+/* What the daemon last said it is on, or "" before it has. */
+const char *musec_sink_now(void);
+/* Called just before a PLAY or RESUME is sent, so the launcher can move the
+ * headset to Muse first. */
+void musec_on_before_heard(void (*fn)(void));
 
 /* The queue's track `i` in PLAY order - shuffled, the i-th to be heard -
  * relative to the music root, or NULL past either end. */

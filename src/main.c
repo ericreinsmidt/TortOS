@@ -1569,7 +1569,11 @@ static aout_state aout_now(void)
 static aout_dest aout_actual(const aout_state *s)
 {
 	char at[128];
+	const char *muse = musec_sink_now();
 
+	/* Muse holding the headset is where the sound is, whatever Diatom says:
+	 * Diatom was moved off it to let Muse have it. */
+	if (musec_heard() && muse[0] && strcmp(muse, "default")) return AOUT_BT;
 	if (!plat_resident_audio(at, sizeof at)) return aout_resolve(s);
 	if (at[0]) return AOUT_BT;
 	return s->wired ? AOUT_WIRED : AOUT_SPK;
@@ -1577,11 +1581,10 @@ static aout_dest aout_actual(const aout_state *s)
 
 /* Send only on a change. SETAUDIO reopens an audio device, which is cheap but
  * not free, and doing it every tick would be a reopen per tick. */
-static void aout_apply(bool force)
+static void aout_tell_diatom(const aout_state *s, const char *dev, bool force,
+                             bool muse_has_it)
 {
-	aout_state  s   = aout_now();
-	const char *dev = aout_device(&s);
-	unsigned    gen = plat_resident_generation();
+	unsigned gen = plat_resident_generation();
 
 	/* Send when the ASKED-FOR device changes, or when the emulator is a new
 	 * one. Never because Diatom ended up somewhere else.
@@ -1615,8 +1618,43 @@ static void aout_apply(bool force)
 	 * or the row - and because "where is the sound going" is otherwise
 	 * invisible after the fact. Diatom logs its own fallback, so the pair of
 	 * lines says both what was asked for and what happened. */
-	fprintf(stderr, "audio: %s -> %s\n",
-	        aout_dest_name(aout_resolve(&s)), dev[0] ? dev : "default");
+	fprintf(stderr, "audio: %s -> %s%s\n",
+	        aout_dest_name(aout_resolve(s)), dev[0] ? dev : "default",
+	        muse_has_it ? " (Muse has the headset)" : "");
+}
+
+/* Where the system's sound goes, for both players.
+ *
+ * On the speaker and the jack both simply open the default, which is dmix.
+ * A Bluetooth headset cannot be shared - bluealsa 3.1 gives an A2DP PCM to one
+ * client at a time, measured 2026-09-25 - so it is HANDED between them, and it
+ * goes to whoever may be heard: Muse while it plays, which is exactly when
+ * ADR-0032 has already quieted the game, and Diatom otherwise.
+ *
+ * Release before acquire, or the second open fails and falls back. Towards
+ * Muse, Diatom is told first and Muse's SINK retries for a second while Diatom
+ * lets go, because at the shelf nothing here reads Diatom's answers. Back
+ * towards Diatom, Muse is told first and Diatom is only told once Muse has
+ * answered, because Diatom does not retry. */
+static void aout_apply(bool force)
+{
+	aout_state  s    = aout_now();
+	const char *out  = aout_device(&s);
+	bool        muse = out[0] && musec_heard();
+
+	if (!muse) {
+		musec_sink("");
+		if (out[0] && !musec_sink_settled()) return;    /* Muse is still letting go */
+	}
+	aout_tell_diatom(&s, muse ? "" : out, force, muse);
+	if (muse) musec_sink(out);
+}
+
+/* The hook musec calls just before a PLAY or RESUME, so the track starts on
+ * the headset rather than reaching it a tick later. */
+static void aout_before_muse(void)
+{
+	aout_apply(false);
 }
 
 /* A sink that failed once is otherwise never tried again. aout_apply sends on
@@ -10170,6 +10208,7 @@ int main(int argc, char *argv[])
 			 * cover it would ask for is drawn as missing instead - see
 			 * muse_covers_settle. */
 			musec_init(shot_path ? "" : bin, music);
+			musec_on_before_heard(aout_before_muse);
 		}
 		/* The play mode the player left it in. */
 		{
