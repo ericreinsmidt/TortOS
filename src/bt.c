@@ -530,6 +530,16 @@ bool bt_pair(const char *mac, char *err, size_t n)
 	return true;
 }
 
+/* Ask launch.sh's bt_reconnect for a pass now rather than at the end of its
+ * twenty seconds, so the published sink follows what this screen just did.
+ * A file it polls once a second; see bt_reconnect. */
+static void publish_soon(void)
+{
+	int fd = open("/tmp/tortos_btpass", O_WRONLY | O_CREAT, 0644);
+
+	if (fd >= 0) close(fd);
+}
+
 bool bt_connect(const char *mac, char *err, size_t n)
 {
 	char out[1024];
@@ -537,7 +547,7 @@ bool bt_connect(const char *mac, char *err, size_t n)
 	if (err && n) err[0] = '\0';
 	if (!bt_mac_valid(mac)) { if (err) snprintf(err, n, "not an address"); return false; }
 	btctl(out, sizeof out, BT_ACT_S, "connect", mac);
-	if (info_says(mac, "Connected: yes")) return true;
+	if (info_says(mac, "Connected: yes")) { publish_soon(); return true; }
 	if (err) snprintf(err, n, "it did not connect");
 	return false;
 }
@@ -553,6 +563,7 @@ bool bt_disconnect(const char *mac)
 	char out[512];
 	if (!bt_mac_valid(mac)) return false;
 	btctl(out, sizeof out, BT_ACT_S, "disconnect", mac);
+	publish_soon();
 	return !info_says(mac, "Connected: yes");
 }
 
@@ -592,6 +603,7 @@ bool bt_forget(const char *mac)
 	btctl(out, sizeof out, BT_ASK_S, "remove", mac);
 	if (info_says(mac, "Paired: yes")) return false;
 	forget_cache(mac);
+	publish_soon();
 	return true;
 }
 

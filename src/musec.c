@@ -346,6 +346,14 @@ void musec_sink(const char *device)
 	fprintf(stderr, "muse: sink -> %s\n", dev);
 }
 
+void musec_sink_again(void)
+{
+	/* Forget what was asked, so the next musec_sink sends even an unchanged
+	 * device. Only while connected and heard from: an empty ask otherwise
+	 * means "not known yet", which the SINK answer fills in. */
+	if (g_fd >= 0 && g_sink_said[0]) g_sink_sent[0] = '\0';
+}
+
 bool musec_sink_settled(void)
 {
 	/* The daemon answers a SINK after its retries, which are a second at

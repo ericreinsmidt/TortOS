@@ -72,6 +72,11 @@ bool musec_heard(void);
  * tries a headset for up to a second, while the other side lets go, and falls
  * back to the default if it never does. */
 void musec_sink(const char *device);
+/* Make the next musec_sink send even if the device has not changed: for a
+ * headset that dropped and came back under the same name, which Muse may
+ * have fallen back from while it was gone. The daemon ignores a SINK for the
+ * device it is already on, so this costs nothing when it never left. */
+void musec_sink_again(void);
 /* Whether the last musec_sink has been answered, or given up on - so the
  * launcher can hand the headset to Diatom only once Muse has let go. */
 bool musec_sink_settled(void);

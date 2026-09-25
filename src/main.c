@@ -1527,6 +1527,8 @@ static void aout_save(aout_policy p)
  * A file rather than asking Bluetooth ourselves: asking means forking
  * bluetoothctl out of a 119 MB process, which is what menu_wifi exists to
  * prevent. The shell loop already knows, so it writes and this reads. */
+static char g_bt_link[32];    /* the published link's ACL handle, see bt_reconnect */
+
 static const char *aout_bt_sink(void)
 {
 	static char   sink[128];
@@ -1540,10 +1542,12 @@ static const char *aout_bt_sink(void)
 	if (primed && now - last < 500) return sink;
 	primed = true;
 	last = now;
-	sink[0] = '\0';
+	sink[0] = g_bt_link[0] = '\0';
 	f = fopen("/tmp/tortos_btsink", "r");
 	if (f) {
 		if (fgets(sink, sizeof sink, f)) sink[strcspn(sink, "\r\n")] = '\0';
+		if (fgets(g_bt_link, sizeof g_bt_link, f))
+			g_bt_link[strcspn(g_bt_link, "\r\n")] = '\0';
 		fclose(f);
 	}
 	return sink;
@@ -1638,15 +1642,28 @@ static void aout_tell_diatom(const aout_state *s, const char *dev, bool force,
  * answered, because Diatom does not retry. */
 static void aout_apply(bool force)
 {
+	static char  link_seen[32];
 	aout_state  s    = aout_now();
 	const char *out  = aout_device(&s);
 	bool        muse = out[0] && musec_heard();
+	/* A new connection under the same name - the headset dropped and came
+	 * back between two looks at it. Nothing else here can see that, and
+	 * whoever fell back to the speaker while it was gone would stay there:
+	 * seen 2026-09-25, a song in Muse. So the holder is told again, once.
+	 * Harmless when it never left: Diatom and Muse both ignore a device they
+	 * are already on. */
+	bool        fresh = out[0] && g_bt_link[0] && strcmp(g_bt_link, link_seen);
 
 	if (!muse) {
 		musec_sink("");
 		if (out[0] && !musec_sink_settled()) return;    /* Muse is still letting go */
 	}
-	aout_tell_diatom(&s, muse ? "" : out, force, muse);
+	if (fresh) {
+		fprintf(stderr, "audio: %s is a new connection (link %s)\n", out, g_bt_link);
+		if (muse) musec_sink_again();
+	}
+	snprintf(link_seen, sizeof link_seen, "%s", out[0] ? g_bt_link : "");
+	aout_tell_diatom(&s, muse ? "" : out, force || (fresh && !muse), muse);
 	if (muse) musec_sink(out);
 }
 
@@ -1655,6 +1672,18 @@ static void aout_apply(bool force)
 static void aout_before_muse(void)
 {
 	aout_apply(false);
+}
+
+/* Muse's own screens, each frame. They route only while music is heard: a
+ * headset that connects mid-song takes the song there and then, where before
+ * it stayed on the speaker until something new was played - seen 2026-09-25,
+ * resume and R1 both went to the speaker right after a pairing. Paused, they
+ * still leave the headset where it is; nothing else can be heard on these
+ * screens, so handing it back on every pause would only be churn. */
+static void muse_screen_poll(void)
+{
+	musec_poll();
+	if (musec_heard()) aout_apply(false);
 }
 
 /* A sink that failed once is otherwise never tried again. aout_apply sends on
@@ -7301,7 +7330,7 @@ static muse_exit muse_now_screen(app *a)
 		bool touched = false;
 		int b;
 
-		musec_poll();
+		muse_screen_poll();
 		cover_answers();
 		mn = musec_now();
 		plat_input_poll(&a->in);
@@ -7456,7 +7485,7 @@ static muse_exit muse_tracks(app *a, int album, bool now)
 		int n = 0, items;
 		const char *playing;
 
-		musec_poll();
+		muse_screen_poll();
 		cover_answers();
 		mn = musec_now();
 		loaded = mn->state == MU_PLAYING || mn->state == MU_PAUSED;
@@ -7671,7 +7700,7 @@ static void muse_shelf_screen(app *a, bool now)
 	while (!done && !want_quit && a->running) {
 		int n = v->list.count, dir = 0;
 
-		musec_poll();
+		muse_screen_poll();
 		cover_answers();
 		plat_input_poll(&a->in);
 		if (a->in.quit_requested) { a->running = false; break; }

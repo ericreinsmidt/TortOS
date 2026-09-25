@@ -439,6 +439,7 @@ bt_reconnect() {
 	[ -n "$adapter" ] || return 0
 	while :; do
 		connected=
+		bonds=
 		for d in /etc/lib/bluetooth/"$adapter"/*:*; do
 			[ -d "$d" ] || continue
 			grep -q '^Trusted=true' "$d/info" 2> /dev/null || continue
@@ -447,11 +448,29 @@ bt_reconnect() {
 			# that every pass connected it for four seconds at a time and
 			# published a sink each time. See bond_name in src/bt.c.
 			grep -q '^\[LinkKey\]' "$d/info" 2> /dev/null || continue
-			mac=$(basename "$d")
+			bonds="$bonds $(basename "$d")"
+		done
+		# Whoever is already connected first, and nobody dialed while one is.
+		# In one walk, a headset switched off but earlier in address order was
+		# dialed before the connected one was even looked at: `connect` takes
+		# about five seconds to give up, so publishing the OpenFit waited six
+		# or seven on the OpenRun - measured 2026-09-25 - and the dead one was
+		# paged every pass for as long as the live one was in use.
+		for mac in $bonds; do
 			if bluetoothctl info "$mac" 2> /dev/null | grep -q 'Connected: yes'; then
 				connected=$mac
-				continue
+				break
 			fi
+		done
+		# Nothing connected: say so NOW, before dialing. Dialing a headset that
+		# is off takes about five seconds each, and one switched back on while
+		# that went on was republished under a name that had never been taken
+		# away - no change, so nothing was re-routed, and a song that had failed
+		# over to the speaker stayed there. Seen 2026-09-25: the OpenFit off for
+		# 26 seconds and the sink never withdrawn.
+		[ -n "$connected" ] || rm -f /tmp/tortos_btsink
+		for mac in $bonds; do
+			[ -z "$connected" ] || break
 			bluetoothctl connect "$mac" > /dev/null 2>&1
 			# Judge by info, NEVER by the return. connect reports Failed for
 			# a2dp even when the link came up - measured 2026-09-03, and
@@ -493,12 +512,32 @@ bt_reconnect() {
 			#
 			# The config itself is written at boot by bt_write_asoundrc, which
 			# explains why it is not written here.
-			echo "$(bt_pcm_name "$connected")" > /tmp/tortos_btsink.tmp &&
-				mv /tmp/tortos_btsink.tmp /tmp/tortos_btsink
+			#
+			# And the link's ACL handle on a second line, which is new on every
+			# connection even when the name is not. A headset that dropped and came
+			# back between two looks here keeps its name, so without this the
+			# launcher could not tell it had ever gone, and whoever had fallen back
+			# to the speaker while it was away was never sent back to it.
+			link=$(hcitool con 2> /dev/null |
+				sed -n "s/.*ACL $connected handle \([0-9]*\).*/\1/p" | head -1)
+			printf '%s\n%s\n' "$(bt_pcm_name "$connected")" "$link" \
+				> /tmp/tortos_btsink.tmp && mv /tmp/tortos_btsink.tmp /tmp/tortos_btsink
 		else
 			rm -f /tmp/tortos_btsink
 		fi
-		sleep 20
+		# Twenty seconds, or less when the Bluetooth screen asks: it touches
+		# /tmp/tortos_btpass after a connect, a disconnect or a forget, so the
+		# sink moves with the screen rather than up to a pass later. Waiting a
+		# whole pass sent anything pressed in between to the speaker - seen
+		# 2026-09-25, a song resumed right after a pairing. A file and not a
+		# signal, because the launcher has no pid for this loop and a signal
+		# to the wrong shell would be launch.sh itself.
+		n=0
+		while [ $n -lt 20 ] && [ ! -e /tmp/tortos_btpass ]; do
+			sleep 1
+			n=$((n + 1))
+		done
+		rm -f /tmp/tortos_btpass
 	done
 }
 
