@@ -989,6 +989,12 @@ static void d_note_audio(const char *l)
 	d_audio_known = true;
 }
 
+int plat_resident_volume(int *count)
+{
+	if (count) *count = d_pend_vol_n;
+	return d_pend_vol_n > 1 ? d_pend_vol : -1;
+}
+
 bool plat_resident_audio(char *out, size_t cap)
 {
 	if (!d_audio_known) return false;

@@ -129,6 +129,12 @@ void plat_resident_quiet(bool on);
  * where it was asked to put it - a sink that will not open, or one that died,
  * makes the port fall back and report the fallback. False until it has said. */
 bool plat_resident_audio(char *out, size_t cap);
+/* The volume Diatom last reported while a game runs - an index on its own
+ * ladder, with the ladder's length in *count - or -1 when it has said nothing
+ * since the game started. It is applied to this side only when the game ends
+ * (see d_apply_levels), so a headset that has to follow the keys DURING a game
+ * reads it here. */
+int  plat_resident_volume(int *count);
 /* Increments each time the launcher connects to a resident emulator. Anything
  * the launcher pushed into the last one has to be pushed into a new one. */
 unsigned plat_resident_generation(void);

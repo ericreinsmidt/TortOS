@@ -15,6 +15,7 @@
 #include "cheevos.h"
 #include "config.h"
 #include "bt.h"
+#include "btvol.h"
 #include "bt_menu.h"
 #include "db.h"
 #include "stats.h"
@@ -1627,6 +1628,41 @@ static void aout_tell_diatom(const aout_state *s, const char *dev, bool force,
 	        muse_has_it ? " (Muse has the headset)" : "");
 }
 
+/* The headset's own volume, kept at the Brick's level while sound goes to one.
+ *
+ * The volume keys move the codec, which a Bluetooth route bypasses, so on a
+ * headset they did nothing - and a headset with no buttons of its own, the
+ * OpenFit or AirPods, had no volume anywhere. With btplayer registered, BlueZ
+ * passes a volume on to the headset over AVRCP (tools/btplayer.c), so the
+ * level is mirrored there: in a game the one Diatom last reported, since it
+ * owns the keys and this side only applies its levels when the game ends;
+ * otherwise this side's own. 0..20 onto AVRCP's 0..127, straight, because
+ * AVRCP volume is a plain proportion and the headset applies its own curve.
+ *
+ * Sent on a change, and again for a new connection so a headset starts at
+ * the Brick's level. One way only: a headset's own buttons move the headset
+ * and not this level. A send that fails - no control yet, right after a
+ * connect - waits two seconds before the next, because each is a mixer open. */
+static void bt_volume_follow(const char *out, bool fresh)
+{
+	static int      sent = -1;
+	static unsigned retry_at;
+	int count = 0, level = plat_resident_volume(&count), v;
+	unsigned now = plat_now_ms();
+
+	if (!out[0]) { sent = -1; return; }
+	if (level < 0) { level = plat_volume_get(); count = PLAT_VOL_MAX + 1; }
+	if (level < 0 || count < 2) return;
+	v = (level * 127 + (count - 1) / 2) / (count - 1);
+	if (!fresh && v == sent) return;
+	if ((int)(now - retry_at) < 0) return;
+	if (!btvol_set(v)) { retry_at = now + 2000; return; }
+	sent = v;
+	/* With its cost, because it is a mixer open on the loop that draws. */
+	fprintf(stderr, "audio: headset volume %d/127 (level %d of %d) in %u ms\n",
+	        v, level, count - 1, plat_now_ms() - now);
+}
+
 /* Where the system's sound goes, for both players.
  *
  * On the speaker and the jack both simply open the default, which is dmix.
@@ -1665,6 +1701,7 @@ static void aout_apply(bool force)
 	snprintf(link_seen, sizeof link_seen, "%s", out[0] ? g_bt_link : "");
 	aout_tell_diatom(&s, muse ? "" : out, force || (fresh && !muse), muse);
 	if (muse) musec_sink(out);
+	bt_volume_follow(out, fresh);
 }
 
 /* The hook musec calls just before a PLAY or RESUME, so the track starts on
