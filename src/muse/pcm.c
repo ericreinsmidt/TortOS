@@ -4,8 +4,12 @@
 
 #include <dlfcn.h>
 #include <errno.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include <syslog.h>
+#include <time.h>
+#include <unistd.h>
 
 /* libasound's own values, which are ABI and have not moved in two decades. */
 #define SND_PCM_STREAM_PLAYBACK       0
@@ -28,6 +32,66 @@ static const char *(*a_strerror)(int);
 static snd_pcm_t *g_pcm;
 static char       g_err[128];
 static int        g_last;        /* the last open's error, 0 when it worked */
+
+/* The last things done to the output, kept for when it goes wrong - #42.
+ * Twice on 2026-09-25 Muse stalled inside bluealsa's plugin, and the second
+ * time the Muse before it vanished with no line at all, so there was nothing
+ * to say which call it had been making. Each entry is formatted when it is
+ * made, wall clock included to line up with the syslog, so that dumping them
+ * is only write() and is safe from a signal handler. */
+#define TRAIL 32
+static char     g_trail[TRAIL][128];
+static unsigned g_trail_n;
+static volatile long g_write_since;   /* when the write in progress began, or 0 */
+
+void pcm_note(const char *fmt, ...)
+{
+	char *slot = g_trail[g_trail_n % TRAIL];
+	struct timespec t;
+	struct tm tm;
+	va_list ap;
+	int n;
+
+	clock_gettime(CLOCK_REALTIME, &t);
+	localtime_r(&t.tv_sec, &tm);
+	n = snprintf(slot, sizeof g_trail[0], "muse:   %02d:%02d:%02d.%03ld ",
+	             tm.tm_hour, tm.tm_min, tm.tm_sec, t.tv_nsec / 1000000);
+	va_start(ap, fmt);
+	vsnprintf(slot + n, sizeof g_trail[0] - n - 1, fmt, ap);
+	va_end(ap);
+	n = (int)strlen(slot);
+	/* Into the syslog as well, where it lands between bluetoothd's transport
+	 * lines in the order things happened. Not by time: the syslog's own stamps
+	 * come in batches - two lines three seconds apart read the same to the
+	 * millisecond, measured 2026-09-25 - hence the wall clock in the text. */
+	syslog(LOG_INFO, "%s", slot + 8);
+	slot[n] = '\n';
+	slot[n + 1] = '\0';
+	g_trail_n++;
+}
+
+void pcm_trail_dump(int fd)
+{
+	unsigned i = g_trail_n > TRAIL ? g_trail_n - TRAIL : 0;
+
+	for (; i < g_trail_n; i++) {
+		const char *s = g_trail[i % TRAIL];
+		if (write(fd, s, strlen(s)) < 0) return;
+	}
+}
+
+static long now_ms(void)
+{
+	struct timespec t;
+	clock_gettime(CLOCK_MONOTONIC, &t);
+	return t.tv_sec * 1000 + t.tv_nsec / 1000000;
+}
+
+long pcm_in_write_ms(void)
+{
+	long since = g_write_since;
+	return since ? now_ms() - since : 0;
+}
 
 static bool bind(void)
 {
@@ -65,6 +129,7 @@ bool pcm_open(const char *device)
 	g_last = r < 0 ? r : 0;
 	if (r < 0) {
 		snprintf(g_err, sizeof g_err, "open %s: %s", device, a_strerror(r));
+		pcm_note("%s", g_err);
 		g_pcm = NULL;
 		return false;
 	}
@@ -102,27 +167,46 @@ bool pcm_open(const char *device)
 	if (r < 0) {
 		snprintf(g_err, sizeof g_err, "set params on %s: %s", device, a_strerror(r));
 		g_last = r;
+		pcm_note("%s", g_err);
 		pcm_close();
 		return false;
 	}
+	pcm_note("open %s: ok", device);
 	return true;
 }
 
 void pcm_close(void)
 {
-	if (g_pcm) a_close(g_pcm);
+	if (g_pcm) {
+		pcm_note("close");
+		a_close(g_pcm);
+	}
 	g_pcm = NULL;
 }
 
 bool pcm_write(const int16_t *frames, int n)
 {
 	while (g_pcm && n > 0) {
-		long w = a_writei(g_pcm, frames, (unsigned long)n);
+		long t0 = now_ms(), took;
+		long w;
 
+		g_write_since = t0;
+		w = a_writei(g_pcm, frames, (unsigned long)n);
+		g_write_since = 0;
+
+		/* A write is ~21 ms of audio into a 200 ms buffer, so a quarter of a
+		 * second inside one is the output not taking it - noted, because a
+		 * stall starts as exactly that. */
+		if ((took = now_ms() - t0) > 250)
+			pcm_note("write of %d frames took %ld ms (%s)", n, took,
+			          w < 0 ? a_strerror((int)w) : "ok");
 		if (w < 0) {
 			/* An underrun is ordinary - a pause, a slow card read - and
 			 * recover re-prepares the stream. Anything else is not. */
-			if (a_recover(g_pcm, (int)w, 1) < 0) {
+			int r = a_recover(g_pcm, (int)w, 1);
+
+			pcm_note("write: %s, recover %s", a_strerror((int)w), r < 0 ? a_strerror(r) : "ok");
+			if (r < 0) {
 				snprintf(g_err, sizeof g_err, "write: %s", a_strerror((int)w));
 				return false;
 			}
@@ -137,6 +221,7 @@ bool pcm_write(const int16_t *frames, int n)
 void pcm_drop(void)
 {
 	if (!g_pcm) return;
+	pcm_note("drop+prepare");
 	a_drop(g_pcm);
 	a_prepare(g_pcm);
 }

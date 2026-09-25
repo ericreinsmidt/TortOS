@@ -44,6 +44,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <syslog.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -180,6 +181,12 @@ static void snapshot(void)
 
 static void handle(const qcmd *q)
 {
+	static const char *const names[] = { "none", "PLAY", "PAUSE", "RESUME", "STOP",
+	                                     "SEEK", "SPEED", "SINK" };
+
+	if (q->c != C_NONE)
+		pcm_note("%s%s%s", names[q->c], q->c == C_SINK ? " " : "",
+		         q->c == C_SINK ? q->dev : "");
 	switch (q->c) {
 	case C_NONE:
 		break;
@@ -503,6 +510,99 @@ static void command(int fd, const char *line)
 
 static void on_term(int sig) { (void)sig; g_quit = 1; }
 
+/* Evidence for #42, and only that: nothing here changes what plays. */
+
+/* A copy of the system log - bluetoothd's transport states and owners,
+ * bluealsa's errors - which is otherwise a ring in memory that the next
+ * reboot loses; stall #2's went that way. Once per stall, so a fork of this
+ * process is fine; SIGCHLD is ignored, so nothing has to reap it. */
+static void save_syslog(void)
+{
+	const char *dir = getenv("LOGS_PATH");
+	char path[512], cmd[600];
+	time_t now = time(NULL);
+	struct tm tm;
+
+	localtime_r(&now, &tm);
+	snprintf(path, sizeof path, "%s/muse-stall-%04d%02d%02d-%02d%02d%02d.txt",
+	         dir && *dir ? dir : "/tmp", tm.tm_year + 1900, tm.tm_mon + 1,
+	         tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+	snprintf(cmd, sizeof cmd, "logread > '%s' 2>&1", path);
+	if (fork() == 0) {
+		execl("/bin/sh", "sh", "-c", cmd, (char *)NULL);
+		_exit(127);
+	}
+	say("system log saved to %s", path);
+}
+
+static void stalled(const char *why)
+{
+	long writing = pcm_in_write_ms();
+
+	if (writing)
+		pcm_note("STALLED, inside a write for %ld ms: %s", writing, why);
+	else
+		pcm_note("STALLED, not in a write: %s", why);
+	say("STALLED: %s; %s; the last output calls:", why,
+	    writing ? "a write has not returned" : "no write in progress");
+	fflush(stderr);
+	pcm_trail_dump(2);
+	save_syslog();
+}
+
+/* Once a second. Playing with a position that has not moved for five seconds
+ * is a stall; so is a player that has held the lock for five, which would
+ * otherwise freeze this thread in the lock along with it and make Muse look
+ * dead to the launcher. Reported once each, and never acted on. Returns
+ * whether the lock was free, so the caller does not wait on it either. */
+static bool watch(void)
+{
+	static double last_heard = -1;
+	static time_t since;
+	static int    misses, reported;
+	time_t now = time(NULL);
+	char   why[256];
+	bool   playing;
+	double heard;
+
+	if (pthread_mutex_trylock(&S.mu) != 0) {
+		if (++misses == 5) stalled("the player has held its lock for 5 s");
+		return false;
+	}
+	misses = 0;
+	playing = S.state == ST_PLAYING;
+	heard = S.heard;
+	snprintf(why, sizeof why, "playing on %s, stuck at %.1f s for 5 s", S.sink, heard);
+	pthread_mutex_unlock(&S.mu);
+
+	if (!playing || heard != last_heard) {
+		last_heard = heard;
+		since = now;
+		reported = 0;
+	} else if (!reported && now - since >= 5) {
+		reported = 1;
+		stalled(why);
+	}
+	return true;
+}
+
+/* A fatal signal leaves one line and the record, then dies the same way. Only
+ * write(): Muse B's predecessor vanished mid-song on 2026-09-25 with nothing
+ * in the log at all. */
+static void on_fatal(int sig)
+{
+	char line[80] = "muse: fatal signal ";
+	size_t n = strlen(line);
+	const char *tail = "; the last output calls:\n";
+
+	if (sig >= 10) line[n++] = (char)('0' + sig / 10);
+	line[n++] = (char)('0' + sig % 10);
+	memcpy(line + n, tail, strlen(tail) + 1);
+	if (write(2, line, strlen(line)) < 0) { /* nowhere left to say it */ }
+	pcm_trail_dump(2);
+	raise(sig);                         /* SA_RESETHAND: the default this time */
+}
+
 int main(void)
 {
 	struct sockaddr_un sa = { .sun_family = AF_UNIX };
@@ -515,6 +615,19 @@ int main(void)
 	signal(SIGPIPE, SIG_IGN);
 	signal(SIGTERM, on_term);
 	signal(SIGINT, on_term);
+	signal(SIGCHLD, SIG_IGN);             /* save_syslog's child */
+	openlog("muse", LOG_PID, LOG_USER);
+	{
+		static const int fatal[] = { SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT };
+		struct sigaction sa;
+		size_t i;
+
+		memset(&sa, 0, sizeof sa);
+		sa.sa_handler = on_fatal;
+		sa.sa_flags = SA_RESETHAND;
+		for (i = 0; i < sizeof fatal / sizeof fatal[0]; i++)
+			sigaction(fatal[i], &sa, NULL);
+	}
 	snprintf(sa.sun_path, sizeof sa.sun_path, "%s", SOCK_PATH);
 
 	/* One Muse. A second one started by a launcher that did not know the
@@ -585,6 +698,9 @@ int main(void)
 		}
 		if (time(NULL) != last_pos) {
 			last_pos = time(NULL);
+			/* Not the blocking lock it was: a player stuck while holding it
+			 * would stop this thread too - see watch. */
+			if (!watch()) continue;
 			pthread_mutex_lock(&S.mu);
 			r = S.state == ST_PLAYING;
 			pthread_mutex_unlock(&S.mu);

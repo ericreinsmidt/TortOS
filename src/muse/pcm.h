@@ -42,4 +42,13 @@ bool pcm_is_open(void);
  * the one failure worth waiting out. */
 bool pcm_busy(void);
 
+/* A line for the record of what was done to the output: the last 32 are kept
+ * and written out by pcm_trail_dump, from a stall or a fatal signal. */
+void pcm_note(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+/* Write that record to `fd`. Only write(), so a signal handler may call it. */
+void pcm_trail_dump(int fd);
+/* How long the write in progress has been going, in ms, or 0 when none is:
+ * a stall that never returns never gets noted, so the report asks. */
+long pcm_in_write_ms(void);
+
 #endif

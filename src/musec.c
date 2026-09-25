@@ -57,9 +57,17 @@ void musec_init(const char *muse_bin, const char *music_root)
 	snprintf(g_root, sizeof g_root, "%s", music_root);
 }
 
-static void drop(void)
+/* `why` is logged when a live connection ends: it is when "Muse vanished"
+ * happened, which on 2026-09-25 could only be inferred afterwards - #42. */
+static void drop(const char *why, int err)
 {
-	if (g_fd >= 0) close(g_fd);
+	if (g_fd >= 0) {
+		fprintf(stderr, "muse: connection lost: %s%s%s (state %s, sink %s)\n", why,
+		        err ? ", " : "", err ? strerror(err) : "",
+		        g_now.state == MU_PLAYING ? "playing" : g_now.state == MU_PAUSED ? "paused" : "stopped",
+		        g_sink_said[0] ? g_sink_said : "?");
+		close(g_fd);
+	}
 	g_fd = -1;
 	g_have = 0;
 	if (g_now.state != MU_OFF) g_now.state = MU_OFF;
@@ -90,7 +98,7 @@ static void sendf(const char *fmt, ...)
 	line[n++] = '\n';
 	if (send(g_fd, line, (size_t)n, MSG_NOSIGNAL | MSG_DONTWAIT) < 0 &&
 	    errno != EAGAIN)
-		drop();                    /* it went away; the next poll starts it */
+		drop("send failed", errno);      /* it went away; the next poll starts it */
 }
 
 /* Connected, or on the way. The daemon is started at most once every two
@@ -267,9 +275,9 @@ void musec_poll(void)
 	}
 	for (;;) {
 		got = recv(g_fd, g_in + g_have, sizeof g_in - g_have - 1, MSG_DONTWAIT);
-		if (got == 0) { drop(); return; }
+		if (got == 0) { drop("closed by Muse", 0); return; }
 		if (got < 0) {
-			if (errno != EAGAIN && errno != EWOULDBLOCK) drop();
+			if (errno != EAGAIN && errno != EWOULDBLOCK) drop("receive failed", errno);
 			break;
 		}
 		g_have += (size_t)got;
