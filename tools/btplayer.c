@@ -22,10 +22,24 @@
  * headers for it, so the handful of types used are declared here. Every call
  * the headset makes on the player - play, pause, from its buttons - is answered
  * UnknownMethod by libdbus, which BlueZ passes on as a failure and nothing more.
+ *
+ * It also mends a volume BlueZ lost. BlueZ 5.54 hands a headset's report only
+ * to the A2DP transports that exist at that moment, and keeps the value in the
+ * player so that a report of the same level again is dropped too
+ * (media.c set_volume). A transport created AFTER the report - a reconnect
+ * from the Bluetooth screen, 2026-09-26 - has no Volume, the keys stop
+ * reaching the headset, and nothing says so. Re-reporting alone did not bring
+ * it back, and a fresh player alone did not; the two together did, measured
+ * the same day: Volume 70, the headset's own level. So each new transport is
+ * looked at two seconds after it appears, and one without a Volume gets
+ * exactly that - once, so a headset that cannot do absolute volume is tried
+ * once and not forever.
  */
 #include <dlfcn.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 typedef struct { const char *name, *message; unsigned bits; void *pad; } dbus_error;
@@ -39,6 +53,8 @@ typedef struct {
 #define BUS_SYSTEM      1
 #define TYPE_OBJECT     ((int)'o')
 #define TYPE_ARRAY      ((int)'a')
+#define TYPE_STRING     ((int)'s')
+#define TYPE_DICT_ENTRY ((int)'e')
 #define NOT_HANDLED     1
 #define PLAYER_PATH     "/org/tortos/player"
 
@@ -54,6 +70,14 @@ static int   (*close_container)(dbus_iter *, dbus_iter *);
 static void *(*send_block)(void *, void *, int, dbus_error *);
 static int   (*register_path)(void *, const char *, const dbus_vtable *, void *);
 static int   (*dispatch)(void *, int);
+static void  (*add_match)(void *, const char *, dbus_error *);
+static int   (*add_filter)(void *, int (*)(void *, void *, void *), void *, void (*)(void *));
+static int   (*is_signal)(void *, const char *, const char *);
+static int   (*iter_init)(void *, dbus_iter *);
+static int   (*iter_type)(dbus_iter *);
+static void  (*iter_recurse)(dbus_iter *, dbus_iter *);
+static int   (*iter_next)(dbus_iter *);
+static void  (*iter_get)(dbus_iter *, void *);
 
 static int on_message(void *conn, void *msg, void *data)
 {
@@ -79,6 +103,14 @@ static bool bind_libdbus(void)
 	SYM(send_block,       "dbus_connection_send_with_reply_and_block");
 	SYM(register_path,    "dbus_connection_register_object_path");
 	SYM(dispatch,         "dbus_connection_read_write_dispatch");
+	SYM(add_match,        "dbus_bus_add_match");
+	SYM(add_filter,       "dbus_connection_add_filter");
+	SYM(is_signal,        "dbus_message_is_signal");
+	SYM(iter_init,        "dbus_message_iter_init");
+	SYM(iter_type,        "dbus_message_iter_get_arg_type");
+	SYM(iter_recurse,     "dbus_message_iter_recurse");
+	SYM(iter_next,        "dbus_message_iter_next");
+	SYM(iter_get,         "dbus_message_iter_get_basic");
 #undef SYM
 	return true;
 }
@@ -111,6 +143,140 @@ static bool register_player(void *conn)
 	return true;
 }
 
+static long now_ms(void)
+{
+	struct timespec t;
+	clock_gettime(CLOCK_MONOTONIC, &t);
+	return t.tv_sec * 1000 + t.tv_nsec / 1000000;
+}
+
+/* A method call with up to two string-ish arguments, waiting for the reply.
+ * The reply for the caller to read and unref, or NULL on any error. */
+static void *call(void *conn, const char *path, const char *iface, const char *method,
+                  int t1, const char *a1, int t2, const char *a2)
+{
+	void *msg = new_call("org.bluez", path, iface, method), *reply;
+	dbus_iter args;
+	dbus_error err;
+
+	if (!msg) return NULL;
+	iter_init_append(msg, &args);
+	if (a1) append_basic(&args, t1, &a1);
+	if (a2) append_basic(&args, t2, &a2);
+	error_init(&err);
+	reply = send_block(conn, msg, 5000, &err);
+	message_unref(msg);
+	if (!reply) error_free(&err);
+	return reply;
+}
+
+static bool has_volume(void *conn, const char *transport)
+{
+	void *r = call(conn, transport, "org.freedesktop.DBus.Properties", "Get",
+	               TYPE_STRING, "org.bluez.MediaTransport1", TYPE_STRING, "Volume");
+
+	if (!r) return false;
+	message_unref(r);
+	return true;
+}
+
+/* The transport's device, e.g. /org/bluez/hci0/dev_C0_86_B3_A7_48_7F. */
+static bool device_of(void *conn, const char *transport, char *out, size_t n)
+{
+	void *r = call(conn, transport, "org.freedesktop.DBus.Properties", "Get",
+	               TYPE_STRING, "org.bluez.MediaTransport1", TYPE_STRING, "Device");
+	dbus_iter it, var;
+	const char *dev = NULL;
+
+	if (!r) return false;
+	if (iter_init(r, &it) && iter_type(&it) == (int)'v') {
+		iter_recurse(&it, &var);
+		if (iter_type(&var) == TYPE_OBJECT) iter_get(&var, &dev);
+	}
+	if (dev) snprintf(out, n, "%s", dev);
+	message_unref(r);
+	return dev != NULL;
+}
+
+/* A fresh player, so BlueZ has no stored level to call the report a repeat
+ * of, then AVRCP again on the device, so the headset reports once more - now
+ * that the transport exists to take it. AVRCP is only the control channel:
+ * the audio does not stop, and the transport is not recreated by it. */
+static void mend(void *conn, const char *transport)
+{
+	static const char *avrcp = "0000110e-0000-1000-8000-00805f9b34fb";
+	char dev[160];
+	void *r;
+
+	if (!device_of(conn, transport, dev, sizeof dev)) return;
+	if ((r = call(conn, "/org/bluez/hci0", "org.bluez.Media1", "UnregisterPlayer",
+	              TYPE_OBJECT, PLAYER_PATH, 0, NULL)))
+		message_unref(r);
+	if (!register_player(conn)) return;
+	if ((r = call(conn, dev, "org.bluez.Device1", "DisconnectProfile",
+	              TYPE_STRING, avrcp, 0, NULL)))
+		message_unref(r);
+	sleep(1);
+	if ((r = call(conn, dev, "org.bluez.Device1", "ConnectProfile",
+	              TYPE_STRING, avrcp, 0, NULL)))
+		message_unref(r);
+}
+
+/* Transports to look at, and when. Stage 0 is the first look, two seconds
+ * after it appears - a headset whose AVRCP comes up after the transport
+ * reports into it by itself; stage 1 is after a mend, and the last. */
+#define WATCHED 4
+static struct { char path[160]; long due; int stage; } g_watch[WATCHED];
+
+static int on_signal(void *conn, void *msg, void *data)
+{
+	dbus_iter args, dict, entry;
+	const char *path = NULL, *iface;
+	int i;
+
+	(void)conn; (void)data;
+	if (!is_signal(msg, "org.freedesktop.DBus.ObjectManager", "InterfacesAdded"))
+		return NOT_HANDLED;
+	if (!iter_init(msg, &args) || iter_type(&args) != TYPE_OBJECT) return NOT_HANDLED;
+	iter_get(&args, &path);
+	if (!iter_next(&args) || iter_type(&args) != TYPE_ARRAY) return NOT_HANDLED;
+	for (iter_recurse(&args, &dict); iter_type(&dict) == TYPE_DICT_ENTRY; iter_next(&dict)) {
+		iter_recurse(&dict, &entry);
+		iter_get(&entry, &iface);
+		if (strcmp(iface, "org.bluez.MediaTransport1")) continue;
+		for (i = 0; i < WATCHED && g_watch[i].path[0]; i++) { }
+		if (i == WATCHED) break;
+		snprintf(g_watch[i].path, sizeof g_watch[i].path, "%s", path);
+		g_watch[i].due = now_ms() + 2000;
+		g_watch[i].stage = 0;
+		break;
+	}
+	return NOT_HANDLED;
+}
+
+static void look(void *conn)
+{
+	int i;
+
+	for (i = 0; i < WATCHED; i++) {
+		char *p = g_watch[i].path;
+
+		if (!p[0] || now_ms() < g_watch[i].due) continue;
+		if (has_volume(conn, p)) {
+			if (g_watch[i].stage) fprintf(stderr, "btplayer: %s has its volume back\n", p);
+			p[0] = '\0';
+		} else if (g_watch[i].stage == 0) {
+			fprintf(stderr, "btplayer: %s came up without a volume; asking again\n", p);
+			mend(conn, p);
+			g_watch[i].stage = 1;
+			g_watch[i].due = now_ms() + 3000;
+		} else {
+			fprintf(stderr, "btplayer: %s still has no volume; leaving it\n", p);
+			p[0] = '\0';
+		}
+	}
+}
+
 int main(void)
 {
 	static const dbus_vtable vt = { NULL, on_message, { NULL } };
@@ -139,6 +305,9 @@ int main(void)
 	if (tries == 10) return 1;
 	fprintf(stderr, "btplayer: registered %s\n", PLAYER_PATH);
 
-	while (dispatch(conn, -1)) { }
+	add_match(conn, "type='signal',sender='org.bluez',"
+	          "interface='org.freedesktop.DBus.ObjectManager',member='InterfacesAdded'", &err);
+	add_filter(conn, on_signal, NULL, NULL);
+	while (dispatch(conn, 250)) look(conn);
 	return 0;
 }
