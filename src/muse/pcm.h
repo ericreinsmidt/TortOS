@@ -36,5 +36,10 @@ void pcm_drop(void);
 long pcm_queued(void);
 
 const char *pcm_error(void);
+/* Whether a device is open at all - pcm_open fails closed. */
+bool pcm_is_open(void);
+/* Whether the last open failed because another process holds the device -
+ * the one failure worth waiting out. */
+bool pcm_busy(void);
 
 #endif

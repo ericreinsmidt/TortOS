@@ -236,10 +236,23 @@ static void handle(const qcmd *q)
 		int tries = strcmp(q->dev, "default") ? 10 : 1, i;
 		struct timespec t0, t1;
 
+		/* Already there: reported, and nothing reopened. The launcher resends
+		 * a headset that came back under the same name, and a reopen here
+		 * would put a gap in a song that never left it. Diatom's port does
+		 * the same for the same reason. */
+		if (!strcmp(q->dev, g_dev) && pcm_is_open()) {
+			S.ev_sink = 1;
+			wake();
+			break;
+		}
 		clock_gettime(CLOCK_MONOTONIC, &t0);
 		snprintf(g_dev, sizeof g_dev, "%s", q->dev);
 		for (i = 0; i < tries; i++) {
 			if (pcm_open(g_dev)) break;
+			/* Only busy is worth a wait - Diatom letting go. Anything else
+			 * fails the same way ten times: a rate the device would not take
+			 * spent the whole second before falling back, 2026-09-25. */
+			if (!pcm_busy()) { i = tries; break; }
 			if (i + 1 < tries) {
 				/* Unlocked while it waits, so the socket thread can still
 				 * take commands and answer STATUS. */
@@ -286,6 +299,7 @@ static void *player(void *arg)
 	pthread_mutex_lock(&S.mu);
 	while (!g_quit) {
 		int n;
+		bool lost = false;
 
 		while (q_len == 0 && S.state != ST_PLAYING && !g_quit)
 			pthread_cond_wait(&S.cv, &S.mu);
@@ -304,8 +318,25 @@ static void *player(void *arg)
 		 * not wait behind it. */
 		pthread_mutex_unlock(&S.mu);
 		n = dec_read(g_dec, buf, CHUNK);
-		if (n > 0 && !pcm_write(buf, n)) n = -1;
+		if (n > 0 && !pcm_write(buf, n)) { n = -1; lost = true; }
 		pthread_mutex_lock(&S.mu);
+
+		/* A headset that went away mid-song: the default, and on from what was
+		 * heard, the way Diatom's port falls back when its sink dies. Reported
+		 * as an ERROR this was read as a track that would not open, so every
+		 * write that failed skipped one: a headset switched off ran through the
+		 * album, measured 2026-09-25. SINK says where it went, and the launcher
+		 * sends the headset back when it reconnects. */
+		if (lost && strcmp(g_dev, "default") && g_dec) {
+			say("%s; the headset went, falling back to default", pcm_error());
+			snprintf(g_dev, sizeof g_dev, "default");
+			pcm_open(g_dev);
+			snprintf(S.sink, sizeof S.sink, "%s", g_dev);
+			S.ev_sink = 1;
+			wake();
+			reopen(S.heard);
+			continue;
+		}
 
 		if (n > 0) {
 			double h = dec_pos(g_dec) - (double)pcm_queued() * S.speed / DEC_RATE;

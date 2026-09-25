@@ -3,6 +3,7 @@
 #include "pcm.h"
 
 #include <dlfcn.h>
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -26,6 +27,7 @@ static const char *(*a_strerror)(int);
 
 static snd_pcm_t *g_pcm;
 static char       g_err[128];
+static int        g_last;        /* the last open's error, 0 when it worked */
 
 static bool bind(void)
 {
@@ -60,6 +62,7 @@ bool pcm_open(const char *device)
 	if (!bind()) return false;
 	pcm_close();
 	r = a_open(&g_pcm, device, SND_PCM_STREAM_PLAYBACK, 0);
+	g_last = r < 0 ? r : 0;
 	if (r < 0) {
 		snprintf(g_err, sizeof g_err, "open %s: %s", device, a_strerror(r));
 		g_pcm = NULL;
@@ -71,8 +74,34 @@ bool pcm_open(const char *device)
 	 * not starve it, short enough that pause and seek feel immediate. */
 	r = a_set_params(g_pcm, SND_PCM_FORMAT_S16_LE, SND_PCM_ACCESS_RW_INTERLEAVED,
 	                 2, 48000, 0, 200000);
+	/* Except a headset that is not running at 48 kHz, where ALSA has to
+	 * resample or nothing plays. A headset picks the rate when IT starts the
+	 * connection: the OpenFit came back at 44.1 kHz on reconnecting by itself
+	 * and every open failed on it, measured 2026-09-25. The wired path's
+	 * reason against awrate does not carry over - the SBC encode that follows
+	 * costs more than the resample does.
+	 *
+	 * Through `plug:`, because a bare `type bluealsa` PCM has no rate
+	 * converter to allow: soft_resample 1 on the PCM itself failed the same
+	 * way, measured the same day. Only on a rate mismatch, which is -EINVAL
+	 * here; busy stays busy, for the caller to retry. */
+	if (r == -EINVAL && strcmp(device, "default")) {
+		char plug[160];
+
+		pcm_close();
+		snprintf(plug, sizeof plug, "plug:%s", device);
+		r = a_open(&g_pcm, plug, SND_PCM_STREAM_PLAYBACK, 0);
+		if (r >= 0)
+			r = a_set_params(g_pcm, SND_PCM_FORMAT_S16_LE,
+			                 SND_PCM_ACCESS_RW_INTERLEAVED, 2, 48000, 1, 200000);
+		else
+			g_pcm = NULL;
+		if (r >= 0)
+			fprintf(stderr, "muse: %s is not at 48 kHz; ALSA resamples it\n", device);
+	}
 	if (r < 0) {
 		snprintf(g_err, sizeof g_err, "set params on %s: %s", device, a_strerror(r));
+		g_last = r;
 		pcm_close();
 		return false;
 	}
@@ -121,3 +150,7 @@ long pcm_queued(void)
 }
 
 const char *pcm_error(void) { return g_err; }
+
+bool pcm_is_open(void) { return g_pcm != NULL; }
+
+bool pcm_busy(void) { return g_last == -EBUSY; }
