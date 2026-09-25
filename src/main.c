@@ -6522,6 +6522,10 @@ static int slot_strip(app *a, SDL_Texture *bg, int saving)
 	slot_view sv = { .aspect = 4.0f / 3.0f, .saving = saving };
 	sysview *v = &a->view[a->sys_cursor];
 	game_entry *g = &v->list.items[v->cursor];
+	/* The game's own system, not the shelf: from Favorites the shelf is
+	 * Favorites, which has no folder, and the slots came out loose in .tortos/
+	 * - a second set the system's shelf never saw. Reported 2026-09-24. */
+	int o = shelf_owner(a, a->sys_cursor, v->cursor);
 	int i, sel = -1, chosen = 0, done = 0;
 	bool   have_b[GM_SLOTS + 1] = { false };
 	char pth[LIB_PATH * 2];
@@ -6530,7 +6534,7 @@ static int slot_strip(app *a, SDL_Texture *bg, int saving)
 		int slot = gm_slot_at(i);
 		struct stat st;
 
-		slot_state_path(a, a->sys_cursor, g, slot, pth, sizeof pth);
+		slot_state_path(a, o, g, slot, pth, sizeof pth);
 		sv.have[i] = (stat(pth, &st) == 0 && st.st_size > 0);
 		if (sv.have[i]) {
 			have_b[i] = true;
@@ -6554,7 +6558,7 @@ static int slot_strip(app *a, SDL_Texture *bg, int saving)
 				         tm->tm_hour < 12 ? "AM" : "PM");
 			}
 
-			slot_preview_path(a, a->sys_cursor, g, slot, pth, sizeof pth);
+			slot_preview_path(a, o, g, slot, pth, sizeof pth);
 			SDL_Surface *sf = IMG_Load(pth);
 			if (sf) {
 				sv.thumb[i] = SDL_CreateTextureFromSurface(a->r, sf);
@@ -8133,16 +8137,17 @@ static menu_result gm_key(app *a, void *ctx, in_button key, int sel)
 
 		if (slot) {
 			sysview *sv = &a->view[a->sys_cursor];
+			int o = shelf_owner(a, a->sys_cursor, sv->cursor);   /* see slot_strip */
 			char sp[LIB_PATH * 2], pp[LIB_PATH * 2];
 
-			slot_state_path(a, a->sys_cursor, &sv->list.items[sv->cursor],
+			slot_state_path(a, o, &sv->list.items[sv->cursor],
 			                slot, sp, sizeof sp);
 			if (sel == GM_SAVE) {
 				plat_resident_line("SAVE\tpath=%s", sp);
 				/* The paused frame is what the save holds, and Diatom already
 				 * wrote it as the pause preview: copy it beside the state so
 				 * the strip can show what is inside the slot. */
-				slot_preview_path(a, a->sys_cursor, &sv->list.items[sv->cursor],
+				slot_preview_path(a, o, &sv->list.items[sv->cursor],
 				                  slot, pp, sizeof pp);
 				copy_file(plat_resident_last_preview(), pp);
 			} else {
@@ -8368,7 +8373,7 @@ static void launch(app *a)
 	/* The scratch, not the Auto card - see pause_preview_path. The card is
 	 * written from this only when the game actually ends, below. */
 	pause_preview_path(pv, sizeof pv);
-	persist_dir_ensure(a, a->sys_cursor);
+	persist_dir_ensure(a, o);
 
 	/* Achievements, if this game has any. Most of a library does not, and that
 	 * is not a failure: chv_load says so by returning false and everything
@@ -8539,7 +8544,7 @@ static void launch(app *a)
 			if (resident) {
 				char ap[LIB_PATH * 2];
 
-				preview_path(a, a->sys_cursor, &v->list.items[v->cursor],
+				preview_path(a, o, &v->list.items[v->cursor],
 				             ap, sizeof ap);
 				copy_file(plat_resident_last_preview(), ap);
 			}
@@ -8615,7 +8620,7 @@ static void launch(app *a)
 		 * so nothing can overwrite it mid-session, and it is written once at
 		 * exit beside the state. The resident path needs the indirection
 		 * because a pause writes the preview too; this one does not. */
-		preview_path(a, a->sys_cursor, &v->list.items[v->cursor], apv, sizeof apv);
+		preview_path(a, o, &v->list.items[v->cursor], apv, sizeof apv);
 		argv[n++] = (char *)"--preview-on-exit"; argv[n++] = apv;
 		/* Same opinions as the resident path gets over SETOPT, so a game plays
 		 * the same whether the resident was up or the fallback ran it. */
