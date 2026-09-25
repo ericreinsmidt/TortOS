@@ -1505,6 +1505,9 @@ static aout_policy g_aout_policy;
 static char g_aout_sent[128];      /* the device Diatom was last told to use */
 static bool g_aout_ever;
 static unsigned g_aout_gen;        /* which connection it was told on */
+static unsigned g_aout_retry_at;   /* earliest next in-game retry of a fallback */
+static int      g_aout_retries;    /* spent on the game running now */
+static bool     g_aout_fallen;     /* a fallback already noticed, so not new */
 
 static aout_policy aout_load(void)
 {
@@ -1605,12 +1608,90 @@ static void aout_apply(bool force)
 
 	snprintf(g_aout_sent, sizeof g_aout_sent, "%s", dev);
 	g_aout_ever = true;
+	/* Diatom's answer to this lands before a retry judges it. The previous
+	 * device's report is still the one held until then. */
+	g_aout_retry_at = plat_now_ms() + 5000;
 	/* Logged because it only happens on a real change - a cable, a headset,
 	 * or the row - and because "where is the sound going" is otherwise
 	 * invisible after the fact. Diatom logs its own fallback, so the pair of
 	 * lines says both what was asked for and what happened. */
 	fprintf(stderr, "audio: %s -> %s\n",
 	        aout_dest_name(aout_resolve(&s)), dev[0] ? dev : "default");
+}
+
+/* A sink that failed once is otherwise never tried again. aout_apply sends on
+ * a change of the ASKED-FOR device, and a headset that would not open, then
+ * became usable under the same name, is no change at all: 2026-09-24 left
+ * Diatom on the speaker through a game with the headset connected and working.
+ *
+ * Retried where it cannot be seen, and rarely where it can. A failed SETAUDIO
+ * is not free: Diatom closes, fails the sink and reopens the default on its
+ * main thread. Measured 2026-09-24 in Contra, 17 switches, 15 of them failed
+ * fakes: 56.00 fps against 59.95, ~351 frames short, 18 resyncs against 3.
+ * About 20 frames - a third of a second of frozen game - per failed try, and
+ * that is the lower bound, because a fake name fails before bluealsa is ever
+ * asked. A retry a minute would be a stutter a minute. */
+
+/* Whether Diatom is on the default device although it was last told to use a
+ * sink. The default and not merely "somewhere else", because the default is
+ * the only place a fallback goes, and a report naming another sink is one that
+ * has not caught up with the last SETAUDIO yet. Testing for any mismatch fired
+ * a retry in the same tick as the send, before Diatom had answered - measured
+ * on the device 2026-09-24, and it spent one of the two stalls on nothing.
+ *
+ * Only true to life while a game runs: at the shelf nothing reads Diatom's
+ * reports - they are dropped at the next game start - so there it describes
+ * the last game. */
+static bool aout_fell_back(void)
+{
+	char at[128];
+
+	if (!g_aout_ever || !g_aout_sent[0]) return false;
+	if (!plat_resident_audio(at, sizeof at)) return false;
+	return at[0] == '\0';
+}
+
+/* Just before a game is handed over. Unconditional, because the shelf cannot
+ * know whether it is needed and it costs nothing when it is not: Diatom
+ * returns early on the device it is already using, without reopening. When
+ * the sink is still broken, the stall is spent inside the launch. */
+static void aout_before_launch(void)
+{
+	g_aout_retries = 0;
+	g_aout_fallen = false;
+	g_aout_retry_at = plat_now_ms() + 5000;
+	if (!g_aout_ever || !g_aout_sent[0]) return;
+	if (aout_fell_back())
+		fprintf(stderr, "audio: trying %s again before the launch\n", g_aout_sent);
+	plat_resident_line("SETAUDIO\tdevice=%s", g_aout_sent);
+}
+
+/* Twice per game at most: for a headset whose A2DP stream was not up yet when
+ * the game asked for it, or one that dropped out and came back under the same
+ * name. Spaced so that Diatom's answer to the first has arrived before the
+ * second is judged. */
+static void aout_retry_in_game(void)
+{
+	bool fell = aout_fell_back();
+
+	/* Never in the moment a fallback is noticed. A sink that has just died is
+	 * certainly still dead: a headset disconnected mid-game on 2026-09-24 had
+	 * its first retry fire within the same second and fail, and only the
+	 * second, after bt_reconnect brought it back 18s later, landed. */
+	if (fell && !g_aout_fallen) {
+		unsigned soonest = plat_now_ms() + 5000;
+
+		if ((int)(soonest - g_aout_retry_at) > 0) g_aout_retry_at = soonest;
+	}
+	g_aout_fallen = fell;
+
+	if (!fell || g_aout_retries >= 2) return;
+	if ((int)(plat_now_ms() - g_aout_retry_at) < 0) return;
+	if (!plat_resident_line("SETAUDIO\tdevice=%s", g_aout_sent)) return;
+	g_aout_retries++;
+	g_aout_retry_at = plat_now_ms() + 25000;
+	fprintf(stderr, "audio: %s fell back; trying again (%d of 2)\n",
+	        g_aout_sent, g_aout_retries);
 }
 
 /* Auto Off while a game runs. Diatom holds the clock, because it owns the pad
@@ -1654,6 +1735,7 @@ static void on_game_tick(void)
 	 * of range, moves the sound without leaving the game. That is the whole
 	 * point of ADR-0029 making this a state rather than a launch argument. */
 	aout_apply(false);
+	aout_retry_in_game();
 
 	if (g_idle_secs > 0) {
 		bool ch = on_charger();
@@ -8333,6 +8415,7 @@ static void launch(app *a)
 		 * because this process is blocked - except when the player opens
 		 * the in-game menu, which is drawn HERE now, over the frame the
 		 * emulator hands us on the way into its pause. */
+		aout_before_launch();
 		if (plat_resident_send(s->tag, core, rom, st, st, pv,
 		                       console, active[0] ? active : NULL)) {
 			int r;
