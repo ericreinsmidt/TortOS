@@ -39,6 +39,7 @@ bt_write_asoundrc() {
 	for d in /etc/lib/bluetooth/*/*:*; do
 		[ -d "$d" ] || continue
 		grep -q '^Trusted=true' "$d/info" 2> /dev/null || continue
+		grep -q '^\[LinkKey\]' "$d/info" 2> /dev/null || continue   # see bt_reconnect
 		mac=$(basename "$d")
 		cat >> "$rc.tmp" <<-EOF
 		pcm.$(bt_pcm_name "$mac") {

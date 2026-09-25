@@ -417,10 +417,11 @@ start_resident() {
 # Keep a remembered headset connected, so powering it on reconnects it wherever
 # you are rather than only at a screen that happens to be watching.
 #
-# Trusted devices only: BlueZ writes those to /etc/lib/bluetooth/<adapter>/, NOT
-# to /etc/bluetooth/keys/ - that directory is a decoy created by the bluetoothd
-# init wrapper's `ln -snf ... /var/lib/bluetooth`, and bluetoothd never reads it
-# because its storage path is compiled in with --localstatedir=/etc.
+# Trusted devices with a key only: BlueZ writes those to
+# /etc/lib/bluetooth/<adapter>/, NOT to /etc/bluetooth/keys/ - that directory
+# is a decoy created by the bluetoothd init wrapper's `ln -snf ...
+# /var/lib/bluetooth`, and bluetoothd never reads it because its storage path
+# is compiled in with --localstatedir=/etc.
 #
 # Judge success by `info`, never by the return of `connect`: bluetoothctl reports
 # Failed for a2dp even when the link came up.
@@ -432,6 +433,11 @@ bt_reconnect() {
 		for d in /etc/lib/bluetooth/"$adapter"/*:*; do
 			[ -d "$d" ] || continue
 			grep -q '^Trusted=true' "$d/info" 2> /dev/null || continue
+			# And a key on the card, or it is not a bond: a memory-only pairing
+			# leaves Trusted behind with no key after a restart, and dialing
+			# that every pass connected it for four seconds at a time and
+			# published a sink each time. See bond_name in src/bt.c.
+			grep -q '^\[LinkKey\]' "$d/info" 2> /dev/null || continue
 			mac=$(basename "$d")
 			if bluetoothctl info "$mac" 2> /dev/null | grep -q 'Connected: yes'; then
 				connected=$mac

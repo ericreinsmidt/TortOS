@@ -334,7 +334,7 @@ static bool bond_name(const char *dir, const char *mac, char *out, size_t n)
 {
 	char path[600], line[256];
 	FILE *f;
-	bool trusted = false, named = false;
+	bool trusted = false, named = false, keyed = false;
 
 	snprintf(path, sizeof path, "%s/%s/info", dir, mac);
 	if (!(f = fopen(path, "r"))) return false;
@@ -349,11 +349,17 @@ static bool bond_name(const char *dir, const char *mac, char *out, size_t n)
 			named = true;
 		} else if (!strcmp(line, "Trusted=true")) {
 			trusted = true;
+		} else if (!strcmp(line, "[LinkKey]")) {
+			keyed = true;
 		}
 	}
 	fclose(f);
 	(void)named;
-	return trusted;
+	/* Trusted AND keyed. Trust alone is what a memory-only pairing leaves on
+	 * the card after bluetoothd restarts: a record that connects and drops
+	 * every 25 seconds, which this listed as paired and bt_reconnect kept
+	 * dialing. Without the key it is a device to pair, not one that is. */
+	return trusted && keyed;
 }
 
 int bt_bonded(bt_device *out, int max)

@@ -35,7 +35,7 @@
 typedef struct {
 	char mac[BT_MAC_MAX];
 	char name[BT_NAME_MAX];
-	bool bonded;         /* trusted, and will reconnect on its own at boot */
+	bool bonded;         /* trusted and keyed, so it reconnects on its own at boot */
 	bool connected;
 } bt_device;
 
