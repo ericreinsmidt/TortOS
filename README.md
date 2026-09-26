@@ -20,6 +20,8 @@
   <img src="res/readme/shelf.png" alt="The SNES shelf, with Chrono Trigger in focus" width="100%">
 </p>
 
+<div align="center">
+
 <table>
   <tr>
     <td align="center" colspan="2"><img src="res/readme/systems.png" width="240" alt="The consoles row"><br><sub>Scroll horizontally</sub></td>
@@ -36,6 +38,8 @@
     <td align="center" colspan="3"><img src="res/readme/nowplaying.png" width="240" alt="Muse's Now Playing"><br><sub>Now Playing, on SELECT from anywhere</sub></td>
   </tr>
 </table>
+
+</div>
 
 ## Why TortOS
 
