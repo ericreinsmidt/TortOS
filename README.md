@@ -52,11 +52,11 @@
 - **Three ways to browse:** a row of covers, a column, or a cube that turns both ways.
 - **Two looks:** Plain Jane cards, or Fancy Pants photos of each console.
 - **RetroAchievements:** sign in on the device. A game's achievements download once and then work offline, and anything you unlock offline is sent later.
-- **Box art the Brick finds itself,** by file name, or by checksum when the name doesn't match. Or add your own.
+- **Box art the Brick finds itself,** from libretro's collection with no account, or from ScreenScraper with a free one, which brings each game's year, genre and synopsis too. Or add your own.
 - **Over The Hare:** move games, saves and covers on and off the card from any browser on your Wi-Fi, behind a PIN.
 - **Autosave and resume,** plus six save slots for when you want a checkpoint.
 - **Turbo buttons:** X and Y press A and B for you, on the nine consoles whose controllers had two face buttons.
-- **Bluetooth headphones,** paired on the device. Plug in wired ones and they take over.
+- **Bluetooth headphones,** paired on the device, with the Brick's volume buttons reaching them and their own buttons playing and skipping in Muse. Plug in wired ones and they take over.
 - **Muse, a music player:** your albums on a shelf of their own covers. SELECT opens it from anywhere, even the in-game menu, and the music keeps playing when you close it. While it plays, the game is silent.
 - **Play Time:** how long you've played each game or console, today, this week, this month, this year or ever.
 - **Favorites and sorting:** Y favorites a game, and each console sorts by name, play time, last played or recently added.
@@ -187,11 +187,11 @@ Check the folder name against the table above, spelled exactly, and that the fil
 <details>
 <summary><b>A game has no box art.</b></summary>
 
-**MENU > Box Art** fetches every missing cover over Wi-Fi from [libretro's thumbnail collection](https://thumbnails.libretro.com). It looks a game up by its file name and, for zipped games, by checksum.
+**MENU > Box Art** fetches every missing cover over Wi-Fi. Sign in to a free [ScreenScraper](https://www.screenscraper.fr) account under **MENU > ScreenScraper** and it asks there first, and brings each game's year, genre and synopsis for its details screen. Without an account, or for a game ScreenScraper doesn't have, it uses [libretro's thumbnail collection](https://thumbnails.libretro.com), looking a game up by its file name and, for zipped games, by checksum.
 
-Some games aren't in libretro's collection, like fan translations and homebrew. Add your own: a PNG named exactly like the game file, in `Roms/<console>/.media/`. `Black Castle.gb` wants `Black Castle.png`. Around 512 pixels on the long side is plenty.
+Some games aren't in either collection, like fan translations and homebrew. Add your own: a PNG named exactly like the game file, in `Roms/<console>/.media/`. `Black Castle.gb` wants `Black Castle.png`. Around 512 pixels on the long side is plenty.
 
-Don't like a cover? Press X on the game and choose **Replace Box Art**. If libretro has nothing to replace it with, you keep the one you had.
+Don't like a cover? Press X on the game and choose **Replace Box Art**. It looks again, and if nothing turns up, you keep the one you had.
 
 </details>
 
@@ -205,7 +205,9 @@ Sign in to your RetroAchievements account under **MENU > Cheevos**. The first ti
 <details>
 <summary><b>Can I use Bluetooth headphones?</b></summary>
 
-Yes. Put them in pairing mode, open **MENU > Bluetooth**, press **Y** to search and **A** to pair. They reconnect by themselves from then on. Set the volume on the headphones: the Brick's volume buttons don't reach them. Wired headphones always win when they're plugged in.
+Yes. Put them in pairing mode, open **MENU > Bluetooth**, press **Y** to search and **A** to pair. They reconnect by themselves from then on. Wired headphones always win when they're plugged in.
+
+The Brick's volume buttons set the headphones' volume, and the headphones' own volume buttons move the Brick's. A few headphones ignore the Brick while they play; on those, use their own buttons. Play, pause and skip on the headphones control Muse.
 
 </details>
 

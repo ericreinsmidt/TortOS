@@ -148,7 +148,7 @@ than any one console:
 | **UI Direction** | `Horizontal`, `Vertical` or `Cubic` - see below |
 | **Box Art** | fetch what the whole library is missing |
 | **Cheevos** | the RetroAchievements account, or `sign in` |
-| **ScreenScraper** | the box-art account, `sign in`, or `not in this build` |
+| **ScreenScraper** | the account that brings covers with each game's year, genre and synopsis, `sign in`, or `not in this build` |
 | **Controls** | every button and what it does, a page per place |
 | **About TortOS** | version, address, battery, uptime |
 
@@ -252,7 +252,9 @@ follows it without relaunching anything. The bond survives a reboot.
 
 **Pairing is on the Bluetooth screen.** Put the headset in pairing mode, press
 **Y** to search, **A** to pair and connect, **X** to forget. The toggle at the
-top turns the radio on and off.
+top turns the radio on and off. Connecting a headset there disconnects any
+other, because choosing one is the point; a headset that reconnects by itself
+never pushes another off.
 
 Only devices that advertise a name are listed. A scan in an ordinary room finds
 a dozen BLE beacons and somebody's television, and BlueZ names everything it
@@ -268,21 +270,21 @@ and need `NoInputNoOutput`. With the default agent every attempt fails with an
 authentication error that looks like a broken key, a broken chip, or broken
 headphones, and is none of them.
 
-**A headset paired now carries game audio from the next launch**, not the
-session already running. alsa-lib reads its configuration once per process, so
-the PCM written when you pair arrives too late for an emulator that opened
-audio at boot. The screen says so when it connects.
+**A headset paired now carries sound straight away**, a running game's
+included.
 
-Two things behave differently on a Bluetooth sink and are not bugs:
+**The volume keys set the headset's own volume**, through its absolute volume
+control, so there is still one volume and not two in series. The headset's
+volume buttons move the Brick's level the other way. A few headsets, the Shokz
+OpenRun Pro among them, take the Brick's level when they connect and ignore
+changes while they play; on those, use the headset's buttons. In a game, a
+press on the headset changes the level without showing the bar.
 
-- **the volume keys do nothing, on purpose.** Volume lives on the headset. The
-  device's own control drives the codec, which a Bluetooth sink does not pass
-  through, so there is nothing for it to turn.
+**The headset's play, pause and skip buttons control Muse**, wherever you are,
+a game included.
 
-  Making it work would mean a second volume in series with the headset's own,
-  with neither aware of the other - and "the sound is quiet" would then have
-  two possible causes and no way to tell them apart from the screen. One
-  control, one thing to check. That is the decision, not a gap.
+One thing behaves differently on a Bluetooth sink and is not a bug:
+
 - **there is roughly 100-150 ms of latency**, from SBC, the radio and the
   headset's own buffer. That is what Bluetooth audio costs on any device and
   nothing here can tune it away.
@@ -413,29 +415,31 @@ than turning away with the face.
 Card art comes from, in order:
 
 1. box art in `Roms/<system>/.media/<name>.png`, whether you put it there or
-   the Box Art row fetched it. The fetch looks a game up by its file name, and
-   where no name matches, by its checksum: a zip records its ROM's CRC, which
-   names the game in No-Intro's list - the catalog libretro files its covers
-   under - so a file still carrying an older name finds its box anyway. On the
-   main card that found 29 more, every one the right game. Fetched art is
-   shrunk to the size it is drawn at - libretro ships covers at its own
-   resolution, which on some systems is two to three times the pixels this
-   screen can show, and every one of those pixels is decode time on every
-   scroll past. Art you put there yourself is never touched, whatever size it
-   is - only what the fetch brings in;
+   the Box Art row fetched it. With a ScreenScraper account the fetch asks
+   ScreenScraper first, and brings the game's year, genre and synopsis with the
+   cover. Without one, or for a game ScreenScraper does not have, it asks
+   libretro: by file name, and where no name matches, by checksum: a zip
+   records its ROM's CRC, which names the game in No-Intro's list - the catalog
+   libretro files its covers under - so a file still carrying an older name
+   finds its box anyway. On the main card that found 29 more, every one the
+   right game. Fetched art is shrunk to the size it is drawn at - libretro
+   ships covers at its own resolution, which on some systems is two to three
+   times the pixels this screen can show, and every one of those pixels is
+   decode time on every scroll past. Art you put there yourself is never
+   touched, whatever size it is - only what the fetch brings in;
 2. **the autosave preview** - the frame you were looking at when you stopped,
    which for a game in progress is a better card than any box;
 3. a generated slab: the system's color, the title, and the title's first
    letter enormous and barely there behind it.
 
-**Adding a cover by hand.** Some games have no cover anywhere libretro looks -
+**Adding a cover by hand.** Some games have no cover anywhere the fetch looks -
 fan translations, homebrew, a dump no catalog lists. Put one in yourself over
-Over The Hare: open `Roms/<system>/.media/` in its file browser and upload a PNG
-named exactly like the ROM file, with `.png` in place of its extension -
+Over The Hare: open `Roms/<system>/.media/` in its file browser and upload a
+PNG named exactly like the ROM file, with `.png` in place of its extension -
 `Black Castle.gb` wants `Black Castle.png`. Box Art never overwrites a cover
-that is already there, and Replace only swaps yours out when libretro has a
-cover to put in its place. Keep it near 512 pixels on the long side: a cover
-you add is drawn as it is and never resized, so a 2000-pixel scan is decoded at
-full size whenever its card comes into view.
+that is already there, and Replace only swaps yours out when ScreenScraper or
+libretro has a cover to put in its place. Keep it near 512 pixels on the long
+side: a cover you add is drawn as it is and never resized, so a 2000-pixel scan
+is decoded at full size whenever its card comes into view.
 
 Pressing A on a game with an autosave does not start it, it continues it.
