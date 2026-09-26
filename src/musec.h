@@ -80,7 +80,8 @@ void musec_sink_again(void);
 /* Whether the last musec_sink has been answered, or given up on - so the
  * launcher can hand the headset to Diatom only once Muse has let go. */
 bool musec_sink_settled(void);
-/* What the daemon last said it is on, or "" before it has. */
+/* What the daemon last said it is on, or "" before it has said, or while a
+ * SINK is waiting for its answer. */
 const char *musec_sink_now(void);
 /* Called just before a PLAY or RESUME is sent, so the launcher can move the
  * headset to Muse first. */

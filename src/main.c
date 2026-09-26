@@ -1584,6 +1584,19 @@ static aout_dest aout_actual(const aout_state *s)
 	return s->wired ? AOUT_WIRED : AOUT_SPK;
 }
 
+/* SETAUDIO, after which Diatom's last report no longer counts until it has
+ * answered this one. Reports are only read while a game runs, so at the shelf
+ * the one held was from the last game: switching to Speaker there, or with
+ * Muse on a headset, the Audio Output row went on saying "bluetooth" while the
+ * sound came out of the speaker - #45, 2026-09-26. Until the answer, the row
+ * shows what was asked; after it, what happened, fallback included. */
+static bool aout_send(const char *dev)
+{
+	if (!plat_resident_line("SETAUDIO\tdevice=%s", dev)) return false;
+	plat_resident_audio_asked();
+	return true;
+}
+
 /* Send only on a change. SETAUDIO reopens an audio device, which is cheap but
  * not free, and doing it every tick would be a reopen per tick. */
 static void aout_tell_diatom(const aout_state *s, const char *dev, bool force,
@@ -1612,7 +1625,7 @@ static void aout_tell_diatom(const aout_state *s, const char *dev, bool force,
 	 * before the first game is every time. Recording it as sent anyway meant
 	 * the next call compared equal and never retried, so the route the log
 	 * announced was one Diatom had never been told about. */
-	if (!plat_resident_line("SETAUDIO\tdevice=%s", dev)) return;
+	if (!aout_send(dev)) return;
 
 	snprintf(g_aout_sent, sizeof g_aout_sent, "%s", dev);
 	g_aout_ever = true;
@@ -1772,7 +1785,7 @@ static void aout_before_launch(void)
 	if (!g_aout_ever || !g_aout_sent[0]) return;
 	if (aout_fell_back())
 		fprintf(stderr, "audio: trying %s again before the launch\n", g_aout_sent);
-	plat_resident_line("SETAUDIO\tdevice=%s", g_aout_sent);
+	aout_send(g_aout_sent);
 }
 
 /* Twice per game at most: for a headset whose A2DP stream was not up yet when
@@ -1796,7 +1809,7 @@ static void aout_retry_in_game(void)
 
 	if (!fell || g_aout_retries >= 2) return;
 	if ((int)(plat_now_ms() - g_aout_retry_at) < 0) return;
-	if (!plat_resident_line("SETAUDIO\tdevice=%s", g_aout_sent)) return;
+	if (!aout_send(g_aout_sent)) return;
 	g_aout_retries++;
 	g_aout_retry_at = plat_now_ms() + 25000;
 	fprintf(stderr, "audio: %s fell back; trying again (%d of 2)\n",
@@ -4412,7 +4425,12 @@ static menu_exit menu_run_body(app *a, const menu_style *st,
 		plat_input_poll(&a->in);
 		/* Where the sound goes, followed in the menus too: a headset connected
 		 * from the Bluetooth screen, or a cable plugged in, only took the sound
-		 * once the menus were left - seen 2026-09-26. It sends only on a change. */
+		 * once the menus were left - seen 2026-09-26. It sends only on a change.
+		 * And Muse is read here as well: its answers - where it now is, and the
+		 * end of a track, which is when the next is sent - waited for the menus
+		 * to be left, so the row read stale and an album stopped at the end of a
+		 * song while a menu was open. #45. */
+		musec_poll();
 		aout_apply(false);
 		if (a->in.quit_requested) { a->running = false; return MENU_LEFT_GONE; }
 		if (a->in.pressed[IN_POWER] || idle_due(a)) {
@@ -5543,7 +5561,8 @@ static void bt_screen(app *a)
 		                      BT_VISIBLE);
 
 		plat_input_poll(&a->in);
-		aout_apply(false);                  /* see menu_run_body */
+		musec_poll();                       /* see menu_run_body */
+		aout_apply(false);
 		if (a->in.quit_requested) { a->running = false; return; }
 		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); return; }
 		if (menu_leaving(a)) done = true;

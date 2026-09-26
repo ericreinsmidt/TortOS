@@ -129,6 +129,9 @@ void plat_resident_quiet(bool on);
  * where it was asked to put it - a sink that will not open, or one that died,
  * makes the port fall back and report the fallback. False until it has said. */
 bool plat_resident_audio(char *out, size_t cap);
+/* Forget that report: a SETAUDIO has just gone, and until Diatom answers it -
+ * its audio_set always does - what it said last describes the moment before. */
+void plat_resident_audio_asked(void);
 /* The volume Diatom last reported while a game runs - an index on its own
  * ladder, with the ladder's length in *count - or -1 when it has said nothing
  * since the game started. It is applied to this side only when the game ends

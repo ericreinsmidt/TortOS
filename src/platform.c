@@ -995,6 +995,8 @@ int plat_resident_volume(int *count)
 	return d_pend_vol_n > 1 ? d_pend_vol : -1;
 }
 
+void plat_resident_audio_asked(void) { d_audio_known = false; }
+
 bool plat_resident_audio(char *out, size_t cap)
 {
 	if (!d_audio_known) return false;

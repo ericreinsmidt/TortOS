@@ -372,7 +372,9 @@ bool musec_sink_settled(void)
 
 const char *musec_sink_now(void)
 {
-	return g_fd >= 0 && g_sink_said[0] ? g_sink_said : "";
+	/* Not while a SINK is unanswered: until then it is the device before -
+	 * the same stale-report trouble as Diatom's, see aout_send in main.c. */
+	return g_fd >= 0 && g_sink_said[0] && !g_sink_waiting ? g_sink_said : "";
 }
 
 void musec_next(void)
