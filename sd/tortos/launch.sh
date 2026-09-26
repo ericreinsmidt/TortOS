@@ -453,6 +453,8 @@ start_resident() {
 bt_reconnect() {
 	adapter=$(hciconfig hci0 2> /dev/null | sed -n 's/.*BD Address: \([0-9A-F:]*\).*/\1/p')
 	[ -n "$adapter" ] || return 0
+	latest=
+	prev_links=
 	while :; do
 		# Back if it died. A restarted player is attached to the sessions that
 		# exist, but a headset already connected reports its volume again only
@@ -476,12 +478,30 @@ bt_reconnect() {
 		# about five seconds to give up, so publishing the OpenFit waited six
 		# or seven on the OpenRun - measured 2026-09-25 - and the dead one was
 		# paged every pass for as long as the live one was in use.
+		#
+		# And with two connected, the one connected LAST, as a phone does. Until
+		# 2026-09-26 it was the first in address order, so with the OpenRun on
+		# the OpenFit could be connected from the screen and the sound stayed on
+		# the OpenRun. The order is kept here, pass to pass: a bond connected now
+		# and not last pass, or on a different link handle - a reconnect - is
+		# the latest. Not the handle's value itself, which is reused (the OpenFit
+		# came back on 128 once the OpenRun's 128 was free). A connect from the
+		# Bluetooth screen asks for a pass at once, so the headset chosen there
+		# takes the sound within a second.
+		cons=$(hcitool con 2> /dev/null)
+		links=
 		for mac in $bonds; do
-			if bluetoothctl info "$mac" 2> /dev/null | grep -q 'Connected: yes'; then
-				connected=$mac
-				break
-			fi
+			bluetoothctl info "$mac" 2> /dev/null | grep -q 'Connected: yes' || continue
+			h=$(echo "$cons" | sed -n "s/.*ACL $mac handle \([0-9]*\).*/\1/p" | head -1)
+			links="$links $mac/$h"
+			case " $prev_links " in *" $mac/$h "*) ;; *) latest=$mac ;; esac
 		done
+		prev_links=$links
+		# The latest while it stays connected; when it goes, one that has not.
+		case "$links " in
+		*" $latest/"*) connected=$latest ;;
+		*) set -- $links; connected=${1%%/*} ;;
+		esac
 		# Nothing connected: say so NOW, before dialing. Dialing a headset that
 		# is off takes about five seconds each, and one switched back on while
 		# that went on was republished under a name that had never been taken

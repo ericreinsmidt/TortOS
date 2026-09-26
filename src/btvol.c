@@ -44,30 +44,33 @@ static bool bind(void)
 	return true;
 }
 
-bool btvol_set(int level)
+bool btvol_set(const char *sink, int level)
 {
-	static const char tail[] = " - A2DP";
+	char card[48];
 	void *mixer = NULL, *e;
 	bool done = false;
+	int i;
 
+	/* bt_C0_86_B3_A7_48_7F back to C0:86:B3:A7:48:7F. */
+	if (!sink || strncmp(sink, "bt_", 3) || strlen(sink) != 3 + 17) return false;
+	snprintf(card, sizeof card, "bluealsa:DEV=%s", sink + 3);
+	for (i = 13 + 2; card[i]; i += 3) card[i] = ':';
 	if (level < 0) level = 0;
 	if (level > 127) level = 127;
 	if (!bind() || m_open(&mixer, 0) < 0) return false;
-	if (m_attach(mixer, "bluealsa") < 0 || m_register(mixer, NULL, NULL) < 0 ||
+	/* One device's controls, by its address. The whole `bluealsa` card lists
+	 * every connected headset's, and with two connected the first one's was
+	 * set - not necessarily the one being heard. Scoped, the control is named
+	 * plainly `A2DP`, and a device that is not connected is refused. */
+	if (m_attach(mixer, card) < 0 || m_register(mixer, NULL, NULL) < 0 ||
 	    m_load(mixer) < 0) {
 		m_close(mixer);
 		return false;
 	}
-	/* The A2DP control of whichever headset is connected. bluealsa names it
-	 * after the device, so it is found by its tail rather than by a name
-	 * compiled in; the SCO and battery controls beside it end differently. */
 	for (e = m_first(mixer); e; e = m_next(e)) {
 		const char *name = m_name(e);
-		size_t n = name ? strlen(name) : 0;
 
-		if (n < sizeof tail - 1 || strcmp(name + n - (sizeof tail - 1), tail))
-			continue;
-		if (!m_has_volume(e)) continue;
+		if (!name || strcmp(name, "A2DP") || !m_has_volume(e)) continue;
 		done = m_set_all(e, level) >= 0;
 		break;
 	}
@@ -77,6 +80,6 @@ bool btvol_set(int level)
 
 #else   /* not __linux__ */
 
-bool btvol_set(int level) { (void)level; return false; }
+bool btvol_set(const char *sink, int level) { (void)sink; (void)level; return false; }
 
 #endif

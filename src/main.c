@@ -1646,21 +1646,26 @@ static void aout_tell_diatom(const aout_state *s, const char *dev, bool force,
 static void bt_volume_follow(const char *out, bool fresh)
 {
 	static int      sent = -1;
+	static char     sent_to[64];     /* the headset it went to */
 	static unsigned retry_at;
 	int count = 0, level = plat_resident_volume(&count), v;
 	unsigned now = plat_now_ms();
 
-	if (!out[0]) { sent = -1; return; }
+	if (!out[0]) { sent = -1; sent_to[0] = '\0'; return; }
 	if (level < 0) { level = plat_volume_get(); count = PLAT_VOL_MAX + 1; }
 	if (level < 0 || count < 2) return;
 	v = (level * 127 + (count - 1) / 2) / (count - 1);
-	if (!fresh && v == sent) return;
+	/* And again for a different headset at the same level: with two connected
+	 * the sound can move between them, and a link handle is no help there - it
+	 * is reused (#44). */
+	if (!fresh && v == sent && !strcmp(out, sent_to)) return;
 	if ((int)(now - retry_at) < 0) return;
-	if (!btvol_set(v)) { retry_at = now + 2000; return; }
+	if (!btvol_set(out, v)) { retry_at = now + 2000; return; }
 	sent = v;
+	snprintf(sent_to, sizeof sent_to, "%s", out);
 	/* With its cost, because it is a mixer open on the loop that draws. */
-	fprintf(stderr, "audio: headset volume %d/127 (level %d of %d) in %u ms\n",
-	        v, level, count - 1, plat_now_ms() - now);
+	fprintf(stderr, "audio: %s volume %d/127 (level %d of %d) in %u ms\n",
+	        out, v, level, count - 1, plat_now_ms() - now);
 }
 
 /* Where the system's sound goes, for both players.
@@ -4405,6 +4410,10 @@ static menu_exit menu_run_body(app *a, const menu_style *st,
 		if (!rows[sel].live) sel = menu_step_sel(rows, n, sel, +1);
 
 		plat_input_poll(&a->in);
+		/* Where the sound goes, followed in the menus too: a headset connected
+		 * from the Bluetooth screen, or a cable plugged in, only took the sound
+		 * once the menus were left - seen 2026-09-26. It sends only on a change. */
+		aout_apply(false);
 		if (a->in.quit_requested) { a->running = false; return MENU_LEFT_GONE; }
 		if (a->in.pressed[IN_POWER] || idle_due(a)) {
 			if (!st->on_power) { power_off(a); return MENU_LEFT_GONE; }
@@ -5510,6 +5519,7 @@ static void bt_screen(app *a)
 		                      BT_VISIBLE);
 
 		plat_input_poll(&a->in);
+		aout_apply(false);                  /* see menu_run_body */
 		if (a->in.quit_requested) { a->running = false; return; }
 		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); return; }
 		if (menu_leaving(a)) done = true;
