@@ -110,6 +110,9 @@ bool bt_power(bool on);
 bool bt_connected(const char *mac);
 
 bool bt_disconnect(const char *mac);
+/* Disconnect every connected bonded device but `keep`, and return how many.
+ * For the Bluetooth screen, where connecting a headset means choosing it. */
+int  bt_disconnect_others(const char *keep);
 bool bt_forget(const char *mac);
 
 /* Rewrite .asoundrc from the current bonds, so a newly paired headset has a

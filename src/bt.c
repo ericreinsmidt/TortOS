@@ -567,6 +567,19 @@ bool bt_disconnect(const char *mac)
 	return !info_says(mac, "Connected: yes");
 }
 
+int bt_disconnect_others(const char *keep)
+{
+	bt_device bonded[BT_MAX];
+	int n = bt_bonded(bonded, BT_MAX), i, gone = 0;
+
+	bt_mark_connected_now(bonded, n);
+	for (i = 0; i < n; i++)
+		if (bonded[i].connected && strcasecmp(bonded[i].mac, keep) &&
+		    bt_disconnect(bonded[i].mac))
+			gone++;
+	return gone;
+}
+
 /* BlueZ keeps a cache entry per device beside the bonds, named for the address
  * and holding the friendly name and the A2DP endpoint capabilities. `remove`
  * deletes the bond and leaves this - observed on 5.54; whether that is
@@ -654,6 +667,7 @@ bool bt_connect(const char *m, char *e, size_t n) { (void)m; if (e && n) e[0] = 
 int  bt_mark_connected_now(bt_device *l, int n) { (void)l; (void)n; return 0; }
 bool bt_power(bool on) { (void)on; return false; }
 bool bt_disconnect(const char *m) { (void)m; return false; }
+int  bt_disconnect_others(const char *k) { (void)k; return 0; }
 bool bt_forget(const char *m) { (void)m; return false; }
 bool bt_asoundrc(const char *t, const char *d) { (void)t; (void)d; return false; }
 

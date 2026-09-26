@@ -357,6 +357,17 @@ bt_player() {
 	"$TORTOS_DIR/btplayer" >> "$LOGS_PATH/tortos.log" 2>&1 &
 }
 
+# Whether bluealsa has an A2DP stream for this address yet. The link comes up
+# first and the stream a moment after, and a headset published in between
+# is one that nothing can open: Muse got `No such device` and fell back to
+# the speaker, and stayed there until something happened to re-send the
+# route - seen 2026-09-26, switching to the OpenFit. -l lists each device's
+# PCMs under its own line, so the A2DP line has to be under THIS one's.
+bt_a2dp_ready() {
+	bluealsa-aplay -l 2> /dev/null |
+		awk -v m="$1" '/^hci/ { on = index($0, m) > 0 } on && /A2DP/ { f = 1 } END { exit !f }'
+}
+
 bt_on() {
 	# Power cycle rather than unblock. See above.
 	echo 0 > /sys/class/rfkill/rfkill0/state 2> /dev/null
@@ -455,6 +466,7 @@ bt_reconnect() {
 	[ -n "$adapter" ] || return 0
 	latest=
 	prev_links=
+	soon=0
 	while :; do
 		# Back if it died. A restarted player is attached to the sessions that
 		# exist, but a headset already connected reports its volume again only
@@ -533,7 +545,14 @@ bt_reconnect() {
 		# already knows the answer, so it writes it and the launcher stats a
 		# path. The ALSA device string is built here for the same reason: the
 		# MAC is here and Diatom must never learn what kind of thing it names.
-		if [ -n "$connected" ]; then
+		if [ -n "$connected" ] && ! bt_a2dp_ready "$connected"; then
+			# Connected, its stream not there yet: leave what is published -
+			# during a switch that is the old headset, still playing - and
+			# look again in a second rather than twenty. Fifteen times at
+			# most, for a bond that never gets an audio stream at all.
+			soon=$((soon + 1))
+		elif [ -n "$connected" ]; then
+			soon=0
 			# Publish the PCM NAME, not a bluealsa device string.
 			#
 			# Measured 2026-09-05 with diatom/tools/btaudio.c - the same SDL,
@@ -563,6 +582,7 @@ bt_reconnect() {
 			printf '%s\n%s\n' "$(bt_pcm_name "$connected")" "$link" \
 				> /tmp/tortos_btsink.tmp && mv /tmp/tortos_btsink.tmp /tmp/tortos_btsink
 		else
+			soon=0
 			rm -f /tmp/tortos_btsink
 		fi
 		# Twenty seconds, or less when the Bluetooth screen asks: it touches
@@ -573,7 +593,9 @@ bt_reconnect() {
 		# signal, because the launcher has no pid for this loop and a signal
 		# to the wrong shell would be launch.sh itself.
 		n=0
-		while [ $n -lt 20 ] && [ ! -e /tmp/tortos_btpass ]; do
+		wait=20
+		[ $soon -gt 0 ] && [ $soon -le 15 ] && wait=1
+		while [ $n -lt $wait ] && [ ! -e /tmp/tortos_btpass ]; do
 			sleep 1
 			n=$((n + 1))
 		done

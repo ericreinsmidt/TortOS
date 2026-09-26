@@ -5484,6 +5484,30 @@ void info_preview(app *a, bool net)
 #define BT_VISIBLE 7
 #define BT_SCAN_S  20
 
+/* After connecting `mac` from the Bluetooth screen: wait - five seconds at
+ * most - until launch.sh has published it and the sound has reached it, so
+ * the headset about to be bumped is not pulled out from under the song. Doing
+ * that first sent every switch through the speaker: the old headset went,
+ * Muse's write failed, it fell back, and only then was it moved - seen
+ * 2026-09-26. Routing keeps running while it waits, which is what moves it. */
+static void bt_await_route(const char *mac)
+{
+	char want[32];
+	unsigned until = plat_now_ms() + 5000;
+	int i;
+
+	snprintf(want, sizeof want, "bt_%s", mac);
+	for (i = 3; want[i]; i++) if (want[i] == ':') want[i] = '_';
+	while ((int)(until - plat_now_ms()) > 0) {
+		musec_poll();
+		aout_apply(false);
+		if (!strcasecmp(aout_bt_sink(), want) &&
+		    (!musec_heard() || !strcasecmp(musec_sink_now(), want)))
+			return;
+		SDL_Delay(50);
+	}
+}
+
 static void bt_screen(app *a)
 {
 	bt_ui u = { 0 };
@@ -5607,9 +5631,25 @@ static void bt_screen(app *a)
 					if (ok) {
 						wait_panel(a, "Bluetooth", "Connecting...");
 						if (bt_connect(d->mac, err, sizeof err)) {
+							/* Connecting one here is choosing it, so any other
+							 * goes back to paired: "connected" on this screen then
+							 * means "where the sound is", and switching back is one
+							 * press rather than a disconnect and a connect. Eric's
+							 * call, 2026-09-26. Only from here: a headset that
+							 * connects by itself does not bump another, or two that
+							 * both do could knock each other off forever. Neither
+							 * headset reconnected by itself within a minute of the
+							 * Brick disconnecting it, so paired stays paired. */
+							int bumped;
+
+							bt_await_route(d->mac);
+							bumped = bt_disconnect_others(d->mac);
+
 							d->connected = true;
-							snprintf(u.note, sizeof u.note,
-							         "Connected"); note_until = now + 4000;
+							snprintf(u.note, sizeof u.note, "%s",
+							         bumped ? "Connected. The other headset is paired now"
+							                : "Connected");
+							note_until = now + 4000;
 						} else {
 							snprintf(u.note, sizeof u.note, "%s", err); note_until = now + 4000;
 						}
