@@ -93,6 +93,26 @@ build/tortos.elf: $(wildcard src/*.c) $(wildcard src/*.h) tools/setbright.c mk/c
 	done
 	@[ tools/setbright.c -nt build/setbright ] && { \
 		echo "STALE: build/setbright is older than tools/setbright.c" >&2; exit 1; } || true
+	@# And the other binaries this builds, which went unchecked until
+	@# 2026-09-26: build/btplayer came out 26 minutes older than its source,
+	@# silently, and a deploy's hash check could not see it - it compares the
+	@# stale build with the copy made from it. Caught only by grepping the
+	@# binary for a string from the change.
+	@for src in $(wildcard src/muse/*.c) $(wildcard src/muse/*.h); do \
+		if [ "$$src" -nt build/muse ]; then \
+			echo "STALE: build/muse is older than $$src" >&2; \
+			echo "  the container did not rebuild. rm build/muse and try again." >&2; \
+			exit 1; \
+		fi; \
+	done
+	@for pair in musectl:tools/musectl.c btplayer:tools/btplayer.c; do \
+		bin=build/$${pair%%:*}; src=$${pair#*:}; \
+		if [ "$$src" -nt "$$bin" ]; then \
+			echo "STALE: $$bin is older than $$src" >&2; \
+			echo "  the container did not rebuild. rm $$bin and try again." >&2; \
+			exit 1; \
+		fi; \
+	done
 
 # The check binaries are rebuilt every time, deliberately.
 #
