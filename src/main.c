@@ -1656,15 +1656,68 @@ static void aout_tell_diatom(const aout_state *s, const char *dev, bool force,
  * the Brick's level. One way only: a headset's own buttons move the headset
  * and not this level. A send that fails - no control yet, right after a
  * connect - waits two seconds before the next, because each is a mixer open. */
+static bool g_game_ticking;     /* inside on_game_tick: a game is running */
+
 static void bt_volume_follow(const char *out, bool fresh)
 {
 	static int      sent = -1;
 	static char     sent_to[64];     /* the headset it went to */
-	static unsigned retry_at;
+	static unsigned retry_at, looked, sent_at;
+	static long     seen;            /* the stamp of the last report read */
+	static bool     primed;
 	int count = 0, level = plat_resident_volume(&count), v;
 	unsigned now = plat_now_ms();
+	struct stat st;
 
 	if (!out[0]) { sent = -1; sent_to[0] = '\0'; return; }
+
+	/* The other way first: the headset's OWN buttons, which btplayer passes on
+	 * as `<PCM name> <0..127> <stamp>` (tools/btplayer.c). Adopted as the Brick's
+	 * level - through Diatom in a game, which owns the level while it runs -
+	 * and recorded as sent, so it is not echoed back to the headset. A new
+	 * stamp is a new report - not a new inode, which tmpfs takes from a pool
+	 * and can hand out again, and presses went missing until the next one.
+	 * The report found at start is only noted, or a value left from before a
+	 * restart would move the level. A tenth of a second between looks.
+	 *
+	 * NOT within a second of this side sending that headset a volume: it
+	 * reports what it was sent, too - the OpenRun answered every set with its
+	 * own announcement, measured 2026-09-26 - and sometimes not quite the same
+	 * number (sent 32, back came 28), so adopting the echo stepped the level
+	 * back and forth. A real press that close to a key press costs one step. */
+	if (now - looked >= 100) {
+		FILE *f = stat("/tmp/tortos_btvol", &st) == 0 ? fopen("/tmp/tortos_btvol", "r") : NULL;
+		char who[64];
+		int  hv, want;
+		long stamp;
+
+		looked = now;
+		if (f && fscanf(f, "%63s %d %ld", who, &hv, &stamp) == 3 && stamp != seen) {
+			bool fresh_report = primed;
+
+			seen = stamp;
+			primed = true;
+			if (fresh_report && !strcmp(who, out) && hv >= 0 && hv <= 127) {
+				bool echo = !strcmp(who, sent_to) && now - sent_at < 1000;
+				int  have = g_game_ticking && level >= 0 ? level : plat_volume_get();
+
+				want = (hv * PLAT_VOL_MAX + 63) / 127;
+				if (!echo && want != have) {
+					if (g_game_ticking)
+						plat_resident_line("SETLEVEL\tkind=volume\tindex=%d\tcount=%d",
+						                   want, PLAT_VOL_MAX + 1);
+					else
+						plat_volume_nudge(want - have);
+					sent = (want * 127 + PLAT_VOL_MAX / 2) / PLAT_VOL_MAX;
+					snprintf(sent_to, sizeof sent_to, "%s", out);
+					fprintf(stderr, "audio: %s's own buttons: %d/127, level %d of %d\n",
+					        out, hv, want, PLAT_VOL_MAX);
+				}
+			}
+		}
+		if (f) fclose(f);
+		if (!primed) primed = true;               /* no file yet is a start too */
+	}
 	if (level < 0) { level = plat_volume_get(); count = PLAT_VOL_MAX + 1; }
 	if (level < 0 || count < 2) return;
 	v = (level * 127 + (count - 1) / 2) / (count - 1);
@@ -1675,6 +1728,7 @@ static void bt_volume_follow(const char *out, bool fresh)
 	if ((int)(now - retry_at) < 0) return;
 	if (!btvol_set(out, v)) { retry_at = now + 2000; return; }
 	sent = v;
+	sent_at = now;
 	snprintf(sent_to, sizeof sent_to, "%s", out);
 	/* With its cost, because it is a mixer open on the loop that draws. */
 	fprintf(stderr, "audio: %s volume %d/127 (level %d of %d) in %u ms\n",
@@ -1856,7 +1910,9 @@ static void on_game_tick(void)
 	/* A cable plugged in mid-game, or a headset that connected or walked out
 	 * of range, moves the sound without leaving the game. That is the whole
 	 * point of ADR-0029 making this a state rather than a launch argument. */
+	g_game_ticking = true;             /* see bt_volume_follow */
 	aout_apply(false);
+	g_game_ticking = false;
 	aout_retry_in_game();
 
 	if (g_idle_secs > 0) {

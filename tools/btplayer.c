@@ -34,6 +34,17 @@
  * looked at two seconds after it appears, and one without a Volume gets
  * exactly that - once, so a headset that cannot do absolute volume is tried
  * once and not forever.
+ *
+ * And it passes a headset's OWN volume changes on. BlueZ announces the
+ * transport's Volume (PropertiesChanged) whenever the headset reports one:
+ * the OpenRun announced every press of its buttons, measured 2026-09-26 -
+ * and every value the Brick sent it as well, which the launcher tells apart
+ * by time (bt_volume_follow). Written to /tmp/tortos_btvol as
+ * `<PCM name> <0..127> <stamp>`, the stamp being this clock's milliseconds,
+ * which only go up - so a new report never reads as the last one, as a
+ * reused inode number could make it. Nothing for four seconds after a
+ * transport appears or is mended: that is the headset reporting where it
+ * already was, and at connect the Brick's level is the one that wins.
  */
 #include <dlfcn.h>
 #include <stdbool.h>
@@ -55,6 +66,7 @@ typedef struct {
 #define TYPE_ARRAY      ((int)'a')
 #define TYPE_STRING     ((int)'s')
 #define TYPE_DICT_ENTRY ((int)'e')
+#define TYPE_UINT16     ((int)'q')
 #define NOT_HANDLED     1
 #define PLAYER_PATH     "/org/tortos/player"
 
@@ -78,6 +90,7 @@ static int   (*iter_type)(dbus_iter *);
 static void  (*iter_recurse)(dbus_iter *, dbus_iter *);
 static int   (*iter_next)(dbus_iter *);
 static void  (*iter_get)(dbus_iter *, void *);
+static const char *(*message_path)(void *);
 
 static int on_message(void *conn, void *msg, void *data)
 {
@@ -111,6 +124,7 @@ static bool bind_libdbus(void)
 	SYM(iter_recurse,     "dbus_message_iter_recurse");
 	SYM(iter_next,        "dbus_message_iter_next");
 	SYM(iter_get,         "dbus_message_iter_get_basic");
+	SYM(message_path,     "dbus_message_get_path");
 #undef SYM
 	return true;
 }
@@ -228,6 +242,47 @@ static void mend(void *conn, const char *transport)
 #define WATCHED 4
 static struct { char path[160]; long due; int stage; } g_watch[WATCHED];
 
+static long g_quiet_until;   /* no headset volumes passed on before this */
+
+/* /org/bluez/hci0/dev_A8_F5_E1_4A_93_71/sep1/fd8 -> bt_A8_F5_E1_4A_93_71, the
+ * name launch.sh publishes (bt_pcm_name in bt-alsa.sh). */
+static void publish_volume(const char *transport, unsigned volume)
+{
+	const char *dev = strstr(transport, "/dev_");
+	FILE *f;
+
+	if (!dev || strlen(dev) < 5 + 17) return;
+	if (!(f = fopen("/tmp/tortos_btvol.tmp", "w"))) return;
+	fprintf(f, "bt_%.17s %u %ld\n", dev + 5, volume, now_ms());
+	fclose(f);
+	rename("/tmp/tortos_btvol.tmp", "/tmp/tortos_btvol");
+}
+
+/* PropertiesChanged(s interface, a{sv} changed, as invalidated), on a
+ * transport: its Volume, if that is what changed. */
+static void on_properties(void *msg)
+{
+	dbus_iter args, dict, entry, var;
+	const char *iface, *key, *path = message_path(msg);
+
+	if (!path || !iter_init(msg, &args) || iter_type(&args) != TYPE_STRING) return;
+	iter_get(&args, &iface);
+	if (strcmp(iface, "org.bluez.MediaTransport1")) return;
+	if (!iter_next(&args) || iter_type(&args) != TYPE_ARRAY) return;
+	for (iter_recurse(&args, &dict); iter_type(&dict) == TYPE_DICT_ENTRY; iter_next(&dict)) {
+		unsigned short volume;
+
+		iter_recurse(&dict, &entry);
+		iter_get(&entry, &key);
+		if (strcmp(key, "Volume") || !iter_next(&entry)) continue;
+		iter_recurse(&entry, &var);
+		if (iter_type(&var) != TYPE_UINT16) continue;
+		iter_get(&var, &volume);
+		if (now_ms() < g_quiet_until) continue;
+		publish_volume(path, volume);
+	}
+}
+
 static int on_signal(void *conn, void *msg, void *data)
 {
 	dbus_iter args, dict, entry;
@@ -235,6 +290,10 @@ static int on_signal(void *conn, void *msg, void *data)
 	int i;
 
 	(void)conn; (void)data;
+	if (is_signal(msg, "org.freedesktop.DBus.Properties", "PropertiesChanged")) {
+		on_properties(msg);
+		return NOT_HANDLED;
+	}
 	if (!is_signal(msg, "org.freedesktop.DBus.ObjectManager", "InterfacesAdded"))
 		return NOT_HANDLED;
 	if (!iter_init(msg, &args) || iter_type(&args) != TYPE_OBJECT) return NOT_HANDLED;
@@ -249,6 +308,7 @@ static int on_signal(void *conn, void *msg, void *data)
 		snprintf(g_watch[i].path, sizeof g_watch[i].path, "%s", path);
 		g_watch[i].due = now_ms() + 2000;
 		g_watch[i].stage = 0;
+		g_quiet_until = now_ms() + 4000;
 		break;
 	}
 	return NOT_HANDLED;
@@ -268,6 +328,7 @@ static void look(void *conn)
 		} else if (g_watch[i].stage == 0) {
 			fprintf(stderr, "btplayer: %s came up without a volume; asking again\n", p);
 			mend(conn, p);
+			g_quiet_until = now_ms() + 4000;
 			g_watch[i].stage = 1;
 			g_watch[i].due = now_ms() + 3000;
 		} else {
@@ -308,6 +369,9 @@ int main(void)
 	add_match(conn, "type='signal',sender='org.bluez',"
 	          "interface='org.freedesktop.DBus.ObjectManager',member='InterfacesAdded'", &err);
 	add_filter(conn, on_signal, NULL, NULL);
+	add_match(conn, "type='signal',sender='org.bluez',"
+	          "interface='org.freedesktop.DBus.Properties',member='PropertiesChanged',"
+	          "arg0='org.bluez.MediaTransport1'", &err);
 	while (dispatch(conn, 250)) look(conn);
 	return 0;
 }
