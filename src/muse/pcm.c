@@ -43,6 +43,7 @@ static int        g_last;        /* the last open's error, 0 when it worked */
 static char     g_trail[TRAIL][128];
 static unsigned g_trail_n;
 static volatile long g_write_since;   /* when the write in progress began, or 0 */
+static long     g_written;           /* frames written since the last open or prepare */
 
 void pcm_note(const char *fmt, ...)
 {
@@ -172,6 +173,7 @@ bool pcm_open(const char *device)
 		return false;
 	}
 	pcm_note("open %s: ok", device);
+	g_written = 0;
 	return true;
 }
 
@@ -214,6 +216,7 @@ bool pcm_write(const int16_t *frames, int n)
 		}
 		frames += w * 2;
 		n -= (int)w;
+		g_written += w;
 	}
 	return g_pcm != NULL;
 }
@@ -221,9 +224,22 @@ bool pcm_write(const int16_t *frames, int n)
 void pcm_drop(void)
 {
 	if (!g_pcm) return;
+	/* Nothing to drop on a device that has not been written to since it was
+	 * opened or last prepared - and on a bluealsa headset a drop there is
+	 * what stalled Muse (#42). The drop makes bluealsa release the A2DP
+	 * stream it acquired a millisecond earlier for the open, and the writes
+	 * that follow wait for a stream it never takes again. All three stalls on
+	 * 2026-09-25/26 were SINK then PLAY, the drop right behind the open; the
+	 * third was caught in order in the syslog: Acquire, ACTIVE, the open,
+	 * PLAY, drop, Release, IDLE, then a write that never returned. */
+	if (!g_written) {
+		pcm_note("drop skipped: nothing written since the open or prepare");
+		return;
+	}
 	pcm_note("drop+prepare");
 	a_drop(g_pcm);
 	a_prepare(g_pcm);
+	g_written = 0;
 }
 
 long pcm_queued(void)
