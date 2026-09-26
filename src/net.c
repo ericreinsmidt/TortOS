@@ -14,6 +14,7 @@
 #include <signal.h>
 #include <stdatomic.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "net.h"
@@ -249,6 +250,18 @@ long net_post_buf(const net_field *f, int n, char *out, size_t outn, int timeout
 
 static pid_t g_async = -1;
 static char  g_async_cfg[160];
+/* When the request in flight started, and what the last one to finish took
+ * and exited with. See net_async_ms. */
+static long  g_async_t0;
+static int   g_async_ms, g_async_exit;
+
+static long now_ms(void)
+{
+	struct timespec ts;
+
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
 
 bool net_post_async(const net_field *f, int n, const char *path, int timeout_s)
 {
@@ -265,6 +278,7 @@ bool net_post_async(const net_field *f, int n, const char *path, int timeout_s)
 	fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 	if (fd < 0) { unlink(g_async_cfg); return false; }
 
+	g_async_t0 = now_ms();
 	g_async = fork();
 	if (g_async < 0) { close(fd); unlink(g_async_cfg); g_async = -1; return false; }
 	if (g_async == 0) {
@@ -344,6 +358,7 @@ bool net_get_async(const char *url, const char *path, int timeout_s)
 	fd = open(g_async_st, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 	if (fd < 0) { unlink(g_async_cfg); g_async_dest[0] = '\0'; return false; }
 
+	g_async_t0 = now_ms();
 	g_async = fork();
 	if (g_async < 0) {
 		close(fd);
@@ -383,6 +398,8 @@ int net_async_poll(void)
 	g_async = -1;
 	unlink(g_async_cfg);
 	ok = (r > 0 && WIFEXITED(st) && WEXITSTATUS(st) == 0);
+	g_async_ms = (int)(now_ms() - g_async_t0);
+	g_async_exit = (r > 0 && WIFEXITED(st)) ? WEXITSTATUS(st) : -1;
 
 	g_async_http = 0;
 	if (g_async_st[0]) {
@@ -411,6 +428,9 @@ int net_async_http(void)
 {
 	return g_async_http;
 }
+
+int net_async_ms(void)   { return g_async_ms; }
+int net_async_exit(void) { return g_async_exit; }
 
 bool net_online(void)
 {

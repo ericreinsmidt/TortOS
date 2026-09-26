@@ -2,6 +2,7 @@
 /* See artscrape.h for where the rules came from and why they are these. */
 #include <ctype.h>
 #include <dirent.h>
+#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -461,6 +462,55 @@ static char   g_ss_note[64];
 
 static art_progress g_st;
 
+/* ---- the log --------------------------------------------------------------
+ *
+ * Every request, what came back and how long it took, plus a line per system
+ * and one for the run. BACKLOG 47: a scrape that felt slow on a fresh card had
+ * nothing in the log but the resizes, so there was nothing to measure it by.
+ *
+ * The check defines ART_QUIET. It runs whole scrapes against a stub, and the
+ * stub's traffic would bury its own report. */
+static long g_run_t0, g_sys_t0;
+static int  g_sys_found0, g_sys_missing0;
+static bool g_sys_on;                  /* a system's work has begun */
+static char g_asked[NAME_MAX_];        /* the name the image in flight was asked by */
+
+static long now_ms(void)
+{
+	struct timespec ts;
+
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+static void say(const char *fmt, ...)
+{
+#ifdef ART_QUIET
+	(void)fmt;
+#else
+	va_list ap;
+
+	va_start(ap, fmt);
+	vfprintf(stderr, fmt, ap);
+	va_end(ap);
+#endif
+}
+
+/* How the request that just finished went: "HTTP 404, 312 ms", or "no answer
+ * (curl 28), 60004 ms" when it never reached a server. */
+static const char *answer(void)
+{
+	static char buf[64];
+
+	if (net_async_http() == 0)
+		snprintf(buf, sizeof buf, "no answer (curl %d), %d ms",
+		         net_async_exit(), net_async_ms());
+	else
+		snprintf(buf, sizeof buf, "HTTP %d, %d ms",
+		         net_async_http(), net_async_ms());
+	return buf;
+}
+
 /* ---- reading the library ------------------------------------------------ */
 
 static bool ext_allowed(const char *name, const char *exts)
@@ -794,6 +844,8 @@ void art_begin(const systems_cfg *sys, const char *roms_dir, const char *only)
 	g_ss_stop = g_ss_retried = false;
 	g_ss_until = 0;
 	g_ss_note[0] = '\0';
+	g_run_t0 = now_ms();
+	g_sys_on = false;
 	g_phase = P_SYSTEM;
 	g_nsys = 0;
 	snprintf(g_romdir, sizeof g_romdir, "%s", roms_dir ? roms_dir : "");
@@ -865,6 +917,7 @@ static bool start_image(const char *remote, const char *name, const char *dest)
 	urlenc(name, en, sizeof en);
 	snprintf(url, sizeof url, BASE "/%s/Named_Boxarts/%s.png", er, en);
 	snprintf(g_pending, sizeof g_pending, "%s", dest);
+	snprintf(g_asked, sizeof g_asked, "%s", name);
 	return net_get_async(url, g_pending, 60);
 }
 
@@ -882,6 +935,11 @@ static int next_system(const char *why)
 		snprintf(g_st.problem, sizeof g_st.problem, "%s", g_st.now);
 		fprintf(stderr, "art: %s\n", g_st.now);
 	}
+	if (g_sys_on)
+		say("art: %s: %d found, %d missing, in %ld s\n", g_sys[g_si].folder,
+		    g_st.found - g_sys_found0, g_st.missing - g_sys_missing0,
+		    (now_ms() - g_sys_t0 + 500) / 1000);
+	g_sys_on = false;
 	g_si++;
 	g_st.systems_done++;
 	g_phase = P_SYSTEM;
@@ -896,7 +954,13 @@ int art_step(void)
 	struct stat st;
 
 	if (!g_running) return -1;
-	if (g_si >= g_nsys) { art_cancel(); return 0; }
+	if (g_si >= g_nsys) {
+		say("art: finished in %ld s: %d found, %d missing, %d had one\n",
+		    (now_ms() - g_run_t0 + 500) / 1000, g_st.found, g_st.missing,
+		    g_st.skipped);
+		art_cancel();
+		return 0;
+	}
 
 	snprintf(dir, sizeof dir, "%s/%s", g_romdir, g_sys[g_si].folder);
 
@@ -943,6 +1007,10 @@ int art_step(void)
 		}
 
 		snprintf(g_st.now, sizeof g_st.now, "%s", g_sys[g_si].folder);
+		g_sys_t0 = now_ms();
+		g_sys_found0 = g_st.found;
+		g_sys_missing0 = g_st.missing;
+		g_sys_on = true;
 		g_ri = 0;
 		g_nretry = 0;
 		/* A replace keeps its own driver in the screen for now, which asks
@@ -961,6 +1029,7 @@ int art_step(void)
 			g_ss_stop = true;
 			snprintf(g_ss_note, sizeof g_ss_note,
 			         "ScreenScraper: today's quota is spent");
+			say("art: %s\n", g_ss_note);
 			return 1;
 		}
 		if (g_ss_until && time(NULL) < g_ss_until) return 1;
@@ -1004,6 +1073,7 @@ int art_step(void)
 			g_ss_stop = true;
 			snprintf(g_ss_note, sizeof g_ss_note,
 			         "ScreenScraper: too many requests, stopped");
+			say("art: %s\n", g_ss_note);
 		} else {
 			g_ri++;
 			g_ss_retried = false;
@@ -1043,6 +1113,8 @@ int art_step(void)
 		int r = net_async_poll();
 
 		if (r == 0) return 1;
+		say("art: %s from libretro by its own name: %s, %s\n", g_roms[g_ri],
+		    r > 0 ? "found" : "not there", answer());
 		/* A miss here is ordinary - it means libretro spells this game
 		 * differently, which is exactly what the catalog is for. It is not
 		 * counted as missing until the fuzzy pass has also failed. */
@@ -1066,6 +1138,8 @@ int art_step(void)
 		int r = net_async_poll();
 
 		if (r == 0) return 1;
+		say("art: %s catalog %s: %s\n", g_sys[g_si].folder,
+		    remote_nth(g_sys[g_si].folder, g_rem), answer());
 		/* Distinguished on purpose: a network or TLS failure is not "these
 		 * games have no art", and reporting it as one is how a certificate
 		 * change gets mistaken for a library full of missing games. */
@@ -1137,6 +1211,8 @@ int art_step(void)
 		int r = net_async_poll();
 
 		if (r == 0) return 1;
+		say("art: %s from libretro as \"%s\": %s, %s\n", g_roms[g_retry[g_qi]],
+		    g_asked, r > 0 ? "found" : "not there", answer());
 		if (r > 0) { art_shrink(g_pending); g_st.found++; }
 		else       g_left[g_nleft++] = g_retry[g_qi];
 		g_qi++;
@@ -1160,6 +1236,7 @@ int art_step(void)
 		int r = net_async_poll();
 
 		if (r == 0) return 1;
+		say("art: %s checksum list: %s\n", g_sys[g_si].folder, answer());
 		if (r > 0) load_dat();
 		g_phase = P_CRC;
 		return 1;
@@ -1202,6 +1279,8 @@ int art_step(void)
 		int r = net_async_poll();
 
 		if (r == 0) return 1;
+		say("art: %s from libretro as \"%s\": %s, %s\n", g_roms[g_retry[g_qi]],
+		    g_asked, r > 0 ? "found" : "not there", answer());
 		if (r > 0) { art_shrink(g_pending); g_st.found++; }
 		else       g_left[g_nleft++] = g_retry[g_qi];
 		g_qi++;

@@ -117,6 +117,9 @@ int net_async_poll(void)
 }
 
 void net_async_abort(void) { g_pending = false; }
+int  net_async_http(void)  { return 200; }
+int  net_async_ms(void)    { return 0; }
+int  net_async_exit(void)  { return 0; }
 
 /* ---- ScreenScraper, stubbed the same way ---------------------------------
  *

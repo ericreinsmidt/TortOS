@@ -247,7 +247,7 @@ check-artrun: build-native/artrun-check
 
 build-native/artrun-check: tools/artrun-check.c src/artscrape.c src/artscrape.h src/urlenc.c FORCE
 	@mkdir -p build-native
-	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g -Isrc -DSS_BUSY_WAIT=0 \
+	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g -Isrc -DSS_BUSY_WAIT=0 -DART_QUIET \
 	      -o $@ tools/artrun-check.c src/artscrape.c src/urlenc.c
 
 # The two hashers - one C for the device, one Python for the host tools - over

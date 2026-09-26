@@ -47,14 +47,19 @@ int ss_system_id(const char *folder)
 
 /* ---- is the reply about the game we asked about? ------------------------- */
 
-/* A title as comparable words. Region tags and the extension go, punctuation
- * splits, articles drop, and a roman numeral becomes a digit - "Dragon Quest
- * III" and "Dragon Quest 3" are the same game and one of them is what the file
- * is called. */
+/* A title as comparable words. Region tags and a file's extension go,
+ * punctuation splits, articles drop, and a roman numeral becomes a digit -
+ * "Dragon Quest III" and "Dragon Quest 3" are the same game and one of them is
+ * what the file is called.
+ *
+ * THE EXTENSION ONLY FROM A FILE NAME. Their titles have none, and taking the
+ * last dot as one cut "Super Mario Bros. 3" to "Super Mario Bros", so its 3
+ * never matched the file's and a reply about the right game was thrown away.
+ * Seen on the fresh card 2026-09-26. */
 #define TOK_MAX 24
 #define TOK_LEN 24
 
-static int tokens(const char *s, char out[TOK_MAX][TOK_LEN])
+static int tokens(const char *s, bool is_file, char out[TOK_MAX][TOK_LEN])
 {
 	static const char *drop[] = { "the", "a", "an", "of", "de", "le", "la" };
 	static const struct { const char *r; const char *d; } ROMAN[] = {
@@ -74,7 +79,7 @@ static int tokens(const char *s, char out[TOK_MAX][TOK_LEN])
 		if (!depth) buf[bi++] = *p;
 	}
 	buf[bi] = '\0';
-	if ((p = strrchr(buf, '.')) && strlen(p) <= 5 && p != buf)
+	if (is_file && (p = strrchr(buf, '.')) && strlen(p) <= 5 && p != buf)
 		*(char *)p = '\0';
 
 	for (p = buf; *p; ) {
@@ -102,10 +107,10 @@ static int tokens(const char *s, char out[TOK_MAX][TOK_LEN])
 	return n;
 }
 
-static int digits_of(const char *s, char out[TOK_MAX][TOK_LEN])
+static int digits_of(const char *s, bool is_file, char out[TOK_MAX][TOK_LEN])
 {
 	char all[TOK_MAX][TOK_LEN];
-	int n = tokens(s, all), i, k = 0;
+	int n = tokens(s, is_file, all), i, k = 0;
 
 	for (i = 0; i < n; i++) {
 		const char *c = all[i];
@@ -126,12 +131,12 @@ bool ss_name_ok(const char *file, const char *const *names, int n)
 	int nw, ng, i, j, k;
 
 	if (!file) return true;
-	nw = digits_of(file, want);
+	nw = digits_of(file, true, want);
 	if (nw == 0) return true;            /* nothing here to check it with */
 
 	for (i = 0; i < n; i++) {
 		if (!names[i]) continue;
-		ng = digits_of(names[i], got);
+		ng = digits_of(names[i], false, got);
 		for (j = 0; j < nw; j++)
 			for (k = 0; k < ng; k++)
 				if (strcmp(want[j], got[k]) == 0) return true;
@@ -395,10 +400,6 @@ bool ss_lookup_url(char *out, size_t n, const char *folder, const char *file,
 	return true;
 }
 
-/* Big enough for the largest reply seen: one game arrives with every region's
- * names and dates, every language's synopsis and up to 54 media URLs. */
-#define SS_REPLY_MAX (192 * 1024)
-
 /* One request, into `out`. */
 static bool ask(const char *folder, const char *file, uint32_t crc, ss_result *out)
 {
@@ -411,7 +412,7 @@ static bool ask(const char *folder, const char *file, uint32_t crc, ss_result *o
 	if (!ss_lookup_url(url, sizeof url, folder, file, crc)) return false;
 	if (!(body = malloc(SS_REPLY_MAX))) return false;
 
-	got = net_get_buf(url, NULL, 0, body, SS_REPLY_MAX, 30);
+	got = net_get_buf(url, NULL, 0, body, SS_REPLY_MAX, SS_WAIT_S);
 	memset(url, 0, sizeof url);          /* it carried both credentials */
 	if (got > 0) ok = ss_parse(body, (size_t)got, file, out);
 	free(body);

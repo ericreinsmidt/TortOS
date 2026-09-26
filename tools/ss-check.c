@@ -179,6 +179,9 @@ static void the_name_check(void)
 		{ "Samurai Pizza Cats (Japan) (Translated).zip", "Kyatto Ninden Teyandee", true },
 		{ "Legend of Zelda, The - A Link to the Past (USA).zip",
 		  "The Legend of Zelda: A Link to the Past", true },
+		/* A dot in THEIR title is not an extension. This one was cut to
+		 * "Super Mario Bros" and lost its 3, on the fresh card 2026-09-26. */
+		{ "Super Mario Bros. 3 (USA) (Rev 1).zip", "Super Mario Bros. 3", true },
 	};
 	size_t i;
 

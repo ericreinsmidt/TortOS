@@ -91,6 +91,13 @@ bool net_get_async(const char *url, const char *path, int timeout_s);
  * have been scraped or keeps asking a server that has already said no. */
 int net_async_http(void);
 
+/* How long the request took, start to reap, and curl's exit status (-1 when it
+ * did not exit on its own), for the same finished request. For the log: a
+ * scrape that is slow has to say which request was, and "no answer" at the
+ * timeout (curl's 28) is a different problem from a quick refusal. */
+int net_async_ms(void);
+int net_async_exit(void);
+
 /* Give up on whatever is in flight: kill it, reap it, and free the slot.
  *
  * For a caller that stops caring - a screen the player closed mid-fetch. Not

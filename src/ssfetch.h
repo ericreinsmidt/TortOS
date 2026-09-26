@@ -41,6 +41,24 @@
  * folder is ever added, ask it again rather than guessing. */
 int ss_system_id(const char *folder);
 
+/* The largest reply read, for both ss_lookup and the stepped run in ssrun.c.
+ *
+ * THE FAMOUS GAMES HAVE THE BIGGEST REPLIES. Measured 2026-09-26: Super Mario
+ * World's is 849,420 bytes, most of it the list of every known hack (363 KB)
+ * and every known dump (284 KB), and eleven of the twelve best-known games on
+ * the test card were over the 192 KB this used to be. Every one was dropped
+ * unread and silently handed to libretro, which has a cover and no text. Those
+ * lists only grow, so this leaves about five times the largest measured. */
+#define SS_REPLY_MAX (4 * 1024 * 1024)
+
+/* How long a lookup may take, in seconds. Measured 2026-09-26 on the Brick:
+ * Super Mario World took 45 s, 43 of them before the first byte, and Streets
+ * of Rage 2 took 23 - so the 30 this used to be threw away a slow answer, and
+ * the game got libretro's cover and no text. The same lookup took 4.5 s a few
+ * minutes later; the wait is the server's, and it varies. The log's `ss:`
+ * lines carry every lookup's time, so a run that comes near this says so. */
+#define SS_WAIT_S 60
+
 /* What one reply is worth. */
 typedef struct {
 	bool      found;           /* they know this game */
