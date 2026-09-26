@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <b>A fast, focused custom firmware for the TrimUI Brick and Brick Hammer.</b><br>
+  <b>A <ins>fast</ins>, focused custom firmware for the TrimUI Brick and Brick Hammer.</b><br>
   Plays eleven classic consoles, and gets out of your way.
 </p>
 
