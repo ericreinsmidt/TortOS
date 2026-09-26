@@ -45,8 +45,21 @@
  * reused inode number could make it. Nothing for four seconds after a
  * transport appears or is mended: that is the headset reporting where it
  * already was, and at connect the Brick's level is the one that wins.
+ *
+ * And a headset's play, pause, next and previous. Not as calls on this player
+ * - none came, from either headset - but as keys: BlueZ gives every AVRCP
+ * headset a virtual keyboard named `<headset> (AVRCP)` and presses its keys.
+ * The OpenRun sent KEY_PLAYCD for every press, never pause; the OpenFit sent
+ * KEY_PAUSECD and KEY_PLAYCD as it saw fit, and KEY_NEXTSONG for a hold -
+ * measured 2026-09-26. Gestures are the headset's own business and cannot be
+ * seen from here; only what they mean arrives. Any `(AVRCP)` keyboard is
+ * watched, and a press is written to /tmp/tortos_btkey as `<action> <stamp>`
+ * for the launcher to hand to Muse: toggle, pause, next or prev.
  */
 #include <dlfcn.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <linux/input.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
@@ -338,6 +351,88 @@ static void look(void *conn)
 	}
 }
 
+/* The headsets' AVRCP keyboards. BlueZ makes one per connection and they come
+ * and go with it, so the list is read again every two seconds; a node that
+ * has gone reads as ENODEV and is closed. */
+#define KEYBOARDS 4
+static struct { int fd; char node[24]; } g_kbd[KEYBOARDS] = {
+	{ -1, "" }, { -1, "" }, { -1, "" }, { -1, "" }
+};
+
+static void find_keyboards(void)
+{
+	FILE *f = fopen("/proc/bus/input/devices", "r");
+	char line[256];
+	bool avrcp = false;
+
+	if (!f) return;
+	while (fgets(line, sizeof line, f)) {
+		char *ev, node[24];
+		int i, free_slot = -1, have = 0;
+
+		if (!strncmp(line, "N: Name=", 8)) {
+			avrcp = strstr(line, " (AVRCP)\"") != NULL;
+			continue;
+		}
+		if (!avrcp || strncmp(line, "H: Handlers=", 12) || !(ev = strstr(line, "event")))
+			continue;
+		avrcp = false;
+		snprintf(node, sizeof node, "/dev/input/%.*s", (int)strspn(ev, "event0123456789"), ev);
+		for (i = 0; i < KEYBOARDS; i++) {
+			if (g_kbd[i].fd >= 0 && !strcmp(g_kbd[i].node, node)) have = 1;
+			if (g_kbd[i].fd < 0 && free_slot < 0) free_slot = i;
+		}
+		if (have || free_slot < 0) continue;
+		if ((g_kbd[free_slot].fd = open(node, O_RDONLY | O_NONBLOCK)) >= 0) {
+			snprintf(g_kbd[free_slot].node, sizeof g_kbd[free_slot].node, "%s", node);
+			fprintf(stderr, "btplayer: watching %s for a headset's keys\n", node);
+		}
+	}
+	fclose(f);
+}
+
+/* Which of Muse's actions a key is. PLAYCD toggles, because the OpenRun sends
+ * nothing else for play and for pause; PAUSECD and STOPCD only pause, so the
+ * OpenFit, which says which it means, never starts music it meant to stop.
+ * FASTFORWARD and REWIND are next and previous, for a headset that sends a
+ * hold that way. */
+static const char *key_action(unsigned code)
+{
+	switch (code) {
+	case KEY_PLAYCD: case KEY_PLAYPAUSE: case KEY_PLAY: return "toggle";
+	case KEY_PAUSECD: case KEY_STOPCD: case KEY_PAUSE:  return "pause";
+	case KEY_NEXTSONG: case KEY_FASTFORWARD:           return "next";
+	case KEY_PREVIOUSSONG: case KEY_REWIND:            return "prev";
+	}
+	return NULL;
+}
+
+static void read_keyboards(void)
+{
+	int i;
+
+	for (i = 0; i < KEYBOARDS; i++) {
+		struct input_event ev;
+		ssize_t n;
+
+		if (g_kbd[i].fd < 0) continue;
+		while ((n = read(g_kbd[i].fd, &ev, sizeof ev)) == (ssize_t)sizeof ev) {
+			const char *act = ev.type == EV_KEY && ev.value == 1 ? key_action(ev.code) : NULL;
+			FILE *f;
+
+			if (!act || !(f = fopen("/tmp/tortos_btkey.tmp", "w"))) continue;
+			fprintf(f, "%s %ld\n", act, now_ms());
+			fclose(f);
+			rename("/tmp/tortos_btkey.tmp", "/tmp/tortos_btkey");
+		}
+		if (n < 0 && errno != EAGAIN) {          /* the headset went */
+			close(g_kbd[i].fd);
+			g_kbd[i].fd = -1;
+			g_kbd[i].node[0] = '\0';
+		}
+	}
+}
+
 int main(void)
 {
 	static const dbus_vtable vt = { NULL, on_message, { NULL } };
@@ -372,6 +467,19 @@ int main(void)
 	add_match(conn, "type='signal',sender='org.bluez',"
 	          "interface='org.freedesktop.DBus.Properties',member='PropertiesChanged',"
 	          "arg0='org.bluez.MediaTransport1'", &err);
-	while (dispatch(conn, 250)) look(conn);
+	/* A tenth of a second, so a headset's key is seen as soon as it is
+	 * pressed; the rest of the time this sleeps in the dispatch. */
+	{
+		long next_find = 0;
+
+		while (dispatch(conn, 100)) {
+			look(conn);
+			if (now_ms() >= next_find) {
+				find_keyboards();
+				next_find = now_ms() + 2000;
+			}
+			read_keyboards();
+		}
+	}
 	return 0;
 }

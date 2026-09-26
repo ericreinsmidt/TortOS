@@ -262,9 +262,50 @@ static void event(const char *line)
 	}
 }
 
+/* A headset's own play, pause, next and previous, which btplayer reads off its
+ * AVRCP keyboard and writes as `<action> <stamp>` (tools/btplayer.c). Here and
+ * not in any one screen, because musec_poll runs wherever Muse matters - the
+ * shelf, the menus, a game's tick, Muse's own screens. Only ever Muse, even in
+ * a game: pausing the music is what brings the game's sound back (ADR-0032),
+ * and a headset's button never reaches into the game itself - Eric's call,
+ * 2026-09-26. A new stamp is a new press; the one found at start is only
+ * noted. Read every tenth of a second, before anything that could return
+ * early, so a press made while Muse was not running is used up, not replayed
+ * later. */
+static void headset_keys(void)
+{
+	static unsigned looked;
+	static long     seen;
+	static bool     primed;
+	unsigned now = plat_now_ms();
+	char     act[16];
+	long     stamp;
+	FILE    *f;
+
+	if (primed && now - looked < 100) return;
+	looked = now;
+	f = fopen("/tmp/tortos_btkey", "r");
+	if (f && fscanf(f, "%15s %ld", act, &stamp) == 2 && stamp != seen) {
+		bool fresh = primed;
+
+		seen = stamp;
+		if (fresh) {
+			fprintf(stderr, "muse: headset %s\n", act);
+			if (!strcmp(act, "toggle"))     musec_toggle();
+			else if (!strcmp(act, "pause")) { if (g_now.state == MU_PLAYING) sendf("PAUSE"); }
+			else if (!strcmp(act, "next"))  musec_next();
+			else if (!strcmp(act, "prev"))  musec_prev();
+		}
+	}
+	if (f) fclose(f);
+	primed = true;
+}
+
 void musec_poll(void)
 {
 	ssize_t got;
+
+	headset_keys();
 
 	/* Reconnect whenever there is a queue to look after, not only when a
 	 * play is waiting: a daemon that restarts mid-album would otherwise
