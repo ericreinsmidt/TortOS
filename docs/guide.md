@@ -275,10 +275,10 @@ included.
 
 **The volume keys set the headset's own volume**, through its absolute volume
 control, so there is still one volume and not two in series. The headset's
-volume buttons move the Brick's level the other way. A few headsets, the Shokz
-OpenRun Pro among them, take the Brick's level when they connect and ignore
-changes while they play; on those, use the headset's buttons. In a game, a
-press on the headset changes the level without showing the bar.
+volume buttons move the Brick's level the other way. On a few headsets, the
+Brick's buttons set only the starting volume; after that, change it on the
+headset itself. In a game, a press on the headset changes the level without
+showing the bar.
 
 **The headset's play, pause and skip buttons control Muse**, wherever you are,
 a game included.

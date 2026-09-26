@@ -211,7 +211,7 @@ Sign in to your RetroAchievements account under **MENU > Cheevos**. The first ti
 
 Yes. Put them in pairing mode, open **MENU > Bluetooth**, press **Y** to search and **A** to pair. They reconnect by themselves from then on. Wired headphones always win when they're plugged in.
 
-The Brick's volume buttons set the headphones' volume, and the headphones' own volume buttons move the Brick's. A few headphones ignore the Brick while they play; on those, use their own buttons. Play, pause and skip on the headphones control Muse.
+The Brick's volume buttons set the headphones' volume, and the headphones' own volume buttons move the Brick's. On a few headphones, the Brick's buttons set only the starting volume; after that, change it on the headphones themselves. Play, pause and skip on the headphones control Muse.
 
 </details>
 
