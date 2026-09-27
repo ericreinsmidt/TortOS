@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <img src="res/readme/shelf.png" alt="The SNES shelf, with Chrono Trigger in focus" width="100%">
+https://github.com/user-attachments/assets/09b52bf2-bdb6-4a93-8613-27059d825ebf
 </p>
 
 <div align="center">
