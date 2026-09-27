@@ -231,7 +231,7 @@ Battery saves are `.srm` files in `Saves/`, named after the game. Save states, t
 
 ## For developers
 
-TortOS is C and SDL2. Games run in [Diatom](https://github.com/ericreinsmidt/diatom), a small libretro frontend built for this device that starts once at boot and stays running.
+TortOS is C and SDL2. Games run in [diatom](https://github.com/ericreinsmidt/diatom), a small libretro frontend built for this device that starts once at boot and stays running.
 
 - [How it works](docs/how-it-works.md): the resident emulator, the boot, and card art off the render thread
 - [Configuration](docs/configuration.md): the two settings databases, `systems.cfg`, core options and turbo
@@ -240,4 +240,4 @@ TortOS is C and SDL2. Games run in [Diatom](https://github.com/ericreinsmidt/dia
 
 ## License
 
-TortOS is MIT, and so is Diatom. The cores keep their own licenses, two of them non-commercial. Full notices are in [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md).
+TortOS is MIT, and so is diatom. The cores keep their own licenses, two of them non-commercial. Full notices are in [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md).

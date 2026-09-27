@@ -83,7 +83,7 @@ Two things, each for a reason:
 
 | | |
 |---|---|
-| `cheevos-active.set` | Diatom reads it, handed over as a path on RUN under its ADR-0026. Moving it would mean Diatom linking sqlite and learning the schema |
+| `cheevos-active.set` | Diatom reads it, handed over as a path on RUN under its ADR-0026. Moving it would mean diatom linking sqlite and learning the schema |
 | `systems.cfg` | build input rather than a setting, as above |
 
 Everything else is in one of the two databases. Favorites are rows keyed

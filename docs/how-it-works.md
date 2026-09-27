@@ -55,7 +55,7 @@ and it pays the dynamic linker as well. That is what a first launch used to pay
 the largest core. It is now paid once, in idle seconds, instead of by whoever
 starts a Genesis game first. Measured 2026-09-08.
 
-The in-game menu is the launcher's own: MENU makes Diatom hand the display
+The in-game menu is the launcher's own: MENU makes diatom hand the display
 over with a preview of the paused frame, and Continue, Save, Load, Reset and
 Quit act through one protocol line each. **Display** cycles the running game's
 mode as you press it, which is the one to use when you want to see the
@@ -178,13 +178,13 @@ if you load an older slot, which rewinds the cartridge's own save with it.
 RetroAchievements, listed in the in-game menu, with what you have earned kept
 across games and cards.
 
-**The evaluation is Diatom's, and that is not a delegation of convenience.**
+**The evaluation is diatom's, and that is not a delegation of convenience.**
 Conditions compare against the *previous frame* - `0xH06f0<d0xH06f0` is "this
 byte is lower than it was last frame" - and the launcher only sees the socket
 every 100 ms against a core running at 60 Hz. That is six frames per poll, so
 five of every six are invisible to it and unlocks would be missed silently.
 The launcher declares which console the game is and hands over the set, and
-Diatom watches every frame
+diatom watches every frame
 (its ADR-0025 and ADR-0026).
 
 **The device does the normal thing.** Sign in once under `MENU` -> Cheevos,

@@ -16,9 +16,9 @@ to reverse belongs in a comment or in `docs/`. An ADR is for a decision that is
 expensive to reverse, that a reasonable person would question later, or where
 the rejected option was genuinely tempting.
 
-TortOS is the consumer side of a two-project pair; Diatom keeps its own
+TortOS is the consumer side of a two-project pair; diatom keeps its own
 decisions in its own tree, and anything crossing the socket between them is
-recorded on the Diatom side because that is where the protocol is defined.
+recorded on the diatom side because that is where the protocol is defined.
 
 | # | Title | Status |
 |---|---|---|

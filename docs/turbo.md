@@ -51,7 +51,7 @@ too many.
 The PC Engine core has a turbo of its own: a hotkey on buttons III and IV that
 latches turbo for I and II. We do not use it.
 
-One interaction across nine systems beats two, and Diatom's works without the
+One interaction across nine systems beats two, and diatom's works without the
 core's help. The PC Engine shipped a two-button pad and the core defaults to one
 (`pce_fast_default_joypad_type_p1 = "2 Buttons"`), so III to VI do not exist and
 X and Y go nowhere, exactly as on the rest of the list.
@@ -66,5 +66,5 @@ nine rather than only on the one core that happens to implement turbo. TortOS
 sends the map just after RUN, because RUN resets the map to identity and
 anything sent before it would be discarded by the launch it was meant for.
 
-`turbo_period` is half a cycle in frames - see Diatom's `src/env.c` and its
+`turbo_period` is half a cycle in frames - see diatom's `src/env.c` and its
 ADR-0028.

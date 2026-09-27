@@ -10,7 +10,7 @@ copied onto the card as `TortOS/THIRD-PARTY-LICENSES.md` by `mk/payload.sh`.
 
 ---
 
-## Diatom (the in-game libretro host)
+## diatom (the in-game libretro host)
 
 - **Origin:** an independent frontend, built in its own repository and shipped
   as `TortOS/diatom`. https://github.com/ericreinsmidt/diatom
@@ -46,7 +46,7 @@ The SDL2 libraries TortOS links against are the device's own, in
 under either the OSI or FSF definition and they restrict commercial
 redistribution outright, which constrains what a card carrying them may be
 sold as - hobby redistribution is what every firmware shipping them relies
-on. The reasoning is worked through in Diatom's ADR-0023. A card built
+on. The reasoning is worked through in diatom's ADR-0023. A card built
 without SNES and the Sega systems carries no such restriction.
 
 Core source: the libretro organization and each core's upstream repository

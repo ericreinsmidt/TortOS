@@ -28,7 +28,7 @@ refuses the card rather than shipping one whose Game Boy, Game Boy Color and
 Game Boy Advance shelves open onto nothing. Restore the fetch and delete the
 script the day that fork syncs.
 
-`make payload` needs a built Diatom binary (`DIATOM_ELF`, defaulting to a
+`make payload` needs a built diatom binary (`DIATOM_ELF`, defaulting to a
 sibling checkout).
 
 `make check` runs before every commit. Each part can be run alone, and each
