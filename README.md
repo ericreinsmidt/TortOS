@@ -16,9 +16,9 @@
   <a href="#faq">FAQ</a>
 </p>
 
-<p align="center">
+<div align="center">
 https://github.com/user-attachments/assets/09b52bf2-bdb6-4a93-8613-27059d825ebf
-</p>
+</div>
 
 <div align="center">
 
