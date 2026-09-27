@@ -70,8 +70,3 @@ left with it.
 - `res/fonts/menu.ttf` - **Josefin Sans**, SIL Open Font License 1.1. Full text
   in `res/fonts/OFL.txt`. It is TortOS's UI face, the in-game menu's face, and
   the face the boot animation and the system cards are lettered in.
-
-## Cover Flow
-
-The perspective card row in `src/coverflow.c` is carried over from EROS, an
-earlier project by the same author, and is MIT like the rest of TortOS.
