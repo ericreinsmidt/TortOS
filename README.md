@@ -90,7 +90,7 @@ https://github.com/user-attachments/assets/09b52bf2-bdb6-4a93-8613-27059d825ebf
 You need a TrimUI Brick or Brick Hammer, a microSD card and, just this once, a computer.
 
 1. **Format the card as exFAT,** with a Master Boot Record partition scheme. On a Mac, open Disk Utility, choose *View > Show All Devices*, and erase the card itself rather than its volume.
-2. **Download `TortOS-v1.0.zip`** from [Releases](https://github.com/ericreinsmidt/TortOS/releases/latest) and unzip it.
+2. **Download `TortOS-v1.0.1.zip`** from [Releases](https://github.com/ericreinsmidt/TortOS/releases/latest) and unzip it.
 3. **Copy everything inside it to the root of the card:** `TortOS/`, `.tmp_update/`, `trimui/`, `Roms/`, `Music/`, `Bios/` and `Saves/`.
 4. **Put the card in the Brick and turn it on.** The first boot installs TortOS, and every boot after that starts it.
 5. **Add games** to the folders in `Roms/`, from the computer now or over Wi-Fi later.

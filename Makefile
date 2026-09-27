@@ -41,7 +41,7 @@ check:
 	printf '\nok: every check passed\n'
 
 # One version number: the zip name and the About page both read it from here.
-VERSION ?= 1.0
+VERSION ?= 1.0.1
 
 # The ScreenScraper developer pair, from .screenscraper.env in this directory
 # (gitignored, never committed). A value already in the environment wins, and
@@ -450,7 +450,7 @@ checkmark:
 	python3 tools/checkmark.py
 
 payload: all checkmark
-	./mk/payload.sh
+	VERSION=$(VERSION) ./mk/payload.sh
 
 release: payload
 	@echo "out/TortOS-v$(VERSION).zip"
