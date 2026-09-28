@@ -1139,6 +1139,11 @@ static int diatom_wait(void)
 			 * launcher's existing after-the-game check powers the device
 			 * down. No new path, and the autosave happens either way. */
 			else if (strncmp(l, "IDLE", 4) == 0 && !sent_stop) {
+				/* Said out loud: a shutdown from here left nothing in the
+				 * log to tell it from a power press, which is how the one
+				 * Diatom sent seven frames into a game went unexplained. */
+				fprintf(stderr, "idle: the emulator reports nobody there, "
+				                "powering off\n");
 				run_power_pressed = true;
 				sent_stop = 1;
 				stop_at = plat_now_ms();
