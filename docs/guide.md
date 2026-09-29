@@ -117,7 +117,7 @@ matters to you - a card is the one part of this that gets reformatted.
 | **MENU** (in `Cubic`) | always the TortOS menu; B is the system's |
 | **MENU** (in game) | the in-game menu: Continue, Save, Load, Display, Cheevos, Reset, Quit |
 | **MENU** (inside any menu) | closes the whole menu, however deep in it you are. B goes back one screen |
-| **SELECT** | Muse, the music player, from anywhere but a running game - the in-game menu included. Again to close it |
+| **SELECT** | Muse, the music and audiobook player, from anywhere but a running game - the in-game menu included. Again to close it |
 | **POWER** | powers off. In a game, the game is saved first |
 
 MENU means three different menus depending on where you are, and each one is
@@ -349,7 +349,7 @@ cover, the track, where in it you are, and what comes next.
 | **A** | pause, or play |
 | **L1/R1** | previous / next track. More than three seconds in, L1 starts the track over |
 | **Left/Right** | back or ahead ten seconds; held, a minute a step after a second and five minutes after three |
-| **Y** | the play mode |
+| **Y** | the play mode (music; books play in order) |
 | **B** | the album's tracks |
 | **MENU** | Muse's menu |
 | **SELECT** | close Muse |
