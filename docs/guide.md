@@ -341,6 +341,15 @@ their Now Playing, and on books Sort By is by author or by title and there is
 no Album Art. A book's cover is the one its files carry, or the picture in its
 folder: one named cover or folder, or the only one there.
 
+**Lock Screen**, for the Brick in a pocket: hold **F1+F2** together for a
+second anywhere in Muse while music is playing - the two front function keys,
+which some other firmwares call L3 and R3 - or pick Lock Screen in Muse's
+menu. The screen goes dark, which on a book playing measured about 6 hours of
+listening becoming 10, and every button is ignored except the volume keys,
+power, and a Bluetooth headset's play, pause and skip. Hold F1+F2 again to
+unlock. Power still turns the Brick off, with a book's place saved, and if the
+music stays paused past Auto Off the Brick turns itself off the same way.
+
 With something playing or paused, SELECT goes straight to **Now Playing**: the
 cover, the track, where in it you are, and what comes next.
 

@@ -25,6 +25,7 @@ int sys_menu_muse_rows(bool books, bool both, sm_muse_row *out)
 	out[n++] = SMM_COUNT;
 	if (both) out[n++] = SMM_SHOW;
 	out[n++] = SMM_SORT;
+	out[n++] = SMM_LOCK;
 	if (!books) out[n++] = SMM_ART;
 	out[n++] = SMM_RESCAN;
 	return n;
@@ -64,6 +65,11 @@ int sys_menu_build(const sys_ui *u, menu_row *out, menu_bufs *b,
 				case SMM_SORT:
 					out[k] = (menu_row){ "Sort By", u->sort ? u->sort
 					                     : u->muse_books ? "Author" : "Artist", true };
+					break;
+				case SMM_LOCK:
+					out[k] = (menu_row){ "Lock Screen",
+					                     u->muse_playing ? NULL : "while playing",
+					                     u->muse_playing };
 					break;
 				case SMM_ART:
 					out[k] = (menu_row){ "Album Art", NEEDS_WIFI(net), net };

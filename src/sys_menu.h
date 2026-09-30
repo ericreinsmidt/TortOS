@@ -72,9 +72,12 @@ typedef enum {
  * On books the count is Books, Sort By is by author or title, and Album Art is
  * not there: MusicBrainz knows records. Show is there only when the card has
  * both kinds, since with one there is nothing to choose between. So the rows
- * move, and which one is where is sys_menu_muse_rows's to say. */
-typedef enum { SMM_COUNT, SMM_SHOW, SMM_SORT, SMM_ART, SMM_RESCAN } sm_muse_row;
-#define SM_MUSE_ROWS 5
+ * move, and which one is where is sys_menu_muse_rows's to say.
+ *
+ * Lock Screen is the pocket lock (#51), the way to find it without knowing
+ * F1+F2 held: live while music plays, and saying so when it does not. */
+typedef enum { SMM_COUNT, SMM_SHOW, SMM_SORT, SMM_LOCK, SMM_ART, SMM_RESCAN } sm_muse_row;
+#define SM_MUSE_ROWS 6
 
 /* Muse's rows in order, for the kind its shelf shows and whether the card has
  * both. Returns how many. The build and the key handler both ask this, so the
@@ -116,6 +119,7 @@ typedef struct {
 	bool muse;               /* or Muse's; see SM_MUSE_ROWS */
 	bool muse_books;         /* and it shows books rather than music */
 	bool muse_both;          /* and the card has both kinds */
+	bool muse_playing;       /* and music is playing, so it can lock */
 
 	wifi_state  wifi;        /* already cached by the caller; see menu_wifi */
 	const char *ssid;        /* the network's name when connected, else NULL */

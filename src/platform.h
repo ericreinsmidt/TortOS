@@ -193,6 +193,13 @@ void plat_volume_nudge(int delta);
 void plat_brightness_nudge(int delta);
 void plat_volume_set_pct(int pct);
 void plat_brightness_set(int level);
+
+/* The panel's backlight off or on, leaving the brightness level as it was -
+ * Muse's pocket lock. Off is the display engine's own switch, not a black
+ * frame: measured 2026-09-30, it takes a book playing from about 470 mA to
+ * 300, where a dark picture would leave the light burning. On comes back at
+ * the level it had. Nothing on the host. */
+void plat_backlight(bool on);
 /* Headphones and the speaker want different volume ladders - the jack covers
  * 61 dB where the speaker covers 45 - so the level has to be re-applied when a
  * plug goes in or comes out, not merely at the next volume press. Call from a

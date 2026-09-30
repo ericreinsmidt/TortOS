@@ -1818,6 +1818,20 @@ void plat_settings_init(void)
 	apply_brightness(cur_bright);
 }
 
+/* The disp2 engine's LCD commands, beside SET/GET_BRIGHTNESS in the vendor's
+ * sunxi_display2.h: 0x104 lights the backlight, 0x105 puts it out. Screen 0
+ * in the first word, as for brightness. Watched on the device both ways. */
+#define DISP_LCD_BACKLIGHT_ENABLE  0x104
+#define DISP_LCD_BACKLIGHT_DISABLE 0x105
+
+void plat_backlight(bool on)
+{
+	unsigned long a[4] = { 0, 0, 0, 0 };
+
+	if (disp_fd < 0) return;
+	ioctl(disp_fd, on ? DISP_LCD_BACKLIGHT_ENABLE : DISP_LCD_BACKLIGHT_DISABLE, a);
+}
+
 #else   /* not __linux__ */
 
 /* The host build exists to look at the shelf while changing how it looks
@@ -1840,6 +1854,7 @@ bool plat_muted(void) { return false; }
 bool plat_headphones_present(void) { return false; }
 static void jack_forget(void) { }
 static void mute_forget(void) { }
+void plat_backlight(bool on) { (void)on; }
 
 /* No settings database on the host, so the config defaults are all there is.
  * Taken anyway rather than ignored: a shelf rendered by --shot should show the

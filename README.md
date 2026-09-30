@@ -158,7 +158,7 @@ None of them is a driver, and none replaces anything the system needs to run.
 
 **On the cube,** up and down change console, left and right move through its games, and B opens that console's menu.
 
-**In Muse,** A opens an album, plays a track or pauses it, L1 and R1 change track, left and right skip ten seconds (hold them to go faster: a minute a step after a second, five after three), and B goes back. A on a book carries on where you left it, and in a book with chapters L1 and R1 move by chapter. On Now Playing, Y changes the play mode for music: in order, repeat all, repeat one or shuffle. On a book, which always plays in order, Y changes the speed instead: 1x up to 2x, and 0.75x, kept for each book.
+**In Muse,** A opens an album, plays a track or pauses it, L1 and R1 change track, left and right skip ten seconds (hold them to go faster: a minute a step after a second, five after three), and B goes back. A on a book carries on where you left it, and in a book with chapters L1 and R1 move by chapter. On Now Playing, Y changes the play mode for music: in order, repeat all, repeat one or shuffle. On a book, which always plays in order, Y changes the speed instead: 1x up to 2x, and 0.75x, kept for each book. To pocket the Brick while music plays, hold F1+F2 (the front function keys) for a second in Muse, or pick **Lock Screen** in its menu: the screen goes dark and only volume, power and your headset's buttons work, until you hold F1+F2 again.
 
 The volume buttons and F1/F2 (brightness) work everywhere.
 

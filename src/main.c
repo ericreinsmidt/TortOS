@@ -175,6 +175,9 @@ static int  shelf_letter_jump(sysview *v, int dir);
  * And sorting puts Muse's shelf in order by its own. */
 static bool is_muse(const system_cfg *s);
 static void muse_order_view(sysview *v);
+/* The pocket lock's gate and MENU's way in, defined with the lock itself. */
+static bool lock_allowed(void);
+static void muse_ask_lock(void);
 /* Muse's menu opens it, and the menu is up here. */
 static void album_art_screen(app *a);
 /* Same reason: Over The Hare is a screen up here and the scan is down there. */
@@ -4438,6 +4441,7 @@ static int menu_build(app *a, screen_id screen, int sys,
 		u.dmode      = DMODES[a->view[sys].dmode].label;
 		u.muse_books = u.muse && muse_books_shown();
 		u.muse_both  = u.muse && ml_count(&g_muse, true) && ml_count(&g_muse, false);
+		u.muse_playing = u.muse && lock_allowed();
 		u.sort       = u.muse ? ml_order_label((ml_order)a->view[sys].sort, u.muse_books)
 		                      : SORTS[a->view[sys].sort].label;
 	} else {
@@ -6648,6 +6652,11 @@ static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
 
 			if (id == SMM_SORT) {
 				sel = SM_SORT;
+			} else if (id == SMM_LOCK) {
+				/* Closes the menu; the screen underneath locks. */
+				if (key != IN_ACCEPT) return MENU_STAY;
+				muse_ask_lock();
+				return MENU_DONE;
 			} else if (id == SMM_SHOW) {
 				/* Two values, so left, right and A all turn it over. */
 				if (d || key == IN_ACCEPT)
@@ -7855,6 +7864,98 @@ static unsigned np_draw(app *a, const mu_now *mn, const char *next)
 	return wait;
 }
 
+/* ---- Muse: the pocket lock ------------------------------------------------
+ *
+ * #51, Eric's design, 2026-09-30. Held F1+F2 - the front function keys, L3/R3
+ * in some other CFWs - for a second inside Muse while music plays, or MENU's
+ * Lock Screen, puts the backlight out and ignores every button but volume,
+ * power and the pair that unlocks. A headset's play, pause and skip still
+ * work: musec_poll reads them, and it runs here as everywhere.
+ *
+ * Power stays power, by Eric's call - powering off is far more common than
+ * pocketing a game handheld for music - so a press in a pocket turns the Brick
+ * off, cleanly, with a book's place saved, as it would with the screen on.
+ * Nothing lights the screen short of unlocking: anything that did would light
+ * it in the pocket. Measured before building: a book playing drew about 470
+ * mA with the backlight on and 300 with it off. */
+
+/* A chord is armed once both keys have been let go, so the hold that unlocks
+ * does not lock again the moment the screen is back, and one lock is one hold. */
+static bool g_lock_armed = true;
+static bool g_lock_asked;                /* MENU's Lock Screen, for muse_menu */
+
+static void muse_ask_lock(void) { g_lock_asked = true; }
+
+static bool lock_chord(const in_state *in)
+{
+	Uint32 later;
+
+	if (!in->down[IN_BRIGHTUP] && !in->down[IN_BRIGHTDN]) g_lock_armed = true;
+	if (!g_lock_armed || !in->down[IN_BRIGHTUP] || !in->down[IN_BRIGHTDN]) return false;
+	later = in->down_since[IN_BRIGHTUP] > in->down_since[IN_BRIGHTDN]
+	      ? in->down_since[IN_BRIGHTUP] : in->down_since[IN_BRIGHTDN];
+	if (SDL_GetTicks() - later < 1000) return false;
+	g_lock_armed = false;
+	return true;
+}
+
+/* Whether a lock can happen here: music playing, and Muse not opened over a
+ * paused game, whose power rule belongs to the game. */
+static bool lock_allowed(void)
+{
+	return musec_playing() && !g_muse_over;
+}
+
+/* The volume and brightness keys on a Muse screen, and the chord. F1 and F2
+ * are brightness, so pressing both nudges one down and one up, which cancels;
+ * once both are held they stop repeating. True when the chord locked. */
+static bool muse_keys(app *a)
+{
+	in_state *in = &a->in;
+
+	if (in_repeat(in, IN_VOLUP)) plat_volume_nudge(+1);
+	if (in_repeat(in, IN_VOLDN)) plat_volume_nudge(-1);
+	if (in->down[IN_BRIGHTUP] && in->down[IN_BRIGHTDN]) {
+		if (in->pressed[IN_BRIGHTUP]) plat_brightness_nudge(+1);
+		if (in->pressed[IN_BRIGHTDN]) plat_brightness_nudge(-1);
+		return lock_chord(in) && lock_allowed();
+	}
+	lock_chord(in);                      /* only to re-arm on release */
+	if (in_repeat(in, IN_BRIGHTUP)) plat_brightness_nudge(+1);
+	if (in_repeat(in, IN_BRIGHTDN)) plat_brightness_nudge(-1);
+	return false;
+}
+
+/* Locked, until F1+F2 again, power, or Auto Off. Nothing is drawn: the panel
+ * is dark and a present would be work for nobody. */
+static void muse_locked(app *a)
+{
+	fprintf(stderr, "muse: locked\n");
+	plat_backlight(false);
+	plat_input_flush();
+	memset(&a->in, 0, sizeof a->in);
+	while (!want_quit && a->running) {
+		muse_screen_poll();
+		plat_input_poll(&a->in);
+		if (a->in.quit_requested) { a->running = false; break; }
+		/* Power, or Auto Off once the music has stopped long enough. The
+		 * light first, so the power-off animation is seen. */
+		if (a->in.pressed[IN_POWER] || idle_due(a)) {
+			plat_backlight(true);
+			muse_power(a);
+			break;
+		}
+		if (in_repeat(&a->in, IN_VOLUP)) plat_volume_nudge(+1);
+		if (in_repeat(&a->in, IN_VOLDN)) plat_volume_nudge(-1);
+		if (lock_chord(&a->in)) break;
+		SDL_Delay(30);
+	}
+	plat_backlight(true);
+	fprintf(stderr, "muse: unlocked\n");
+	plat_input_flush();
+	memset(&a->in, 0, sizeof a->in);
+}
+
 /* MENU, from any Muse screen: Muse's own menu, the one its shelf has always
  * had. One button, one meaning, wherever in Muse it is pressed - it used to
  * close Muse from Now Playing and the tracks, and open this on the shelf.
@@ -7873,6 +7974,11 @@ static muse_exit muse_menu(app *a)
 	g_menu_closing = false;
 	plat_input_flush();
 	memset(&a->in, 0, sizeof a->in);
+	/* Lock Screen closed the menu to lock from the screen underneath. */
+	if (g_lock_asked) {
+		g_lock_asked = false;
+		if (lock_allowed()) muse_locked(a);
+	}
 	if (want_quit || !a->running) return MUSE_CLOSE;
 	return g_muse_gen != gen ? MUSE_REBUILT : MUSE_BACK;
 }
@@ -7933,10 +8039,12 @@ static muse_exit muse_now_screen(app *a)
 		if (in_repeat(&a->in, IN_R1))       musec_next();
 		if (in_repeat(&a->in, IN_LEFT))     musec_seek_by(-seek_step(&a->in, IN_LEFT));
 		if (in_repeat(&a->in, IN_RIGHT))    musec_seek_by(+seek_step(&a->in, IN_RIGHT));
-		if (in_repeat(&a->in, IN_VOLUP))    plat_volume_nudge(+1);
-		if (in_repeat(&a->in, IN_VOLDN))    plat_volume_nudge(-1);
-		if (in_repeat(&a->in, IN_BRIGHTUP)) plat_brightness_nudge(+1);
-		if (in_repeat(&a->in, IN_BRIGHTDN)) plat_brightness_nudge(-1);
+		if (muse_keys(a)) {
+			muse_locked(a);
+			if (!a->running || g_muse_gone) { how = MUSE_CLOSE; break; }
+			memset(&drawn, 0, sizeof drawn);   /* the screen is back: draw it */
+			continue;
+		}
 
 		/* The queue's track, not musec_path: that goes blank when an album
 		 * ends, and the screen should still show the album that just did. */
@@ -8115,10 +8223,11 @@ static muse_exit muse_tracks(app *a, int album, bool now)
 		if (in_repeat(&a->in, IN_RIGHT))    musec_seek_by(+seek_step(&a->in, IN_RIGHT));
 		if (in_repeat(&a->in, IN_L1))       musec_prev();
 		if (in_repeat(&a->in, IN_R1))       musec_next();
-		if (in_repeat(&a->in, IN_VOLUP))    plat_volume_nudge(+1);
-		if (in_repeat(&a->in, IN_VOLDN))    plat_volume_nudge(-1);
-		if (in_repeat(&a->in, IN_BRIGHTUP)) plat_brightness_nudge(+1);
-		if (in_repeat(&a->in, IN_BRIGHTDN)) plat_brightness_nudge(-1);
+		if (muse_keys(a)) {
+			muse_locked(a);
+			if (!a->running || g_muse_gone) { how = MUSE_CLOSE; break; }
+			continue;
+		}
 
 		if (a->in.pressed[IN_ACCEPT] && items > 0) {
 			/* The track already playing is not started over: A on it is the
@@ -8335,10 +8444,11 @@ static void muse_shelf_screen(app *a, bool now)
 			if (in_repeat(&a->in, IN_R1)) v->cursor = (v->cursor + CF_WINDOW) % n;
 			cf_set_cursor_dir(&v->cf, v->cursor, n, dir);
 		}
-		if (in_repeat(&a->in, IN_VOLUP))    plat_volume_nudge(+1);
-		if (in_repeat(&a->in, IN_VOLDN))    plat_volume_nudge(-1);
-		if (in_repeat(&a->in, IN_BRIGHTUP)) plat_brightness_nudge(+1);
-		if (in_repeat(&a->in, IN_BRIGHTDN)) plat_brightness_nudge(-1);
+		if (muse_keys(a)) {
+			muse_locked(a);
+			if (!a->running || g_muse_gone) break;
+			continue;
+		}
 
 		if (a->in.pressed[IN_ACCEPT]) {
 			/* SELECT from the tracks or Now Playing closes all of Muse, and

@@ -416,23 +416,30 @@ static void system_menu(void)
 		m.wifi = WIFI_CONNECTED;     /* the case above left the radio down */
 		mn = sys_menu_build(&m, mrows, &mb, &mhead);
 		printf("Muse's shelf menu:\n");
-		ck(mn == 4, "four rows with only music, not six");
+		ck(mn == 5, "five rows with only music");
 		ck(!strcmp(mrows[0].label, "Albums") && !strcmp(val(&mrows[0]), "7"),
 		   "how many albums");
 		ck(!strcmp(mrows[1].label, "Sort By") && mrows[1].live &&
 		   !strcmp(val(&mrows[1]), "Artist"),
 		   "Sort By, and by artist when nothing says otherwise");
-		ck(!strcmp(mrows[2].label, "Album Art") && mrows[2].live,
+		ck(!strcmp(mrows[2].label, "Lock Screen") && !mrows[2].live &&
+		   !strcmp(val(&mrows[2]), "while playing"),
+		   "Lock Screen, dead and saying why with nothing playing");
+		ck(!strcmp(mrows[3].label, "Album Art") && mrows[3].live,
 		   "covers to fetch, on a network");
-		ck(!strcmp(mrows[3].label, "Rescan Folder") && mrows[3].live,
+		ck(!strcmp(mrows[4].label, "Rescan Folder") && mrows[4].live,
 		   "and a rescan that works");
+		m.muse_playing = true;
+		sys_menu_build(&m, mrows, &mb, &mhead);
+		ck(mrows[2].live && !val(&mrows[2])[0], "Lock Screen live while music plays");
+		m.muse_playing = false;
 		m.sort = "Album";
 		m.wifi = WIFI_OFF;
 		sys_menu_build(&m, mrows, &mb, &mhead);
 		ck(!strcmp(val(&mrows[1]), "Album"), "the order it is in");
-		ck(!mrows[2].live && !strcmp(val(&mrows[2]), "needs Wi-Fi"),
+		ck(!mrows[3].live && !strcmp(val(&mrows[3]), "needs Wi-Fi"),
 		   "Album Art says why it cannot, off the network");
-		ck(mrows[1].live && mrows[3].live,
+		ck(mrows[1].live && mrows[4].live,
 		   "and neither Sort By nor Rescan Folder needs one");
 		for (k = 0; k < mn; k++) {
 			ck(strcmp(mrows[k].label, "Core") != 0, "no Core: it has none");
@@ -445,15 +452,15 @@ static void system_menu(void)
 		m.wifi = WIFI_CONNECTED;
 		m.muse_both = true;
 		mn = sys_menu_build(&m, mrows, &mb, &mhead);
-		ck(mn == SM_MUSE_ROWS, "five rows with both kinds");
+		ck(mn == SM_MUSE_ROWS, "six rows with both kinds");
 		ck(!strcmp(mrows[1].label, "Show") && mrows[1].live &&
 		   !strcmp(val(&mrows[1]), "Music"), "Show, on music");
-		ck(!strcmp(mrows[2].label, "Sort By") && !strcmp(mrows[3].label, "Album Art"),
-		   "Sort By and Album Art after it");
+		ck(!strcmp(mrows[2].label, "Sort By") && !strcmp(mrows[3].label, "Lock Screen") &&
+		   !strcmp(mrows[4].label, "Album Art"), "Sort By, Lock Screen, then Album Art");
 		m.muse_books = true;
 		m.game_count = 2;
 		mn = sys_menu_build(&m, mrows, &mb, &mhead);
-		ck(mn == 4, "four rows on books");
+		ck(mn == 5, "five rows on books");
 		ck(!strcmp(mrows[0].label, "Books") && !strcmp(val(&mrows[0]), "2"),
 		   "how many books");
 		ck(!strcmp(val(&mrows[1]), "Audiobooks"), "Show, on books");
@@ -464,8 +471,9 @@ static void system_menu(void)
 		{
 			sm_muse_row ids[SM_MUSE_ROWS];
 
-			ck(sys_menu_muse_rows(true, false, ids) == 3 && ids[1] == SMM_SORT,
-			   "books alone: the count, Sort By and Rescan Folder");
+			ck(sys_menu_muse_rows(true, false, ids) == 4 && ids[1] == SMM_SORT &&
+			   ids[2] == SMM_LOCK,
+			   "books alone: the count, Sort By, Lock Screen and Rescan Folder");
 		}
 	}
 }

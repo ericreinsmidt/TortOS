@@ -31,7 +31,7 @@ static void ck(int cond, const char *what)
  * written with no air around the slash - "L1/R1", not "L1 / R1". */
 static const char *const BUTTONS[] = {
 	"Up/Down", "Left/Right", "A", "B", "X", "Y", "L1/R1", "X/Y",
-	"MENU", "SELECT", "POWER", "Volume rocker", "F1/F2",
+	"MENU", "SELECT", "POWER", "Volume rocker", "F1/F2", "F1+F2",
 };
 #define NBUTTONS ((int)(sizeof BUTTONS / sizeof BUTTONS[0]))
 
