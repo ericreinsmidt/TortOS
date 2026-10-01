@@ -71,8 +71,12 @@ static int game(menu_row *out)
 {
 	int n = 0;
 
-	out[n++] = (menu_row){ "MENU",   "Pause and menu",     false };
-	out[n++] = (menu_row){ "SELECT", "Muse, in that menu", false };
+	/* Fast forward rides on MENU's row, because a seventh row does not fit
+	 * (PAGE_MAX in tools/controls-check.c). MENU+R1 steps 2x, 3x, 4x and back
+	 * to normal - Diatom's ADR-0034 - and MENU opens the menu on release so it
+	 * can be held for it. Eric's wording, 2026-10-01, SELECT's with it. */
+	out[n++] = (menu_row){ "MENU",   "Menu, +R1 for FF",   false };
+	out[n++] = (menu_row){ "SELECT", "Muse in menu",       false };
 	out[n++] = (menu_row){ "X/Y",  "Turbo A/B *",        false };
 	out[n++] = (menu_row){ "POWER",  "Save and turn off",  false };
 	/* The exception as a note rather than a longer row, because it is true of

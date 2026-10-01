@@ -2244,6 +2244,22 @@ static void on_cheevo_unlocked(int id)
 	}
 }
 
+/* Called from inside plat_resident_wait when Diatom says the fast-forward step
+ * changed, or that a game resumed fast (its ADR-0034). Drawn as an unlock
+ * notice is - rendered here, composited there - and shorter, since it says a
+ * word. The step, not the speed reached: on a heavy SNES or GBA game 3x and
+ * 4x both run about 2.5x, and that figure moves from scene to scene. */
+static void on_speed(int x)
+{
+	char p[CFG_STR * 2], body[16];
+
+	if (x > 1) snprintf(body, sizeof body, "%dx", x);
+	else       snprintf(body, sizeof body, "Off");
+	snprintf(p, sizeof p, "%s/notice.dtov", P_USERDATA);
+	if (notice_render("Fast forward", body, p))
+		plat_resident_line("OVERLAY\tpath=%s\tms=1500", p);
+}
+
 /* ---------- where you were ------------------------------------------------ */
 
 /* Coming back to the shelf you left is worth four lines of file handling: the
@@ -10994,6 +11010,7 @@ int main(int argc, char *argv[])
 	{	char cp[CFG_STR * 2];
 		chv_earned_load();
 		plat_resident_on_unlock(on_cheevo_unlocked);
+		plat_resident_on_speed(on_speed);
 		plat_resident_on_tick(on_game_tick);
 
 		/* Without this every HTTPS request fails verification, because the

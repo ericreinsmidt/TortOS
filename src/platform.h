@@ -110,6 +110,11 @@ int  plat_resident_wait(void);
  * to size. NULL to stop. */
 void plat_resident_on_unlock(void (*fn)(int id));
 
+/* Called from inside plat_resident_wait when Diatom reports its fast-forward
+ * step, 1 to 4 (its ADR-0034): on every MENU+R1, and again when a game resumes
+ * fast. A callback for the unlock's reason. NULL to stop. */
+void plat_resident_on_speed(void (*fn)(int x));
+
 /* Called from inside plat_resident_wait roughly ten times a second, which is
  * the rate its socket poll already runs at. For work the launcher wants to do
  * WHILE a game is running and cannot do anywhere else, because this process is

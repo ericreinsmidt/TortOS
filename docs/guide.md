@@ -115,7 +115,8 @@ matters to you - a card is the one part of this that gets reformatted.
 | **MENU** (on the systems row) | the TortOS menu - settings that are about the firmware |
 | **MENU** (inside a system) | that system's menu, below |
 | **MENU** (in `Cubic`) | always the TortOS menu; B is the system's |
-| **MENU** (in game) | the in-game menu: Continue, Save, Load, Display, Cheevos, Reset, Quit |
+| **MENU** (in game) | the in-game menu: Continue, Save, Load, Display, Cheevos, Reset, Quit. It opens when you let go, so MENU can be held for fast forward |
+| **MENU+R1** (in game) | fast forward: 2x, 3x, 4x, then back to normal |
 | **MENU** (inside any menu) | closes the whole menu, however deep in it you are. B goes back one screen |
 | **SELECT** | Muse, the music and audiobook player, from anywhere but a running game - the in-game menu included. Again to close it |
 | **POWER** | powers off. In a game, the game is saved first |
@@ -217,6 +218,17 @@ fast, is in [turbo.md](turbo.md).
 
 Diatom does the pulsing, not the emulator core, which is why it works the same
 on all nine rather than only on the one core that happens to implement turbo.
+
+**Fast forward** is MENU+R1 in a game. Each press steps the speed to 2x, 3x,
+4x and back to normal, and says so at the bottom of the screen. The game is
+silent while it's fast, and the picture moves in steps rather than smoothly,
+because the Brick draws every other frame to give the game more time. Each
+game starts at normal speed, and the speed stays where you left it through the
+in-game menu.
+
+The speed is as fast as the game can go, up to the step. NES and Genesis
+games reach it. A heavy SNES or Game Boy Advance game tops out at about 2.5x,
+so there 3x and 4x both mean as fast as that game can go.
 
 Volume and brightness draw the same thin line across the top of the screen in
 the launcher, in a game, and in the in-game menu. One firmware, one piece of
