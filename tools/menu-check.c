@@ -471,7 +471,7 @@ static void system_menu(void)
 		{
 			sm_muse_row ids[SM_MUSE_ROWS];
 
-			ck(sys_menu_muse_rows(true, false, ids) == 4 && ids[1] == SMM_SORT &&
+			ck(sys_menu_muse_rows(true, false, false, ids) == 4 && ids[1] == SMM_SORT &&
 			   ids[2] == SMM_LOCK,
 			   "books alone: the count, Sort By, Lock Screen and Rescan Folder");
 		}
@@ -569,6 +569,81 @@ static void cursor_reaches(void)
 	/* Play Time reads what is already stored and asks nothing of the network,
 	 * so it stays reachable when everything else is grayed out. */
 	ck(holds(got, k, PM_STATS), "Play Time is reachable offline");
+}
+
+static bool has_label(const menu_row *rows, int n, const char *label)
+{
+	int i;
+
+	for (i = 0; i < n; i++)
+		if (!strcmp(rows[i].label, label)) return true;
+	return false;
+}
+
+/* A device with no radio at all, which is not the same as one whose radio is
+ * off. Off keeps every row and says "needs Wi-Fi", because turning it on is
+ * the fix; with no radio there is no fix, so the rows go. And a device that
+ * has both radios, which is the Brick, must get every row in today's order,
+ * or the build and the key handler would be reading two different menus. */
+static void radio_less(void)
+{
+	sys_ui u;
+	menu_bufs b;
+	menu_row rows[MENU_MAX_ROWS];
+	pm_row pm[PM_ROWS];
+	sm_row sm[SM_ROWS];
+	sm_muse_row mu[SM_MUSE_ROWS];
+	const char *heading;
+	int n, k, i;
+	bool ok;
+
+	memset(&u, 0, sizeof u);
+	u.wifi = WIFI_OFF;
+	u.cards = "Plain Jane";
+	u.cards_dir = "Horizontal";
+	printf("a device with both radios:\n");
+	k = sys_menu_tortos_rows(&u, pm);
+	for (i = 0, ok = true; i < k; i++) if (pm[i] != (pm_row)i) ok = false;
+	ck(k == PM_ROWS && ok, "every TortOS row, in the enum's order");
+	k = sys_menu_system_rows(&u, sm);
+	for (i = 0, ok = true; i < k; i++) if (sm[i] != (sm_row)i) ok = false;
+	ck(k == SM_ROWS && ok, "every system row, in the enum's order");
+
+	u.no_wifi = true;
+	u.no_bt = true;
+	n = sys_menu_build(&u, rows, &b, &heading);
+	k = sys_menu_tortos_rows(&u, pm);
+	printf("TortOS menu, no radio at all:\n");
+	ck(n == k && n == PM_ROWS - 6, "six rows fewer, and the build agrees with the list");
+	ck(!has_label(rows, n, "Wi-Fi") && !has_label(rows, n, "Bluetooth"),
+	   "no Wi-Fi, no Bluetooth");
+	ck(!has_label(rows, n, "Over The Hare") && !has_label(rows, n, "Box Art"),
+	   "no Over The Hare, no Box Art");
+	ck(!has_label(rows, n, "Cheevos") && !has_label(rows, n, "ScreenScraper"),
+	   "and no sign-ins");
+	ck(has_label(rows, n, "Audio Output") && has_label(rows, n, "Play Time") &&
+	   has_label(rows, n, "Controls") && has_label(rows, n, "About TortOS"),
+	   "the rest is all there");
+	ck(pm[n - 1] == PM_ABOUT && !strcmp(rows[n - 1].label, "About TortOS") &&
+	   pm[0] == PM_STATS && !strcmp(rows[0].label, "Play Time"),
+	   "and the list names the rows the build drew, first to last");
+
+	memset(&u, 0, sizeof u);
+	u.games = true;
+	u.no_wifi = true;
+	u.sys_name = "NES"; u.sys_core = "nestopia";
+	u.game_count = 3; u.dmode = "Native";
+	n = sys_menu_build(&u, rows, &b, &heading);
+	k = sys_menu_system_rows(&u, sm);
+	printf("system menu, no radio at all:\n");
+	ck(n == k && n == SM_ROWS - 1, "Box Art goes and nothing else");
+	ck(!has_label(rows, n, "Box Art"), "no Box Art");
+	ck(sm[n - 1] == SM_RESCAN && !strcmp(rows[n - 1].label, "Rescan Folder"),
+	   "Rescan Folder moves up into its place");
+
+	k = sys_menu_muse_rows(false, false, true, mu);
+	for (i = 0, ok = true; i < k; i++) if (mu[i] == SMM_ART) ok = false;
+	ck(ok, "Muse loses Album Art too");
 }
 
 /* The bound is the point. An all-dead menu must terminate, not spin. */
@@ -956,6 +1031,7 @@ int main(void)
 	system_menu();
 	auto_off_words();
 	cursor_reaches();
+	radio_less();
 	slots();
 	save_slot();
 	card_sets();

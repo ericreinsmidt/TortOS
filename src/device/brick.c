@@ -962,6 +962,11 @@ void plat_brightness_set(int level)
 	levels_save();
 }
 
+/* Both radios are on the Brick's board: the xradio chip carries Wi-Fi and
+ * Bluetooth. */
+bool plat_has_wifi(void)      { return true; }
+bool plat_has_bluetooth(void) { return true; }
+
 /* ---- battery ---- */
 
 bool plat_battery(int *pct, bool *charging)

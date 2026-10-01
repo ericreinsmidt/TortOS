@@ -18,7 +18,35 @@ void sys_menu_auto_off_label(int seconds, char *out, size_t n)
  * cannot be used teaches nobody why. */
 #define NEEDS_WIFI(on) ((on) ? NULL : "needs Wi-Fi")
 
-int sys_menu_muse_rows(bool books, bool both, sm_muse_row *out)
+int sys_menu_tortos_rows(const sys_ui *u, pm_row *out)
+{
+	int n = 0, r;
+
+	for (r = 0; r < PM_ROWS; r++) {
+		/* Everything that needs the network, including both sign-ins: an
+		 * account nobody can reach is a row that can only fail. Audio Output
+		 * stays, since a cable and the speaker are still two places. */
+		if (u->no_wifi && (r == PM_WIFI || r == PM_XFER || r == PM_SCRAPE ||
+		                   r == PM_ACHIEVEMENTS || r == PM_SS))
+			continue;
+		if (u->no_bt && r == PM_BT) continue;
+		out[n++] = (pm_row)r;
+	}
+	return n;
+}
+
+int sys_menu_system_rows(const sys_ui *u, sm_row *out)
+{
+	int n = 0, r;
+
+	for (r = 0; r < SM_ROWS; r++) {
+		if (u->no_wifi && r == SM_BOXART) continue;
+		out[n++] = (sm_row)r;
+	}
+	return n;
+}
+
+int sys_menu_muse_rows(bool books, bool both, bool no_wifi, sm_muse_row *out)
 {
 	int n = 0;
 
@@ -26,7 +54,7 @@ int sys_menu_muse_rows(bool books, bool both, sm_muse_row *out)
 	if (both) out[n++] = SMM_SHOW;
 	out[n++] = SMM_SORT;
 	out[n++] = SMM_LOCK;
-	if (!books) out[n++] = SMM_ART;
+	if (!books && !no_wifi) out[n++] = SMM_ART;
 	out[n++] = SMM_RESCAN;
 	return n;
 }
@@ -50,7 +78,8 @@ int sys_menu_build(const sys_ui *u, menu_row *out, menu_bufs *b,
 		}
 		if (u->muse) {
 			sm_muse_row ids[SM_MUSE_ROWS];
-			int k, n = sys_menu_muse_rows(u->muse_books, u->muse_both, ids);
+			int k, n = sys_menu_muse_rows(u->muse_books, u->muse_both,
+			                              u->no_wifi, ids);
 
 			for (k = 0; k < n; k++)
 				switch (ids[k]) {
@@ -80,11 +109,13 @@ int sys_menu_build(const sys_ui *u, menu_row *out, menu_bufs *b,
 				}
 			return n;
 		}
-		out[SM_GAMES]   = (menu_row){ "Games",         b->a,        false };
-		out[SM_CORE]    = (menu_row){ "Core",          b->b,        false };
-		out[SM_SORT]    = (menu_row){ "Sort By",
+		menu_row full[SM_ROWS];
+
+		full[SM_GAMES]   = (menu_row){ "Games",         b->a,        false };
+		full[SM_CORE]    = (menu_row){ "Core",          b->b,        false };
+		full[SM_SORT]    = (menu_row){ "Sort By",
 		                              u->sort ? u->sort : "Name", true  };
-		out[SM_DISPLAY] = (menu_row){ "Display Mode",  u->dmode,    true  };
+		full[SM_DISPLAY] = (menu_row){ "Display Mode",  u->dmode,    true  };
 		/* Button Mapping is out until there is something behind it. Diatom
 		 * supplies core button labels, so the hook is real - but a dead row
 		 * in a menu of live ones is a promise the launcher is not keeping,
@@ -98,20 +129,28 @@ int sys_menu_build(const sys_ui *u, menu_row *out, menu_bufs *b,
 		 * they stay, because what they report is true - the shelf's count and
 		 * the core that will run it. The filter Show promised is on the shelf
 		 * already: Y marks a favorite and Favorites is its own shelf. */
-		/* out[SM_BUTTONS] = (menu_row){ "Button Mapping", NULL,    false }; */
+		/* full[SM_BUTTONS] = (menu_row){ "Button Mapping", NULL,    false }; */
 		/* Just this system. Needs the network like its counterpart in the
 		 * TortOS menu, and says so rather than opening a screen that can only
 		 * report the same thing. */
-		out[SM_BOXART]  = (menu_row){ "Box Art",       NEEDS_WIFI(net), net };
+		full[SM_BOXART]  = (menu_row){ "Box Art",       NEEDS_WIFI(net), net };
 		/* Live now that there is something behind it. It rescans the whole
 		 * card rather than this one folder - the work is three directory reads
 		 * and the shared parts (hiding a system that emptied, rebuilding
 		 * Favorites) have to run anyway - but the folder you are standing in
 		 * is the one you came here to refresh, so the name still describes
 		 * what you asked for. */
-		out[SM_RESCAN]  = (menu_row){ "Rescan Folder", NULL,        true  };
-		return SM_ROWS;
+		full[SM_RESCAN]  = (menu_row){ "Rescan Folder", NULL,        true  };
+		{
+			sm_row ids[SM_ROWS];
+			int k, n = sys_menu_system_rows(u, ids);
+
+			for (k = 0; k < n; k++) out[k] = full[ids[k]];
+			return n;
+		}
 	}
+
+	menu_row full[PM_ROWS];
 
 	*heading = "TortOS";
 	/* The network's name, not its address. A settings row should say what the
@@ -123,8 +162,8 @@ int sys_menu_build(const sys_ui *u, menu_row *out, menu_bufs *b,
 		snprintf(b->b, sizeof b->b, "%s",
 		         u->wifi == WIFI_CONNECTING ? "connecting" :
 		         u->wifi == WIFI_IDLE       ? "not connected" : "off");
-	out[PM_WIFI]         = (menu_row){ "Wi-Fi",     b->b,      true  };
-	out[PM_BT]           = (menu_row){ "Bluetooth",
+	full[PM_WIFI]         = (menu_row){ "Wi-Fi",     b->b,      true  };
+	full[PM_BT]           = (menu_row){ "Bluetooth",
 	                                   u->bt_name ? u->bt_name : "not connected",
 	                                   true  };
 	/* Where the system's sound goes - not Diatom's, which is why the label says
@@ -137,7 +176,7 @@ int sys_menu_build(const sys_ui *u, menu_row *out, menu_bufs *b,
 		snprintf(b->d, sizeof b->d, "auto (%s)", aout_dest_name(u->audio_dest));
 	else
 		snprintf(b->d, sizeof b->d, "%s", aout_dest_name(u->audio_dest));
-	out[PM_AUDIO]        = (menu_row){ "Audio Output", b->d, true };
+	full[PM_AUDIO]        = (menu_row){ "Audio Output", b->d, true };
 	/* Files onto and off the device over Wi-Fi: a small web server on the LAN
 	 * that a phone or a laptop opens. Named for OTA, which is what everyone
 	 * already calls this, and for the other half of the fable - the tortoise
@@ -145,20 +184,20 @@ int sys_menu_build(const sys_ui *u, menu_row *out, menu_bufs *b,
 	 *
 	 * Directly under Wi-Fi because it is useless without it, and reads as an
 	 * answer to the row above rather than a separate idea. */
-	out[PM_XFER]         = (menu_row){ "Over The Hare", NEEDS_WIFI(net), net };
-	out[PM_STATS]        = (menu_row){ "Play Time",  NULL,      true  };
-	out[PM_SLEEP]        = (menu_row){ "Auto Off",  b->c,      true  };
+	full[PM_XFER]         = (menu_row){ "Over The Hare", NEEDS_WIFI(net), net };
+	full[PM_STATS]        = (menu_row){ "Play Time",  NULL,      true  };
+	full[PM_SLEEP]        = (menu_row){ "Auto Off",  b->c,      true  };
 	/* Both change how the shelf looks and nothing about what is on it. They
 	 * are what is left of that group: Text Size stood here until the band it
 	 * offered turned out to be too narrow to matter - src/ui.c. */
-	out[PM_THEME]        = (menu_row){ "UI Theme",  u->cards,     true };
-	out[PM_DIR]          = (menu_row){ "UI Direction", u->cards_dir, true };
+	full[PM_THEME]        = (menu_row){ "UI Theme",  u->cards,     true };
+	full[PM_DIR]          = (menu_row){ "UI Direction", u->cards_dir, true };
 	/* Not "Sleep". The device has no suspend and is not getting one - see the
 	 * backlog. This powers off, and resume-into-game brings you back where you
 	 * were, which is what sleep would have been for. */
 	sys_menu_auto_off_label(u->auto_off, b->c, sizeof b->c);
-	out[PM_SCRAPE]       = (menu_row){ "Box Art",   NEEDS_WIFI(net), net };
-	out[PM_ACHIEVEMENTS] = (menu_row){ "Cheevos",
+	full[PM_SCRAPE]       = (menu_row){ "Box Art",   NEEDS_WIFI(net), net };
+	full[PM_ACHIEVEMENTS] = (menu_row){ "Cheevos",
 	                                   u->ra_in ? u->ra_name : "sign in",
 	                                   true };
 	/* Beside Cheevos because it is the same kind of row: an account, named by
@@ -168,14 +207,20 @@ int sys_menu_build(const sys_ui *u, menu_row *out, menu_bufs *b,
 	 * Dead when the build has no developer key, because then there is nothing
 	 * to sign into - and saying so is better than a row that opens a keyboard
 	 * and refuses whatever is typed into it. */
-	out[PM_SS]           = (menu_row){ "ScreenScraper",
+	full[PM_SS]           = (menu_row){ "ScreenScraper",
 	                                   !u->ss_have ? "not in this build"
 	                                   : u->ss_in ? u->ss_name : "sign in",
 	                                   u->ss_have };
 	/* What every button does, per screen. Needs nothing of the device, which
 	 * is the point: it is the page you reach when the thing you have forgotten
 	 * is which button opens Muse. See src/controls.h. */
-	out[PM_CONTROLS]     = (menu_row){ "Controls",    NULL,   true  };
-	out[PM_ABOUT]        = (menu_row){ "About TortOS", NULL,   true  };
-	return PM_ROWS;
+	full[PM_CONTROLS]     = (menu_row){ "Controls",    NULL,   true  };
+	full[PM_ABOUT]        = (menu_row){ "About TortOS", NULL,   true  };
+	{
+		pm_row ids[PM_ROWS];
+		int k, n = sys_menu_tortos_rows(u, ids);
+
+		for (k = 0; k < n; k++) out[k] = full[ids[k]];
+		return n;
+	}
 }

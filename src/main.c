@@ -4442,6 +4442,8 @@ static int menu_build(app *a, screen_id screen, int sys,
 	u.wifi  = menu_wifi(ss, sizeof ss);
 	u.ssid  = ss;
 	u.games = screen == SCREEN_GAMES;
+	u.no_wifi = !plat_has_wifi();
+	u.no_bt   = !plat_has_bluetooth();
 
 	if (u.games) {
 		const system_cfg *sc = &a->sys.systems[sys];
@@ -6528,7 +6530,8 @@ static int menu_shelf_width(app *a)
 		if (muse) {
 			sm_muse_row ids[SM_MUSE_ROWS];
 			int both = ml_count(&g_muse, true) && ml_count(&g_muse, false);
-			int nn = sys_menu_muse_rows(muse_books_shown(), both, ids);
+			int nn = sys_menu_muse_rows(muse_books_shown(), both,
+			                            !plat_has_wifi(), ids);
 
 			for (k = 0; k < nn; k++) {
 				if (ids[k] == SMM_SORT) srow = k;
@@ -6663,7 +6666,7 @@ static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
 			sm_muse_row ids[SM_MUSE_ROWS];
 			int n = sys_menu_muse_rows(muse_books_shown(),
 			                           ml_count(&g_muse, true) && ml_count(&g_muse, false),
-			                           ids);
+			                           !plat_has_wifi(), ids);
 			sm_muse_row id = sel >= 0 && sel < n ? ids[sel] : SMM_COUNT;
 
 			if (id == SMM_SORT) {
@@ -6692,6 +6695,16 @@ static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
 		 * knew that from the day the menu was cut to two rows, and left and
 		 * right on Favorites' Sort By did nothing at all. */
 		if (a->view[a->sys_cursor].owner) sel = sel == 1 ? SM_SORT : SM_GAMES;
+		/* And a console's rows lose Box Art on a device with no radio, which
+		 * moves Rescan Folder up one: which row is which comes from the same
+		 * list the build used. */
+		else if (!is_muse(&a->sys.systems[a->sys_cursor])) {
+			sys_ui dev = { .no_wifi = !plat_has_wifi() };
+			sm_row ids[SM_ROWS];
+			int n = sys_menu_system_rows(&dev, ids);
+
+			sel = sel >= 0 && sel < n ? (int)ids[sel] : SM_ROWS;
+		}
 		/* Display mode, saved the moment it changes because there is no
 		 * confirm step to hang the write off. */
 		if (d && sel == SM_DISPLAY) {
@@ -6761,6 +6774,16 @@ static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
 			return MENU_DONE;
 		}
 		return MENU_STAY;
+	}
+
+	/* The row's identity rather than its position: a device with no radio has
+	 * fewer of them, and the same list the build used says which is which. */
+	{
+		sys_ui dev = { .no_wifi = !plat_has_wifi(), .no_bt = !plat_has_bluetooth() };
+		pm_row ids[PM_ROWS];
+		int n = sys_menu_tortos_rows(&dev, ids);
+
+		sel = sel >= 0 && sel < n ? (int)ids[sel] : PM_ROWS;
 	}
 
 	/* Auto Off, on the left/right idiom Display mode uses. */

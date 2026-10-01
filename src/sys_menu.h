@@ -82,7 +82,7 @@ typedef enum { SMM_COUNT, SMM_SHOW, SMM_SORT, SMM_LOCK, SMM_ART, SMM_RESCAN } sm
 /* Muse's rows in order, for the kind its shelf shows and whether the card has
  * both. Returns how many. The build and the key handler both ask this, so the
  * two cannot disagree about what row 2 is. */
-int sys_menu_muse_rows(bool books, bool both, sm_muse_row *out);
+int sys_menu_muse_rows(bool books, bool both, bool no_wifi, sm_muse_row *out);
 
 #define MENU_MAX_ROWS 13
 
@@ -120,6 +120,14 @@ typedef struct {
 	bool muse_books;         /* and it shows books rather than music */
 	bool muse_both;          /* and the card has both kinds */
 	bool muse_playing;       /* and music is playing, so it can lock */
+
+	/* What the device HAS, rather than what state it is in. A radio that is
+	 * merely off keeps its rows, saying "needs Wi-Fi", because turning it on
+	 * is the fix; a device with no radio at all loses them, because nothing
+	 * is. False means present, so a caller or a check that says nothing about
+	 * it gets the Brick. */
+	bool        no_wifi;
+	bool        no_bt;
 
 	wifi_state  wifi;        /* already cached by the caller; see menu_wifi */
 	const char *ssid;        /* the network's name when connected, else NULL */
@@ -160,6 +168,13 @@ typedef struct {
 	 * check that links it would have to link the table too. */
 	const char *sort;
 } sys_ui;
+
+/* The TortOS menu's rows and the system menu's, in order, for what the device
+ * has - see no_wifi in sys_ui. Return how many. The build and the key handler
+ * both ask, so the two cannot disagree about what row 3 is, the same reason
+ * sys_menu_muse_rows exists. */
+int sys_menu_tortos_rows(const sys_ui *u, pm_row *out);
+int sys_menu_system_rows(const sys_ui *u, sm_row *out);
 
 /* Seconds to the label a row shows. Pure, and here rather than in main.c so
  * the check can hold it to "never", "30s" and "2m" without a device. */
