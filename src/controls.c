@@ -77,15 +77,19 @@ static int game(menu_row *out)
 	 * can be held for it. Eric's wording, 2026-10-01, SELECT's with it. */
 	out[n++] = (menu_row){ "MENU",   "Menu, +R1 for FF",   false };
 	out[n++] = (menu_row){ "SELECT", "Muse in menu",       false };
-	out[n++] = (menu_row){ "X/Y",  "Turbo A/B *",        false };
+	/* X and Y are Diatom's turbo on the nine two-button systems; L2 and R2
+	 * are mGBA's own Turbo L and R, which work on GBA and do nothing on GB and
+	 * GBC, which have no shoulders (found 2026-09-30, choosing a fast-forward
+	 * button). One row for both, since the page is full. */
+	out[n++] = (menu_row){ "X/Y/L2/R2", "Turbo A/B/L1/R1 *", false };
 	out[n++] = (menu_row){ "POWER",  "Save and turn off",  false };
-	/* The exception as a note rather than a longer row, because it is true of
-	 * two systems out of eleven: on those two, X and Y are the pad's own
-	 * buttons. Kept short - a note runs the width of the panel and is cut at
-	 * about thirty characters. An asterisk on both ends, the row's value and
-	 * this line, so the two read as a footnote and its mark rather than as two
-	 * separate claims. Eric's, 2026-09-20. */
-	out[n++] = MENU_NOTE("* Genesis and SNES: not turbo");
+	/* The exceptions as a note rather than a longer row: X and Y are the pad's
+	 * own buttons on Genesis and SNES, and L2 and R2 only do anything on GBA.
+	 * Kept short - a note runs the width of the panel and is cut at about
+	 * thirty characters. An asterisk on both ends, the row's value and this
+	 * line, so the two read as a footnote and its mark rather than as two
+	 * separate claims. Eric's, 2026-09-20; reworded by him 2026-10-01. */
+	out[n++] = MENU_NOTE("* for some systems");
 	return n;
 }
 

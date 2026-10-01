@@ -66,6 +66,17 @@ is no set. Volume and brightness set in a game
 come back to the launcher's settings when the game ends, because the two
 sides share one levels channel instead of overwriting each other.
 
+**Fast forward** is diatom's, on MENU+R1, which is why MENU opens the menu when
+it is let go rather than when it is pressed (diatom's ADR-0034). Each press
+steps 2x, 3x, 4x and back to 1x. While fast, diatom draws every other refresh
+and runs as many game frames as fit in the time between, up to the step, with
+the sound muted. Drawing the picture costs 4 to 7 ms of each frame on the
+Brick, so drawing every refresh would leave the game too little. Measured
+2026-10-01: NES reaches 4x and Genesis 3.9x; a heavy SNES or Game Boy Advance
+game tops out at about 2.5x. Diatom reports each change as a `SPEED` line, and the
+launcher draws the "Fast forward 4x" notice and hands it back to be laid over
+the game, the same road an achievement's notice takes.
+
 Nothing depends on the resident emulator. If the socket is not there - in the
 first second after boot, or if it has died - the launcher runs the same
 `diatom` binary standalone, one process for that game, and starts a fresh
@@ -185,7 +196,7 @@ byte is lower than it was last frame" - and the launcher only sees the socket
 every 100 ms against a core running at 60 Hz. That is six frames per poll, so
 five of every six are invisible to it and unlocks would be missed silently.
 The launcher declares which console the game is and hands over the set, and
-diatom watches every frame
+diatom watches every frame, fast-forwarded ones included
 (its ADR-0025 and ADR-0026).
 
 **The device does the normal thing.** Sign in once under `MENU` -> Cheevos,

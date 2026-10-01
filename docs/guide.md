@@ -219,6 +219,10 @@ fast, is in [turbo.md](turbo.md).
 Diatom does the pulsing, not the emulator core, which is why it works the same
 on all nine rather than only on the one core that happens to implement turbo.
 
+**On Game Boy Advance, L2 and R2 are turbo L and turbo R.** That one is the
+emulator's own turbo rather than TortOS's, so it is only there on Game Boy
+Advance; on Game Boy and Game Boy Color, which have no L and R, they do nothing.
+
 **Fast forward** is MENU+R1 in a game. Each press steps the speed to 2x, 3x,
 4x and back to normal, and says so at the bottom of the screen. The game is
 silent while it's fast, and the picture moves in steps rather than smoothly,
@@ -226,9 +230,9 @@ because the Brick draws every other frame to give the game more time. Each
 game starts at normal speed, and the speed stays where you left it through the
 in-game menu.
 
-The speed is as fast as the game can go, up to the step. NES and Genesis
-games reach it. A heavy SNES or Game Boy Advance game tops out at about 2.5x,
-so there 3x and 4x both mean as fast as that game can go.
+The speed is as fast as the game can go, up to the step. NES games reach it,
+and Genesis comes close. A heavy SNES or Game Boy Advance game tops out at
+about 2.5x, so there 3x and 4x both mean as fast as that game can go.
 
 Volume and brightness draw the same thin line across the top of the screen in
 the launcher, in a game, and in the in-game menu. One firmware, one piece of
