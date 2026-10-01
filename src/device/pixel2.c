@@ -19,12 +19,15 @@
 
 #include <SDL_syswm.h>
 
+#include <dirent.h>
 #include <fcntl.h>
 #include <linux/input.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <time.h>
 #include <unistd.h>
 
 const char *P_ROOT = "/mnt/SDCARD/TortOS";
@@ -45,22 +48,110 @@ static int           drm_fd = -1;      /* SDL's, for passing the display to Diat
 
 SDL_Renderer *plat_renderer(void) { return ren; }
 
+/* DRM master, by its two ioctls from the kernel's drm.h rather than libdrm,
+ * the same way the codec's controls are reached below: two numbers do not
+ * need a library. */
+#define PX_DRM_IOCTL_SET_MASTER  _IO('d', 0x1e)
+#define PX_DRM_IOCTL_DROP_MASTER _IO('d', 0x1f)
+
+/* The boot animation is TortOS-px2's splash, which holds the display while it
+ * plays. TortOS starts alongside it and never waits for it: SDL builds
+ * everything without the display (SDL_KMSDRM_REQUIRE_DRM_MASTER off), and the
+ * first present tells the splash to stop and takes over from it. */
+static void signal_splash(int sig)
+{
+	DIR *proc = opendir("/proc");
+	struct dirent *e;
+
+	while (proc && (e = readdir(proc))) {
+		char path[64], comm[32] = { 0 };
+		int fd;
+
+		if (e->d_name[0] < '1' || e->d_name[0] > '9') continue;
+		snprintf(path, sizeof path, "/proc/%s/comm", e->d_name);
+		if ((fd = open(path, O_RDONLY | O_CLOEXEC)) < 0) continue;
+		if (read(fd, comm, sizeof comm - 1) > 0 && !strcmp(comm, "splash\n"))
+			kill(atoi(e->d_name), sig);
+		close(fd);
+	}
+	if (proc) closedir(proc);
+}
+
+/* The splash stops on the frame it is showing and lets go of the display;
+ * master being free again is the answer, so this tries until it is. A frame
+ * and a flip at most, and bounded, so a stuck splash costs a log line and not
+ * the launcher. */
+static void take_from_splash(void)
+{
+	Uint32 t0 = SDL_GetTicks();
+
+	signal_splash(SIGUSR1);
+	while (drm_fd >= 0 && ioctl(drm_fd, PX_DRM_IOCTL_SET_MASTER, 0) != 0 &&
+	       SDL_GetTicks() - t0 < 300)
+		SDL_Delay(1);
+	fprintf(stderr, "video: took the display from the splash in %u ms\n",
+	        (unsigned)(SDL_GetTicks() - t0));
+	/* On the kernel's clock, beside the splash's "panel lit", so the boot
+	 * from power to shelf reads off one log (docs/boot-time.md in
+	 * TortOS-px2). */
+	{
+		struct timespec now;
+		char line[64];
+		int fd = open("/dev/kmsg", O_WRONLY | O_CLOEXEC);
+
+		clock_gettime(CLOCK_BOOTTIME, &now);
+		snprintf(line, sizeof line, "tortos: first frame at %.3f s\n",
+		         now.tv_sec + now.tv_nsec / 1e9);
+		if (fd >= 0) {
+			if (write(fd, line, strlen(line)) < 0) { /* not fatal */ }
+			close(fd);
+		}
+	}
+}
+
 /* Black around the picture, then the picture: 1024x768 down to 640x480 and a
  * quarter turn counter-clockwise, which on this panel ("Left Side Up") is the
- * right way up - checked by eye 2026-10-01 with a marker drawn top-left. The
- * draw color is put back, because TortOS sets it and expects it to stay. */
-void plat_present(void)
+ * right way up - checked by eye 2026-10-01 with a marker drawn top-left. */
+static void show_screen(void)
 {
 	SDL_Rect dest = { (panel_w - 640) / 2, (panel_h - 480) / 2, 640, 480 };
-	Uint8 r, g, b, a;
 
-	SDL_GetRenderDrawColor(ren, &r, &g, &b, &a);
 	SDL_SetRenderTarget(ren, NULL);
 	SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
 	SDL_RenderClear(ren);
 	SDL_RenderCopyEx(ren, screen_tex, NULL, &dest, -90, NULL, SDL_FLIP_NONE);
 	SDL_RenderPresent(ren);
 	SDL_SetRenderTarget(ren, screen_tex);
+}
+
+/* The draw color is put back, because TortOS sets it and expects it to stay.
+ *
+ * The first present after taking the display from the splash shows TWICE.
+ * SDL's first frame on a display it did not own when it started never reaches
+ * the panel: filmed on 2026-10-01, the logo went to black for exactly one
+ * second, which is the shelf loop's heartbeat redraw - TortOS draws only when
+ * something changes, so a lost first frame stayed lost until then. The frame
+ * is still in screen_tex, so the second showing costs one copy, and when it
+ * returns TortOS's picture is on glass.
+ *
+ * Then the splash is ended. Its logo is off the screen by then, so nothing
+ * shows; and gone, it leaves SDL nothing to restore when TortOS exits, which
+ * had put the logo back up at power-off. */
+void plat_present(void)
+{
+	static bool shown;
+	Uint8 r, g, b, a;
+
+	SDL_GetRenderDrawColor(ren, &r, &g, &b, &a);
+	if (!shown) {
+		take_from_splash();
+		show_screen();
+		show_screen();
+		signal_splash(SIGTERM);
+		shown = true;
+	} else {
+		show_screen();
+	}
 	SDL_SetRenderDrawColor(ren, r, g, b, a);
 }
 
@@ -76,6 +167,9 @@ bool plat_video_init(void)
 	 * dropping every third line. */
 	SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
 	SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengles2");
+	/* The boot animation holds the display until the first present; see
+	 * take_from_splash. */
+	SDL_SetHint(SDL_HINT_KMSDRM_REQUIRE_DRM_MASTER, "0");
 	if (SDL_InitSubSystem(SDL_INIT_VIDEO) != 0) {
 		fprintf(stderr, "video init: %s\n", SDL_GetError());
 		return false;
@@ -130,12 +224,6 @@ void plat_video_quit(void)
 	drm_fd = -1;
 	SDL_QuitSubSystem(SDL_INIT_VIDEO);
 }
-
-/* DRM master, by its two ioctls from the kernel's drm.h rather than libdrm,
- * the same way the codec's controls are reached below: two numbers do not
- * need a library. */
-#define PX_DRM_IOCTL_SET_MASTER  _IO('d', 0x1e)
-#define PX_DRM_IOCTL_DROP_MASTER _IO('d', 0x1f)
 
 /* Diatom is about to present: it cannot while this process holds master. */
 void device_display_release(void)
