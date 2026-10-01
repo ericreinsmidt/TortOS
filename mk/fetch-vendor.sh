@@ -8,7 +8,7 @@
 #   tortos.elf needs libSDL2 libSDL2_image libSDL2_ttf libm libdl libc
 #
 # Every one of those ships in the device's own firmware under /usr/trimui/lib
-# or /usr/lib. Settings are TortOS's own code in src/platform.c, against the
+# or /usr/lib. Settings are TortOS's own code in src/device/brick.c, against the
 # device's ALSA control and display-engine interfaces.
 #
 # Cores come from libretro's own buildbot, pinned by sha256 - the same hashes

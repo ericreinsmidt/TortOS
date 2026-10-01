@@ -128,9 +128,9 @@ static void names(void)
 
 /* ---- the jack, and the handover that made this invisible ----------------- */
 
-/* The two windows, from src/platform.c. Duplicated here on purpose: if someone
- * retunes the ladder and does not touch this file, the numbers below stop
- * describing the device and the mismatch is the point of noticing. */
+/* The two windows, from src/device/brick.c. Duplicated here on purpose: if
+ * someone retunes the ladder and does not touch this file, the numbers below
+ * stop describing the device and the mismatch is the point of noticing. */
 #define SPK_TOP 0
 #define SPK_BOT 39
 #define HP_TOP  8

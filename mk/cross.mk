@@ -2,7 +2,9 @@
 # is passed in and holds the device's own SDL2 libraries, so what links is
 # byte-identical to what runs.
 BUILD := build
-SRC := $(wildcard src/*.c)
+# Every device shares src/*.c; DEVICE picks the one device file built with it.
+DEVICE ?= brick
+SRC := $(wildcard src/*.c) src/device/$(DEVICE).c
 CC ?= aarch64-linux-gnu-gcc
 
 VERSION ?= 0.0
@@ -34,6 +36,8 @@ LDLIBS := -lSDL2 -lSDL2_image -lSDL2_ttf -lm -ldl
 # what it does not buy.
 CREDS := $(BUILD)/ss_creds.h
 CFLAGS += -I$(BUILD)
+# src too, so a device file in src/device/ includes the shared headers by name
+CFLAGS += -Isrc
 
 .PHONY: creds
 creds:

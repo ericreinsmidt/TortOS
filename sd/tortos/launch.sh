@@ -76,7 +76,7 @@ leds_off() {
 # Apply the configured brightness now, so the boot animation is not dimmer than
 # everything after it. tortos.elf has not started yet and cannot do it.
 #
-# This ladder is TortOS's own and is shared verbatim with platform.c and with
+# This ladder is TortOS's own and is shared verbatim with src/device/brick.c and with
 # the emulator: twelve geometric rungs, the first being the panel's measured
 # floor (0 and 1 are black on this display). A saved level in
 # The level the player last chose, which the launcher already resolved against
@@ -335,7 +335,7 @@ fi
 #
 #     --a2dp-volume IS load-bearing and is not an assumption: it leaves volume
 #     with the headset, so a BT sink stays outside both the speaker and jack
-#     ladders in src/platform.c and must not be attenuated here.
+#     ladders in src/device/brick.c and must not be attenuated here.
 bt_off() {
 	# Before anything else: no radio means no sink, and a stale file would
 	# leave the launcher routing sound at a device that is gone. The port

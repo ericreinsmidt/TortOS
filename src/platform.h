@@ -5,10 +5,14 @@
 #include <SDL.h>
 #include <stdbool.h>
 
-/* Everything that knows it is running on a TrimUI Brick lives here: the
- * display, the buttons that arrive on three different devices, the panel
- * backlight, the codec, the battery, and the pipe to the resident emulator.
- * The rest of TortOS talks to this file and to SDL, and to nothing else. */
+/* Everything that knows which device it is running on sits behind this file:
+ * the display, the buttons, the panel backlight, the codec, the battery, and
+ * the pipe to the resident emulator. The rest of TortOS talks to this file and
+ * to SDL, and to nothing else.
+ *
+ * Behind it: platform.c and resident.c, which every device shares, and one
+ * device file, src/device/<name>.c, chosen by DEVICE= at build time (the
+ * Brick's is brick.c). device.h is the seam between those two halves. */
 
 #define TORTOS_SCREEN_W 1024
 #define TORTOS_SCREEN_H 768

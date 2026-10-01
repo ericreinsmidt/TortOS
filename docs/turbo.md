@@ -32,7 +32,7 @@ two buttons do nothing.
 The Brick has four face buttons, and their printed labels are what matters
 here - the evdev names on this shell are crossed, and reasoning from those has
 produced a wrong answer twice (see the note above the button table in
-`src/platform.c`).
+`src/device/brick.c`).
 
 | physical | printed | free on a two-button console | free on Genesis |
 |---|---|---|---|

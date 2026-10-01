@@ -5,7 +5,10 @@
 # There is no emulator on the host, so launching a game does nothing useful --
 # this build is for looking at the shelf while changing how it looks.
 BUILD := build-native
-SRC := $(wildcard src/*.c)
+# The Brick's device file, whose hardware is behind __linux__ with a host stub
+# beside it: that is what this build has always run.
+DEVICE ?= brick
+SRC := $(wildcard src/*.c) src/device/$(DEVICE).c
 
 PKGS := sdl2 SDL2_image SDL2_ttf
 VERSION ?= 0.0
@@ -21,6 +24,8 @@ LDLIBS := $(shell pkg-config --libs $(PKGS)) -lm
 # host build can talk to ScreenScraper too. See mk/cross.mk.
 CREDS := $(BUILD)/ss_creds.h
 CFLAGS += -I$(BUILD)
+# src too, so a device file in src/device/ includes the shared headers by name
+CFLAGS += -Isrc
 
 .PHONY: all creds
 all: creds $(BUILD)/tortos

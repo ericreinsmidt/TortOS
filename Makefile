@@ -72,7 +72,7 @@ export SS_DEVID SS_DEVPASS
 build/ss_creds.h: FORCE
 	@$(MAKE) --no-print-directory -f mk/cross.mk creds
 
-build/tortos.elf: $(wildcard src/*.c) $(wildcard src/*.h) tools/setbright.c mk/cross.mk \
+build/tortos.elf: $(wildcard src/*.c) $(wildcard src/*.h) $(wildcard src/device/*.c) tools/setbright.c mk/cross.mk \
                   $(wildcard src/muse/*.c) $(wildcard src/muse/*.h) tools/musectl.c \
                   tools/btplayer.c \
                   build/ss_creds.h
@@ -97,7 +97,7 @@ build/tortos.elf: $(wildcard src/*.c) $(wildcard src/*.h) tools/setbright.c mk/c
 	@# Diatom's tools/brick-make.sh has carried this check since 2026-08-25,
 	@# where the same thing cost an hour twice. A comment here used to claim
 	@# mk/cross.mk carried one too. It did not.
-	@for src in $(wildcard src/*.c) $(wildcard src/*.h) mk/cross.mk build/ss_creds.h; do \
+	@for src in $(wildcard src/*.c) $(wildcard src/*.h) $(wildcard src/device/*.c) mk/cross.mk build/ss_creds.h; do \
 		if [ "$$src" -nt build/tortos.elf ]; then \
 			echo "STALE: build/tortos.elf is older than $$src" >&2; \
 			echo "  the container did not rebuild. rm build/tortos.elf and try again." >&2; \
