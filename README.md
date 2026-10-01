@@ -258,3 +258,7 @@ TortOS is C and SDL2. Games run in [diatom](https://github.com/ericreinsmidt/dia
 ## License
 
 TortOS is MIT, and so is diatom. The cores keep their own licenses, two of them non-commercial. Full notices are in [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md).
+
+<p align="center">
+  <a href="https://github.com/ericreinsmidt/TortOS/releases"><img src="https://img.shields.io/github/downloads/ericreinsmidt/TortOS/total?color=80B076" alt="Downloads"></a>
+</p>
