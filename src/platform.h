@@ -53,6 +53,16 @@ void plat_video_quit(void);
 SDL_Renderer *plat_renderer(void);
 unsigned plat_now_ms(void);
 
+/* The screen, as TortOS draws it: always TORTOS_SCREEN_W x TORTOS_SCREEN_H,
+ * landscape. Every frame is shown with plat_present, and drawing goes back to
+ * the screen from an offscreen texture with plat_draw_to_screen - never
+ * SDL_RenderPresent or SDL_SetRenderTarget(r, NULL) directly. On the Brick
+ * the screen is the window and those two are exactly the SDL calls. A device
+ * whose panel is another size or turned draws into a texture of this size
+ * instead, and fits it to the panel at present. */
+void plat_present(void);
+void plat_draw_to_screen(void);
+
 bool plat_input_init(void);
 void plat_input_quit(void);
 void plat_input_poll(in_state *st);

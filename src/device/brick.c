@@ -69,6 +69,11 @@ const char *P_FONT = "/mnt/SDCARD/TortOS/menu.ttf";
 
 SDL_Renderer *plat_renderer(void) { return ren; }
 
+/* The Brick's panel is the screen, so drawing to the screen is drawing to the
+ * window. */
+void plat_present(void) { SDL_RenderPresent(ren); }
+void plat_draw_to_screen(void) { SDL_SetRenderTarget(ren, NULL); }
+
 bool plat_video_init(void)
 {
 	SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");

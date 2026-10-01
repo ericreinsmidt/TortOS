@@ -326,7 +326,7 @@ kb_result kb_prompt(SDL_Renderer *r, in_state *in, const char *title,
 		if (backdrop) backdrop(ctx);
 		kb_draw(r, &k, title, accent);
 		plat_draw_osd(r);
-		SDL_RenderPresent(r);
+		plat_present();
 		SDL_Delay(8);
 	}
 }
