@@ -23,6 +23,14 @@ bool device_power_pressed(void);
  * switch. */
 void device_levels_forget(void);
 
+/* The display, around a game. Release is called just before Diatom is told to
+ * present (RUN, and the wait that follows a RESUME), take once it has handed
+ * the screen back (PAUSED, EXIT, or the game gone). Nothing on a device where
+ * both can draw to one framebuffer by turns, which is the Brick; passing DRM
+ * master on one that drives its display through KMS (Diatom's ADR-0036). */
+void device_display_release(void);
+void device_display_take(void);
+
 /* Shared by the portable half, for the device file. */
 void plat_set_btn(in_state *st, in_button b, bool down);   /* a button's edge */
 bool plat_terminating(void);                    /* SIGTERM arrived */

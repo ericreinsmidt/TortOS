@@ -293,6 +293,11 @@ void plat_input_poll(in_state *st)
 	poll_raw_fd(fd_joy, st);
 }
 
+/* The launcher and Diatom take turns on one framebuffer here, so there is
+ * nothing to hand over. */
+void device_display_release(void) { }
+void device_display_take(void) { }
+
 /* The power key's queue, drained: true if a press was in it. The launcher
  * watches power this way while a child or a game owns the screen, which is
  * the one control that always has to work. */
