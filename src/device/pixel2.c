@@ -473,10 +473,23 @@ struct px_ctl_elem_value {
  * so 0 is the cut. Speaker or headphones is "Playback Mux", which the system's
  * jackswitch daemon drives.
  *
- * The window the twenty positions spread over is NOT YET MEASURED: 255 at the
- * top and 45 dB below it at the bottom, the range the Brick's speaker spans,
- * as a starting point to be set by ear the way the Brick's was. Headphones
- * share it until they are measured too.
+ * The windows were set by ear on 2026-10-02, the way the Brick's were: a game
+ * playing, the register stepped over SSH until Eric called each end.
+ *
+ * Speaker: full volume is comfortable and does not distort, so position 20 is
+ * raw 255. The floor was walked up from the old guess (raw 140, too quiet):
+ * 148 and 156 too quiet, 164 too quiet beside 172, and 172 called right for
+ * position 1. About 31 dB, so about 1.6 dB a press.
+ *
+ * Headphones (Apple EarPods): walked up from quiet to the most wanted - full
+ * volume was a step too far, raw 244 is the top. The floor was walked down
+ * from 172, 6 dB at a time, everything too loud until raw 76. About 63 dB,
+ * 3.3 dB a press; EarPods are efficient, and a less sensitive pair will want
+ * a different floor, as on the Brick.
+ *
+ * The constants are the windows that put positions 1 and 20 exactly on those
+ * raw values with aout_level_to_raw's rounding: speaker 0-87, headphones
+ * 11-188, in attenuation.
  *
  * Kept as ATTENUATION from 255, so the shared aout_level_to_raw - written for
  * the Brick's inverted register, loud end low - lays the positions out with
@@ -486,9 +499,9 @@ struct px_ctl_elem_value {
 #define GAIN_CTL      "Master Playback Volume"
 #define GAIN_RAW_MAX  255
 #define SPK_ATT_TOP   0      /* attenuation at position 20 */
-#define SPK_ATT_BOTTOM 121   /* and at position 0, which the cut replaces */
-#define HP_ATT_TOP    0
-#define HP_ATT_BOTTOM 121
+#define SPK_ATT_BOTTOM 87    /* and at position 0, which the cut replaces */
+#define HP_ATT_TOP    11
+#define HP_ATT_BOTTOM 188
 #define VOL_MAX       PLAT_VOL_MAX
 
 /* sysfs, 0-255, 0 dark. The Brick's ladder, which is the launcher's rungs and
@@ -634,8 +647,8 @@ void plat_backlight(bool on)
 	write_file(BACKLIGHT_POWER, on ? "0\n" : "4\n");
 }
 
-/* The windows will differ by jack once both are measured, so the level is
- * re-applied when a plug goes in or out, as on the Brick. */
+/* The windows differ by jack, so the level is re-applied when a plug goes in
+ * or out, as on the Brick. */
 void plat_audio_jack_poll(void)
 {
 	if (!aout_should_reapply(jack_was, jack_present() != 0, cur_vol >= 0)) return;
