@@ -650,8 +650,8 @@ done
 # old way, one process per game, when they are not there. That is what happens
 # for a launch in the first second after boot, and if this ever dies.
 # The resident emulator is Diatom. It maps every core in cores/ itself as it
-# starts, before its socket exists, and keeps each for the life of the
-# process (diatom_core_premap), so there is no core list to hand over and
+# starts, in the background once its socket is listening, and keeps each for
+# the life of the process (diatom_core_premap), so there is no core list to hand over and
 # nothing here changes when a system is added. The fallback for a resident that dies mid-session is the same
 # binary run standalone by the launcher - one emulator, held two ways.
 export TORTOS_DIATOM_SOCKET=/tmp/diatom.sock

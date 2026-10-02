@@ -318,6 +318,17 @@ void plat_input_flush(void)
 	drain(fd_power);
 }
 
+/* No wait here, unlike the Brick: the keys are read straight from the kernel,
+ * with no daemon or joystick layer coming up in bursts, so whatever the boot
+ * produced is already queued and emptying the queues is enough. Measured
+ * 2026-10-02: the Brick's 350 ms caught nothing here, power-button boots
+ * included. */
+void plat_input_settle(in_state *st)
+{
+	plat_input_flush();
+	memset(st, 0, sizeof *st);
+}
+
 /* The descriptors stay open: they are display-independent. */
 void plat_input_quit(void) { }
 
