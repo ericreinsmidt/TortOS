@@ -425,15 +425,28 @@ static void d_note_cheevo(const char *l)
 	if (d_on_unlock) d_on_unlock(atoi(i + 3));
 }
 
-/* "DISPLAY\tmode=native\tfilter=nearest\trect=256x224+384+272" */
+/* "DISPLAY\tmode=native\tfilter=nearest\trect=256x224+384+272\tsurface=1024x768"
+ *
+ * The rect is in Diatom's surface, which need not be the size TortOS draws at:
+ * on the GKD Pixel 2 it is 640x480, and the paused frame behind the in-game
+ * menu sat in the top-left 640x480 of the screen until it was scaled. Kept in
+ * TortOS's units from here on. A Diatom that does not say its surface is taken
+ * to be drawing at TortOS's size, which every one before the field was. The
+ * edges are scaled rather than the size, so a rect that fills the surface
+ * fills the screen exactly. */
 static void d_note_display(const char *l)
 {
 	const char *r = strstr(l, "rect=");
-	int w, h, x, y;
+	const char *s = strstr(l, "surface=");
+	int w, h, x, y, sw = TORTOS_SCREEN_W, sh = TORTOS_SCREEN_H;
 
 	if (!r || sscanf(r + 5, "%dx%d+%d+%d", &w, &h, &x, &y) != 4) return;
 	if (w <= 0 || h <= 0) return;
-	d_rect.w = w; d_rect.h = h; d_rect.x = x; d_rect.y = y;
+	if (s && (sscanf(s + 8, "%dx%d", &sw, &sh) != 2 || sw <= 0 || sh <= 0)) return;
+	d_rect.x = x * TORTOS_SCREEN_W / sw;
+	d_rect.y = y * TORTOS_SCREEN_H / sh;
+	d_rect.w = (x + w) * TORTOS_SCREEN_W / sw - d_rect.x;
+	d_rect.h = (y + h) * TORTOS_SCREEN_H / sh - d_rect.y;
 	d_rect_known = true;
 }
 
