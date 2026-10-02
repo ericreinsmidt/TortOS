@@ -254,14 +254,20 @@ bool plat_resident_send(const char *tag, const char *core, const char *rom,
 		 * opening seconds and Diatom cannot evaluate what it has not been
 		 * given yet. Both are ignored by an older Diatom, which is what
 		 * ADR-0009 promises about unknown keys. */
+		/* The display goes to Diatom before the game does: it presents its
+		 * first frame as soon as the load is done, and cannot while this
+		 * process holds it. */
+		device_display_release();
 		if (!dsend("RUN\tcore=%s\trom=%s\ttag=%s"
 		           "\tresume=%s\texit_state=%s\tpreview=%s"
 		           "\tconsole=%d\tcheevos=%s",
 		           core, rom, tag,
 		           resume ? resume : "", exit_state ? exit_state : "",
 		           preview ? preview : "",
-		           console, cheevos ? cheevos : ""))
+		           console, cheevos ? cheevos : "")) {
+			device_display_take();      /* no game is coming */
 			return false;
+		}
 
 		/* AFTER RUN, never before: RUN resets the map to identity (Diatom's
 		 * ADR-0020, so a table sent for one game cannot silently govern the
@@ -340,6 +346,9 @@ bool plat_resident_line(const char *fmt, ...)
 	va_start(ap, fmt);
 	vsnprintf(line, sizeof line, fmt, ap);
 	va_end(ap);
+	/* RESUME hands the display back to the game, which presents the moment it
+	 * reads the line: let go first, the same as before RUN. */
+	if (!strncmp(line, "RESUME", 6)) device_display_release();
 	if (dsend("%s", line)) return true;
 	/* Closed under us - Diatom restarted, or a newer client displaced this
 	 * connection (its ADR-0033). dsend has closed our end, so this is a fresh
@@ -618,7 +627,15 @@ static int diatom_wait(void)
 
 int plat_resident_wait(void)
 {
-	int r = diatom_wait();
+	int r;
+
+	/* Here too, for a RESUME: the in-game menu took the display back, and
+	 * the game is about to present again. Releasing twice is harmless. */
+	device_display_release();
+	r = diatom_wait();
+	/* Back from Diatom, by whatever route - PAUSED and EXIT come after it has
+	 * let go, and a dead emulator holds nothing. */
+	device_display_take();
 
 	/* Input ownership just came back to this process, so anything remembered
 	 * about the jack was formed while something else was driving.
