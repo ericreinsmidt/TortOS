@@ -365,7 +365,8 @@ const char *plat_resident_last_preview(void) { return d_preview; }
 /* One LEVEL line: "LEVEL\tkind=volume\tindex=8\tcount=21". The values are
  * held rather than applied - Diatom owns the hardware while the game runs
  * (its ADR-0020), and applying over the top is exactly the fight the state
- * plane exists to end. They are applied when EXIT hands ownership back. */
+ * plane exists to end. They are applied when EXIT or PAUSED hands ownership
+ * back. */
 /* Where Diatom says the sound ACTUALLY is (its ADR-0029). Not necessarily
  * where it was told to put it: a sink that will not open, or one that died
  * under it, makes the port fall back and say so. Reported to the launcher so a
@@ -512,7 +513,12 @@ static int diatom_wait(void)
 		plat_mute_poll(false);
 		while ((l = dline(100))) {
 			if      (strncmp(l, "RUNNING", 7) == 0) d_got_running = 1;
-			else if (strncmp(l, "PAUSED", 6) == 0)  return RES_PAUSED;
+			/* The menu is the launcher's, and so are the levels while it is
+			 * up: taken at PAUSED as at EXIT. Taken only at EXIT, a press in
+			 * the menu stepped from the level before the game - seen on the
+			 * GKD Pixel 2 2026-10-02, raised to 18 in a game, and the menu's
+			 * first press went to 3. */
+			else if (strncmp(l, "PAUSED", 6) == 0)  { d_apply_levels(); return RES_PAUSED; }
 			else if (strncmp(l, "PREVIEW\tpath=", 13) == 0)
 				snprintf(d_preview, sizeof d_preview, "%s", l + 13);
 			else if (strncmp(l, "LEVEL\t", 6) == 0) d_note_level(l);
