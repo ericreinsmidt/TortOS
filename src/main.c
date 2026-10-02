@@ -11237,13 +11237,9 @@ int main(int argc, char *argv[])
 	 * is it this process's turn to own the framebuffer. */
 	wait_for_boot_anim();
 
-	/* Swallow the input noise a boot produces -- replayed wake presses, the
-	 * bursts input devices emit as they come up -- before honoring anything. */
-	{
-		Uint32 grace = SDL_GetTicks() + 350;
-		while (SDL_GetTicks() < grace) { plat_input_poll(&a.in); SDL_Delay(8); }
-		memset(&a.in, 0, sizeof a.in);
-	}
+	/* Nothing pressed during the boot is honored. How long that takes is the
+	 * device's to say - see plat_input_settle. */
+	plat_input_settle(&a.in);
 
 	/* Straight back into the game, before the shelf is ever drawn. After the
 	 * input grace above, so a wake press replayed by the boot does not land in
