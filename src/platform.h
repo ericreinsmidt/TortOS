@@ -67,6 +67,11 @@ bool plat_input_init(void);
 void plat_input_quit(void);
 void plat_input_poll(in_state *st);
 void plat_input_flush(void);
+/* Once, just before the shelf's first frame: throw away whatever input the
+ * boot produced, so nothing pressed while the device came up is honored, and
+ * leave `st` empty. How long that takes depends on the device - on one whose
+ * input arrives in bursts as it starts, settling means waiting them out. */
+void plat_input_settle(in_state *st);
 bool in_repeat(in_state *st, in_button b);
 
 /* Tell the input layer the process is going away. The next plat_input_poll

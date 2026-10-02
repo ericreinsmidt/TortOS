@@ -177,6 +177,18 @@ void plat_input_flush(void)
 #endif
 }
 
+/* The input noise a Brick's boot produces - replayed wake presses, the bursts
+ * its input devices emit as they come up - is waited out, 350 ms of polling
+ * and discarding, before anything is honored. Moved here unchanged from the
+ * launcher's startup when other devices turned out not to make any. */
+void plat_input_settle(in_state *st)
+{
+	Uint32 grace = SDL_GetTicks() + 350;
+
+	while (SDL_GetTicks() < grace) { plat_input_poll(st); SDL_Delay(8); }
+	memset(st, 0, sizeof *st);
+}
+
 void plat_input_quit(void)
 {
 	if (joy) { SDL_JoystickClose(joy); joy = NULL; }
