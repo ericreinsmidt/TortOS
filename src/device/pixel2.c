@@ -504,13 +504,18 @@ struct px_ctl_elem_value {
 #define HP_ATT_BOTTOM 188
 #define VOL_MAX       PLAT_VOL_MAX
 
-/* sysfs, 0-255, 0 dark. The Brick's ladder, which is the launcher's rungs and
- * Diatom's: brightness reads in ratios. 1 was still lit on this panel and 0
- * dark, checked by eye 2026-10-01. */
+/* sysfs, 0-255, 0 dark. The device tree's brightness-levels table sends 1 to 17
+ * all to the same output (a PWM duty of 1666 of 25000 ns) and is one-to-one
+ * above that, so the Brick's ladder (2, 4, 8, 16, ...) spent its bottom four
+ * rungs on one brightness - reported 2026-10-02 as the bottom of the scale
+ * sitting still. Driving the PWM directly the same day, 1000 ns was black, so
+ * 17 is the floor and stays: Eric wanted dimmer, but not black. The rungs are
+ * equal ratios from 17 to 255, about 28% a step, since brightness reads in
+ * ratios. Diatom's port holds the same rungs; change one, change the other. */
 #define BACKLIGHT       "/sys/class/backlight/backlight/brightness"
 #define BACKLIGHT_POWER "/sys/class/backlight/backlight/bl_power"
 static const unsigned char bright_ladder[] = {
-	2, 4, 8, 16, 32, 48, 72, 96, 128, 160, 192, 255
+	17, 22, 28, 36, 46, 58, 74, 95, 122, 156, 199, 255
 };
 #define BRIGHT_MAX ((int)(sizeof bright_ladder / sizeof bright_ladder[0]) - 1)
 _Static_assert(BRIGHT_MAX == PLAT_BRIGHT_MAX, "bright_ladder vs PLAT_BRIGHT_MAX");
