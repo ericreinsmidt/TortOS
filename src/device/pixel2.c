@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: MIT */
 /* The GKD Pixel 2: a 640x480 panel that is physically 480x640 portrait and
  * mounted turned, buttons read straight from the kernel, the RK817 codec, a
- * sysfs backlight and battery, and no radio. Its system is TortOS-px2, our own
+ * sysfs backlight and battery, and no radio. Its system is plastron, our own
  * Buildroot image: mainline Linux, Panfrost, SDL2 drawing through KMS.
  *
  * TortOS draws exactly as it does on the Brick, at 1024x768 landscape, into an
@@ -54,7 +54,7 @@ SDL_Renderer *plat_renderer(void) { return ren; }
 #define PX_DRM_IOCTL_SET_MASTER  _IO('d', 0x1e)
 #define PX_DRM_IOCTL_DROP_MASTER _IO('d', 0x1f)
 
-/* The boot animation is TortOS-px2's splash, which holds the display while it
+/* The boot animation is plastron's splash, which holds the display while it
  * plays. TortOS starts alongside it and never waits for it: SDL builds
  * everything without the display (SDL_KMSDRM_REQUIRE_DRM_MASTER off), and the
  * first present tells the splash to stop and takes over from it. */
@@ -93,7 +93,7 @@ static void take_from_splash(void)
 	        (unsigned)(SDL_GetTicks() - t0));
 	/* On the kernel's clock, beside the splash's "panel lit", so the boot
 	 * from power to shelf reads off one log (docs/boot-time.md in
-	 * TortOS-px2). */
+	 * plastron). */
 	{
 		struct timespec now;
 		char line[64];

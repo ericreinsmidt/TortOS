@@ -1,10 +1,10 @@
 #!/bin/sh
-# TortOS on the GKD Pixel 2. TortOS-px2's init starts this once the card's
+# TortOS on the GKD Pixel 2. plastron's init starts this once the card's
 # games partition is mounted at /mnt/SDCARD.
 #
 # The Brick's launch.sh, less everything that belongs to the Brick's stock
 # firmware - its LEDs, its input daemon, Wi-Fi and Bluetooth, the boot logo
-# and splash it patches. The Pixel's system is TortOS-px2, ours from the
+# and splash it patches. The Pixel's system is plastron, ours from the
 # kernel up, so there is nothing here to work around: start the emulator,
 # start the launcher, power off when it is done.
 
