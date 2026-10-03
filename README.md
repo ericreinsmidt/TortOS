@@ -92,7 +92,7 @@ You need a TrimUI Brick, Brick Hammer or GKD Pixel 2, a microSD card and, just t
 
 ### On the Brick
 
-1. **Format the card as exFAT,** with a Master Boot Record partition scheme. On a Mac, open Disk Utility, choose *View > Show All Devices*, and erase the card itself rather than its volume.
+1. **Format the card as FAT32 or exFAT,** with a Master Boot Record partition scheme. Both work; the TortOS Installer uses FAT32. On a Mac, open Disk Utility, choose *View > Show All Devices*, and erase the card itself rather than its volume.
 2. **Download `TortOS-v1.3.0.zip`** from [Releases](https://github.com/ericreinsmidt/TortOS/releases/latest) and unzip it.
 3. **Copy everything inside it to the root of the card:** `TortOS/`, `.tmp_update/`, `trimui/`, `Roms/`, `Music/`, `Audiobooks/`, `Bios/` and `Saves/`.
 4. **Put the card in the Brick and turn it on.** The first boot installs TortOS, and every boot after that starts it.
