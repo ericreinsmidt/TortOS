@@ -681,31 +681,63 @@ static SDL_Texture *face_tex(app *a, int i)
 	return g_face[i];
 }
 
+/* A system card's file in the chosen set, and the default set's to fall back
+ * on. A set may be incomplete and still be worth showing. Favorites is the
+ * standing example: it is a shelf, not a console, so a set of hardware
+ * photographs has nothing to put there and borrows the default's card rather
+ * than falling all the way through to the generated one. */
+static bool sys_card_paths(const app *a, int i, char *set, char *def, size_t n)
+{
+	snprintf(set, n, "%s/cards/%s/%s", P_ROOT, CARD_SETS[g_cards].dir,
+	         a->sys.systems[i].card);
+	snprintf(def, n, "%s/cards/%s/%s", P_ROOT, CARDS_DEFAULT, a->sys.systems[i].card);
+	return g_cards != 0;          /* whether the default is a different file */
+}
+
+/* The generated card, for a system with no file in either set. Needs the
+ * renderer, so it is made on the main thread. */
+static void sys_card_generated(app *a, int i)
+{
+	a->sys_tex[i] = ui_make_card(a->r, a->sys.systems[i].name, a->sys.systems[i].accent,
+	                             &a->sys_w[i], &a->sys_h[i]);
+}
+
+/* On the frame, as every system card was until 2026-10-02. Now only for the
+ * focused card at boot, and when there is no loader thread. */
+static void sys_card_load_now(app *a, int i)
+{
+	char set[CFG_STR * 2], def[CFG_STR * 2];
+	bool other = sys_card_paths(a, i, set, def, sizeof set);
+
+	a->sys_tex[i] = load_image(a->r, set, &a->sys_w[i], &a->sys_h[i], &a->sys_cb[i]);
+	if (!a->sys_tex[i] && other)
+		a->sys_tex[i] = load_image(a->r, def, &a->sys_w[i], &a->sys_h[i], &a->sys_cb[i]);
+	if (!a->sys_tex[i]) sys_card_generated(a, i);
+}
+
+/* System cards come from the loader threads like covers, under a shelf number
+ * no real shelf has (texload uses -1 for an idle worker). All thirteen used to
+ * be decoded on the main thread before the first frame - 640x820 PNGs, about
+ * 370 ms of the GKD Pixel 2's boot, measured 2026-10-02 - whether or not the
+ * system shelf was what came up. */
+#define SYS_CARDS_SHELF (-2)
+
 static SDL_Texture *sys_get_tex(void *ctx, int i, int *w, int *h, float *cb)
 {
 	app *a = ctx;
 	if (!a->sys_tex[i]) {
-		char path[CFG_STR * 2];
+		char set[CFG_STR * 2], def[CFG_STR * 2];
+		bool other = sys_card_paths(a, i, set, def, sizeof set);
 
-		snprintf(path, sizeof path, "%s/cards/%s/%s", P_ROOT,
-		         CARD_SETS[g_cards].dir, a->sys.systems[i].card);
-		a->sys_tex[i] = load_image(a->r, path, &a->sys_w[i], &a->sys_h[i],
-		                           &a->sys_cb[i]);
-		/* A set may be incomplete and still be worth showing. Favorites is
-		 * the standing example: it is a shelf, not a console, so a set of
-		 * hardware photographs has nothing to put there and borrows the
-		 * default's card rather than falling all the way through to the
-		 * generated one. */
-		if (!a->sys_tex[i] && g_cards != 0) {
-			snprintf(path, sizeof path, "%s/cards/%s/%s", P_ROOT,
-			         CARDS_DEFAULT, a->sys.systems[i].card);
-			a->sys_tex[i] = load_image(a->r, path, &a->sys_w[i], &a->sys_h[i],
-		                           &a->sys_cb[i]);
-		}
-		if (!a->sys_tex[i])
-			a->sys_tex[i] = ui_make_card(a->r, a->sys.systems[i].name,
-			                             a->sys.systems[i].accent,
-			                             &a->sys_w[i], &a->sys_h[i]);
+		/* Ask and draw nothing this frame; cf_draw skips a card with no
+		 * texture. No worker means doing it here, as before. */
+		if (!texload_want(SYS_CARDS_SHELF, i, set, other ? def : NULL))
+			sys_card_load_now(a, i);
+	}
+	if (!a->sys_tex[i]) {
+		*w = *h = 0;
+		if (cb) *cb = 1.0f;
+		return NULL;
 	}
 	*w = a->sys_w[i];
 	*h = a->sys_h[i];
@@ -966,6 +998,21 @@ static void texload_drain(app *a)
 	while (texload_take(&s, &i, &surf)) {
 		sysview *v;
 
+		if (s == SYS_CARDS_SHELF) {
+			if (i >= 0 && i < a->sys.count && !a->sys_tex[i]) {
+				if (surf) {
+					a->sys_cb[i] = content_bottom(surf);
+					a->sys_tex[i] = SDL_CreateTextureFromSurface(a->r, surf);
+					if (a->sys_tex[i])
+						SDL_QueryTexture(a->sys_tex[i], NULL, NULL,
+						                 &a->sys_w[i], &a->sys_h[i]);
+				}
+				if (!a->sys_tex[i]) sys_card_generated(a, i);
+				landed = true;
+			}
+			if (surf) SDL_FreeSurface(surf);
+			continue;
+		}
 		if (s < 0 || s >= a->sys.count) { if (surf) SDL_FreeSurface(surf); continue; }
 		v = &a->view[s];
 		/* The shelf may have moved on, or something else may have filled this
@@ -3338,6 +3385,14 @@ static void draw_shelf(app *a)
 	 * First, too: the cube sets render targets further down, and nothing here
 	 * should depend on that not having happened yet. */
 	texload_drain(a);
+	/* And any system card still missing is asked for again: a game list
+	 * draws none, so nothing else would ask, and a full queue turns an ask
+	 * away. Thirteen checks once they are all in. */
+	for (int i = 0; i < a->sys.count; i++)
+		if (!a->sys_tex[i]) {
+			int w, h;
+			sys_get_tex(a, i, &w, &h, NULL);
+		}
 	draw_background(a);
 	if (a->sys.count <= 0) draw_no_games(a);
 	else if (a->screen == SCREEN_SYSTEMS) draw_systems(a);
@@ -11017,6 +11072,7 @@ int main(int argc, char *argv[])
 		 * card that lost it or never had one gets a correct one for free. */
 		db_write_boot_env();
 	}
+	t_mark("databases");
 
 	snprintf(path, sizeof path, "%s/systems.cfg", P_ROOT);
 	if (!cfg_load_systems(path, &a.sys)) {
@@ -11070,11 +11126,13 @@ int main(int argc, char *argv[])
 				if (!strcmp(m, MUSE_MODES[k].key)) musec_set_mode((muq_mode)k);
 		}
 	}
+	t_mark("muse+accounts");
 
 	/* Scan every system now, not when one is opened: it is three directory
 	 * reads, it happens behind the boot animation, and it means walking into
 	 * a system is a frame rather than a wait. */
 	scan_all(&a);
+	t_mark("library scan");
 	/* After the scan, because it indexes by system, and before anything can
 	 * launch, because the mode has to reach Diatom with the first RUN. */
 	display_load(&a);
@@ -11092,8 +11150,10 @@ int main(int argc, char *argv[])
 	 * time was too late by definition: this process draws long before the
 	 * player launches anything. */
 	plat_resident_ready();
+	t_mark("diatom connect");
 
 	if (!plat_video_init()) { fprintf(stderr, "video init failed\n"); return 1; }
+	t_mark("video");
 	IMG_Init(IMG_INIT_PNG);
 	/* After IMG_Init: the worker calls IMG_Load.
 	 *
@@ -11106,6 +11166,7 @@ int main(int argc, char *argv[])
 	 * one. */
 	if (!shot_path) texload_start();
 	a.r = plat_renderer();
+	t_mark("renderer");
 	plat_input_init();
 	/* Nothing is handed in any more. The two-tier lookup this replaces - a
 	 * shipped default and the player's saved level - is one key each in the
@@ -11147,8 +11208,16 @@ int main(int argc, char *argv[])
 	a.resume_menu = playing_restore(&a);
 	cf_reset(&a.cf_sys, a.sys_cursor);
 	a.tint = a.sys.systems[a.sys_cursor].accent;
-	prime_sys_window(&a);
+	t_mark("restore place");
+	/* Only the card the first frame centers is decoded here, and only when
+	 * that frame is the system shelf; everything else is asked of the loader
+	 * threads, covers first because a game list is what usually comes up.
+	 * draw_shelf keeps asking until every system card is in. */
+	if (a.screen == SCREEN_SYSTEMS && !a.sys_tex[a.sys_cursor])
+		sys_card_load_now(&a, a.sys_cursor);
+	t_mark("system cards");
 	prime_window(&a, a.sys_cursor);
+	prime_sys_window(&a);
 	t_mark("card assets");
 
 	a.running = true;
@@ -11358,6 +11427,7 @@ int main(int argc, char *argv[])
 			    now - last_render >= HEARTBEAT_MS) {
 				tick_tint(&a);
 				render(&a);
+				if (!last_render) t_mark("first frame");
 				last_render = plat_now_ms();
 			} else {
 				SDL_Delay(IDLE_POLL_MS);
