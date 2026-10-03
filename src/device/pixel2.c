@@ -248,6 +248,7 @@ void device_display_take(void)
 static int fd_pad = -1;     /* "gkd_pixel2_joypad": the face, d-pad, shoulders, FUNCTION */
 static int fd_keys = -1;    /* "gpio-keys": volume */
 static int fd_power = -1;   /* "rk805 pwrkey" */
+static int jack_fd = -1;    /* "rk817_int Headphones": the jack switch, for the settings */
 static int dbg_input;
 
 /* Kernel code -> TortOS button, by what is printed on the key. Measured
@@ -265,21 +266,38 @@ static const struct { int code; in_button b; } keymap[] = {
 };
 #define CODE_FUNCTION BTN_TRIGGER_HAPPY1
 
-static int open_by_key(int code)
+/* Every input device this file wants, found by what each reports, not by
+ * number: there is no udev here, and enumeration order is not a promise.
+ *
+ * In one pass, keeping every node it wants and closing only the ones it does
+ * not. Closing an evdev descriptor waits out an RCU grace period in the kernel
+ * (evdev_detach_client), 10 to 50 ms each on this device while the boot is
+ * busy, and the scan this replaced - one per device, closing every node it
+ * passed over - spent about 190 ms of the boot in close(), measured
+ * 2026-10-02. On this device every node is one of the four, so none is
+ * closed at all. */
+static void input_scan(void)
 {
-	unsigned long bits[NLONGS(KEY_MAX)];
+	unsigned long keys[NLONGS(KEY_MAX)], sw[NLONGS(SW_MAX)];
 	char path[32];
 	int i, fd;
 
 	for (i = 0; i < 32; i++) {
+		bool kept = true;
+
 		snprintf(path, sizeof path, "/dev/input/event%d", i);
 		if ((fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC)) < 0) continue;
-		memset(bits, 0, sizeof bits);
-		if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof bits), bits) >= 0 && BIT_IS_SET(bits, code))
-			return fd;
-		close(fd);
+		memset(keys, 0, sizeof keys);
+		memset(sw, 0, sizeof sw);
+		ioctl(fd, EVIOCGBIT(EV_KEY, sizeof keys), keys);
+		ioctl(fd, EVIOCGBIT(EV_SW, sizeof sw), sw);
+		if      (fd_pad < 0   && BIT_IS_SET(keys, BTN_SOUTH))           fd_pad = fd;
+		else if (fd_keys < 0  && BIT_IS_SET(keys, KEY_VOLUMEUP))        fd_keys = fd;
+		else if (fd_power < 0 && BIT_IS_SET(keys, KEY_POWER))           fd_power = fd;
+		else if (jack_fd < 0  && BIT_IS_SET(sw, SW_HEADPHONE_INSERT))   jack_fd = fd;
+		else kept = false;
+		if (!kept) close(fd);
 	}
-	return -1;
 }
 
 bool plat_input_init(void)
@@ -288,11 +306,7 @@ bool plat_input_init(void)
 
 	snprintf(marker, sizeof marker, "%s/.input_debug", P_ROOT);
 	dbg_input = getenv("TORTOS_INPUT_DEBUG") != NULL || access(marker, F_OK) == 0;
-	/* Found by what each reports, not by number: there is no udev here, and
-	 * enumeration order is not a promise. */
-	if (fd_pad < 0)   fd_pad   = open_by_key(BTN_SOUTH);
-	if (fd_keys < 0)  fd_keys  = open_by_key(KEY_VOLUMEUP);
-	if (fd_power < 0) fd_power = open_by_key(KEY_POWER);
+	if (fd_pad < 0 || fd_keys < 0 || fd_power < 0) input_scan();
 	if (fd_pad < 0)   fprintf(stderr, "input: no gamepad found\n");
 	if (fd_keys < 0)  fprintf(stderr, "input: no volume keys found\n");
 	if (fd_power < 0) fprintf(stderr, "input: no power key found\n");
@@ -522,7 +536,7 @@ _Static_assert(BRIGHT_MAX == PLAT_BRIGHT_MAX, "bright_ladder vs PLAT_BRIGHT_MAX"
 
 static int mixer_fd = -1;
 static int cur_vol = -1, cur_bright = -1;
-static int jack_fd = -1, jack_was = -1;
+static int jack_was = -1;
 
 static int clampi(int v, int lo, int hi)
 {
@@ -552,24 +566,11 @@ static int read_int(const char *path)
 	return atoi(buf);
 }
 
+/* Found by input_scan with the buttons, which plat_input_init runs first. */
 static void jack_open(void)
 {
-	unsigned long bits[NLONGS(SW_MAX)];
-	char path[32];
-	int i, fd;
-
-	for (i = 0; i < 32; i++) {
-		snprintf(path, sizeof path, "/dev/input/event%d", i);
-		if ((fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC)) < 0) continue;
-		memset(bits, 0, sizeof bits);
-		if (ioctl(fd, EVIOCGBIT(EV_SW, sizeof bits), bits) >= 0 &&
-		    BIT_IS_SET(bits, SW_HEADPHONE_INSERT)) {
-			jack_fd = fd;
-			return;
-		}
-		close(fd);
-	}
-	fprintf(stderr, "settings: no headphone jack input node\n");
+	if (jack_fd < 0) input_scan();
+	if (jack_fd < 0) fprintf(stderr, "settings: no headphone jack input node\n");
 }
 
 static int jack_present(void)
