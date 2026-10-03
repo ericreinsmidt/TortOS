@@ -144,6 +144,7 @@ than any one console:
 | **Bluetooth** | the connected headset, or `not connected` - pair, connect and forget |
 | **Audio Output** | `Auto` or `Speaker`, and where Auto landed - see **Audio** below |
 | **Over The Hare** | the file server; needs Wi-Fi and says so when there is none |
+| **Date & Time** | the clock and the time zone, set with left and right - see below |
 | **Auto Off** | how long without a button before the device powers itself down |
 | **UI Theme** | `Plain Jane` or `Fancy Pants` - which art the shelves wear |
 | **UI Direction** | `Horizontal`, `Vertical` or `Cubic` - see below |
@@ -152,6 +153,13 @@ than any one console:
 | **ScreenScraper** | the account that brings covers with each game's year, genre and synopsis, `sign in`, or `not in this build` |
 | **Controls** | every button and what it does, a page per place |
 | **About TortOS** | version, address, battery, uptime |
+
+Date & Time has a row for each part of the clock and one for the time zone,
+each changed with left and right and set the moment it changes, so the time
+holds through a power-off. The zones are one or two cities per hour of offset,
+west to east. On the Brick, Wi-Fi sets the clock again whenever it connects,
+so there it is mostly for the zone; the Pixel 2 has no network to take the
+time from, so set it there once.
 
 Over The Hare and Box Art need a network, and go quiet without one rather than
 disappearing - a row that vanishes teaches nobody why. Cheevos stays reachable

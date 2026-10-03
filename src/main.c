@@ -13,6 +13,7 @@
  */
 #include "atomic.h"
 #include "cheevos.h"
+#include "clock.h"
 #include "config.h"
 #include "bt.h"
 #include "btvol.h"
@@ -4584,6 +4585,12 @@ static int menu_build(app *a, screen_id screen, int sys,
 		u.cards     = CARD_SETS[g_cards].name;
 		u.cards_dir = CARD_DIRS[g_dir].name;
 		u.auto_off  = a->auto_off;
+		{
+			static char clk[32];
+
+			clock_label(time(NULL), clk, sizeof clk);
+			u.clock = clk;
+		}
 		u.audio_policy = ao.policy;
 		u.audio_dest   = aout_actual(&ao);
 
@@ -6720,6 +6727,81 @@ static int menu_std_width(app *a)
 	return floor > content ? floor : content;
 }
 
+/* Date & Time (src/clock.h). Each row is one part of the clock, changed with
+ * left and right and set the moment it changes: the system clock and the
+ * hardware clock both, so it holds through a power-off. Time Zone steps
+ * through CLOCK_ZONES and is the library database's "timezone", which the
+ * Brick's launch.sh reads at boot as well. */
+typedef struct {
+	char field[CLK_FIELDS][24];
+	char zone[64];   /* a city, or a zone id not on the list as it is */
+} clock_ui;
+
+static const char *const CLOCK_ROW_NAMES[CLK_FIELDS] = {
+	"Year", "Month", "Day", "Hour", "Minute",
+};
+
+static int clock_build(void *ctx, menu_row *rows, int max, const char **heading)
+{
+	clock_ui *c = ctx;
+	time_t now = time(NULL);
+	char id[64];
+	int i, z, n = 0;
+
+	*heading = "Date & Time";
+	for (i = 0; i < CLK_FIELDS && n < max; i++) {
+		clock_field_label(now, (clock_field)i, c->field[i], sizeof c->field[i]);
+		rows[n++] = (menu_row){ CLOCK_ROW_NAMES[i], c->field[i], true };
+	}
+	db_get_str(db_lib(), "timezone", id, sizeof id, "America/New_York");
+	z = clock_zone_find(id);
+	snprintf(c->zone, sizeof c->zone, "%s", z >= 0 ? CLOCK_ZONES[z].city : id);
+	if (n < max) rows[n++] = (menu_row){ "Time Zone", c->zone, true };
+	if (n + 3 <= max) {
+		rows[n++] = MENU_RULE;
+		rows[n++] = MENU_NOTE("Left/right: change");
+		/* Only where it is true: the Brick's ntpd sets the clock again once
+		 * Wi-Fi connects, so a time set here lasts until then */
+		if (plat_has_wifi()) rows[n++] = MENU_NOTE("Wi-Fi sets the clock when connected");
+	}
+	return n;
+}
+
+static menu_result clock_key(app *a, void *ctx, in_button key, int sel)
+{
+	int d = key == IN_RIGHT ? 1 : key == IN_LEFT ? -1 : 0;
+
+	(void)a; (void)ctx;
+	if (!d) return MENU_STAY;
+	if (sel >= 0 && sel < CLK_FIELDS) {
+		plat_clock_set(clock_step(time(NULL), (clock_field)sel, d));
+	} else if (sel == CLK_FIELDS) {
+		char id[64];
+		int z;
+
+		db_get_str(db_lib(), "timezone", id, sizeof id, "America/New_York");
+		z = clock_zone_step(id, d);
+		db_set_str(db_lib(), "timezone", CLOCK_ZONES[z].id);
+		db_write_boot_env();
+		plat_clock_zone(CLOCK_ZONES[z].id);
+	}
+	return MENU_STAY;
+}
+
+static void clock_screen(app *a)
+{
+	clock_ui c;
+	menu_style st = {
+		/* Fixed, so the panel does not change size as "May" becomes
+		 * "September" under a held key */
+		.fixed_w = menu_std_width(a),
+		.accent  = MENU_ACCENT,
+	};
+
+	memset(&c, 0, sizeof c);
+	menu_run(a, &st, clock_build, clock_key, &c);
+}
+
 static void tortos_menu_draw(app *a, int sel)
 {
 	menu_row rows[MENU_MAX_ROWS];
@@ -6966,6 +7048,7 @@ static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
 	case PM_ACHIEVEMENTS: ra_signin_screen(a); break;
 	case PM_SS:           ss_signin_screen(a); break;
 	case PM_BT:           bt_screen(a); break;
+	case PM_CLOCK:        clock_screen(a); break;
 	case PM_STATS:        if (stats_screen(a)) return MENU_DONE; break;
 	case PM_CONTROLS:     controls_screen(a); break;
 	case PM_ABOUT:        about_screen(a); break;
@@ -11125,6 +11208,15 @@ int main(int argc, char *argv[])
 		/* Rewritten at every boot, not only on change: it is derived, so a
 		 * card that lost it or never had one gets a correct one for free. */
 		db_write_boot_env();
+	}
+	/* Local time is the card's chosen zone, in this process, from here on:
+	 * the Brick's launch.sh points the system at it too, but the Pixel 2's
+	 * system has no other way to know it */
+	{
+		char tz[64];
+
+		db_get_str(db_lib(), "timezone", tz, sizeof tz, "America/New_York");
+		plat_clock_zone(tz);
 	}
 	t_mark("databases");
 

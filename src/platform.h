@@ -4,6 +4,7 @@
 
 #include <SDL.h>
 #include <stdbool.h>
+#include <time.h>
 
 /* Everything that knows which device it is running on sits behind this file:
  * the display, the buttons, the panel backlight, the codec, the battery, and
@@ -266,5 +267,15 @@ bool plat_battery(int *pct, bool *charging);
  * hides everything that needs it (src/sys_menu.h). */
 bool plat_has_wifi(void);
 bool plat_has_bluetooth(void);
+
+/* Date & Time (src/clock.h). Set the clock to `t`, and the hardware clock with
+ * it, which keeps the time while the device is off: the Pixel 2 has nothing
+ * else to set it from. False if the system clock would not take it. */
+bool plat_clock_set(time_t t);
+
+/* Times read as local time in zone `id` from now on, in this process: a zone
+ * database name such as "America/New_York". The setting itself is the
+ * library database's "timezone". */
+void plat_clock_zone(const char *id);
 
 #endif

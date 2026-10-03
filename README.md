@@ -108,7 +108,8 @@ The Pixel 2 has no system of its own to run on, so the card is the whole system:
 1. **Download `TortOS-v1.3.0-pixel2.img.xz`** from [Releases](https://github.com/ericreinsmidt/TortOS/releases/latest).
 2. **Write it to the card** with the [TortOS Installer](https://github.com/ericreinsmidt/TortOS-Installer/releases/latest) (its Pixel 2 tab), or any program that writes disk images, like Raspberry Pi Imager. It erases everything on the card.
 3. **Put the card in the Pixel 2 and turn it on.** The first boot takes a few seconds longer while it turns the rest of the card into space for games, music and saves. Every boot after that comes straight up.
-4. **Add games** to the folders in `Roms/`. Put the card back in the computer, where it shows up as TORTOS.
+4. **Set the clock** under **MENU > Date & Time**, with the time zone. The Pixel 2 has no network to take the time from, and keeps it once it is set.
+5. **Add games** to the folders in `Roms/`. Put the card back in the computer, where it shows up as TORTOS.
 
 The Pixel 2 has no Wi-Fi or Bluetooth, so it has no Over The Hare, no box art fetched on the device and no RetroAchievements. The TortOS Installer can fetch box art onto the card from a computer, or add your own.
 
@@ -183,7 +184,7 @@ The volume buttons and F1/F2 (brightness) work everywhere.
 <details>
 <summary>What's in each menu</summary>
 
-**The TortOS menu,** MENU on the consoles row: Play Time, Wi-Fi, Bluetooth, Audio Output, Over The Hare, Auto Off, UI Theme, UI Direction, Box Art, Cheevos, ScreenScraper, Controls, About TortOS.
+**The TortOS menu,** MENU on the consoles row: Play Time, Wi-Fi, Bluetooth, Audio Output, Over The Hare, Date & Time, Auto Off, UI Theme, UI Direction, Box Art, Cheevos, ScreenScraper, Controls, About TortOS.
 
 **A console's menu,** MENU inside it: Sort By, Display Mode, Box Art for that console alone, and Rescan Folder for games copied since the Brick was turned on.
 

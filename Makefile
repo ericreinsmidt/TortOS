@@ -30,7 +30,8 @@ all: build/tortos.elf
 CHECKS = check-cheevos check-hare check-httpd check-idle check-rahash \
          check-raset check-xfer check-menus check-artscrape check-artrun check-audioout \
          check-db check-stats check-sort check-bt check-backlog check-ss \
-         check-muselib check-musequeue check-museart check-controls check-logpack
+         check-muselib check-musequeue check-museart check-controls check-logpack \
+         check-clock
 
 check:
 	@fail=0; for c in $(CHECKS); do \
@@ -239,6 +240,16 @@ build-native/idle-check: tools/idle-check.c src/idle.c src/idle.h FORCE
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
 	      -o $@ tools/idle-check.c src/idle.c
+
+# Date & Time: each row moving only itself, the 12-hour words, and the zone
+# list running west to east - see tools/clock-check.c.
+check-clock: build-native/clock-check
+	@./build-native/clock-check
+
+build-native/clock-check: tools/clock-check.c src/clock.c src/clock.h FORCE
+	@mkdir -p build-native
+	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
+	      -o $@ tools/clock-check.c src/clock.c
 
 # The device's title matcher against the host tool's. A drift here does not
 # fail, it just finds fewer games - see tools/artscrape-check.c.

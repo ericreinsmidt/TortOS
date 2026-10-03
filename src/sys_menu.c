@@ -186,6 +186,9 @@ int sys_menu_build(const sys_ui *u, menu_row *out, menu_bufs *b,
 	 * answer to the row above rather than a separate idea. */
 	full[PM_XFER]         = (menu_row){ "Over The Hare", NEEDS_WIFI(net), net };
 	full[PM_STATS]        = (menu_row){ "Play Time",  NULL,      true  };
+	/* On every device: the Brick takes its time from Wi-Fi, but the time zone
+	 * is chosen here on both. */
+	full[PM_CLOCK]        = (menu_row){ "Date & Time", u->clock,  true  };
 	full[PM_SLEEP]        = (menu_row){ "Auto Off",  b->c,      true  };
 	/* Both change how the shelf looks and nothing about what is on it. They
 	 * are what is left of that group: Text Size stood here until the band it

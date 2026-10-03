@@ -183,6 +183,7 @@ static void tortos_menu_offline(void)
 	u.cards = "Plain Jane";
 	u.cards_dir = "Horizontal";
 	u.auto_off = 120;
+	u.clock = "Oct 3, 6:12 AM";
 	n = sys_menu_build(&u, rows, &b, &heading);
 
 	printf("TortOS menu, radio off:\n");
@@ -196,6 +197,9 @@ static void tortos_menu_offline(void)
 	ck(!strcmp(val(&rows[PM_ACHIEVEMENTS]), "sign in"), "Cheevos invites a sign in");
 	ck(rows[PM_ACHIEVEMENTS].live, "Cheevos is reachable signed out");
 	ck(!strcmp(val(&rows[PM_SLEEP]), "2m"), "120s reads as 2m");
+	ck(!strcmp(rows[PM_CLOCK].label, "Date & Time") &&
+	   !strcmp(val(&rows[PM_CLOCK]), "Oct 3, 6:12 AM"), "Date & Time reads the time");
+	ck(rows[PM_CLOCK].live, "and opens with no network: it is how the Pixel gets one");
 	ck(!strcmp(val(&rows[PM_THEME]), "Plain Jane"), "the card set names itself");
 	ck(!strcmp(val(&rows[PM_DIR]), "Horizontal"), "and so does the direction");
 	ck(rows[PM_DIR].live, "UI Direction is reachable offline too");
@@ -622,8 +626,9 @@ static void radio_less(void)
 	ck(!has_label(rows, n, "Cheevos") && !has_label(rows, n, "ScreenScraper"),
 	   "and no sign-ins");
 	ck(has_label(rows, n, "Audio Output") && has_label(rows, n, "Play Time") &&
-	   has_label(rows, n, "Controls") && has_label(rows, n, "About TortOS"),
-	   "the rest is all there");
+	   has_label(rows, n, "Controls") && has_label(rows, n, "About TortOS") &&
+	   has_label(rows, n, "Date & Time"),
+	   "the rest is all there, Date & Time with it");
 	ck(pm[n - 1] == PM_ABOUT && !strcmp(rows[n - 1].label, "About TortOS") &&
 	   pm[0] == PM_STATS && !strcmp(rows[0].label, "Play Time"),
 	   "and the list names the rows the build drew, first to last");
