@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <b>A <ins>fast</ins>, focused custom firmware for the TrimUI Brick and Brick Hammer.</b><br>
+  <b>A <ins>fast</ins>, focused custom firmware for the TrimUI Brick, Brick Hammer and GKD Pixel 2.</b><br>
   Plays eleven classic consoles, and gets out of your way.
 </p>
 
@@ -88,16 +88,29 @@ https://github.com/user-attachments/assets/09b52bf2-bdb6-4a93-8613-27059d825ebf
 
 ## Install
 
-You need a TrimUI Brick or Brick Hammer, a microSD card and, just this once, a computer.
+You need a TrimUI Brick, Brick Hammer or GKD Pixel 2, a microSD card and, just this once, a computer.
+
+### On the Brick
 
 1. **Format the card as exFAT,** with a Master Boot Record partition scheme. On a Mac, open Disk Utility, choose *View > Show All Devices*, and erase the card itself rather than its volume.
-2. **Download `TortOS-v1.2.0.zip`** from [Releases](https://github.com/ericreinsmidt/TortOS/releases/latest) and unzip it.
+2. **Download `TortOS-v1.3.0.zip`** from [Releases](https://github.com/ericreinsmidt/TortOS/releases/latest) and unzip it.
 3. **Copy everything inside it to the root of the card:** `TortOS/`, `.tmp_update/`, `trimui/`, `Roms/`, `Music/`, `Audiobooks/`, `Bios/` and `Saves/`.
 4. **Put the card in the Brick and turn it on.** The first boot installs TortOS, and every boot after that starts it.
 5. **Add games** to the folders in `Roms/`, from the computer now or over Wi-Fi later.
 
 > [!IMPORTANT]
 > `.tmp_update` starts with a dot, so most computers hide it and it gets left behind. Without it the first boot powers off and the Brick keeps starting its stock system. On a Mac, press <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>.</kbd> in Finder to show hidden files before you copy.
+
+### On the GKD Pixel 2
+
+The Pixel 2 has no system of its own to run on, so the card is the whole system: TortOS on [plastron](https://github.com/ericreinsmidt/plastron), a small Linux built for it.
+
+1. **Download `TortOS-v1.3.0-pixel2.img.xz`** from [Releases](https://github.com/ericreinsmidt/TortOS/releases/latest).
+2. **Write it to the card** with the [TortOS Installer](https://github.com/ericreinsmidt/TortOS-Installer/releases/latest) (its Pixel 2 tab), or any program that writes disk images, like Raspberry Pi Imager. It erases everything on the card.
+3. **Put the card in the Pixel 2 and turn it on.** The first boot takes a few seconds longer while it turns the rest of the card into space for games, music and saves. Every boot after that comes straight up.
+4. **Add games** to the folders in `Roms/`. Put the card back in the computer, where it shows up as TORTOS.
+
+The Pixel 2 has no Wi-Fi or Bluetooth, so it has no Over The Hare, no box art fetched on the device and no RetroAchievements. The TortOS Installer can fetch box art onto the card from a computer, or add your own.
 
 ### Adding games over Wi-Fi
 
@@ -114,7 +127,7 @@ The PIN is new every time you open Over The Hare.
 
 ### Removing TortOS
 
-Take the card out. The Brick boots its own system again.
+Take the card out. The Brick boots its own system again. On the Pixel 2 the card is the system, so another card with another system replaces it.
 
 Before you reformat the card or give the Brick away:
 
@@ -162,6 +175,8 @@ None of them is a driver, and none replaces anything the system needs to run.
 **In Muse,** A opens an album, plays a track or pauses it, L1 and R1 change track, left and right skip ten seconds (hold them to go faster: a minute a step after a second, five after three), and B goes back. A on a book carries on where you left it, and in a book with chapters L1 and R1 move by chapter. On Now Playing, Y changes the play mode for music: in order, repeat all, repeat one or shuffle. On a book, which always plays in order, Y changes the speed instead: 1x up to 2x, and 0.75x, kept for each book. To pocket the Brick while music plays, hold F1+F2 (the front function keys) for a second in Muse, or pick **Lock Screen** in its menu: the screen goes dark and only volume, power and your headset's buttons work, until you hold F1+F2 again.
 
 The volume buttons and F1/F2 (brightness) work everywhere.
+
+**On the Pixel 2,** FUNCTION is MENU, so everything on this page that uses MENU uses FUNCTION. It has no brightness keys: FUNCTION with volume up or down is brightness, everywhere, and Muse's pocket lock is FUNCTION with both volume keys.
 
 **The Brick lists all of this itself,** under **MENU > Controls**: five pages, stepped through with left and right, so you never need this page to look a button up.
 
@@ -242,7 +257,7 @@ Battery saves are `.srm` files in `Saves/`, named after the game. Save states, t
 <details>
 <summary><b>Something went wrong. How do I send the logs?</b></summary>
 
-Open **MENU > Over The Hare**, open its address in a browser, and click **Download logs** at the bottom of the first page. You get one `.tar.gz` file holding the last ten boots' logs and a short summary of the Brick, ready to send to whoever is helping you. Wi-Fi network, headset and account names are masked in it, and the logs on the card are left as they are. The logs themselves are in `.userdata/tg3040/logs/` on the card.
+Open **MENU > Over The Hare**, open its address in a browser, and click **Download logs** at the bottom of the first page. You get one `.tar.gz` file holding the last ten boots' logs and a short summary of the Brick, ready to send to whoever is helping you. Wi-Fi network, headset and account names are masked in it, and the logs on the card are left as they are. The logs themselves are in `.userdata/tg3040/logs/` on the card. The Pixel 2 has no Over The Hare, so copy its logs off the card instead, from `.userdata/pixel2/logs/`.
 
 </details>
 
