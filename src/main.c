@@ -11257,12 +11257,14 @@ int main(int argc, char *argv[])
 	a.r = plat_renderer();
 	t_mark("renderer");
 	plat_input_init();
+	t_mark("input");
 	/* Nothing is handed in any more. The two-tier lookup this replaces - a
 	 * shipped default and the player's saved level - is one key each in the
 	 * database, seeded once and overwritten by a nudge. That is also the end
 	 * of a bug it kept reintroducing: reapplying the config afterwards put
 	 * the shipped default ahead of the level the player last chose. */
 	plat_settings_init();
+	t_mark("settings");
 	plat_leds_off();
 	t_mark("video+input");
 
