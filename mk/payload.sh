@@ -4,18 +4,37 @@
 # Copy the CONTENTS of out/sd/ to the root of a FAT32 SD card, put it in a
 # stock Brick and power on: the first boot installs the runtrimui.sh hook and
 # every boot after that comes straight up in TortOS.
+#
+# DEVICE=pixel2 assembles the GKD Pixel 2's instead, under out/sd-pixel2/.
+# plastron, the Pixel's system, builds it into its card image and copies it
+# onto the card on first boot, so its build sets where the binaries are, where
+# the payload goes and ZIP= for no zip:
+#
+#   DEVICE=pixel2 TORTOS_ELF=... MUSE_ELF=... DIATOM_ELF=... VENDOR_DIR=... \
+#       OUT=... ZIP= mk/payload.sh
 set -e
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-OUT=$ROOT/out/sd
+DEVICE=${DEVICE:-brick}
+case $DEVICE in
+brick)  OUT=${OUT:-$ROOT/out/sd};        LAUNCH=$ROOT/sd/tortos/launch.sh ;;
+pixel2) OUT=${OUT:-$ROOT/out/sd-pixel2}; LAUNCH=$ROOT/sd/pixel2/launch.sh ;;
+*) echo "payload: unknown DEVICE $DEVICE (brick or pixel2)" >&2; exit 1 ;;
+esac
 P=$OUT/TortOS
+TORTOS_ELF=${TORTOS_ELF:-$ROOT/build/tortos.elf}
+MUSE_ELF=${MUSE_ELF:-$ROOT/build/muse}
+VENDOR_DIR=${VENDOR_DIR:-$ROOT/vendor}
 
-[ -f "$ROOT/build/tortos.elf" ] || { echo "run make first"; exit 1; }
+[ -f "$TORTOS_ELF" ] || { echo "run make first"; exit 1; }
 # A release ships with the ScreenScraper developer pair built in, or box art
 # quietly falls back to libretro for everyone who installs it. A build without
 # one is fine for development; it is not fine to package. The pair comes from
 # .screenscraper.env (see the Makefile). ALLOW_NO_SS=1 packages one anyway.
-if grep -q '^#define SS_DEVID *""' "$ROOT/build/ss_creds.h" 2>/dev/null ||
-   [ ! -f "$ROOT/build/ss_creds.h" ]; then
+# Not checked for the Pixel: its launcher is built by plastron, which compiles
+# the pair in itself, from build-pixel2/ rather than build/.
+if [ "$DEVICE" = brick ] &&
+   { grep -q '^#define SS_DEVID *""' "$ROOT/build/ss_creds.h" 2>/dev/null ||
+     [ ! -f "$ROOT/build/ss_creds.h" ]; }; then
 	if [ "${ALLOW_NO_SS:-0}" != 1 ]; then
 		echo "payload: build/tortos.elf has no ScreenScraper developer pair." >&2
 		echo "payload: add .screenscraper.env, rebuild, or set ALLOW_NO_SS=1" >&2
@@ -23,21 +42,17 @@ if grep -q '^#define SS_DEVID *""' "$ROOT/build/ss_creds.h" 2>/dev/null ||
 	fi
 	echo "payload: WARNING: packaging without the ScreenScraper developer pair" >&2
 fi
-DIATOM_ELF=${DIATOM_ELF:-$ROOT/../diatom/build/brick/diatom}
+DIATOM_ELF=${DIATOM_ELF:-$ROOT/../diatom/build/$DEVICE/diatom}
 [ -f "$DIATOM_ELF" ] || { echo "no diatom at $DIATOM_ELF (set DIATOM_ELF)"; exit 1; }
-[ -f "$ROOT/vendor/cores/fceumm_libretro.so" ] || { echo "run mk/fetch-vendor.sh first"; exit 1; }
+[ -f "$VENDOR_DIR/cores/fceumm_libretro.so" ] || { echo "run mk/fetch-vendor.sh first"; exit 1; }
 
 rm -rf "$OUT"
 mkdir -p "$P/cards" "$P/cores" "$P/res/web" \
-         "$OUT/.tmp_update" "$OUT/trimui/app" \
          "$OUT/Roms" "$OUT/Music" "$OUT/Audiobooks" "$OUT/Bios" "$OUT/Saves"
 
-cp "$ROOT/build/tortos.elf" "$P/"
-cp "$ROOT/build/setbright" "$P/"          # brightness before the boot animation
-cp "$ROOT/build/btplayer" "$P/"           # lets a headset's volume through BlueZ
-cp "$ROOT/build/muse" "$P/"               # the audio player's engine; Muse cannot play without it
-cp "$ROOT/sd/tortos/launch.sh" "$P/"
-cp "$ROOT/sd/tortos/bt-alsa.sh" "$P/"     # sourced by launch.sh, run by the launcher
+cp "$TORTOS_ELF" "$P/tortos.elf"
+cp "$MUSE_ELF" "$P/muse"                  # the audio player's engine; Muse cannot play without it
+cp "$LAUNCH" "$P/launch.sh"
 # Only systems.cfg is shipped now. tortos.cfg, turbo.cfg and coreopts.cfg are
 # compiled into the launcher and seed the settings database on first run, so
 # there is no file to ship and none to drift from the code that reads it.
@@ -58,16 +73,13 @@ cp "$ROOT/res/fonts/menu.ttf" "$P/"       # the UI face, and the in-game menu's
 # a browser asks for /web/menu.ttf.
 cp "$ROOT/res/web/"* "$P/res/web/"
 cp "$ROOT/res/fonts/menu.ttf" "$P/res/web/menu.ttf"
-cp "$ROOT/res/boot/tortos-boot.mp4" "$P/"
-cp "$ROOT/res/boot/bootlogo.bmp" "$P/"    # u-boot splash, applied on first boot
-cp "$ROOT/res/boot/splash.png" "$P/"      # the pic2fb loading splash, likewise
 # The device has curl and OpenSSL but nothing to trust - see res/ssl/README.md.
 # Without this, every HTTPS request fails verification and achievements never
 # arrive, with an error that reads like the network being down.
 cp "$ROOT/res/ssl/cacert.pem" "$P/"
 cp "$ROOT/THIRD-PARTY-LICENSES.md" "$P/"  # notices for the redistributed software
 cp "$DIATOM_ELF" "$P/diatom"
-cp "$ROOT/vendor/cores/"*.so "$P/cores/"
+cp "$VENDOR_DIR/cores/"*.so "$P/cores/"
 
 # Every system on the shelf must have its core on the card.
 #
@@ -87,12 +99,25 @@ if [ -n "$missing" ]; then
 	exit 1
 fi
 
-cp "$ROOT/sd/.tmp_update/updater" "$ROOT/sd/.tmp_update/tg3040.sh" "$OUT/.tmp_update/"
-cp "$ROOT/sd/trimui/app/MainUI" "$ROOT/sd/trimui/app/runtrimui.sh" "$OUT/trimui/app/"
+chmod +x "$P/launch.sh" "$P/tortos.elf" "$P/diatom" "$P/muse"
 
-chmod +x "$OUT/.tmp_update/updater" "$OUT/.tmp_update/tg3040.sh" \
-         "$OUT/trimui/app/MainUI" "$OUT/trimui/app/runtrimui.sh" \
-         "$P/launch.sh" "$P/tortos.elf" "$P/diatom" "$P/setbright" "$P/btplayer" "$P/muse"
+# What only the Brick has: the hook into TrimUI's firmware, Bluetooth, and the
+# boot pictures its firmware shows. The Pixel's system is plastron, whose
+# splash plays the boot animation itself.
+if [ "$DEVICE" = brick ]; then
+	mkdir -p "$OUT/.tmp_update" "$OUT/trimui/app"
+	cp "$ROOT/build/setbright" "$P/"          # brightness before the boot animation
+	cp "$ROOT/build/btplayer" "$P/"           # lets a headset's volume through BlueZ
+	cp "$ROOT/sd/tortos/bt-alsa.sh" "$P/"     # sourced by launch.sh, run by the launcher
+	cp "$ROOT/res/boot/tortos-boot.mp4" "$P/"
+	cp "$ROOT/res/boot/bootlogo.bmp" "$P/"    # u-boot splash, applied on first boot
+	cp "$ROOT/res/boot/splash.png" "$P/"      # the pic2fb loading splash, likewise
+	cp "$ROOT/sd/.tmp_update/updater" "$ROOT/sd/.tmp_update/tg3040.sh" "$OUT/.tmp_update/"
+	cp "$ROOT/sd/trimui/app/MainUI" "$ROOT/sd/trimui/app/runtrimui.sh" "$OUT/trimui/app/"
+	chmod +x "$OUT/.tmp_update/updater" "$OUT/.tmp_update/tg3040.sh" \
+	         "$OUT/trimui/app/MainUI" "$OUT/trimui/app/runtrimui.sh" \
+	         "$P/setbright" "$P/btplayer"
+fi
 
 # One ROM folder per system, with the .media folder box art goes in. Read from
 # systems.cfg (awk, not sed: folder names contain spaces).
@@ -113,7 +138,12 @@ du -sh "$OUT"
 echo "payload ready: $OUT"
 
 VERSION=${VERSION:-1.0}
-ZIP="$ROOT/out/TortOS-v$VERSION.zip"
+if [ "$DEVICE" = brick ]; then
+	ZIP=${ZIP-$ROOT/out/TortOS-v$VERSION.zip}
+else
+	ZIP=${ZIP-$ROOT/out/TortOS-v$VERSION-$DEVICE.zip}
+fi
+[ -n "$ZIP" ] || exit 0
 rm -f "$ZIP"
 ( cd "$OUT" && zip -qr "$ZIP" . -x '.DS_Store' '._*' )
 echo "release zip:  $ZIP  ($(du -h "$ZIP" | cut -f1))"
