@@ -349,7 +349,13 @@ Box Art fetch, which only keep working while they are on screen.
 
 Albums go in `Music/`, a folder per artist and one inside it per album:
 `Music/Radiohead/The Bends/01 Planet Telex.mp3`. A folder of tracks straight
-under `Music/` - a podcast, a mix - is an album of its own. Over The Hare
+under `Music/` is filed under its artist when its tags say clearly who that is
+(the album artist, or the artist every track agrees on), moving to
+`Music/<artist>/<album>/` with its cover; one with no clear answer - a
+podcast, a mix - stays an album of its own. Songs straight in `Music/`, in no
+folder at all, are moved into `Music/Singles/` the next time the shelf is
+read, a name already there getting " (2)", and Singles has a cover of its own
+at `Music/.media/Singles.png` until you replace it. Over The Hare
 reaches `Music/` too, and albums sent that way are on the shelf when you leave
 its screen. MP3, M4A, M4B, AAC, FLAC, Ogg, Opus and WAV play. Tracks play in
 file-name order, and the number at the front of a file name is left off the

@@ -21,6 +21,7 @@
  *        SINK    device=                     an ALSA name; "default" is dmix
  *        STATUS
  *        COVER   path=  base=                write path's picture to base.jpg|png
+ *        ARTIST  dir=                        who a folder of tracks is by
  *   out  READY   proto=2
  *        STATE   state=playing|paused|stopped  path=
  *        META    title= artist= album= len= chapters=
@@ -32,6 +33,8 @@
  *                                              device would not open
  *        ERROR   why=
  *        COVER   base=  file=                  what was written; "" if nothing
+ *        ARTIST  dir=  name=                   from the tags; "" if no clear
+ *                                              answer (tags.h)
  */
 #include <errno.h>
 #include <fcntl.h>
@@ -51,6 +54,7 @@
 #include "cover.h"
 #include "dec.h"
 #include "pcm.h"
+#include "tags.h"
 
 #define SOCK_PATH "/tmp/muse.sock"
 #define PATH_MAX_ 1024
@@ -476,6 +480,18 @@ static void command(int fd, const char *line)
 		if (cover_extract(q.path, base, file, sizeof file) < 0)
 			say("no cover from %s", q.path);
 		send_line(fd, "COVER\tbase=%s\tfile=%s", clean(base, a, sizeof a), file);
+		return;
+	}
+	if (!strncmp(line, "ARTIST", 6)) {
+		/* Here too, for COVER's reason: headers only, a few milliseconds a
+		 * track, nothing to do with what is playing. */
+		char dir[PATH_MAX_], name[256], a[PATH_MAX_ + 8], b[300];
+
+		arg(line, "dir", dir, sizeof dir);
+		if (!dir[0]) return;
+		tags_folder_artist(dir, name, sizeof name);
+		send_line(fd, "ARTIST\tdir=%s\tname=%s", clean(dir, a, sizeof a),
+		          clean(name, b, sizeof b));
 		return;
 	}
 	if (!strncmp(line, "PLAY", 4)) {
