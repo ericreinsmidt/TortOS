@@ -4568,6 +4568,7 @@ static int menu_build(app *a, screen_id screen, int sys,
 	u.games = screen == SCREEN_GAMES;
 	u.no_wifi = !plat_has_wifi();
 	u.no_bt   = !plat_has_bluetooth();
+	u.cable_xfer = plat_cable_link(NULL, 0);
 
 	if (u.games) {
 		const system_cfg *sc = &a->sys.systems[sys];
@@ -5393,6 +5394,9 @@ static void xfer_screen(app *a)
 	hare_stats st;
 	unsigned long long total_in = 0, total_out = 0;
 	bool       done = false;
+	/* Over the USB cable or over the air, which is also the screen's name. */
+	const bool  cable = plat_cable_link(NULL, 0);
+	const char *name  = cable ? XFER_NAME_CABLE : XFER_NAME_WIFI;
 
 	g_logs_app = a;
 	hare_set_logs(pack_logs);
@@ -5401,7 +5405,7 @@ static void xfer_screen(app *a)
 		menu_row row = { "Could not start", NULL, false };
 
 		draw_shelf(a);
-		menu_draw(a, "Over The Hare", &row, 1, -1, 0, MENU_ACCENT);
+		menu_draw(a, name, &row, 1, -1, 0, MENU_ACCENT);
 		plat_draw_osd(a->r);
 		plat_present();
 		SDL_Delay(1800);
@@ -5426,11 +5430,14 @@ static void xfer_screen(app *a)
 		total_out += st.out;
 
 		/* Two seconds, because wifi_status forks wpa_cli and this loop runs
-		 * every frame. Same cache the About screen uses. */
+		 * every frame. Same cache the About screen uses. Over a cable the
+		 * address never changes, so it is always shown, and the browser row
+		 * says whether anyone is on the other end. */
 		if (!addr[0] || now - next_check > 2000u) {
 			next_check = now;
-			if (wifi_status(ssid, sizeof ssid, ip, sizeof ip) == WIFI_CONNECTED
-			    && ip[0]) {
+			if (cable ? plat_cable_link(ip, sizeof ip)
+			          : wifi_status(ssid, sizeof ssid, ip, sizeof ip) == WIFI_CONNECTED
+			            && ip[0]) {
 				/* Port 80 needs no colon, and the address is being copied by
 				 * hand off a three-inch screen - so it is only shown when it
 				 * is not the one everybody assumes. */
@@ -5512,7 +5519,7 @@ static void xfer_screen(app *a)
 		 * twenty games would otherwise rescan twenty times, and every one of
 		 * them would stall the loop that is still receiving. */
 		if (changed) {
-			wait_panel(a, "Over The Hare", "Scanning...");
+			wait_panel(a, name, "Scanning...");
 			rescan_all(a);
 		}
 	}
@@ -6984,7 +6991,8 @@ static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
 	/* The row's identity rather than its position: a device with no radio has
 	 * fewer of them, and the same list the build used says which is which. */
 	{
-		sys_ui dev = { .no_wifi = !plat_has_wifi(), .no_bt = !plat_has_bluetooth() };
+		sys_ui dev = { .no_wifi = !plat_has_wifi(), .no_bt = !plat_has_bluetooth(),
+		               .cable_xfer = plat_cable_link(NULL, 0) };
 		pm_row ids[PM_ROWS];
 		int n = sys_menu_tortos_rows(&dev, ids);
 

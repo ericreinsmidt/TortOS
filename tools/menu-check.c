@@ -633,6 +633,18 @@ static void radio_less(void)
 	   pm[0] == PM_STATS && !strcmp(rows[0].label, "Play Time"),
 	   "and the list names the rows the build drew, first to last");
 
+	/* The GKD Pixel 2: no radio, and its files go over the USB cable. */
+	u.cable_xfer = true;
+	n = sys_menu_build(&u, rows, &b, &heading);
+	k = sys_menu_tortos_rows(&u, pm);
+	printf("TortOS menu, no radio, files over the cable:\n");
+	ck(n == k && n == PM_ROWS - 5, "five rows fewer: the transfer row stays");
+	for (i = 0; i < k && pm[i] != PM_XFER; i++) { }
+	ck(i < k && !strcmp(rows[i].label, "Down to the Wire"),
+	   "as Down to the Wire, where the list says it is");
+	ck(i < k && rows[i].live && !rows[i].value, "live, and not asking for Wi-Fi");
+	ck(!has_label(rows, n, "Over The Hare"), "never under its Wi-Fi name");
+
 	memset(&u, 0, sizeof u);
 	u.games = true;
 	u.no_wifi = true;

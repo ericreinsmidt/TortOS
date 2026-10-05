@@ -145,7 +145,7 @@ than any one console:
 | **Wi-Fi** | the network's name when connected, or why it is not |
 | **Bluetooth** | the connected headset, or `not connected` - pair, connect and forget |
 | **Audio Output** | `Auto` or `Speaker`, and where Auto landed - see **Audio** below |
-| **Over The Hare** | the file server; needs Wi-Fi and says so when there is none |
+| **Over The Hare** | the file server; needs Wi-Fi and says so when there is none. On the Pixel 2 it is **Down to the Wire**, over the USB cable, always at `10.42.0.1` |
 | **Date & Time** | the clock and the time zone, set with left and right - see below |
 | **Auto Off** | how long without a button before the device powers itself down |
 | **UI Theme** | `Plain Jane` or `Fancy Pants` - which art the shelves wear |

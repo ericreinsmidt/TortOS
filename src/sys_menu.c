@@ -26,9 +26,11 @@ int sys_menu_tortos_rows(const sys_ui *u, pm_row *out)
 		/* Everything that needs the network, including both sign-ins: an
 		 * account nobody can reach is a row that can only fail. Audio Output
 		 * stays, since a cable and the speaker are still two places. */
-		if (u->no_wifi && (r == PM_WIFI || r == PM_XFER || r == PM_SCRAPE ||
+		if (u->no_wifi && (r == PM_WIFI || r == PM_SCRAPE ||
 		                   r == PM_ACHIEVEMENTS || r == PM_SS))
 			continue;
+		/* Unless the files go over a cable, which needs no radio. */
+		if (u->no_wifi && !u->cable_xfer && r == PM_XFER) continue;
 		if (u->no_bt && r == PM_BT) continue;
 		out[n++] = (pm_row)r;
 	}
@@ -183,8 +185,13 @@ int sys_menu_build(const sys_ui *u, menu_row *out, menu_bufs *b,
 	 * runs the system, the hare carries the files.
 	 *
 	 * Directly under Wi-Fi because it is useless without it, and reads as an
-	 * answer to the row above rather than a separate idea. */
-	full[PM_XFER]         = (menu_row){ "Over The Hare", NEEDS_WIFI(net), net };
+	 * answer to the row above rather than a separate idea.
+	 *
+	 * Over the USB cable, where a device does it that way, it is Down to the
+	 * Wire, and the cable is always there to try. */
+	full[PM_XFER]         = u->cable_xfer
+	                      ? (menu_row){ XFER_NAME_CABLE, NULL, true }
+	                      : (menu_row){ XFER_NAME_WIFI, NEEDS_WIFI(net), net };
 	full[PM_STATS]        = (menu_row){ "Play Time",  NULL,      true  };
 	/* On every device: the Brick takes its time from Wi-Fi, but the time zone
 	 * is chosen here on both. */

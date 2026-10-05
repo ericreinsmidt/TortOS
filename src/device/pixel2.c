@@ -773,6 +773,19 @@ bool plat_usb_audio_present(void)
 	return access("/proc/asound/card1/usbid", F_OK) == 0;
 }
 
+/* Files over the USB cable: plastron gives usb0 this address and hands the
+ * computer one of its own (S40usbgadget), so the screen shows the same thing
+ * every time, cable in or not. Whether a computer is there is left to the
+ * screen's browser row: the USB controller went on saying "configured" with
+ * the cable pulled (2026-10-05), and the row already says it. */
+#define CABLE_ADDR "10.42.0.1"
+
+bool plat_cable_link(char *addr, size_t n)
+{
+	if (addr && n) snprintf(addr, n, "%s", CABLE_ADDR);
+	return true;
+}
+
 /* No mute switch on this device. */
 bool plat_mute_poll(bool own_volume) { (void)own_volume; return false; }
 bool plat_muted(void) { return false; }

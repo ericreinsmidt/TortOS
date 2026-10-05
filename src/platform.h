@@ -255,6 +255,12 @@ bool plat_headphones_present(void);
 /* A USB sound card is plugged in: a USB-C DAC, where the port can be a host.
  * False on a device whose port can't be one safely (the Brick). */
 bool plat_usb_audio_present(void);
+
+/* Files move over the USB cable rather than Wi-Fi: the device's USB port is a
+ * network link to a computer (the GKD Pixel 2). True, with the address a
+ * browser opens (addr may be NULL); false on a device that moves files over
+ * Wi-Fi. */
+bool plat_cable_link(char *addr, size_t n);
 /* kind: 1 = brightness, 2 = volume */
 void plat_osd_show(int kind, int val, int max);
 void plat_draw_osd(SDL_Renderer *r);

@@ -763,6 +763,13 @@ bool plat_headphones_present(void) { return jack_present() != 0; }
  * hand risks supplying power into a charger: not worth a board. 2026-10-05. */
 bool plat_usb_audio_present(void) { return false; }
 
+/* Files go over Wi-Fi here, by Over The Hare. */
+bool plat_cable_link(char *addr, size_t n)
+{
+	(void)addr; (void)n;
+	return false;
+}
+
 /* The switch, checked wherever the jack is and for the same reason: this is
  * the one thing every screen does once a frame.
  *
@@ -928,6 +935,11 @@ bool plat_mute_poll(bool own_volume) { (void)own_volume; return false; }
 bool plat_muted(void) { return false; }
 bool plat_headphones_present(void) { return false; }
 bool plat_usb_audio_present(void) { return false; }
+bool plat_cable_link(char *addr, size_t n)
+{
+	(void)addr; (void)n;
+	return false;
+}
 static void jack_forget(void) { }
 static void mute_forget(void) { }
 void plat_backlight(bool on) { (void)on; }
