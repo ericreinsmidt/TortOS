@@ -29,6 +29,7 @@
 #include "artscrape.h"
 #include "favorites.h"
 #include "hare.h"
+#include "hareart.h"
 #include "idle.h"
 #include "notice.h"
 #include "rafetch.h"
@@ -5387,6 +5388,16 @@ static void muse_before_delete(const char *abs)
 	}
 }
 
+/* Album covers for the page, down with Muse's Album Art, and the covers the
+ * shelf draws, down with Muse's shelf. */
+static bool  cover_file(int al, char *out, size_t n);
+static bool  cover_answers(void);
+static void  muse_file_albums(void);
+static char *albums_wanted(size_t *len, char *why, size_t wn);
+static char *album_pick(int id, const char *json, size_t n, size_t *len,
+                        char *why, size_t wn);
+static void  xfer_after_write(const char *abs);
+
 static void xfer_screen(app *a)
 {
 	char       ssid[WIFI_SSID_MAX], ip[64];
@@ -5398,10 +5409,22 @@ static void xfer_screen(app *a)
 	/* Over the USB cable or over the air, which is also the screen's name. */
 	const bool  cable = plat_cable_link(NULL, 0);
 	const char *name  = cable ? XFER_NAME_CABLE : XFER_NAME_WIFI;
+	unsigned    cover_at = 0, cover_next = 0;   /* the embedded covers, below */
 
 	g_logs_app = a;
 	hare_set_logs(pack_logs);
 	hare_set_before_delete(muse_before_delete);
+	/* Box art fetched by the page is Down to the Wire's alone (hareart.h);
+	 * a cover uploaded into a shelf's .media is shrunk on every device. */
+	hareart_init(&a->sys, P_ROMS);
+	if (cable) {
+		hare_set_art(hareart_wanted, hareart_match, hareart_crc, hareart_nointro);
+		hare_set_albums(albums_wanted, album_pick);
+	} else {
+		hare_set_art(NULL, NULL, NULL, NULL);
+		hare_set_albums(NULL, NULL);
+	}
+	hare_set_after_write(xfer_after_write);
 	if (!hare_start(P_ROMS, P_CARD, P_SHARED, P_WEB)) {
 		menu_row row = { "Could not start", NULL, false };
 
@@ -5429,6 +5452,22 @@ static void xfer_screen(app *a)
 		hare_status(&st);
 		total_in  += st.in;
 		total_out += st.out;
+
+		/* Every album's embedded cover copied out to .media, where the page
+		 * can show it and Album Art can judge it: an album the shelf never
+		 * drew had none there, so the page showed nothing and asked
+		 * MusicBrainz over a cover the files already carried (Eric,
+		 * 2026-10-05). cover_file asks Muse as the shelf does, one album
+		 * each tenth of a second, again for any Muse has not answered. */
+		muse_poll();
+		cover_answers();
+		muse_file_albums();             /* read again on the way out, if moved */
+		if (g_cov && g_muse.nalbums > 0 && now - cover_at >= 100u) {
+			char pic[LIB_PATH * 2 + 8];
+
+			cover_at = now;
+			cover_file(cover_next++ % g_muse.nalbums, pic, sizeof pic);
+		}
 
 		/* Two seconds, because wifi_status forks wpa_cli and this loop runs
 		 * every frame. Same cache the About screen uses. Over a cable the
@@ -8827,6 +8866,119 @@ static void album_art_landed(app *a, int al, const char *rg)
 	texload_bump();
 	faces_stale();
 	if (g_np.album == al) np_forget();
+}
+
+/* ---- Muse: album covers from the web page (Down to the Wire) ------------
+ *
+ * Album Art's rules, answered for the page at the other end of the cable,
+ * which asks MusicBrainz and the Cover Art Archive itself: the Pixel has no
+ * network. Which albums want a cover is museart_jobs, which release a reply
+ * names is museart_pick, and a cover that lands is remembered as Album Art
+ * remembers its own. See hare_set_albums. */
+
+/* Where an album's cover goes, as a path the page uploads to: the card's
+ * Music/<artist>/.media/<album>.jpg is music/<artist>/.media/<album>.jpg. */
+static bool album_cover_path(int al, char *out, size_t n)
+{
+	char base[LIB_PATH * 2];
+	size_t root = strlen(g_muse_root);
+
+	ml_cover_base(g_muse_root, &g_muse, al, base, sizeof base);
+	if (strncmp(base, g_muse_root, root) || strncmp(base + root, "/Music/", 7))
+		return false;
+	return snprintf(out, n, "music/%s.jpg", base + root + 7) < (int)n;
+}
+
+/* The album a pick answered and its release group, until its cover lands.
+ * One at a time: the page uploads each cover straight after its pick. */
+static int  g_pick_al = -1;
+static char g_pick_rg[64];
+
+static char *albums_wanted(size_t *len, char *why, size_t wn)
+{
+	museart_job *jobs = calloc((size_t)(g_muse.nalbums > 0 ? g_muse.nalbums : 1),
+	                           sizeof *jobs);
+	hj o = { 0 };
+	bool first = true;
+	int n, i, k;
+
+	if (!jobs) { snprintf(why, wn, "out of memory"); return NULL; }
+	n = museart_jobs(jobs, g_muse.nalbums);
+	hj_lit(&o, "{\"albums\":[");
+	for (i = 0; i < n; i++) {
+		char artists[MUSEART_TRIES][128], albums[MUSEART_TRIES][128];
+		char url[1024], cover[LIB_PATH * 2];
+		int tries = museart_tries(jobs[i].artist, jobs[i].album, artists, albums);
+
+		if (!album_cover_path(jobs[i].id, cover, sizeof cover)) continue;
+		if (!first) hj_lit(&o, ",");
+		first = false;
+		hj_lit(&o, "{\"id\":");
+		hj_int(&o, jobs[i].id);
+		hj_lit(&o, ",\"artist\":");
+		hj_str(&o, jobs[i].artist);
+		hj_lit(&o, ",\"album\":");
+		hj_str(&o, jobs[i].album);
+		/* The searches in Album Art's order, each asked only if the one
+		 * before named nothing. */
+		hj_lit(&o, ",\"searches\":[");
+		for (k = 0; k < tries; k++) {
+			if (!museart_search_url(artists[k], albums[k], url, sizeof url)) continue;
+			if (k) hj_lit(&o, ",");
+			hj_str(&o, url);
+		}
+		hj_lit(&o, "]}");
+	}
+	hj_lit(&o, "]}");
+	free(jobs);
+	return hj_done(&o, len, why, wn);
+}
+
+static char *album_pick(int id, const char *json, size_t n, size_t *len,
+                        char *why, size_t wn)
+{
+	char rg[64] = "", cover[LIB_PATH * 2] = "", base[LIB_PATH * 2], *slash;
+	hj o = { 0 };
+
+	if (id < 0 || id >= g_muse.nalbums || g_muse.albums[id].book) {
+		snprintf(why, wn, "no such album");
+		return NULL;
+	}
+	if (museart_pick(json, n, g_muse.albums[id].n, rg, sizeof rg) &&
+	    album_cover_path(id, cover, sizeof cover)) {
+		/* The .media folder, which an album whose files never carried a
+		 * cover does not have: the upload needs it to exist. */
+		ml_cover_base(g_muse_root, &g_muse, id, base, sizeof base);
+		if ((slash = strrchr(base, '/'))) { *slash = '\0'; mkdir(base, 0755); }
+		g_pick_al = id;
+		snprintf(g_pick_rg, sizeof g_pick_rg, "%s", rg);
+	} else {
+		rg[0] = cover[0] = '\0';
+	}
+	hj_lit(&o, "{\"rg\":");
+	hj_str(&o, rg);
+	hj_lit(&o, ",\"cover\":");
+	hj_str(&o, cover);
+	hj_lit(&o, "}");
+	return hj_done(&o, len, why, wn);
+}
+
+/* Every upload, from the transfer screen: a game's cover is shrunk, and the
+ * cover of the album last picked is taken as Album Art takes one, the PNG the
+ * files carried removed and the release group remembered. */
+static void xfer_after_write(const char *abs)
+{
+	char base[LIB_PATH * 2], p[LIB_PATH * 2 + 8];
+
+	hareart_after_write(abs);
+	if (g_pick_al < 0 || g_pick_al >= g_muse.nalbums) return;
+	ml_cover_base(g_muse_root, &g_muse, g_pick_al, base, sizeof base);
+	snprintf(p, sizeof p, "%s.jpg", base);
+	if (strcmp(p, abs)) return;
+	snprintf(p, sizeof p, "%s.png", base);
+	remove(p);
+	if (g_logs_app) album_art_landed(g_logs_app, g_pick_al, g_pick_rg);
+	g_pick_al = -1;
 }
 
 /* Album Art, from Muse's menu: MusicBrainz and the Cover Art Archive, for the

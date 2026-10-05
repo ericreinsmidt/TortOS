@@ -187,6 +187,27 @@ static const struct { const char *from, *to; } TAG_ALIAS[] = {
 	{ "world",  "usa" },        /* a World dump is the one a US card wants */
 };
 
+/* GoodTools' region codes, a letter a region and several run together: (U),
+ * (J), (E), (UJE). Much of a card named before No-Intro looks like this, and
+ * unread, a (U) game scored the US and Japanese covers alike and took
+ * whichever came first: Vigilante (U) got Japan's box, 2026-10-05. Read only
+ * from a tag of one to three of these letters and nothing else, and only once
+ * TAG_ALIAS has passed on it, which already claims "us", "eu" and "jp". */
+static const struct { char code; const char *region; } GOODTOOLS[] = {
+	{ 'u', "usa" }, { 'j', "japan" }, { 'e', "europe" },
+	{ 'w', "usa" },             /* World, as TAG_ALIAS reads it */
+	{ 'k', "korea" },
+};
+
+static const char *goodtools_region(char code)
+{
+	size_t k;
+
+	for (k = 0; k < sizeof GOODTOOLS / sizeof GOODTOOLS[0]; k++)
+		if (GOODTOOLS[k].code == code) return GOODTOOLS[k].region;
+	return NULL;
+}
+
 /* Tags likely to mean "not the release you have": prototypes, betas, and the
  * demo discs that share a title with the game. A candidate carrying one of
  * these is only picked when nothing else matched. */
@@ -224,12 +245,27 @@ static int name_tags(const char *s, char out[][TAG_MAX], int max)
 			out[n][o] = '\0';
 			if (o) {
 				size_t k;
+				bool aliased = false;
 
 				for (k = 0; k < sizeof TAG_ALIAS / sizeof TAG_ALIAS[0]; k++)
 					if (!strcmp(out[n], TAG_ALIAS[k].from)) {
 						snprintf(out[n], TAG_MAX, "%s", TAG_ALIAS[k].to);
+						aliased = true;
 						break;
 					}
+				/* A GoodTools code becomes one tag a region it names. */
+				if (!aliased && o <= 3) {
+					char codes[4];
+
+					snprintf(codes, sizeof codes, "%s", out[n]);
+					for (k = 0; codes[k] && goodtools_region(codes[k]); k++) { }
+					if (!codes[k]) {
+						for (k = 0; codes[k] && n < max; k++)
+							snprintf(out[n++], TAG_MAX, "%s", goodtools_region(codes[k]));
+						s = c < e ? c + 1 : e;
+						continue;
+					}
+				}
 				n++;
 			}
 			s = c < e ? c + 1 : e;
@@ -626,9 +662,41 @@ static bool parse_index(void)
  * One pass over the index per ROM, decoding and normalizing candidates as it
  * goes. `out` takes the winning name exactly as libretro spells it, because
  * that is what the download URL needs. */
+/* One catalog name weighed against the ROM: true for an exact hit, which ends
+ * the search; a normalized one is kept in `out` if it scores best so far. The
+ * rule both index forms share - libretro's listing page here, a list of names
+ * from the web page in art_match_list - so there is one copy of it. */
+static bool consider(const char *base, const char *nb, const char *cand,
+                     char *out, size_t outn, bool *have_norm, int *best)
+{
+	char cnorm[NAME_MAX_];
+
+	if (!strcmp(cand, base)) {                      /* exact: nothing beats it */
+		snprintf(out, outn, "%s", cand);
+		return true;
+	}
+	if (nb[0]) {
+		art_norm(cand, cnorm, sizeof cnorm);
+		if (!strcmp(cnorm, nb)) {
+			/* Several entries normalize alike - 1703 of NES's 13418 - and
+			 * taking the first meant taking whichever sorted first, which
+			 * is a Japanese release as often as not. Score them on how
+			 * well their region and language tags overlap the card's. */
+			int sc = art_tag_score(base, cand);
+
+			if (!*have_norm || sc > *best) {
+				*best = sc;
+				snprintf(out, outn, "%s", cand);
+				*have_norm = true;
+			}
+		}
+	}
+	return false;
+}
+
 static bool match(const char *base, char *out, size_t outn)
 {
-	char nb[NAME_MAX_], cand[NAME_MAX_], cnorm[NAME_MAX_];
+	char nb[NAME_MAX_], cand[NAME_MAX_];
 	const char *p;
 	bool have_norm = false;
 	int best = 0;
@@ -649,29 +717,285 @@ static bool match(const char *base, char *out, size_t outn)
 
 		snprintf(raw, sizeof raw, "%.*s", (int)(len - 4), p);   /* drop .png */
 		urldec(raw, cand, sizeof cand);
-
-		if (!strcmp(cand, base)) {                  /* exact: nothing beats it */
-			snprintf(out, outn, "%s", cand);
-			return true;
-		}
-		if (nb[0]) {
-			art_norm(cand, cnorm, sizeof cnorm);
-			if (!strcmp(cnorm, nb)) {
-				/* Several entries normalize alike - 1703 of NES's 13418 - and
-				 * taking the first meant taking whichever sorted first, which
-				 * is a Japanese release as often as not. Score them on how
-				 * well their region and language tags overlap the card's. */
-				int sc = art_tag_score(base, cand);
-
-				if (!have_norm || sc > best) {
-					best = sc;
-					snprintf(out, outn, "%s", cand);
-					have_norm = true;
-				}
-			}
-		}
+		if (consider(base, nb, cand, out, outn, &have_norm, &best)) return true;
 	}
 	return have_norm;
+}
+
+/* ---- the loose pass ------------------------------------------------------
+ *
+ * The last try, only for a game the exact, normalized and checksum passes all
+ * missed, so what they match is unchanged. art_norm stays the Python's rule;
+ * this reads past what separates the naming conventions instead:
+ *
+ *   GoodTools' [...] flags   [!] [c] [a1] [b1] [T+Eng], dropped like (...)
+ *   "The"                    first or last: The Legend of Zelda is Legend
+ *                            of Zelda, The
+ *   "&" and "and"            libretro files & as _, so Sonic & Knuckles and
+ *                            Sonic and Knuckles both lose the word
+ *   accents                  Pokémon is Pokemon, where art_norm drops the
+ *                            letter and splits the word
+ *
+ * Eric's ask, 2026-10-05. Measured on the GKD Pixel 2's card the same day:
+ * see tools/artscrape-check.c. */
+
+/* A Latin letter for an accented one, UTF-8 Latin-1 range (C3 xx), or 0. */
+static char unaccent(unsigned char b)
+{
+	static const char MAP[65] =
+		"AAAAAAACEEEEIIII" "DNOOOOOxOUUUUYTs"
+		"aaaaaaaceeeeiiii" "dnooooo/ouuuuyty";
+
+	return b >= 0x80 && b <= 0xBF ? MAP[b - 0x80] : 0;
+}
+
+void art_norm_loose(const char *in, char *out, size_t outn)
+{
+	char flat[NAME_MAX_ * 2], words[NAME_MAX_];
+	size_t o = 0, w = 0;
+	int depth = 0;
+	char *tok, *save, *first = NULL, *last = NULL, *v[64];
+	int nv = 0, i;
+
+	/* Tags out, both kinds, accents folded, & to a space. */
+	for (; *in && o + 1 < sizeof flat; in++) {
+		unsigned char c = (unsigned char)*in;
+
+		if (c == '(' || c == '[') { depth++; continue; }
+		if ((c == ')' || c == ']') && depth) { depth--; flat[o++] = ' '; continue; }
+		if (depth) continue;
+		if (c == 0xC3 && in[1] && unaccent((unsigned char)in[1])) {
+			unsigned char u = (unsigned char)unaccent((unsigned char)*++in);
+
+			flat[o++] = isalnum(u) ? (char)tolower(u) : ' ';
+			continue;
+		}
+		flat[o++] = isalnum(c) ? (char)tolower(c) : ' ';
+	}
+	flat[o] = '\0';
+
+	/* "and" anywhere, "the" first or last. */
+	for (tok = strtok_r(flat, " ", &save); tok && nv < 64; tok = strtok_r(NULL, " ", &save))
+		if (strcmp(tok, "and")) v[nv++] = tok;
+	if (nv > 1 && !strcmp(v[0], "the")) first = v[0];
+	if (nv > 1 && !strcmp(v[nv - 1], "the")) last = v[nv - 1];
+	for (i = 0; i < nv; i++) {
+		size_t len = strlen(v[i]);
+
+		if (v[i] == first || v[i] == last) continue;
+		if (w + len + 2 > sizeof words) break;
+		if (w) words[w++] = ' ';
+		memcpy(words + w, v[i], len);
+		w += len;
+	}
+	words[w] = '\0';
+	snprintf(out, outn, "%s", words);
+}
+
+/* consider(), loosely: a hit is kept if its tags score best so far. */
+static void consider_loose(const char *base, const char *lb, const char *cand,
+                           char *out, size_t outn, bool *have, int *best)
+{
+	char cl[NAME_MAX_];
+	int sc;
+
+	art_norm_loose(cand, cl, sizeof cl);
+	if (!lb[0] || strcmp(cl, lb)) return;
+	sc = art_tag_score(base, cand);
+	if (!*have || sc > *best) {
+		*best = sc;
+		snprintf(out, outn, "%s", cand);
+		*have = true;
+	}
+}
+
+/* The loose pass against libretro's listing page, as match() reads it. */
+static bool match_loose(const char *base, char *out, size_t outn)
+{
+	char lb[NAME_MAX_], cand[NAME_MAX_];
+	const char *p;
+	bool have = false;
+	int best = 0;
+
+	art_norm_loose(base, lb, sizeof lb);
+	for (p = g_html; p && (p = strstr(p, "href=\"")); ) {
+		const char *q;
+		size_t len;
+		char raw[NAME_MAX_ * 2];
+
+		p += 6;
+		q = strchr(p, '"');
+		if (!q) break;
+		len = (size_t)(q - p);
+		if (len < 5 || len >= sizeof raw) continue;
+		if (strncmp(q - 4, ".png", 4) != 0) continue;
+		snprintf(raw, sizeof raw, "%.*s", (int)(len - 4), p);
+		urldec(raw, cand, sizeof cand);
+		consider_loose(base, lb, cand, out, outn, &have, &best);
+	}
+	return have;
+}
+
+bool art_match_loose(const char *base, const char *names, char *out, size_t outn)
+{
+	char lb[NAME_MAX_], cand[NAME_MAX_];
+	const char *p, *eol;
+	bool have = false;
+	int best = 0;
+
+	art_norm_loose(base, lb, sizeof lb);
+	for (p = names; *p; p = *eol ? eol + 1 : eol) {
+		size_t len;
+
+		eol = strchr(p, '\n');
+		if (!eol) eol = p + strlen(p);
+		len = (size_t)(eol - p);
+		if (len && p[len - 1] == '\r') len--;
+		if (!len || len >= sizeof cand) continue;
+		memcpy(cand, p, len);
+		cand[len] = '\0';
+		consider_loose(base, lb, cand, out, outn, &have, &best);
+	}
+	return have;
+}
+
+/* ---- the subtitle rule ---------------------------------------------------
+ *
+ * The very last try, after the loose pass: a card title with no subtitle
+ * matching a catalog title that adds one. libretro files the Neo Geo Pocket's
+ * games under No-Intro's full names - Baseball Stars - Pocket Sports Series
+ * (Japan, Europe) (En,Ja) - where a card carries Baseball Stars (World), and
+ * three of the GKD Pixel 2 card's seven were found no other way (Eric's ask,
+ * 2026-10-05).
+ *
+ * Only when every catalog title it fits is the SAME game, its title and
+ * subtitle alike, differing only in tags: Mega Man fits Mega Man - Dr. Wily's
+ * Revenge and Mega Man - Xtreme, two games, and matches neither. A wrong cover
+ * is worse than none. What it cannot rule out is a catalog that has only a
+ * different game under the same main title, which is why it is last. */
+
+/* A title without its tags, and whether it has a subtitle there: a " - "
+ * before the first "(" or "[". */
+static size_t title_len(const char *s)
+{
+	const char *tag = strpbrk(s, "([");
+
+	return tag ? (size_t)(tag - s) : strlen(s);
+}
+
+static const char *subtitle_at(const char *s)
+{
+	const char *sub = strstr(s, " - ");
+
+	return sub && (size_t)(sub - s) < title_len(s) ? sub : NULL;
+}
+
+bool art_match_subtitle(const char *base, const char *names, char *out, size_t outn)
+{
+	char lb[NAME_MAX_], cand[NAME_MAX_], part[NAME_MAX_], cl[NAME_MAX_];
+	char game[NAME_MAX_] = "";
+	const char *p, *eol, *sub;
+	bool have = false;
+	int best = 0;
+
+	if (subtitle_at(base)) return false;
+	art_norm_loose(base, lb, sizeof lb);
+	if (!lb[0]) return false;
+	for (p = names; *p; p = *eol ? eol + 1 : eol) {
+		size_t len;
+		int sc;
+
+		eol = strchr(p, '\n');
+		if (!eol) eol = p + strlen(p);
+		len = (size_t)(eol - p);
+		if (len && p[len - 1] == '\r') len--;
+		if (!len || len >= sizeof cand) continue;
+		memcpy(cand, p, len);
+		cand[len] = '\0';
+		if (!(sub = subtitle_at(cand))) continue;
+
+		snprintf(part, sizeof part, "%.*s", (int)(sub - cand), cand);
+		art_norm_loose(part, cl, sizeof cl);
+		if (strcmp(cl, lb)) continue;
+		/* The whole title, subtitle and all, untagged: which game it is. */
+		snprintf(part, sizeof part, "%.*s", (int)title_len(cand), cand);
+		art_norm_loose(part, cl, sizeof cl);
+		if (!game[0]) snprintf(game, sizeof game, "%s", cl);
+		else if (strcmp(game, cl)) return false;          /* two games: neither */
+		sc = art_tag_score(base, cand);
+		if (!have || sc > best) {
+			best = sc;
+			snprintf(out, outn, "%s", cand);
+			have = true;
+		}
+	}
+	return have;
+}
+
+bool art_match_list(const char *base, const char *names, char *out, size_t outn)
+{
+	char nb[NAME_MAX_], cand[NAME_MAX_];
+	const char *p, *eol;
+	bool have_norm = false;
+	int best = 0;
+
+	art_norm(base, nb, sizeof nb);
+	for (p = names; *p; p = *eol ? eol + 1 : eol) {
+		size_t len;
+
+		eol = strchr(p, '\n');
+		if (!eol) eol = p + strlen(p);
+		len = (size_t)(eol - p);
+		if (len && p[len - 1] == '\r') len--;
+		if (!len || len >= sizeof cand) continue;
+		memcpy(cand, p, len);
+		cand[len] = '\0';
+		if (consider(base, nb, cand, out, outn, &have_norm, &best)) return true;
+	}
+	return have_norm;
+}
+
+const char *art_collection(const char *folder, int n)
+{
+	return remote_nth(folder, n);
+}
+
+/* Whether there is a cover at `path`: a file that starts as a PNG or a JPEG
+ * does. Not merely one that is there - libretro's GitHub mirror stores a
+ * duplicate cover as a symbolic link, and its raw files answer with the link's
+ * text, the name of the file it points at. Four of those landed as "covers"
+ * on 2026-10-05 and, counted as present, were never fetched again. */
+static bool is_cover(const char *path)
+{
+	unsigned char head[4];
+	FILE *f = fopen(path, "rb");
+	size_t n;
+
+	if (!f) return false;
+	n = fread(head, 1, sizeof head, f);
+	fclose(f);
+	if (n < 4) return false;
+	return (head[0] == 0x89 && head[1] == 'P' && head[2] == 'N' && head[3] == 'G') ||
+	       (head[0] == 0xFF && head[1] == 0xD8);
+}
+
+int art_missing(const char *dir, const char *exts,
+                void (*fn)(const char *stem, void *ctx), void *ctx)
+{
+	int i, n = 0;
+
+	read_roms(dir, exts);
+	for (i = 0; i < g_nroms; i++) {
+		char have[ARTPATH_MAX];
+
+		/* The same test a Box Art run counts by. */
+		if (snprintf(have, sizeof have, "%s/.media/%s.png", dir, g_roms[i])
+		    >= (int)sizeof have) continue;
+		if (is_cover(have)) continue;
+		if (fn) fn(g_roms[i], ctx);
+		n++;
+	}
+	return n;
 }
 
 /* ---- the checksum ------------------------------------------------------- */
@@ -796,16 +1120,21 @@ out:
  * text and the name is the block's own, the nearest `game (` above it. */
 static bool dat_name(uint32_t crc, char *out, size_t outn)
 {
+	return art_dat_name(g_dat, crc, out, outn);
+}
+
+bool art_dat_name(const char *dat, uint32_t crc, char *out, size_t outn)
+{
 	char needle[20];
 	const char *hit, *game, *p, *q;
 
-	if (!g_dat) return false;
+	if (!dat) return false;
 	snprintf(needle, sizeof needle, " crc %08X ", (unsigned)crc);
-	if (!(hit = strstr(g_dat, needle))) {
+	if (!(hit = strstr(dat, needle))) {
 		snprintf(needle, sizeof needle, " crc %08x ", (unsigned)crc);
-		if (!(hit = strstr(g_dat, needle))) return false;
+		if (!(hit = strstr(dat, needle))) return false;
 	}
-	for (game = hit; game > g_dat; game--)
+	for (game = hit; game > dat; game--)
 		if (game[-1] == '\n' && !strncmp(game, "game (", 6)) break;
 	if (strncmp(game, "game (", 6) != 0) return false;
 	if (!(p = strstr(game, "name \"")) || p > hit) return false;
@@ -1000,7 +1329,7 @@ int art_step(void)
 
 				if (snprintf(have, sizeof have, "%s/.media/%s.png",
 				             dir, g_roms[i]) >= (int)sizeof have) continue;
-				if (stat(have, &st) == 0 && st.st_size > 0) g_st.skipped++;
+				if (is_cover(have)) g_st.skipped++;
 				else want++;
 			}
 			if (want == 0) return next_system(NULL);
@@ -1036,7 +1365,7 @@ int art_step(void)
 		g_ss_until = 0;
 		if (!art_paths(dir, g_roms[g_ri], media, sizeof media,
 		               dest, sizeof dest)) { g_ri++; return 1; }
-		if (stat(dest, &st) == 0 && st.st_size > 0) { g_ri++; return 1; }
+		if (is_cover(dest)) { g_ri++; return 1; }
 		snprintf(g_st.now, sizeof g_st.now, "%s", g_roms[g_ri]);
 		mkdir(media, 0777);
 		{
@@ -1097,7 +1426,7 @@ int art_step(void)
 			g_ri++;
 			return 1;
 		}
-		if (!g_only[0] && stat(dest, &st) == 0 && st.st_size > 0) { g_ri++; return 1; }
+		if (!g_only[0] && is_cover(dest)) { g_ri++; return 1; }
 
 		snprintf(g_st.now, sizeof g_st.now, "%s", g_roms[g_ri]);
 		mkdir(media, 0777);
@@ -1251,19 +1580,25 @@ int art_step(void)
 		 * checksums have had their turn. */
 		if (g_qi >= g_nretry) { g_phase = P_FUZZY; return 1; }
 		ri = g_retry[g_qi];
-		if (!g_dat ||
-		    !art_paths(dir, g_roms[ri], media, sizeof media, dest, sizeof dest) ||
-		    !art_rom_crc(dir, g_roms[ri], g_sys[g_si].exts, &crc) ||
-		    !dat_name(crc, dname, sizeof dname) ||
-		    !match(dname, hitbuf, sizeof hitbuf)) {
+		if (!art_paths(dir, g_roms[ri], media, sizeof media, dest, sizeof dest)) {
 			g_left[g_nleft++] = ri;
 			g_qi++;
 			return 1;
 		}
 		/* Logged, because a checksum that names a game is a claim worth
-		 * being able to check: it says which file became which cover. */
-		fprintf(stderr, "art: %s is %s by checksum, cover %s\n",
-		        g_roms[ri], dname, hitbuf);
+		 * being able to check: it says which file became which cover. And
+		 * where the checksum names nothing, the loose pass, last of all. */
+		if (g_dat && art_rom_crc(dir, g_roms[ri], g_sys[g_si].exts, &crc) &&
+		    dat_name(crc, dname, sizeof dname) && match(dname, hitbuf, sizeof hitbuf)) {
+			fprintf(stderr, "art: %s is %s by checksum, cover %s\n",
+			        g_roms[ri], dname, hitbuf);
+		} else if (match_loose(g_roms[ri], hitbuf, sizeof hitbuf)) {
+			fprintf(stderr, "art: %s loosely, cover %s\n", g_roms[ri], hitbuf);
+		} else {
+			g_left[g_nleft++] = ri;
+			g_qi++;
+			return 1;
+		}
 		snprintf(g_st.now, sizeof g_st.now, "%s", g_roms[ri]);
 		mkdir(media, 0777);
 		if (!start_image(remote_nth(g_sys[g_si].folder, g_rem), hitbuf, dest)) {

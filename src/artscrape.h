@@ -4,6 +4,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "config.h"
 
@@ -123,5 +124,44 @@ int art_tag_score(const char *want, const char *cand);
  * be read whole; false for one, which the caller treats as "ask by name". */
 bool art_rom_crc(const char *dir, const char *stem, const char *exts,
                  uint32_t *crc);
+
+/* ---- for the web page's Box art (Over The Hare, Down to the Wire) -------
+ *
+ * The browser on the other end fetches libretro's covers itself, from their
+ * GitHub mirror, which lets a page read it where thumbnails.libretro.com does
+ * not; the GKD Pixel 2 has no network of its own to ask. The device still
+ * does the matching, with the rule above, so there is one copy of it. */
+
+/* The nth libretro collection a shelf's covers are filed under (0, then 1),
+ * or NULL when it has no more or the shelf is not in the table. */
+const char *art_collection(const char *folder, int n);
+
+/* Every game in `dir` (games are the files `exts` allows) with no cover yet,
+ * by stem, handed to `fn` in folder order. Returns how many. Not while a Box
+ * Art run is going: it reads the folder into the same list a run uses. */
+int art_missing(const char *dir, const char *exts,
+                void (*fn)(const char *stem, void *ctx), void *ctx);
+
+/* The match for `base` among `names`, one catalog name a line without its
+ * .png, as the web page sends a collection's listing: exact first, then
+ * normalized, tags scoring a tie, exactly as a Box Art run matches. */
+bool art_match_list(const char *base, const char *names, char *out, size_t outn);
+
+/* The loose pass, the last try for a game every other pass missed: (...) and
+ * GoodTools' [...] flags dropped, accents folded, "and" and "&" dropped, and
+ * "The" dropped where it opens or closes the title. art_norm is untouched, so
+ * nothing the other passes matched changes. */
+void art_norm_loose(const char *in, char *out, size_t outn);
+bool art_match_loose(const char *base, const char *names, char *out, size_t outn);
+
+/* The last try of all, for the web page's run: a card title with no subtitle
+ * matched to a catalog title that adds one (Baseball Stars to Baseball Stars -
+ * Pocket Sports Series), only when every title it fits is the same game. */
+bool art_match_subtitle(const char *base, const char *names, char *out, size_t outn);
+
+/* The name a No-Intro list (libretro-database's .dat, as text) gives the dump
+ * with this CRC32, or false. With art_rom_crc, the checksum pass: a game whose
+ * file carries a name the catalog no longer uses, found by what it is. */
+bool art_dat_name(const char *dat, uint32_t crc, char *out, size_t outn);
 
 #endif

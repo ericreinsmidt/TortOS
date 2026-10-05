@@ -13,6 +13,7 @@
 #include <time.h>
 
 #include "hare.h"
+#include "muselib.h"
 #include "xfer.h"
 
 #define PIN_LEN        4
@@ -46,6 +47,22 @@ static bool     g_shelf_changed;  /* something the shelf would show has moved */
 static char     g_last[128];
 static bool   (*g_pack_logs)(char *path, size_t pn, char *name, size_t nn);
 static void   (*g_before_delete)(const char *abs);
+static char  *(*g_art_wanted)(size_t *len, char *why, size_t wn);
+static hare_art_fn g_art_match, g_art_crc, g_art_nointro;
+static void   (*g_after_write)(const char *abs);
+static char  *(*g_albums_wanted)(size_t *len, char *why, size_t wn);
+static char  *(*g_albums_pick)(int id, const char *json, size_t n,
+                               size_t *len, char *why, size_t wn);
+
+/* A MusicBrainz search reply, as the page passes it on: 25 releases is tens
+ * of kilobytes. */
+#define PICK_TMP "/tmp/tortos-albumpick"
+#define PICK_MAX (2L * 1024 * 1024)
+
+/* A collection's names, as the page sends them for /api/art/match. NES's box
+ * art is 13,439 names, about 600 KB; this is room for a much bigger one. */
+#define ART_NAMES_TMP "/tmp/tortos-artnames"
+#define ART_NAMES_MAX (8L * 1024 * 1024)
 static unsigned long g_in, g_out;
 
 /* ---- randomness ------------------------------------------------------ */
@@ -255,6 +272,54 @@ void hare_set_logs(bool (*pack)(char *path, size_t pn, char *name, size_t nn))
 
 void hare_set_before_delete(void (*fn)(const char *abs)) { g_before_delete = fn; }
 
+void hare_set_art(char *(*wanted)(size_t *len, char *why, size_t wn),
+                  hare_art_fn match, hare_art_fn crc, hare_art_fn nointro)
+{
+	g_art_wanted = wanted;
+	g_art_match = match;
+	g_art_crc = crc;
+	g_art_nointro = nointro;
+}
+
+void hare_set_albums(char *(*wanted)(size_t *len, char *why, size_t wn),
+                     char *(*pick)(int id, const char *json, size_t n,
+                                   size_t *len, char *why, size_t wn))
+{
+	g_albums_wanted = wanted;
+	g_albums_pick = pick;
+}
+
+void hare_set_after_write(void (*fn)(const char *abs)) { g_after_write = fn; }
+
+/* A hook's JSON answer, or its reason as a 500. */
+static void reply_json(httpd_req *r, char *json, size_t len, const char *why,
+                       const char *fallback)
+{
+	if (!json) {
+		httpd_reply_status(r, 500, why[0] ? why : fallback);
+		return;
+	}
+	httpd_reply(r, 200, "application/json", json, len, NULL);
+	free(json);
+}
+
+/* The whole of a small file, NUL-terminated, or NULL. For the names the page
+ * sent, which the body sink put on disk. */
+static char *slurp(const char *path, long max)
+{
+	FILE *f = fopen(path, "rb");
+	char *buf;
+	size_t n;
+
+	if (!f) return NULL;
+	buf = malloc((size_t)max + 1);
+	if (!buf) { fclose(f); return NULL; }
+	n = fread(buf, 1, (size_t)max, f);
+	fclose(f);
+	buf[n] = '\0';
+	return buf;
+}
+
 /* ---- a folder and everything in it ----------------------------------------
  *
  * lstat, so a link is removed and never followed. The card is vfat and has no
@@ -317,6 +382,88 @@ static const char *base_of(const char *p)
 {
 	const char *s = strrchr(p, '/');
 	return s ? s + 1 : p;
+}
+
+/* An album's cover where Muse reads one, as a path the page can ask for:
+ * <parent>/.media/<album>.jpg or .png (what Album Art fetched, or the files
+ * carried), else a cover or folder picture in the album's own folder.
+ * `abs`/`req` are the folder being listed, `name` the album in it. */
+static bool album_cover(const char *abs, const char *req, const char *name,
+                        char *cover, size_t cn)
+{
+	static const struct { const char *pre, *post; } WAYS[] = {
+		{ ".media/", ".jpg" }, { ".media/", ".png" },
+		{ "", "/cover.jpg" }, { "", "/cover.png" }, { "", "/cover.jpeg" },
+		{ "", "/folder.jpg" }, { "", "/folder.png" }, { "", "/folder.jpeg" },
+	};
+	size_t i;
+
+	for (i = 0; i < sizeof WAYS / sizeof WAYS[0]; i++) {
+		char have[XFER_PATH_MAX];
+		struct stat cs;
+
+		if (snprintf(have, sizeof have, "%s/%s%s%s", abs, WAYS[i].pre, name,
+		             WAYS[i].post) >= (int)sizeof have) continue;
+		if (stat(have, &cs) != 0 || cs.st_size <= 0) continue;
+		return snprintf(cover, cn, "%s/%s%s%s", req, WAYS[i].pre, name,
+		                WAYS[i].post) < (int)cn;
+	}
+	return false;
+}
+
+static int cmp_str(const void *a, const void *b)
+{
+	return strcasecmp(*(const char *const *)a, *(const char *const *)b);
+}
+
+/* An artist's folder, as a picture: up to four of its albums' covers, the
+ * albums in name order, as "covers":[...]. Eric's, 2026-10-05 - an artist
+ * row had nothing beside it while its albums one level in all had covers.
+ * `abs`/`req` are the folder being listed, `artist` the folder in it. */
+#define ARTIST_COVERS 4
+
+static void artist_covers(jbuf *j, const char *abs, const char *req, const char *artist)
+{
+	char dir[XFER_PATH_MAX], rdir[XFER_PATH_MAX], cover[XFER_PATH_MAX];
+	char *names[256];
+	int n = 0, i, shown = 0;
+	DIR *d;
+	struct dirent *e;
+
+	if (snprintf(dir, sizeof dir, "%s/%s", abs, artist) >= (int)sizeof dir ||
+	    snprintf(rdir, sizeof rdir, "%s/%s", req, artist) >= (int)sizeof rdir ||
+	    !(d = opendir(dir)))
+		return;
+	while ((e = readdir(d)) && n < (int)(sizeof names / sizeof names[0])) {
+		if (e->d_name[0] == '.') continue;
+		if ((names[n] = strdup(e->d_name))) n++;
+	}
+	closedir(d);
+	qsort(names, (size_t)n, sizeof names[0], cmp_str);
+	for (i = 0; i < n; i++) {
+		if (shown < ARTIST_COVERS && album_cover(dir, rdir, names[i], cover, sizeof cover)) {
+			JLIT(j, shown++ ? "," : ",\"covers\":[");
+			jstr(j, cover);
+		}
+		free(names[i]);
+	}
+	if (shown) JLIT(j, "]");
+}
+
+/* Whether a folder holds songs of its own, and so is an album where Muse
+ * reads one, rather than an artist's folder of albums. Read until the first:
+ * the page gives an album a cover's slot, and an artist none (2026-10-05, an
+ * outline beside every artist read as a cover missing). */
+static bool holds_songs(const char *dir)
+{
+	DIR *d = opendir(dir);
+	struct dirent *e;
+	bool found = false;
+
+	while (d && !found && (e = readdir(d)))
+		found = e->d_name[0] != '.' && ml_is_audio(e->d_name);
+	if (d) closedir(d);
+	return found;
 }
 
 static void route_list(httpd_req *r)
@@ -415,6 +562,43 @@ static void route_list(httpd_req *r)
 			jstr(&j, e->d_name);
 			JLIT(&j, ",\"path\":");
 			jstr(&j, child);
+
+			/* A game's cover, where the shelf reads it: <folder>/.media/
+			 * <stem>.png. Named in the listing so the page can draw it beside
+			 * the game; a stat per file, in a folder of games only. */
+			if (S_ISREG(st.st_mode) && !strncmp(req, "roms/", 5) &&
+			    !strstr(req, "/.media")) {
+				char stem[XFER_NAME_MAX], cover[XFER_PATH_MAX], have[XFER_PATH_MAX];
+				char *dot;
+				struct stat cs;
+
+				snprintf(stem, sizeof stem, "%s", e->d_name);
+				if ((dot = strrchr(stem, '.'))) *dot = '\0';
+				if (snprintf(have, sizeof have, "%s/.media/%s.png", abs, stem)
+				    < (int)sizeof have &&
+				    snprintf(cover, sizeof cover, "%s/.media/%s.png", req, stem)
+				    < (int)sizeof cover &&
+				    stat(have, &cs) == 0 && cs.st_size > 0) {
+					JLIT(&j, ",\"cover\":");
+					jstr(&j, cover);
+				}
+			}
+			/* And an album's or a book's, for a folder in Music or
+			 * Audiobooks. An artist's folder has none, and shows none. */
+			if (S_ISDIR(st.st_mode) && e->d_name[0] != '.' &&
+			    (!strncmp(req, "music", 5) || !strncmp(req, "books", 5))) {
+				char cover[XFER_PATH_MAX];
+
+				if (holds_songs(full)) {
+					JLIT(&j, ",\"album\":true");
+					if (album_cover(abs, req, e->d_name, cover, sizeof cover)) {
+						JLIT(&j, ",\"cover\":");
+						jstr(&j, cover);
+					}
+				} else {
+					artist_covers(&j, abs, req, e->d_name);
+				}
+			}
 		}
 		jfmt(&j, ",\"dir\":%s,\"size\":%lld}",
 		     S_ISDIR(st.st_mode) ? "true" : "false", (long long)st.st_size);
@@ -557,6 +741,117 @@ static void on_request(httpd_req *r, bool done, void *ctx)
 		return;
 	}
 
+	/* Box art: which games want covers, and which cover each gets from a
+	 * collection's names. See hare_set_art. */
+	if (!strcmp(path, "/api/art/wanted") && !strcmp(m, "GET")) {
+		char why[128] = "";
+		size_t len = 0;
+		char *json;
+
+		if (!done) httpd_want_body(r, HTTPD_BODY_NONE, NULL);
+		if (!g_art_wanted) { httpd_reply_status(r, 404, "no box art here"); return; }
+		if (!(json = g_art_wanted(&len, why, sizeof why))) {
+			httpd_reply_status(r, 500, why[0] ? why : "could not look");
+			return;
+		}
+		httpd_reply(r, 200, "application/json", json, len, NULL);
+		free(json);
+		return;
+	}
+	/* The same body either way: a collection's names to match by, or its
+	 * No-Intro list to match what they left by checksum. */
+	if ((!strcmp(path, "/api/art/match") || !strcmp(path, "/api/art/crc") ||
+	     !strcmp(path, "/api/art/nointro")) && !strcmp(m, "POST")) {
+		hare_art_fn fn = !strcmp(path, "/api/art/crc") ? g_art_crc
+		               : !strcmp(path, "/api/art/nointro") ? g_art_nointro : g_art_match;
+		char raw[XFER_PATH_MAX], folder[XFER_PATH_MAX], why[128] = "";
+		size_t len = 0;
+		char *body, *json;
+
+		if (!done) {
+			long n = httpd_content_len(r);
+
+			if (!fn) {
+				httpd_want_body(r, HTTPD_BODY_NONE, NULL);
+				httpd_reply_status(r, 404, "no box art here");
+				return;
+			}
+			if (n <= 0 || n > ART_NAMES_MAX) {
+				httpd_want_body(r, HTTPD_BODY_NONE, NULL);
+				httpd_reply_status(r, 413, "that is not a list of names");
+				return;
+			}
+			httpd_want_body(r, HTTPD_BODY_FILE, ART_NAMES_TMP);
+			return;
+		}
+		httpd_query(r, "s", raw, sizeof raw);
+		body = slurp(ART_NAMES_TMP, ART_NAMES_MAX);
+		remove(ART_NAMES_TMP);
+		if (!raw[0] || !xfer_decode(raw, folder, sizeof folder)) {
+			free(body);
+			httpd_reply_status(r, 400, "which shelf?");
+			return;
+		}
+		if (!body) { httpd_reply_status(r, 500, "the names did not arrive"); return; }
+		json = fn(folder, body, &len, why, sizeof why);
+		free(body);
+		if (!json) {
+			httpd_reply_status(r, 500, why[0] ? why : "could not match");
+			return;
+		}
+		note("box art for %s", folder);
+		httpd_reply(r, 200, "application/json", json, len, NULL);
+		free(json);
+		return;
+	}
+
+	/* Album covers: which albums want one, and which release a search reply
+	 * names. See hare_set_albums. */
+	if (!strcmp(path, "/api/albums/wanted") && !strcmp(m, "GET")) {
+		char why[128] = "";
+		size_t len = 0;
+
+		if (!done) httpd_want_body(r, HTTPD_BODY_NONE, NULL);
+		if (!g_albums_wanted) { httpd_reply_status(r, 404, "no album covers here"); return; }
+		reply_json(r, g_albums_wanted(&len, why, sizeof why), len, why, "could not look");
+		return;
+	}
+	if (!strcmp(path, "/api/albums/pick") && !strcmp(m, "POST")) {
+		char idq[16], why[128] = "";
+		size_t len = 0, n;
+		char *reply;
+
+		if (!done) {
+			long cl = httpd_content_len(r);
+
+			if (!g_albums_pick) {
+				httpd_want_body(r, HTTPD_BODY_NONE, NULL);
+				httpd_reply_status(r, 404, "no album covers here");
+				return;
+			}
+			if (cl <= 0 || cl > PICK_MAX) {
+				httpd_want_body(r, HTTPD_BODY_NONE, NULL);
+				httpd_reply_status(r, 413, "that is not a search reply");
+				return;
+			}
+			httpd_want_body(r, HTTPD_BODY_FILE, PICK_TMP);
+			return;
+		}
+		httpd_query(r, "id", idq, sizeof idq);
+		reply = slurp(PICK_TMP, PICK_MAX);
+		remove(PICK_TMP);
+		if (!idq[0] || !reply) {
+			free(reply);
+			httpd_reply_status(r, 400, "which album?");
+			return;
+		}
+		n = strlen(reply);
+		reply_json(r, g_albums_pick(atoi(idq), reply, n, &len, why, sizeof why),
+		           len, why, "could not pick");
+		free(reply);
+		return;
+	}
+
 	/* Download logs: packed when asked, named for the day, and sent. The
 	 * pack is removed as soon as it is open - the stream keeps it alive - so
 	 * nothing is left in /tmp however the download ends. */
@@ -600,6 +895,17 @@ static void on_request(httpd_req *r, bool done, void *ctx)
 			 * running into this one. The download still works; the browser
 			 * just names the file from the URL. */
 			extra[0] = '\0';
+		}
+		/* A cover drawn beside a game in the list (thumb=1) is not a download
+		 * anyone asked for: a folder of them would fill the screen's last
+		 * line with covers, one after another. */
+		{
+			char thumb[4];
+
+			if (httpd_query(r, "thumb", thumb, sizeof thumb)[0]) {
+				httpd_reply_file(r, abs, mime_for(abs), NULL);
+				return;
+			}
 		}
 		/* Only once the file is really going out: a 404 said "sending" too. */
 		if (httpd_reply_file(r, abs, mime_for(abs), extra[0] ? extra : NULL)) {
@@ -674,6 +980,7 @@ static void on_request(httpd_req *r, bool done, void *ctx)
 				return;
 			}
 			note_write(abs);
+			if (g_after_write) g_after_write(abs);
 			note("received %s", base_of(abs));
 			httpd_reply(r, 200, "text/plain", "ok", 2, NULL);
 		}

@@ -90,10 +90,30 @@ static bool write_file(const char *path, const char *text)
 	return fclose(f) == 0;
 }
 
+/* A stand-in cover: a word to tell covers apart, behind a PNG's signature,
+ * because a run counts a cover only when the file starts as a picture (a
+ * link's text from libretro's mirror once passed for one, 2026-10-05). The
+ * readers below hand back the word. */
+#define PNG_SIG "\x89PNG"
+
+static bool write_cover(const char *path, const char *word)
+{
+	char buf[64];
+
+	snprintf(buf, sizeof buf, "%s%s", PNG_SIG, word);
+	return write_file(path, buf);
+}
+
+static const char *word_of(const char *buf)
+{
+	return strncmp(buf, PNG_SIG, 4) ? buf : buf + 4;
+}
+
 int net_async_poll(void)
 {
 	char part[2100];
 	const char *body = NULL;
+	bool image = false;
 	size_t n = strlen(g_pend_url);
 
 	if (!g_pending) return -1;
@@ -108,11 +128,12 @@ int net_async_poll(void)
 	} else if ((g_serve_image && strstr(g_pend_url, g_serve_image)) ||
 	           (g_serve_also && strstr(g_pend_url, g_serve_also))) {
 		body = "NEW";
+		image = true;
 	}
 	if (!body) return -1;
 
 	snprintf(part, sizeof part, "%s.part", g_pend_path);
-	if (!write_file(part, body)) return -1;
+	if (!(image ? write_cover(part, body) : write_file(part, body))) return -1;
 	return rename(part, g_pend_path) == 0 ? 1 : -1;
 }
 
@@ -155,7 +176,7 @@ int ss_run_step(void)
 	g_ss_toomany = false;
 	if (g_ss_busy > 0) { g_ss_busy--; g_ss_toomany = true; return -1; }
 	if (!g_ss_has || strcmp(g_ss_has, g_ss_stem)) return -1;
-	return write_file(g_ss_dest, "SS") ? 0 : -1;
+	return write_cover(g_ss_dest, "SS") ? 0 : -1;
 }
 
 void ss_run_cancel(void) { g_ss_stem[0] = '\0'; }
@@ -185,7 +206,7 @@ static void set_cover(const char *text)
 	char p[512];
 
 	snprintf(p, sizeof p, "%s/Hit Game.png", g_media);
-	write_file(p, text);
+	write_cover(p, text);
 }
 
 static const char *cover(void)
@@ -200,7 +221,7 @@ static const char *cover(void)
 	n = fread(buf, 1, sizeof buf - 1, f);
 	fclose(f);
 	buf[n] = '\0';
-	return buf;
+	return word_of(buf);
 }
 
 /* Any game's cover, by stem. */
@@ -216,7 +237,7 @@ static const char *cover_of(const char *stem)
 	n = fread(buf, 1, sizeof buf - 1, f);
 	fclose(f);
 	buf[n] = '\0';
-	return buf;
+	return word_of(buf);
 }
 
 static void put16(FILE *f, unsigned v)
@@ -337,6 +358,22 @@ int main(void)
 	CHECK(strstr(g_urls, "Other%20Game") != NULL,
 	      "the ordinary run did not ask for the game with no art:\n%s", g_urls);
 	CHECK(!strcmp(cover(), "OLD"), "the ordinary run changed a cover it skipped");
+
+	/* What libretro's GitHub mirror answers for a duplicate cover: the text
+	 * of a link, the name of the file it points at. Four landed as covers on
+	 * 2026-10-05 and, counted as art, were never fetched again. */
+	printf("  a cover that is no picture is fetched again:\n");
+	{
+		char p[512];
+
+		snprintf(p, sizeof p, "%s/Hit Game.png", g_media);
+		write_file(p, "Hit Game (USA).png");
+	}
+	g_serve_image = "Hit%20Game";
+	CHECK(run(NULL, &st) == 0, "the run did not finish");
+	CHECK(strstr(g_urls, "Hit%20Game") != NULL,
+	      "a link's text passed for a cover and was skipped:\n%s", g_urls);
+	CHECK(!strcmp(cover(), "NEW"), "the cover reads \"%s\", wanted NEW", cover());
 
 	printf("  a name too long to hold is refused, not widened to the shelf:\n");
 	memset(big, 'x', sizeof big - 1);

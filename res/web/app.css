@@ -240,6 +240,31 @@ header {
 .row .mark { width: 22px; text-align: center; color: var(--dim); flex-shrink: 0; }
 .row.dir .mark { color: var(--accent); }
 
+/* A game's cover where the shelf has one, in place of the mark. Every file row
+ * in a folder that has any covers gets the slot, empty ones outlined, so the
+ * names stay in one column and a game without art shows at a glance. Covers
+ * are shrunk on the device, so the picture is already small. */
+.row .cover {
+	width: 40px; height: 48px; flex-shrink: 0;
+	margin: -6px 0;
+	object-fit: contain;
+	border-radius: 4px;
+}
+.row .cover.none { border: 1px dashed var(--line); box-sizing: border-box; }
+/* An artist: up to four of their albums' covers in a square, the same size as
+ * one cover, so the names stay in one column; a cell with no album left as
+ * the panel behind it. */
+.row .cover.grid {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	grid-template-rows: 1fr 1fr;
+	gap: 1px;
+	height: 40px; margin: 0;
+	overflow: hidden;
+	background: var(--panel);
+}
+.row .cover.grid img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
 /* A folder row lit because files are being dragged over it and it will take
  * them. Drag and drop is self-revealing: the row that accepts a drop lights up
  * and one that will not stays flat, so which folders take files is learned by
@@ -282,6 +307,11 @@ header {
         max-width: var(--wrap); display: flex; align-items: center; gap: 16px;
         flex-wrap: wrap; }
 .logs a { text-decoration: none; }
+/* Covers sit above it, the same way, and say how they are going. Each line's
+ * words go under its button, where a long one has the page's width. */
+.art { margin-top: 24px; }
+.art + .logs { margin-top: 16px; }
+.logs { flex-direction: column; align-items: flex-start; gap: 8px; }
 
 /* ---- dropping files ---------------------------------------------------- */
 

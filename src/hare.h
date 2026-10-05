@@ -51,6 +51,43 @@ void hare_set_logs(bool (*pack)(char *path, size_t pn, char *name, size_t nn));
  * there. Unset, nothing is told. */
 void hare_set_before_delete(void (*fn)(const char *abs));
 
+/* Box art for the web page, which the launcher answers because it knows the
+ * shelves and the matching rule (hareart.c, artscrape.h). The browser fetches
+ * the covers itself; these say which games want one and which each gets:
+ *
+ *   wanted  GET /api/art/wanted, the shelves with games missing covers, as
+ *           the JSON the page reads
+ *   match   POST /api/art/match?s=<folder>, the body a collection's names,
+ *           one a line: that shelf's matches, as JSON
+ *   crc     POST /api/art/crc?s=<folder>, the body the collection's No-Intro
+ *           list: what matching by name left, matched by checksum
+ *   nointro POST /api/art/nointro?s=<folder>, the same list: each missing
+ *           zip's No-Intro name by checksum, for the page to ask for directly
+ *
+ * Each returns malloc'd text the server frees, or NULL with the reason in
+ * `why`. Unset, the routes answer 404 and the page hides its button. */
+typedef char *(*hare_art_fn)(const char *folder, const char *body,
+                             size_t *len, char *why, size_t wn);
+void hare_set_art(char *(*wanted)(size_t *len, char *why, size_t wn),
+                  hare_art_fn match, hare_art_fn crc, hare_art_fn nointro);
+
+/* Album covers the same way, from MusicBrainz and the Cover Art Archive:
+ *
+ *   wanted  GET /api/albums/wanted, the albums Album Art would ask about, each
+ *           with the MusicBrainz searches to try, in order, as JSON
+ *   pick    POST /api/albums/pick?id=N, the body a search's reply: the release
+ *           group by Muse's track-count rule and where its cover goes, as
+ *           JSON, or an empty "rg" when the reply is not the album
+ *
+ * Same contract as hare_set_art. */
+void hare_set_albums(char *(*wanted)(size_t *len, char *why, size_t wn),
+                     char *(*pick)(int id, const char *json, size_t n,
+                                   size_t *len, char *why, size_t wn));
+
+/* Called with a file's absolute path once an upload of it is in place, so the
+ * launcher can shrink a cover. Unset, nothing is told. */
+void hare_set_after_write(void (*fn)(const char *abs));
+
 /* The most a delete takes at once, files and folders together. More than
  * this is almost certainly the wrong folder, and it is asked for in parts. */
 #define HARE_DELETE_MAX 1000

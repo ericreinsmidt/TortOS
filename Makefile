@@ -160,10 +160,10 @@ build-native/cheevos-check: tools/cheevos-check.c src/cheevos.c src/cheevos.h \
 check-hare: build-native/hare-check
 	@./build-native/hare-check
 
-build-native/hare-check: tools/hare-check.c src/hare.c src/httpd.c src/xfer.c FORCE
+build-native/hare-check: tools/hare-check.c src/hare.c src/httpd.c src/xfer.c src/muselib.c FORCE
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -Wno-unused-parameter -D_GNU_SOURCE -O1 -g \
-	      -o $@ tools/hare-check.c src/hare.c src/httpd.c src/xfer.c
+	      -o $@ tools/hare-check.c src/hare.c src/httpd.c src/xfer.c src/muselib.c
 
 # Hare's transport, driven by a real client over a real socket. An HTTP parser
 # is where "looks right" and "is right" part company: every browser sends the

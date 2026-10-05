@@ -187,17 +187,55 @@ function draw() {
 	ul.textContent = '';
 	$('empty').hidden = entries.length > 0;
 	$('logs').hidden = cwd !== '';
+	drawArt();
+	/* A listing with any covers gives each row of that kind a cover's slot:
+	 * every game when a game has one, every album when an album has. Albums
+	 * only, not an artist's folder of them, which has no cover to show. */
+	const gameCovers = entries.some((e) => !e.dir && e.cover);
+	const albumCovers = entries.some((e) => e.dir && (e.cover || e.covers));
+	const thumb = (path) => '/api/file?thumb=1&p=' + enc(path);
 
 	for (const e of entries) {
 		const li = document.createElement('li');
 		li.className = 'row' + (e.dir ? ' dir' : '');
 
-		const mark = document.createElement('span');
-		mark.className = 'mark';
-		/* Text, not an icon font and not an SVG sprite: two characters that
-		 * every system font already has, and nothing more to serve. */
-		mark.textContent = e.dir ? '▸' : '·';
-		li.append(mark);
+		if (e.dir && e.covers && e.covers.length > 1) {
+			/* An artist: their albums' covers, four at most, in a square. */
+			const g = document.createElement('span');
+			g.className = 'cover grid';
+			for (const p of e.covers.slice(0, 4)) {
+				const c = document.createElement('img');
+				c.src = thumb(p);
+				c.alt = '';
+				c.loading = 'lazy';
+				g.append(c);
+			}
+			li.append(g);
+		} else if (e.dir && e.covers) {
+			const c = document.createElement('img');
+			c.className = 'cover';
+			c.src = thumb(e.covers[0]);
+			c.alt = '';
+			c.loading = 'lazy';
+			li.append(c);
+		} else if (e.dir ? albumCovers && (e.album || e.cover) : gameCovers) {
+			/* thumb=1 so the device does not report each one as a download. */
+			const c = document.createElement(e.cover ? 'img' : 'span');
+			c.className = 'cover' + (e.cover ? '' : ' none');
+			if (e.cover) {
+				c.src = thumb(e.cover);
+				c.alt = '';
+				c.loading = 'lazy';
+			}
+			li.append(c);
+		} else {
+			const mark = document.createElement('span');
+			mark.className = 'mark';
+			/* Text, not an icon font and not an SVG sprite: two characters that
+			 * every system font already has, and nothing more to serve. */
+			mark.textContent = e.dir ? '▸' : '·';
+			li.append(mark);
+		}
 
 		/* Drop straight onto a folder, so uploading into eleven shelves is not
 		 * eleven round trips through each one.
@@ -584,6 +622,278 @@ addEventListener('drop', (e) => {
 	dragUI(false);
 	dropped(e.dataTransfer);
 });
+
+/* ---- box art ----------------------------------------------------------- */
+
+/* Down to the Wire only: the device behind the cable has no network, so this
+ * page fetches libretro's covers and the device decides which game gets which
+ * (src/hareart.h). Where the device fetches its own, /api/art/wanted answers
+ * 404 and the button never shows.
+ *
+ * From libretro's GitHub mirror, not thumbnails.libretro.com, which the device
+ * itself uses: that server does not let a web page read what it sends, and
+ * GitHub does. Its listing is a collection's whole Named_Boxarts folder, two
+ * requests a collection; GitHub allows 60 an hour without an account. */
+const GH_API = 'https://api.github.com/repos/libretro-thumbnails/';
+const GH_RAW = 'https://raw.githubusercontent.com/libretro-thumbnails/';
+/* libretro's No-Intro lists, for the checksum pass, as the device's own Box
+ * Art fetches them. */
+const DAT = 'https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/no-intro/';
+let artBusy = false;
+
+/* libretro's repos are its collections' names with underscores for spaces:
+ * "Sega - Mega Drive - Genesis" is Sega_-_Mega_Drive_-_Genesis. */
+const repoOf = (collection) => collection.replace(/ /g, '_');
+
+/* null where the device says no (404): the button stays hidden. */
+async function wanted(what) {
+	const r = await fetch('/api/' + what + '/wanted', { credentials: 'same-origin' });
+	if (!r.ok) return null;
+	return r.json();
+}
+
+/* What is missing, games and albums in one line, on the first page only, and
+ * left alone while a run is saying how it is going. */
+async function drawArt() {
+	if (artBusy) return;
+	if (cwd !== '') { $('art').hidden = true; return; }
+	let games = null, albums = null;
+	try { [games, albums] = await Promise.all([wanted('art'), wanted('albums')]); }
+	catch (e) { /* leave it hidden */ }
+	if (cwd !== '' || artBusy) return;
+
+	const g = games ? games.shelves.reduce((n, s) => n + s.missing, 0) : 0;
+	const nc = games ? games.shelves.length : 0;
+	const a = albums ? albums.albums.length : 0;
+	const parts = [];
+
+	/* Both counts every time, so a zero reads as done rather than forgotten. */
+	if (games) parts.push(!g ? 'Every game has a cover.' : g === 1 ? '1 game has no cover.'
+		: g + ' games on ' + nc + (nc === 1 ? ' console' : ' consoles') + ' have no cover.');
+	/* Album Art's own rule: no cover, or one too small to be sharp. */
+	if (albums) parts.push(!a ? 'Every album has a cover.'
+		: (a === 1 ? '1 album has' : a + ' albums have') + ' no cover, or a small one.');
+	$('art').hidden = !games && !albums || (!g && !a && !lastRun);
+	$('artgo').disabled = !g && !a;
+	$('artmsg').textContent = parts.join(' ') + lastRun;
+}
+
+/* What went wrong in the last run, kept beside the count once it is over: a
+ * toast is gone in seconds, and "3 failed" with no names left nothing to go
+ * on (2026-10-05). */
+let lastRun = '';
+const failNote = (fails) => fails.length
+	? ' Last time, ' + fails.length + ' failed: ' + fails.join('; ') + '.' : '';
+
+async function github(url) {
+	const r = await fetch(url);
+	if (r.status === 403 || r.status === 429)
+		throw new Error("GitHub's hourly limit is used up. Try again in an hour.");
+	if (!r.ok) throw new Error('GitHub answered ' + r.status);
+	return r.json();
+}
+
+/* A collection's box art names, without their .png. */
+async function coverNames(repo) {
+	const top = await github(GH_API + repo + '/git/trees/master');
+	const dir = top.tree.find((e) => e.path === 'Named_Boxarts');
+	if (!dir) return [];
+	const box = await github(GH_API + repo + '/git/trees/' + dir.sha);
+	return box.tree.filter((e) => e.path.endsWith('.png')).map((e) => e.path.slice(0, -4));
+}
+
+const say = (t) => { $('artmsg').textContent = t; };
+
+/* One cover from the mirror, as a PNG blob. libretro stores a duplicate cover
+ * as a symbolic link, and GitHub's raw files answer a link with its text: the
+ * name of the file it points at, in the same folder. That text landed as four
+ * "covers" on 2026-10-05, so a reply that is not a PNG is followed as a link,
+ * a few hops at most, and never uploaded as it is. */
+async function coverBlob(repo, name) {
+	for (let hop = 0; hop < 4; hop++) {
+		const r = await fetch(GH_RAW + repo + '/master/Named_Boxarts/' + enc(name) + '.png');
+		if (!r.ok) throw new Error('GitHub answered ' + r.status);
+		const blob = await r.blob();
+		const head = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
+
+		if (head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4E && head[3] === 0x47)
+			return blob;
+		const link = (await blob.text()).trim();
+		if (!link || link.length > 300 || link.includes('\n') || !link.endsWith('.png'))
+			throw new Error('not a picture');
+		name = link.replace(/^.*\//, '').slice(0, -4);
+	}
+	throw new Error('links lead nowhere');
+}
+
+/* libretro's file names are No-Intro's with these characters as _. */
+const libretroName = (name) => name.replace(/[&*\/:`<>?\\|]/g, '_');
+
+/* Games' covers, best-first (Eric, 2026-10-05), counted into `n`:
+ *
+ *   1. the game's own name, asked for directly - a file named the No-Intro way
+ *      already is the cover's name
+ *   2. its checksum's No-Intro name, from the console's No-Intro list, asked
+ *      for directly
+ *   3. only for what is left, the collection's listing, matched by name and
+ *      then loosely
+ *
+ * The first two use only raw.githubusercontent.com, which has no hourly cap;
+ * the listing is GitHub's API, 60 requests an hour, which runs out after a
+ * few full runs. A miss in 1 or 2 is ordinary and not reported; only what
+ * fails once a cover has been found is. */
+async function getArt(n, fails, notes) {
+	const w = await wanted('art');
+	/* The listing's failure, once seen: the rest of the run goes on without
+	 * it. GitHub's hour running out used to end the whole run, so a console
+	 * after it never had the two ways that need no listing (2026-10-05, both
+	 * Neo Geo Pockets). */
+	let noList = '', waiting = 0;
+
+	if (!w) return;
+	for (const s of w.shelves) {
+		const left = new Set(s.games);
+		const cover = (stem) => 'roms/' + s.folder + '/.media/' + stem + '.png';
+
+		/* The second collection (a console's disc games) only for what the
+		 * first left. */
+		for (const c of s.collections) {
+			if (!left.size) break;
+			const repo = repoOf(c);
+			const put = async (stem, name, report) => {
+				try {
+					await api('PUT', '/api/file?p=' + enc(cover(stem)), await coverBlob(repo, name));
+					n.games++;
+					left.delete(stem);
+				} catch (err) {
+					if (err.message === 'unauthorized') throw err;
+					if (report) fails.push(stem + ' (' + err.message + ')');
+				}
+			};
+			const each = async (pairs, how, report) => {
+				let i = 0;
+				for (const [stem, name] of pairs) {
+					if (!left.has(stem)) continue;
+					say(s.name + ': ' + how + ', ' + (++i) + ' of ' + pairs.length + ', ' + stem);
+					await put(stem, name, report);
+				}
+			};
+
+			await each([...left].map((stem) => [stem, libretroName(stem)]), 'by name', false);
+
+			if (left.size) {
+				say(s.name + ': looking games up by checksum');
+				const dat = await fetch(DAT + enc(c) + '.dat').catch(() => null);
+				if (dat && dat.ok) {
+					const byCrc = await (await api('POST', '/api/art/nointro?s=' + enc(s.folder),
+					                               await dat.text())).json();
+					await each(byCrc.matches.map((m) => [m.stem, libretroName(m.name)]),
+					           'by checksum', false);
+				}
+			}
+
+			if (left.size && noList) waiting += left.size;
+			if (left.size && !noList) {
+				say(s.name + ': looking through libretro\'s list for ' + left.size + ' more');
+				let names;
+				try {
+					names = await coverNames(repo);
+				} catch (err) {
+					noList = err.message;
+					waiting += left.size;
+					continue;
+				}
+				if (!names.length) continue;
+				const byName = await (await api('POST', '/api/art/match?s=' + enc(s.folder),
+				                                names.join('\n'))).json();
+				await each(byName.matches.map((m) => [m.stem, m.name]), 'from the list', true);
+				/* And loosely, last of all: the device's loose pass, given no
+				 * checksum list ("-") since the checksums have had their turn. */
+				if (left.size) {
+					const loose = await (await api('POST', '/api/art/crc?s=' + enc(s.folder),
+					                               '-')).json();
+					await each(loose.matches.map((m) => [m.stem, m.name]), 'loosely', true);
+				}
+			}
+		}
+	}
+	if (noList)
+		notes.push(' ' + waiting + (waiting === 1 ? ' game waits' : ' games wait') +
+		           ' for libretro\'s list: ' + noList);
+}
+
+/* Album covers: MusicBrainz names the release, the device picks it by Muse's
+ * track-count rule (the first hit is often a single of the same name), and
+ * the Cover Art Archive has its front at 500px. MusicBrainz asks for a request
+ * a second at most, so searches are spaced out. */
+const CAA = 'https://coverartarchive.org/release-group/';
+let mbLast = 0;
+
+async function musicbrainz(url) {
+	const wait = mbLast + 1100 - Date.now();
+	if (wait > 0) await new Promise((ok) => setTimeout(ok, wait));
+	mbLast = Date.now();
+	const r = await fetch(url, { headers: { Accept: 'application/json' } });
+	if (r.status === 503) throw new Error('MusicBrainz is busy. Try again in a minute.');
+	return r.ok ? r.text() : null;
+}
+
+async function getAlbums(n, fails) {
+	const w = await wanted('albums');
+
+	if (!w) return;
+	for (let i = 0; i < w.albums.length; i++) {
+		const al = w.albums[i];
+		let pick = null;
+
+		say('Albums: ' + (i + 1) + ' of ' + w.albums.length + ', ' + al.album);
+		for (const url of al.searches) {
+			const reply = await musicbrainz(url);
+			if (!reply) continue;
+			pick = await (await api('POST', '/api/albums/pick?id=' + al.id, reply)).json();
+			if (pick.rg) break;
+		}
+		if (!pick || !pick.rg) continue;
+		try {
+			const img = await fetch(CAA + pick.rg + '/front-500');
+			/* Known to MusicBrainz with no front cover given: not found. */
+			if (img.status === 404) continue;
+			if (!img.ok) throw new Error('the Cover Art Archive answered ' + img.status);
+			await api('PUT', '/api/file?p=' + enc(pick.cover), await img.blob());
+			n.albums++;
+		} catch (err) {
+			if (err.message === 'unauthorized') throw err;
+			fails.push(al.album + ' (' + err.message + ')');
+		}
+	}
+}
+
+/* One button, games and then albums. */
+async function getCovers() {
+	const n = { games: 0, albums: 0 };
+	const fails = [], notes = [];
+	const count = (k, one, many) => n[k] + ' ' + (n[k] === 1 ? one : many);
+
+	artBusy = true;
+	$('artgo').disabled = true;
+	try {
+		await getArt(n, fails, notes);
+		await getAlbums(n, fails);
+		toast('Covers for ' + count('games', 'game', 'games') + ' and ' +
+		      count('albums', 'album', 'albums') +
+		      (fails.length ? ', ' + fails.length + ' failed' : ''),
+		      !n.games && !n.albums && fails.length > 0);
+		lastRun = failNote(fails) + notes.join('');
+	} catch (err) {
+		if (err.message !== 'unauthorized') toast(err.message, true);
+		lastRun = ' Last time it stopped: ' + err.message + failNote(fails);
+	} finally {
+		artBusy = false;
+		go(cwd, 'none').catch(() => {});
+	}
+}
+
+$('artgo').addEventListener('click', () => { if (!artBusy) getCovers(); });
 
 /* ---- toast ------------------------------------------------------------- */
 

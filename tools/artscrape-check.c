@@ -80,6 +80,105 @@ static void check_scoring(void)
 	/* And an untagged entry must not beat the right region, or "Contra"
 	 * would win over "Contra (USA)" for every card. */
 	BEATS("Contra (USA)", "Contra (USA)", "Contra");
+
+	/* GoodTools' letters, which most of a card named before No-Intro carries.
+	 * Vigilante (U) was given the Japanese box, 2026-10-05: unread, (U) and
+	 * (USA) shared nothing, and the first in the list won. */
+	BEATS("Vigilante (U)", "Vigilante (USA)", "Vigilante (Japan)");
+	BEATS("Gradius (J)", "Gradius (Japan)", "Gradius (USA)");
+	BEATS("Xenon 2 Megablast (E) [c][!]", "Xenon 2 - Megablast (Europe)",
+	      "Xenon 2 - Megablast (Japan)");
+	/* Several run together, each a region. */
+	BEATS("Awesome Possum (UJE) [!]", "Awesome Possum (USA)", "Awesome Possum (Korea)");
+	BEATS("Space Turtleship (K)", "Space Turtleship (Korea)", "Space Turtleship (USA)");
+	/* And the aliases still come first: TOSEC's EU is Europe, not
+	 * Europe and the USA. */
+	BEATS("Contra (EU)", "Contra (Europe)", "Contra (USA)");
+}
+
+/* The loose pass: what it reads past, and what it must not. Measured on the
+ * GKD Pixel 2's card 2026-10-05, the 17 games missing covers against libretro's
+ * listings: 10 by name, 5 more loosely (three [c] dumps, two Ys
+ * translations), 2 still none (a different title, a Korean-only game). */
+#define LOOSE(a, b, same)                                                     \
+	do {                                                                      \
+		char la[256], lb[256];                                                \
+		art_norm_loose((a), la, sizeof la);                                   \
+		art_norm_loose((b), lb, sizeof lb);                                   \
+		if ((strcmp(la, lb) == 0) != (same)) {                                \
+			fprintf(stderr, "  FAIL: %s and %s should%s match loosely\n"     \
+			        "        (\"%s\" against \"%s\")\n", (a), (b),            \
+			        (same) ? "" : " not", la, lb);                            \
+			failures++;                                                       \
+		}                                                                     \
+	} while (0)
+
+static void check_loose(void)
+{
+	fprintf(stderr, "  the loose pass:\n");
+	/* GoodTools' flags, the three this card had. */
+	LOOSE("Brian Lara Cricket (E) (Jun 1995) [c][!]", "Brian Lara Cricket (Europe)", true);
+	LOOSE("Xenon 2 Megablast (E) [c][!]", "Xenon 2 - Megablast (Europe)", true);
+	LOOSE("Ys III - Wanderers From Ys (J) [T+Eng1.00]", "Ys III - Wanderers from Ys (Japan)", true);
+	/* "The" where it opens or closes, never where it is part of a word. */
+	LOOSE("The Legend of Zelda (U)", "Legend of Zelda, The (USA)", true);
+	LOOSE("Theme Park (E)", "Park (Europe)", false);
+	LOOSE("Ys II - Ancient Ys Vanished - The Final Chapter (J)",
+	      "Ys II - Ancient Ys Vanished - Final Chapter (Japan)", false);
+	/* & as libretro files it, and spelled out. */
+	LOOSE("Sonic & Knuckles (W)", "Sonic _ Knuckles (World)", true);
+	LOOSE("Sonic and Knuckles (W)", "Sonic _ Knuckles (World)", true);
+	/* Accents folded rather than dropped. */
+	LOOSE("Pok\xc3\xa9mon Pinball (U)", "Pokemon Pinball (USA)", true);
+	/* And different games stay different. */
+	LOOSE("Xenon 2 Megablast (E)", "Xenon Megablast (Europe)", false);
+	LOOSE("NCAA Final Four College Basketball (U)", "NCAA Final Four Basketball (USA)", false);
+}
+
+/* The subtitle rule, against the mono Neo Geo Pocket's real libretro names
+ * (2026-10-05) and a Mega Man list where a title fits two games. */
+#define SUBTITLE(base, names, want)                                           \
+	do {                                                                      \
+		char got[256] = "";                                                   \
+		bool hit = art_match_subtitle((base), (names), got, sizeof got);      \
+		if ((want) ? !hit || strcmp(got, (want)) : hit) {                     \
+			fprintf(stderr, "  FAIL: %s by its title alone gave \"%s\","     \
+			        " wanted \"%s\"\n", (base), hit ? got : "(none)",        \
+			        (want) ? (want) : "(none)");                              \
+			failures++;                                                       \
+		}                                                                     \
+	} while (0)
+
+static void check_subtitle(void)
+{
+	static const char *NGP =
+		"Baseball Stars - Pocket Sports Series (Japan, Europe) (En,Ja)\n"
+		"King of Fighters R-1 - Pocket Fighting Series (Japan, Europe) (En,Ja)\n"
+		"King of Fighters R-1 - Pocket Kakutou Series _ Melon-chan no Seichou Nikki (Japan) (Demo)\n"
+		"Melon-chan no Seichou Nikki (Japan)\n"
+		"Pocket Tennis - Pocket Sports Series (Japan, Europe) (En,Ja)\n"
+		"Samurai Shodown! - Pocket Fighting Series (Japan, Europe) (En,Ja)\n";
+	static const char *MEGAMAN =
+		"Mega Man - Dr. Wily's Revenge (USA)\n"
+		"Mega Man - Dr. Wily's Revenge (Europe)\n"
+		"Mega Man - Xtreme (USA)\n";
+
+	fprintf(stderr, "  the subtitle rule:\n");
+	SUBTITLE("Baseball Stars (World)", NGP,
+	         "Baseball Stars - Pocket Sports Series (Japan, Europe) (En,Ja)");
+	SUBTITLE("Pocket Tennis (World)", NGP,
+	         "Pocket Tennis - Pocket Sports Series (Japan, Europe) (En,Ja)");
+	SUBTITLE("Samurai Shodown! (World)", NGP,
+	         "Samurai Shodown! - Pocket Fighting Series (Japan, Europe) (En,Ja)");
+	/* Two games under one title: neither, rather than a guess. */
+	SUBTITLE("King of Fighters R-1 (World)", NGP, NULL);
+	SUBTITLE("Mega Man (U)", MEGAMAN, NULL);
+	/* One game in two regions is still one game, and the region decides. */
+	SUBTITLE("Mega Man (E)", "Mega Man - Dr. Wily's Revenge (USA)\n"
+	         "Mega Man - Dr. Wily's Revenge (Europe)\n",
+	         "Mega Man - Dr. Wily's Revenge (Europe)");
+	/* A card title with a subtitle of its own is not this rule's. */
+	SUBTITLE("Baseball Stars - Pro Edition (World)", NGP, NULL);
 }
 
 /* Never called: this file exercises the matching rules, which run before any
@@ -102,6 +201,8 @@ int main(int argc, char **argv)
 	(void)argc; (void)argv;
 	if (getenv("ART_SCORING")) {
 		check_scoring();
+		check_loose();
+		check_subtitle();
 		if (failures) {
 			fprintf(stderr, "\n  %d scoring check(s) failed\n", failures);
 			return 1;
