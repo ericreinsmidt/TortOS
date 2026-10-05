@@ -4,6 +4,7 @@
 #include "device.h"
 #include "platform.h"
 
+#include <dirent.h>
 #include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
@@ -177,6 +178,48 @@ static bool dconnect(void)
 bool plat_resident_ready(void)
 {
 	return dconnect();
+}
+
+/* Is a Diatom running at all? Only the resident can be, at a launch: the
+ * standalone fallback runs one game at a time, from here. */
+static bool diatom_running(void)
+{
+	DIR *proc = opendir("/proc");
+	struct dirent *e;
+	bool found = false;
+
+	while (proc && !found && (e = readdir(proc))) {
+		char path[300], comm[32] = { 0 };
+		int fd;
+
+		if (e->d_name[0] < '1' || e->d_name[0] > '9') continue;
+		snprintf(path, sizeof path, "/proc/%s/comm", e->d_name);
+		if ((fd = open(path, O_RDONLY | O_CLOEXEC)) < 0) continue;
+		if (read(fd, comm, sizeof comm - 1) > 0 && !strcmp(comm, "diatom\n"))
+			found = true;
+		close(fd);
+	}
+	if (proc) closedir(proc);
+	return found;
+}
+
+/* A game resumed at boot launches about as soon as the resident Diatom is up
+ * to answer, and lost that race now and then: it ran in the standalone
+ * fallback, which has no socket, so no in-game menu and no following the
+ * sound to a DAC that appeared after it - seen on the GKD Pixel 2,
+ * 2026-10-05. So while a Diatom is running, it is waited for; with none
+ * running, the fallback is at once, as before. */
+bool plat_resident_await(unsigned max_ms, unsigned *waited_ms)
+{
+	unsigned t0 = plat_now_ms();
+
+	*waited_ms = 0;
+	while (!dconnect()) {
+		if (plat_now_ms() - t0 >= max_ms || !diatom_running()) return false;
+		usleep(20000);
+	}
+	*waited_ms = plat_now_ms() - t0;
+	return true;
 }
 
 

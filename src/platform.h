@@ -111,6 +111,9 @@ bool plat_spawn_detached(char *const argv[], const char *const envkv[],
 #define RES_PAUSED 2   /* Diatom only: menu open, the launcher owns the display */
 const char *plat_resident_socket(void);
 bool plat_resident_ready(void);
+/* plat_resident_ready, waiting up to max_ms for a Diatom that is running but
+ * not answering yet (still starting); false at once when none is running. */
+bool plat_resident_await(unsigned max_ms, unsigned *waited_ms);
 /* `console` is a RetroAchievements console id and `cheevos` a set file for
  * Diatom to watch; 0 and NULL mean the game has no achievements, which is the
  * ordinary case. Diatom ADR-0026.

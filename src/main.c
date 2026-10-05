@@ -9325,6 +9325,7 @@ static void launch(app *a)
 	 * option rather than failing loudly. */
 	char *argv[20 + 2 * 32];
 	bool resident = false, want_menu;
+	unsigned waited;
 	int n = 0;
 
 	if (v->list.count == 0) return;
@@ -9450,7 +9451,13 @@ static void launch(app *a)
 	 * ADR-0032. Stated before the RUN goes out, which sends it. */
 	plat_resident_quiet(musec_playing());
 
-	if (plat_resident_ready()) {
+	/* A game resumed at boot waited 71 and 47 ms for the resident on the
+	 * Pixel 2 (2026-10-05, a DAC plugged in), where it had been falling back
+	 * unseen. A second is ten times that, and only ever spent on a Diatom
+	 * that is running but stuck; one that isn't running falls back at once. */
+	if (plat_resident_await(1000, &waited)) {
+		if (waited)
+			fprintf(stderr, "resident emulator answered after %u ms\n", waited);
 		/* The emulator is already up, holding its context and every core,
 		 * so this is ~200ms rather than ~1100. Nothing here is torn
 		 * down -- this process keeps its own context through the whole game,
@@ -9594,6 +9601,11 @@ static void launch(app *a)
 		} else {
 			fprintf(stderr, "resident emulator did not answer, falling back\n");
 		}
+	} else {
+		/* Silent until 2026-10-05, which is how a resumed game running in
+		 * the fallback went unnoticed. */
+		fprintf(stderr, "no resident emulator to connect to (waited %u ms), falling back\n",
+		        waited);
 	}
 
 	if (!resident) {
