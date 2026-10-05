@@ -24,7 +24,7 @@
  * to a headset that is not there. The only override worth having is REFUSING
  * Bluetooth, so that is the only one offered. */
 typedef enum {
-	AOUT_AUTO = 0,   /* wired, then Bluetooth, then the speaker */
+	AOUT_AUTO = 0,   /* USB, then wired, then Bluetooth, then the speaker */
 	AOUT_SPEAKER,    /* never Bluetooth; a cable still works */
 	AOUT_POLICY_COUNT
 } aout_policy;
@@ -34,19 +34,31 @@ typedef enum {
  * that separates them lives in the codec, below ALSA, and is the port's job
  * (plat_audio_jack_poll). The distinction survives here only because the menu
  * has to be able to say which one you are hearing. */
-typedef enum { AOUT_SPK = 0, AOUT_WIRED, AOUT_BT } aout_dest;
+/* USB is a fourth: a USB-C DAC, on a device whose port can be a host (the
+ * GKD Pixel 2). Its device string is the system's "usb", a mixed device in
+ * front of the DAC, so unlike a Bluetooth sink it is not handed between Muse
+ * and Diatom: both have it at once, as both have the codec. */
+typedef enum { AOUT_SPK = 0, AOUT_WIRED, AOUT_BT, AOUT_USB } aout_dest;
+
+/* The USB destination's device string, in the system's ALSA config. */
+#define AOUT_USB_DEVICE "usb"
 
 typedef struct {
 	aout_policy policy;
 	bool        wired;     /* a jack is inserted, from SW_HEADPHONE_INSERT */
+	bool        usb;       /* a USB sound card is plugged in */
 	const char *bt_sink;   /* ALSA device for a connected sink, else NULL/"" */
 } aout_state;
 
-/* wired > bluetooth > speaker. A cable is the clearest statement of intent a
- * player can make, and it beats a headset that merely happens to be connected. */
+/* usb > wired > bluetooth > speaker. A cable is the clearest statement of
+ * intent a player can make, and it beats a headset that merely happens to be
+ * connected; of two cables, a DAC is the one plugged in on purpose. Eric's
+ * call, 2026-10-05. A charging cable is not a sound card, so it changes
+ * nothing. */
 aout_dest   aout_resolve(const aout_state *s);
 
-/* The device string to hand Diatom: the sink's own name, or "" for the codec.
+/* The device string to hand Diatom: the sink's own name, AOUT_USB_DEVICE, or
+ * "" for the codec.
  * Never NULL, so a caller can always print or compare it. */
 const char *aout_device(const aout_state *s);
 

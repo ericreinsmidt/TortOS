@@ -248,6 +248,10 @@ bool plat_muted(void);
  * switch for its own reason - which volume window to use - so both halves ask
  * the hardware rather than one telling the other something it could get wrong. */
 bool plat_headphones_present(void);
+
+/* A USB sound card is plugged in: a USB-C DAC, where the port can be a host.
+ * False on a device whose port can't be one safely (the Brick). */
+bool plat_usb_audio_present(void);
 /* kind: 1 = brightness, 2 = volume */
 void plat_osd_show(int kind, int val, int max);
 void plat_draw_osd(SDL_Renderer *r);

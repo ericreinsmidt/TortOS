@@ -482,6 +482,31 @@ struct px_ctl_elem_value {
 };
 #define PX_CTL_ELEM_WRITE _IOWR('U', 0x13, struct px_ctl_elem_value)
 
+/* And for making a control: the integer case of the info struct, its union at
+ * full size for the same reason, and the TLV header alone, since the request
+ * number holds the header's size and not the data's. */
+struct px_ctl_elem_info {
+	struct px_ctl_elem_id id;
+	int           type;
+	unsigned int  access;
+	unsigned int  count;
+	int           owner;
+	union {
+		struct { long min, max, step; } integer;
+		unsigned char reserved[128];
+	} value;
+	unsigned char reserved[64];
+};
+struct px_ctl_tlv {
+	unsigned int numid;
+	unsigned int length;
+	unsigned int tlv[];
+};
+#define PX_CTL_ELEM_INFO  _IOWR('U', 0x11, struct px_ctl_elem_info)
+#define PX_CTL_ELEM_ADD   _IOWR('U', 0x17, struct px_ctl_elem_info)
+#define PX_CTL_TLV_WRITE  _IOWR('U', 0x1b, struct px_ctl_tlv)
+#define PX_CTL_ELEM_UNLOCK _IOW('U', 0x15, struct px_ctl_elem_id)
+
 /* The RK817's "Master Playback Volume": 0-255 on both channels, NOT inverted -
  * 255 is 0 dB and 0 is -95 dB, read with amixer 2026-10-01. It has no switch,
  * so 0 is the cut. Speaker or headphones is "Playback Mux", which the system's
@@ -517,6 +542,26 @@ struct px_ctl_elem_value {
 #define HP_ATT_TOP    11
 #define HP_ATT_BOTTOM 188
 #define VOL_MAX       PLAT_VOL_MAX
+
+/* A USB-C DAC's volume: a software one, "USB Playback Volume" on this card,
+ * which plastron's ALSA config puts in front of the DAC (its pcm.usb), with
+ * the DAC's own control set to full by the system when it appears. The DAC's
+ * own comes and goes with it; this one is always here, so it is written with
+ * every level, the codec's too, and plugging a DAC in needs nothing re-applied.
+ *
+ * 0-255 over -95.625 to 0 dB: 0.375 dB a step, the codec's step, so the
+ * window is in the same units as the codec's. 0 is silence.
+ *
+ * The window is the EarPods' headphone window, a starting guess: the ear
+ * sets it with a DAC playing, as it did the codec's. Diatom's Pixel port
+ * writes the same control with the same numbers. Change one, change the
+ * other, and asound.conf's min_dB with them. */
+#define USB_CTL        "USB Playback Volume"
+#define USB_RAW_MAX    255
+#define USB_DB_MIN     (-9562)   /* hundredths of a dB, as alsa-lib rounds -95.625 */
+#define USB_DB_STEP    37        /* and 0.375 */
+#define USB_ATT_TOP    11
+#define USB_ATT_BOTTOM 188
 
 /* sysfs, 0-255, 0 dark. The device tree's brightness-levels table sends 1 to 17
  * all to the same output (a PWM duty of 1666 of 25000 ns) and is one-to-one
@@ -583,9 +628,29 @@ static int jack_present(void)
 	return BIT_IS_SET(bits, SW_HEADPHONE_INSERT) ? 1 : 0;
 }
 
-static void apply_volume(int v)
+static void ctl_write(const char *name, long raw)
 {
 	struct px_ctl_elem_value c;
+
+	if (mixer_fd < 0) return;
+	memset(&c, 0, sizeof c);
+	c.id.iface = 2;                                 /* SNDRV_CTL_ELEM_IFACE_MIXER */
+	snprintf((char *)c.id.name, sizeof c.id.name, "%s", name);
+	/* Both channels: one written alone reads as a balance problem. */
+	c.value.integer.value[0] = raw;
+	c.value.integer.value[1] = raw;
+	if (ioctl(mixer_fd, PX_CTL_ELEM_WRITE, &c) < 0)
+		fprintf(stderr, "settings: mixer rejected '%s' = %ld\n", name, raw);
+}
+
+static long usb_raw(int v)
+{
+	return v == 0 ? 0
+	     : USB_RAW_MAX - aout_level_to_raw(v, VOL_MAX, USB_ATT_TOP, USB_ATT_BOTTOM);
+}
+
+static void apply_volume(int v)
+{
 	int hp = jack_present();
 	long raw = v == 0 ? 0
 	         : GAIN_RAW_MAX - aout_level_to_raw(v, VOL_MAX,
@@ -594,15 +659,51 @@ static void apply_volume(int v)
 
 	jack_was = hp;
 	cur_vol = v;
+	ctl_write(GAIN_CTL, raw);
+	ctl_write(USB_CTL, usb_raw(v));
+}
+
+/* alsa-lib makes the USB control itself the first time something plays
+ * through a DAC, at 0 dB, the loudest there is. Made here first, before Muse
+ * or a game can play, it is kept as it is, at the player's level. It has to
+ * be the shape alsa-lib checks for, or it is replaced: two channels, 0-255,
+ * and a dB scale. A control added by hand stays until the next boot, so a
+ * restart finds it there. */
+static void usb_volume_create(void)
+{
+	struct px_ctl_elem_info info;
+	unsigned int tlv[6];
+
 	if (mixer_fd < 0) return;
-	memset(&c, 0, sizeof c);
-	c.id.iface = 2;                                 /* SNDRV_CTL_ELEM_IFACE_MIXER */
-	snprintf((char *)c.id.name, sizeof c.id.name, "%s", GAIN_CTL);
-	/* Both channels: one written alone reads as a balance problem. */
-	c.value.integer.value[0] = raw;
-	c.value.integer.value[1] = raw;
-	if (ioctl(mixer_fd, PX_CTL_ELEM_WRITE, &c) < 0)
-		fprintf(stderr, "settings: mixer rejected '%s' = %ld\n", GAIN_CTL, raw);
+	memset(&info, 0, sizeof info);
+	info.id.iface = 2;                              /* SNDRV_CTL_ELEM_IFACE_MIXER */
+	snprintf((char *)info.id.name, sizeof info.id.name, "%s", USB_CTL);
+	if (ioctl(mixer_fd, PX_CTL_ELEM_INFO, &info) == 0) return;
+	info.type   = 2;                                /* SNDRV_CTL_ELEM_TYPE_INTEGER */
+	info.access = 0x3 | 0x20;                       /* READWRITE, TLV_WRITE */
+	info.count  = 2;
+	info.owner  = 1;                                /* one element, on adding */
+	info.value.integer.max = USB_RAW_MAX;
+	if (ioctl(mixer_fd, PX_CTL_ELEM_ADD, &info) < 0) {
+		fprintf(stderr, "settings: could not add '%s'\n", USB_CTL);
+		return;
+	}
+	tlv[0] = info.id.numid;
+	tlv[1] = 4 * sizeof tlv[0];
+	tlv[2] = 1;                                     /* SNDRV_CTL_TLVT_DB_SCALE */
+	tlv[3] = 2 * sizeof tlv[0];
+	tlv[4] = (unsigned int)USB_DB_MIN;
+	tlv[5] = USB_DB_STEP;
+	if (ioctl(mixer_fd, PX_CTL_TLV_WRITE, tlv) < 0)
+		fprintf(stderr, "settings: no dB scale for '%s'\n", USB_CTL);
+	/* The kernel locks a control added by hand to whoever added it, for as
+	 * long as they hold the card open, and this holds it open for good: a
+	 * game's volume presses, written by Diatom, were refused until the menu
+	 * had the launcher write the level (seen 2026-10-05). */
+	if (ioctl(mixer_fd, PX_CTL_ELEM_UNLOCK, &info.id) < 0)
+		fprintf(stderr, "settings: could not unlock '%s'\n", USB_CTL);
+	/* Added at 0, silence: the middle until a level is known. */
+	ctl_write(USB_CTL, usb_raw(VOL_MAX / 2));
 }
 
 static void apply_brightness(int b)
@@ -642,6 +743,7 @@ void plat_settings_init(void)
 	}
 	cur_vol    = v >= 0 ? clampi(v, 0, VOL_MAX)    : -1;
 	cur_bright = b >= 0 ? clampi(b, 0, BRIGHT_MAX) : BRIGHT_MAX / 2;
+	usb_volume_create();
 	if (cur_vol >= 0) apply_volume(cur_vol);
 	apply_brightness(cur_bright);
 }
@@ -662,6 +764,14 @@ void plat_audio_jack_poll(void)
 }
 
 bool plat_headphones_present(void) { return jack_present() != 0; }
+
+/* The RK817 is card 0, so a card 1 that has a USB id is a USB-C DAC: plastron's
+ * usbrole makes the port a host when one is plugged in, and the kernel's USB
+ * audio driver adds it. One stat, asked each time the output is decided. */
+bool plat_usb_audio_present(void)
+{
+	return access("/proc/asound/card1/usbid", F_OK) == 0;
+}
 
 /* No mute switch on this device. */
 bool plat_mute_poll(bool own_volume) { (void)own_volume; return false; }

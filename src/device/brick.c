@@ -758,6 +758,11 @@ static void apply_volume(int v)
  * nothing unless the state actually changed. */
 bool plat_headphones_present(void) { return jack_present() != 0; }
 
+/* The Brick's port can play through a USB-C DAC once it is a host, but nothing
+ * on the board tells it a device is plugged in, and switching it to host by
+ * hand risks supplying power into a charger: not worth a board. 2026-10-05. */
+bool plat_usb_audio_present(void) { return false; }
+
 /* The switch, checked wherever the jack is and for the same reason: this is
  * the one thing every screen does once a frame.
  *
@@ -922,6 +927,7 @@ void plat_audio_jack_poll(void) { }
 bool plat_mute_poll(bool own_volume) { (void)own_volume; return false; }
 bool plat_muted(void) { return false; }
 bool plat_headphones_present(void) { return false; }
+bool plat_usb_audio_present(void) { return false; }
 static void jack_forget(void) { }
 static void mute_forget(void) { }
 void plat_backlight(bool on) { (void)on; }

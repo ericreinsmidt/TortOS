@@ -1854,6 +1854,7 @@ static aout_state aout_now(void)
 
 	s.policy  = g_aout_policy;
 	s.wired   = plat_headphones_present();
+	s.usb     = plat_usb_audio_present();
 	s.bt_sink = aout_bt_sink();
 	return s;
 }
@@ -1872,9 +1873,10 @@ static aout_dest aout_actual(const aout_state *s)
 
 	/* Muse holding the headset is where the sound is, whatever Diatom says:
 	 * Diatom was moved off it to let Muse have it. */
-	if (musec_heard() && muse[0] && strcmp(muse, "default")) return AOUT_BT;
+	if (musec_heard() && muse[0] && strcmp(muse, "default"))
+		return strcmp(muse, AOUT_USB_DEVICE) ? AOUT_BT : AOUT_USB;
 	if (!plat_resident_audio(at, sizeof at)) return aout_resolve(s);
-	if (at[0]) return AOUT_BT;
+	if (at[0]) return strcmp(at, AOUT_USB_DEVICE) ? AOUT_BT : AOUT_USB;
 	return s->wired ? AOUT_WIRED : AOUT_SPK;
 }
 
@@ -2056,6 +2058,16 @@ static void aout_apply(bool force)
 	 * are already on. */
 	bool        fresh = out[0] && g_bt_link[0] && strcmp(g_bt_link, link_seen);
 
+	/* A USB-C DAC is mixed (the system's "usb" device), so it is not handed
+	 * over: Diatom and Muse both have it at once, as both have the codec, and
+	 * the headset's volume has nothing to follow. */
+	if (aout_resolve(&s) == AOUT_USB) {
+		link_seen[0] = '\0';
+		aout_tell_diatom(&s, out, force, false);
+		musec_sink(out);
+		bt_volume_follow("", false);
+		return;
+	}
 	if (!muse) {
 		musec_sink("");
 		if (out[0] && !musec_sink_settled()) return;    /* Muse is still letting go */

@@ -24,8 +24,40 @@ static void ck(int cond, const char *what)
 static aout_state st(aout_policy p, bool wired, const char *bt)
 {
 	aout_state s;
-	s.policy = p; s.wired = wired; s.bt_sink = bt;
+	s.policy = p; s.wired = wired; s.usb = false; s.bt_sink = bt;
 	return s;
+}
+
+/* A USB-C DAC: plugged in on purpose, so it wins over everything, in either
+ * policy, and it is the system's mixed "usb" device rather than a sink's own
+ * name. Unplugged, nothing about the rest changes. */
+static void usb_dac(void)
+{
+	aout_state s;
+	int p, w, b;
+
+	printf("a USB-C DAC:\n");
+	s = st(AOUT_AUTO, false, NULL); s.usb = true;
+	ck(aout_resolve(&s) == AOUT_USB, "wins over the speaker");
+	ck(!strcmp(aout_device(&s), AOUT_USB_DEVICE), "and sends the mixed usb device");
+	s = st(AOUT_AUTO, true, BT); s.usb = true;
+	ck(aout_resolve(&s) == AOUT_USB, "wins over a cable in the jack and a headset");
+	s = st(AOUT_SPEAKER, false, NULL); s.usb = true;
+	ck(aout_resolve(&s) == AOUT_USB, "wins when pinned to Speaker, being a cable");
+	for (p = 0; p < AOUT_POLICY_COUNT; p++)
+		for (w = 0; w < 2; w++)
+			for (b = 0; b < 2; b++) {
+				aout_state u = st((aout_policy)p, w != 0, b ? BT : NULL);
+				aout_dest without = aout_resolve(&u);
+
+				u.usb = true;
+				ck(aout_resolve(&u) == AOUT_USB, "in every combination");
+				u.usb = false;
+				ck(aout_resolve(&u) == without, "and unplugged, the rest decides as before");
+			}
+	ck(strcmp(aout_dest_name(AOUT_USB), aout_dest_name(AOUT_WIRED)) != 0 &&
+	   strcmp(aout_dest_name(AOUT_USB), aout_dest_name(AOUT_SPK)) != 0,
+	   "and the menu can tell it from the jack and the speaker");
 }
 
 /* The rule the whole feature is: wired > bluetooth > speaker. */
@@ -226,6 +258,7 @@ int main(void)
 	empty_sink();
 	every_case();
 	names();
+	usb_dac();
 	reapply_rule();
 	the_measured_case();
 	ladder();
