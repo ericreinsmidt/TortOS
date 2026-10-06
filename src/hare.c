@@ -161,7 +161,10 @@ typedef struct { char *p; size_t used, cap; bool over; } jbuf;
  * "Expected double-quoted property name at position 71", which is a true and
  * completely unhelpful description of a missing bracket sixty characters
  * earlier. Nothing in C requires a human to count a string literal. */
-#define JLIT(j, s) jput((j), (s), sizeof (s) - 1)
+/* The "" in front makes anything but a literal a compile error: given an
+ * expression, sizeof measures a pointer, which is how an artist's covers went
+ * out as seven bytes of garbage on 2026-10-05. */
+#define JLIT(j, s) jput((j), "" s, sizeof (s) - 1)
 
 static void jput(jbuf *j, const char *s, size_t n)
 {
@@ -442,7 +445,12 @@ static void artist_covers(jbuf *j, const char *abs, const char *req, const char 
 	qsort(names, (size_t)n, sizeof names[0], cmp_str);
 	for (i = 0; i < n; i++) {
 		if (shown < ARTIST_COVERS && album_cover(dir, rdir, names[i], cover, sizeof cover)) {
-			JLIT(j, shown++ ? "," : ",\"covers\":[");
+			/* Two JLITs, not one with a ?: inside: JLIT takes the length of a
+			 * literal from sizeof, and of an expression that is a pointer's.
+			 * Each cover went out as seven bytes of whatever followed, and a
+			 * Music folder of artists would not open (2026-10-05). */
+			if (shown++) JLIT(j, ",");
+			else         JLIT(j, ",\"covers\":[");
 			jstr(j, cover);
 		}
 		free(names[i]);

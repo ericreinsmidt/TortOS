@@ -34,6 +34,21 @@
 
 static int failures;
 
+/* The art match route's handler, standing in for the launcher's: how much of
+ * the body it was handed. */
+static size_t g_art_seen;
+
+static char *art_seen(const char *folder, const char *body, size_t *len,
+                      char *why, size_t wn)
+{
+	char *out = malloc(3);
+
+	(void)folder; (void)why; (void)wn;
+	g_art_seen = strlen(body);
+	if (out) { memcpy(out, "{}", 3); *len = 2; }
+	return out;
+}
+
 #define CHECK(cond, ...)                                                      \
 	do {                                                                      \
 		if (!(cond)) {                                                        \
@@ -422,6 +437,72 @@ int main(void)
 			struct stat st;
 			snprintf(p, sizeof p, "%s/.tortos/cheevos.cfg", g_shared);
 			CHECK(stat(p, &st) == 0, "cheevos.cfg was deleted");
+		}
+	}
+
+	/* A body read back by its handler, whole: the art routes stream theirs to
+	 * a file and read it in the second call. The file was still open then, its
+	 * last bytes still buffered, so a small body arrived empty - a console's
+	 * whole cover list, 2026-10-05 - and a large one short by its tail. One
+	 * small and one past a stdio buffer, to catch both. */
+	printf("  a body is all there when its handler reads it:\n");
+	{
+		static char big[100000];
+		char resp[256];
+		size_t i;
+
+		hare_set_art(NULL, art_seen, NULL, NULL);
+		CHECK(req("POST", "/api/art/match?s=NES", g_cookie, "abc\ndef", 7,
+		          resp, sizeof resp) == 200 && g_art_seen == 7,
+		      "a 7-byte body reached the handler as %zu bytes", g_art_seen);
+		for (i = 0; i < sizeof big; i++) big[i] = (char)('a' + i % 26);
+		CHECK(req("POST", "/api/art/match?s=NES", g_cookie, big, sizeof big,
+		          resp, sizeof resp) == 200 && g_art_seen == sizeof big,
+		      "a %zu-byte body reached the handler as %zu bytes", sizeof big, g_art_seen);
+		hare_set_art(NULL, NULL, NULL, NULL);
+	}
+
+	/* Music listed as the page draws it: an album marked as one with its
+	 * cover, an artist with their albums' covers. Two covers for the artist,
+	 * because the second is the one that went out as seven bytes of garbage
+	 * on 2026-10-05 and left a folder of artists unopenable. */
+	printf("  Music's albums and artists come with their covers:\n");
+	{
+		static const char *const DIRS[] = {
+			"Music", "Music/.media", "Music/Flat", "Music/Band", "Music/Band/.media",
+			"Music/Band/One", "Music/Band/Two",
+		};
+		static const char *const FILES[] = {
+			"Music/Flat/01 A.mp3", "Music/.media/Flat.jpg",
+			"Music/Band/One/01 B.mp3", "Music/Band/Two/01 C.mp3",
+			"Music/Band/.media/One.jpg", "Music/Band/.media/Two.png",
+		};
+		char p[512], body[4096];
+		size_t i;
+
+		for (i = 0; i < sizeof DIRS / sizeof DIRS[0]; i++) {
+			snprintf(p, sizeof p, "%s/%s", g_card, DIRS[i]);
+			mkdir(p, 0777);
+		}
+		for (i = 0; i < sizeof FILES / sizeof FILES[0]; i++) {
+			snprintf(p, sizeof p, "%s/%s", g_card, FILES[i]);
+			mkfile(p, "X");
+		}
+		CHECK(req("GET", "/api/list?p=music", g_cookie, NULL, 0, body, sizeof body) == 200,
+		      "listing Music failed");
+		CHECK(json_ok(body), "the Music listing is not valid JSON: %s", body);
+		CHECK(strstr(body, "\"album\":true,\"cover\":\"music/.media/Flat.jpg\"") != NULL,
+		      "the album and its cover: %s", body);
+		CHECK(strstr(body, "\"covers\":[\"music/Band/.media/One.jpg\","
+		                   "\"music/Band/.media/Two.png\"]") != NULL,
+		      "the artist and both albums' covers, in order: %s", body);
+		for (i = sizeof FILES / sizeof FILES[0]; i-- > 0; ) {
+			snprintf(p, sizeof p, "%s/%s", g_card, FILES[i]);
+			remove(p);
+		}
+		for (i = sizeof DIRS / sizeof DIRS[0]; i-- > 1; ) {
+			snprintf(p, sizeof p, "%s/%s", g_card, DIRS[i]);
+			rmdir(p);
 		}
 	}
 
