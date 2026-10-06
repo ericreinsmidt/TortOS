@@ -111,7 +111,7 @@ The Pixel 2 has no system of its own to run on, so the card is the whole system:
 4. **Set the clock** under **MENU > Date & Time**, with the time zone. The Pixel 2 has no network to take the time from, and keeps it once it is set.
 5. **Add games** to the folders in `Roms/`. Put the card back in the computer, where it shows up as TORTOS.
 
-The Pixel 2 has no Wi-Fi or Bluetooth, so it has no box art fetched on the device and no RetroAchievements. The TortOS Installer can fetch box art onto the card from a computer, or add your own. Files can go on and off over its USB cable instead, with Down To The Wire (below).
+The Pixel 2 has no Wi-Fi or Bluetooth, so it has no box art fetched on the device and no RetroAchievements. The TortOS Installer can fetch box art onto the card from a computer, or add your own. Files can go on and off over its USB cable instead, with Down To The Wire (below), coming in v1.4.0.
 
 ### Adding games over Wi-Fi
 
@@ -126,7 +126,7 @@ The PIN is new every time you open Over The Hare.
 
 <br clear="right">
 
-### Adding games over the USB cable (Pixel 2)
+### Adding games over the USB cable (Pixel 2, coming in v1.4.0)
 
 The same thing over a cable, called Down To The Wire. It works with a Mac or a Linux computer; Windows needs a driver for this kind of connection, so not yet.
 
@@ -193,7 +193,7 @@ The volume buttons and F1/F2 (brightness) work everywhere.
 <details>
 <summary>What's in each menu</summary>
 
-**The TortOS menu,** MENU on the consoles row: Play Time, Wi-Fi, Bluetooth, Audio Output, Over The Hare (Down To The Wire on the Pixel 2), Date & Time, Auto Off, UI Theme, UI Direction, Box Art, Cheevos, ScreenScraper, Controls, About TortOS.
+**The TortOS menu,** MENU on the consoles row: Play Time, Wi-Fi, Bluetooth, Audio Output, Over The Hare (Down To The Wire on the Pixel 2, from v1.4.0), Date & Time, Auto Off, UI Theme, UI Direction, Box Art, Cheevos, ScreenScraper, Controls, About TortOS.
 
 **A console's menu,** MENU inside it: Sort By, Display Mode, Box Art for that console alone, and Rescan Folder for games copied since the Brick was turned on.
 
@@ -246,7 +246,7 @@ The Brick's volume buttons set the headphones' volume, and the headphones' own v
 <details>
 <summary><b>How do I add music?</b></summary>
 
-Put it in `Music/` on the card, from a computer, over Wi-Fi with Over The Hare, or over the Pixel 2's cable with Down To The Wire, a folder per artist and a folder inside that per album: `Music/Radiohead/The Bends/01 Planet Telex.mp3`. An album folder put straight into `Music/` is moved under its artist when its tags name one, and songs in no folder at all are moved into `Music/Singles/`, an album of their own. MP3, M4A, M4B, AAC, FLAC, Ogg, Opus and WAV all play. Muse appears on the shelf once there's music, and each album's cover comes from its own files, or a picture in the album's folder. **MENU > Album Art** on Muse's shelf fetches a sharper cover over Wi-Fi from [MusicBrainz](https://musicbrainz.org)'s Cover Art Archive for any album whose files carry none, or only a small one.
+Put it in `Music/` on the card, from a computer, over Wi-Fi with Over The Hare, or over the Pixel 2's cable with Down To The Wire (from v1.4.0), a folder per artist and a folder inside that per album: `Music/Radiohead/The Bends/01 Planet Telex.mp3`. From v1.4.0, an album folder put straight into `Music/` is moved under its artist when its tags name one, and songs in no folder at all are moved into `Music/Singles/`, an album of their own. MP3, M4A, M4B, AAC, FLAC, Ogg, Opus and WAV all play. Muse appears on the shelf once there's music, and each album's cover comes from its own files, or a picture in the album's folder. **MENU > Album Art** on Muse's shelf fetches a sharper cover over Wi-Fi from [MusicBrainz](https://musicbrainz.org)'s Cover Art Archive for any album whose files carry none, or only a small one.
 
 </details>
 
@@ -267,7 +267,7 @@ Battery saves are `.srm` files in `Saves/`, named after the game. Save states, t
 <details>
 <summary><b>Something went wrong. How do I send the logs?</b></summary>
 
-Open **MENU > Over The Hare** (**Down To The Wire** on the Pixel 2), open its address in a browser, and click **Download logs** at the bottom of the first page. You get one `.tar.gz` file holding the last ten boots' logs and a short summary of the device, ready to send to whoever is helping you. Wi-Fi network, headset and account names are masked in it, and the logs on the card are left as they are. The logs themselves are on the card, in `.userdata/tg3040/logs/` on the Brick and `.userdata/pixel2/logs/` on the Pixel 2.
+Open **MENU > Over The Hare** (**Down To The Wire** on the Pixel 2, from v1.4.0), open its address in a browser, and click **Download logs** at the bottom of the first page. You get one `.tar.gz` file holding the last ten boots' logs and a short summary of the device, ready to send to whoever is helping you. Wi-Fi network, headset and account names are masked in it, and the logs on the card are left as they are. The logs themselves are on the card, in `.userdata/tg3040/logs/` on the Brick and `.userdata/pixel2/logs/` on the Pixel 2.
 
 </details>
 

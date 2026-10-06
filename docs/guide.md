@@ -145,7 +145,7 @@ than any one console:
 | **Wi-Fi** | the network's name when connected, or why it is not |
 | **Bluetooth** | the connected headset, or `not connected` - pair, connect and forget |
 | **Audio Output** | `Auto` or `Speaker`, and where Auto landed - see **Audio** below |
-| **Over The Hare** | the file server; needs Wi-Fi and says so when there is none. On the Pixel 2 it is **Down To The Wire**, over the USB cable, always at `10.42.0.1` |
+| **Over The Hare** | the file server; needs Wi-Fi and says so when there is none. From v1.4.0, on the Pixel 2 it is **Down To The Wire**, over the USB cable, always at `10.42.0.1` |
 | **Date & Time** | the clock and the time zone, set with left and right - see below |
 | **Auto Off** | how long without a button before the device powers itself down |
 | **UI Theme** | `Plain Jane` or `Fancy Pants` - which art the shelves wear |
@@ -348,8 +348,9 @@ to the shelf, and the shelf out of Muse. The exceptions are Over The Hare and a
 Box Art fetch, which only keep working while they are on screen.
 
 Albums go in `Music/`, a folder per artist and one inside it per album:
-`Music/Radiohead/The Bends/01 Planet Telex.mp3`. A folder of tracks straight
-under `Music/` is filed under its artist when its tags say clearly who that is
+`Music/Radiohead/The Bends/01 Planet Telex.mp3`. From v1.4.0, a folder of
+tracks straight under `Music/` is filed under its artist when its tags say
+clearly who that is
 (the album artist, or the artist every track agrees on), moving to
 `Music/<artist>/<album>/` with its cover; one with no clear answer - a
 podcast, a mix - stays an album of its own. Songs straight in `Music/`, in no
