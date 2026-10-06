@@ -107,11 +107,11 @@ _Static_assert(MENU_MAX_ROWS >= PM_ROWS, "MENU_MAX_ROWS < PM_ROWS");
 _Static_assert(MENU_MAX_ROWS >= SM_ROWS, "MENU_MAX_ROWS < SM_ROWS");
 
 /* The file server's two names, one per way the files travel: over the air,
- * Over The Hare; over the USB cable (the GKD Pixel 2), Down to the Wire.
+ * Over The Hare; over the USB cable (the GKD Pixel 2), Down To The Wire.
  * Eric's, 2026-10-05. Only what people see takes the cable name; the code
  * and the server stay the hare's, one for both. */
 #define XFER_NAME_WIFI  "Over The Hare"
-#define XFER_NAME_CABLE "Down to the Wire"
+#define XFER_NAME_CABLE "Down To The Wire"
 
 /* Where the built rows' text lives. A row holds pointers, not copies, so the
  * strings a build formats have to outlive the build; the caller owns this and

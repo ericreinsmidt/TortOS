@@ -640,8 +640,8 @@ static void radio_less(void)
 	printf("TortOS menu, no radio, files over the cable:\n");
 	ck(n == k && n == PM_ROWS - 5, "five rows fewer: the transfer row stays");
 	for (i = 0; i < k && pm[i] != PM_XFER; i++) { }
-	ck(i < k && !strcmp(rows[i].label, "Down to the Wire"),
-	   "as Down to the Wire, where the list says it is");
+	ck(i < k && !strcmp(rows[i].label, "Down To The Wire"),
+	   "as Down To The Wire, where the list says it is");
 	ck(i < k && rows[i].live && !rows[i].value, "live, and not asking for Wi-Fi");
 	ck(!has_label(rows, n, "Over The Hare"), "never under its Wi-Fi name");
 

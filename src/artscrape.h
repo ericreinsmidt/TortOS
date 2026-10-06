@@ -125,7 +125,7 @@ int art_tag_score(const char *want, const char *cand);
 bool art_rom_crc(const char *dir, const char *stem, const char *exts,
                  uint32_t *crc);
 
-/* ---- for the web page's Box art (Over The Hare, Down to the Wire) -------
+/* ---- for the web page's Box art (Over The Hare, Down To The Wire) -------
  *
  * The browser on the other end fetches libretro's covers itself, from their
  * GitHub mirror, which lets a page read it where thumbnails.libretro.com does

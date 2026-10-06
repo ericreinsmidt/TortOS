@@ -20,7 +20,7 @@ char *hj_done(hj *o, size_t *len, char *why, size_t wn);
 /* The web page's Box art, on the device's side: the answers to hare.h's art
  * hooks, and the shrink for a cover once it lands.
  *
- * Down to the Wire only, Eric's call 2026-10-05: the GKD Pixel 2 has no
+ * Down To The Wire only, Eric's call 2026-10-05: the GKD Pixel 2 has no
  * network of its own, so the browser at the other end of the cable fetches
  * libretro's covers from their GitHub mirror. The Brick fetches its own, with
  * ScreenScraper and the checksum besides, so a second way there would only be

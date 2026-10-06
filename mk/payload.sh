@@ -75,10 +75,10 @@ cp "$ROOT/res/singles.png" "$P/"          # Muse's cover for Singles, the loose 
 cp "$ROOT/res/web/"* "$P/res/web/"
 cp "$ROOT/res/fonts/menu.ttf" "$P/res/web/menu.ttf"
 # The Pixel's files go over its USB cable, so its page carries the cable name,
-# Down to the Wire (src/sys_menu.h). Only the page's own words: the browser
+# Down To The Wire (src/sys_menu.h). Only the page's own words: the browser
 # code names nothing, and the server is the same.
 if [ "$DEVICE" = pixel2 ]; then
-	sed 's/Over The Hare/Down to the Wire/g' "$ROOT/res/web/index.html" > "$P/res/web/index.html"
+	sed 's/Over The Hare/Down To The Wire/g' "$ROOT/res/web/index.html" > "$P/res/web/index.html"
 fi
 # The device has curl and OpenSSL but nothing to trust - see res/ssl/README.md.
 # Without this, every HTTPS request fails verification and achievements never

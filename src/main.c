@@ -5416,7 +5416,7 @@ static void xfer_screen(app *a)
 	g_logs_app = a;
 	hare_set_logs(pack_logs);
 	hare_set_before_delete(muse_before_delete);
-	/* Box art fetched by the page is Down to the Wire's alone (hareart.h);
+	/* Box art fetched by the page is Down To The Wire's alone (hareart.h);
 	 * a cover uploaded into a shelf's .media is shrunk on every device. */
 	hareart_init(&a->sys, P_ROMS);
 	singles_cover();                /* back, if it was taken off the card */
@@ -8909,7 +8909,7 @@ static void album_art_landed(app *a, int al, const char *rg)
 	if (g_np.album == al) np_forget();
 }
 
-/* ---- Muse: album covers from the web page (Down to the Wire) ------------
+/* ---- Muse: album covers from the web page (Down To The Wire) ------------
  *
  * Album Art's rules, answered for the page at the other end of the cable,
  * which asks MusicBrainz and the Cover Art Archive itself: the Pixel has no

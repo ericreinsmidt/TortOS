@@ -625,7 +625,7 @@ addEventListener('drop', (e) => {
 
 /* ---- box art ----------------------------------------------------------- */
 
-/* Down to the Wire only: the device behind the cable has no network, so this
+/* Down To The Wire only: the device behind the cable has no network, so this
  * page fetches libretro's covers and the device decides which game gets which
  * (src/hareart.h). Where the device fetches its own, /api/art/wanted answers
  * 404 and the button never shows.
