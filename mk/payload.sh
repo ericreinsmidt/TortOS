@@ -53,6 +53,13 @@ mkdir -p "$P/cards" "$P/cores" "$P/res/web" \
 cp "$TORTOS_ELF" "$P/tortos.elf"
 cp "$MUSE_ELF" "$P/muse"                  # the audio player's engine; Muse cannot play without it
 cp "$LAUNCH" "$P/launch.sh"
+# Which TortOS this is, for plastron: the Pixel's image copies its TortOS/ over
+# the card's only when it is newer than the card's (/etc/init.d/tortos), so a
+# system-only update brings the new TortOS with it. Only when the build says:
+# a payload built without a version has no file, and is never copied over one.
+if [ -n "${VERSION:-}" ]; then
+	echo "$VERSION" > "$P/VERSION"
+fi
 # Only systems.cfg is shipped now. tortos.cfg, turbo.cfg and coreopts.cfg are
 # compiled into the launcher and seed the settings database on first run, so
 # there is no file to ship and none to drift from the code that reads it.
