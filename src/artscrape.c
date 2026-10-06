@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <unistd.h>
 
 #include <sys/stat.h>
@@ -757,9 +758,19 @@ void art_norm_loose(const char *in, char *out, size_t outn)
 	char *tok, *save, *first = NULL, *last = NULL, *v[64];
 	int nv = 0, i;
 
-	/* Tags out, both kinds, accents folded, & to a space. */
+	/* Tags out, both kinds, accents folded, & to a space. And a "The" that
+	 * opens a subtitle: No-Intro writes SNK vs. Capcom - The Match of the
+	 * Millennium where a card has SNK Vs Capcom - Match of The Millennium
+	 * (2026-10-05); "the" first or last is dropped below, once the " - " that
+	 * marks a subtitle is gone. */
 	for (; *in && o + 1 < sizeof flat; in++) {
 		unsigned char c = (unsigned char)*in;
+
+		if (!depth && !strncmp(in, " - ", 3) && !strncasecmp(in + 3, "the ", 4)) {
+			flat[o++] = ' ';
+			in += 6;                                   /* past " - the" */
+			continue;
+		}
 
 		if (c == '(' || c == '[') { depth++; continue; }
 		if ((c == ')' || c == ']') && depth) { depth--; flat[o++] = ' '; continue; }

@@ -123,8 +123,14 @@ static void check_loose(void)
 	/* "The" where it opens or closes, never where it is part of a word. */
 	LOOSE("The Legend of Zelda (U)", "Legend of Zelda, The (USA)", true);
 	LOOSE("Theme Park (E)", "Park (Europe)", false);
+	LOOSE("Legend of the Mystical Ninja (U)", "Legend of Mystical Ninja (USA)", false);
+	/* And a subtitle's opening "The", which No-Intro writes and a card may
+	 * not; "The" inside a subtitle still counts. */
+	LOOSE("SNK Vs Capcom - Match of The Millennium (World)",
+	      "SNK vs. Capcom - The Match of the Millennium (World) (En,Ja)", true);
+	LOOSE("Zelda - Link to the Past (U)", "Zelda - A Link to the Past (USA)", false);
 	LOOSE("Ys II - Ancient Ys Vanished - The Final Chapter (J)",
-	      "Ys II - Ancient Ys Vanished - Final Chapter (Japan)", false);
+	      "Ys II - Ancient Ys Vanished - Final Chapter (Japan)", true);
 	/* & as libretro files it, and spelled out. */
 	LOOSE("Sonic & Knuckles (W)", "Sonic _ Knuckles (World)", true);
 	LOOSE("Sonic and Knuckles (W)", "Sonic _ Knuckles (World)", true);

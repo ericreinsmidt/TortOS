@@ -740,8 +740,11 @@ const libretroName = (name) => name.replace(/[&*\/:`<>?\\|]/g, '_');
  *
  * The first two use only raw.githubusercontent.com, which has no hourly cap;
  * the listing is GitHub's API, 60 requests an hour, which runs out after a
- * few full runs. A miss in 1 or 2 is ordinary and not reported; only what
- * fails once a cover has been found is. */
+ * few full runs. A miss by the game's own name is ordinary and not reported;
+ * a cover the checksum or the listing named that then would not come or would
+ * not go onto the card is. The checksum step's failures were silent at first,
+ * and the mono Neo Geo Pocket's covers went missing with nothing to say why
+ * (2026-10-05). */
 async function getArt(n, fails, notes) {
 	const w = await wanted('art');
 	/* The listing's failure, once seen: the rest of the run goes on without
@@ -767,7 +770,11 @@ async function getArt(n, fails, notes) {
 					left.delete(stem);
 				} catch (err) {
 					if (err.message === 'unauthorized') throw err;
-					if (report) fails.push(stem + ' (' + err.message + ')');
+					/* 'some': all but a 404, which for a checksum's name only
+					 * means libretro files that dump's cover under another name,
+					 * and the listing finds it (three such, 2026-10-05). */
+					if (report === true || (report === 'some' && !/ 404$/.test(err.message)))
+						fails.push(stem + ' (' + err.message + ')');
 				}
 			};
 			const each = async (pairs, how, report) => {
@@ -788,7 +795,7 @@ async function getArt(n, fails, notes) {
 					const byCrc = await (await api('POST', '/api/art/nointro?s=' + enc(s.folder),
 					                               await dat.text())).json();
 					await each(byCrc.matches.map((m) => [m.stem, libretroName(m.name)]),
-					           'by checksum', false);
+					           'by checksum', 'some');
 				}
 			}
 
