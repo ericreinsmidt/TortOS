@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>A <ins>fast</ins>, focused custom firmware for the TrimUI Brick, Brick Hammer and GKD Pixel 2.</b><br>
-  Plays eleven classic consoles, and gets out of your way.
+  Plays eleven classic consoles and your music, and gets out of your way.
 </p>
 
 <p align="center">
