@@ -90,11 +90,11 @@ https://github.com/user-attachments/assets/09b52bf2-bdb6-4a93-8613-27059d825ebf
 
 You need a TrimUI Brick, Brick Hammer or GKD Pixel 2, a microSD card and, just this once, a computer.
 
-The [TortOS Installer](https://github.com/ericreinsmidt/tortos-installer/releases/latest), for macOS, Windows and Linux, sets up a card for either device: it downloads the latest TortOS and puts it on the card, or updates a card that already has it. The steps below also say how to do it by hand.
+The [TortOS Installer](https://github.com/ericreinsmidt/TortOS-Installer/releases/latest), for macOS, Windows and Linux, sets up a card for either device: it downloads the latest TortOS and puts it on the card, or updates a card that already has it. The steps below also say how to do it by hand.
 
 ### On the Brick
 
-With the [TortOS Installer](https://github.com/ericreinsmidt/tortos-installer/releases/latest), choose **TrimUI Brick** and **Fresh install**, then go on from step 4. By hand, from the start:
+With the [TortOS Installer](https://github.com/ericreinsmidt/TortOS-Installer/releases/latest), choose **TrimUI Brick** and **Fresh install**, then go on from step 4. By hand, from the start:
 
 1. **Format the card as FAT32 or exFAT,** with a Master Boot Record partition scheme. Both work; the TortOS Installer uses FAT32. On a Mac, open Disk Utility, choose *View > Show All Devices*, and erase the card itself rather than its volume.
 2. **Download `TortOS-v1.4.0.zip`** from [Releases](https://github.com/ericreinsmidt/TortOS/releases/latest) and unzip it.

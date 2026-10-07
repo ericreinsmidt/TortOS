@@ -14,7 +14,7 @@ every control, menu row and setting, and the reasons behind them.
 | **Windows** | Right-click the card, `Format`, **exFAT**. |
 
 Both work - the kernel has both - and nothing on the card comes near FAT32's
-4 GB limit on a file. The [TortOS Installer](https://github.com/ericreinsmidt/tortos-installer)
+4 GB limit on a file. The [TortOS Installer](https://github.com/ericreinsmidt/TortOS-Installer)
 formats FAT32. By hand, exFAT is what every formatter offers at the size of card
 anyone actually uses, Windows' own included, so it is the one the steps above
 name.
