@@ -19,7 +19,7 @@ SSH := sshpass -p 'tina' ssh -o StrictHostKeyChecking=no \
         adb adb-elf adb-res adb-vendor adb-restart adb-run adb-log \
         check check-cheevos check-hare check-httpd check-idle check-rahash \
         check-raset check-xfer check-menus check-artscrape check-artrun check-audioout \
-        check-db check-stats check-sort check-bt check-backlog check-ss hooks storeprobe deploy restart logs
+        check-db check-stats check-sort check-bt check-ss storeprobe deploy restart logs
 
 all: build/tortos.elf
 
@@ -29,7 +29,7 @@ all: build/tortos.elf
 # exist, and check-menus was about to join eight others in that state.
 CHECKS = check-cheevos check-hare check-httpd check-idle check-rahash \
          check-raset check-xfer check-menus check-artscrape check-artrun check-audioout \
-         check-db check-stats check-sort check-bt check-backlog check-ss \
+         check-db check-stats check-sort check-bt check-ss \
          check-muselib check-musequeue check-museart check-controls check-logpack \
          check-clock
 
@@ -358,21 +358,6 @@ storeprobe:
 		echo "STALE: build/storeprobe is older than tools/storeprobe.c" >&2; \
 		exit 1; } || true
 
-# A worktree is a checkout of TRACKED files, so the four gitignored working
-# documents stay behind in the main tree and a worktree session starts without
-# the device rules. git runs post-checkout after `git worktree add`, and hooks
-# come from the shared common dir, so this is a one-time install per clone.
-hooks:
-	git config core.hooksPath mk/hooks
-	@echo "hooks: post-checkout will copy the working documents into new worktrees"
-
-# BACKLOG.md is the other open-item store, and until 2026-09-05 it was the only
-# one with nothing checking it. It drifted exactly that far: a heading still
-# reading DECIDED, NOT BUILT while that work was being finished, and four
-# Diatom-owned sections sitting where check-register could not see them.
-#
-# The file is gitignored, so this skips cleanly when it is absent rather than
-# failing a worktree over a file a worktree cannot have.
 # Fourteen config files became two databases, so properties that used to be
 # obvious from looking at a text file now need asserting - chiefly that a
 # shipped default never overwrites a choice, which is a bug this project
@@ -472,9 +457,6 @@ build-native/museart-check: tools/museart-check.c src/museart.c src/museart.h \
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
 	      -o $@ tools/museart-check.c src/museart.c src/urlenc.c src/rajson.c
-
-check-backlog:
-	@python3 tools/backlog-check.py
 
 # src/main.c hand-keeps a copy of the mark that C cannot import from
 # tools/markdef.py. payload depends on this for the same reason payload.sh

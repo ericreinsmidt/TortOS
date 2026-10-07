@@ -21,46 +21,8 @@ __pycache__/
 .DS_Store
 ._*
 
-# Internal notes. None of it is needed to build, install or contribute, and
-# none of it is written for anyone outside this working copy: CLAUDE.md and
-# BACKLOG.md are the working agreement and the running list, DEVICE-LOOP.md is
-# the accumulated sharp edges of developing against a live Brick, and
-# VOLUME-CURVE.md is one afternoon's measurements behind a constant that now
-# carries its own numbers in the comment above it, and MGBA-MBC2.md is a defect
-# in the pinned core, written up for upstream. Nothing tracked may reference
-# any of them.
-CLAUDE.md
-BACKLOG.md
-DEVICE-LOOP.md
-VOLUME-CURVE.md
-MGBA-MBC2.md
-MGBA-MBC2-issue.md
-MGBA-MBC2-body.md
-
 sysroot/
-
-# Local ROM/BIOS test set. 889 MB of content that must never enter history.
-/TortOS-Test-Set/
-/TortOS-Test-Set.zip
-
-# Design working files: source documents for art, not build inputs.
-/tortos_logo_ideas/
-
-# Backups: the pre-rebrand boot assets, and pulled device saves. Local only -
-# 120MB+ of save states and a redundant copy of tracked art.
-/backups/
 
 # Copied in from res/fonts at deploy and payload time so the browser can ask
 # for /web/menu.ttf - one copy in the repo, two on the card.
 /res/web/menu.ttf
-
-# A scratch harness for the box art scraper, not part of the build.
-/tools/art-try.c
-
-# Source photographs for the fancy cards, and the card set they replaced.
-# 100MB of Evan Amos originals at full resolution, which res/cards/fancy is cut
-# down from, plus a copy of the set that was there before 2026-09-11. Neither
-# belongs in the repo and neither has ever been in it - these lines exist so a
-# stray `git add -A` cannot change that.
-/system_images_original/
-/cards_backup_photos/

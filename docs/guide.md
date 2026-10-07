@@ -223,8 +223,7 @@ Nine of the eleven have it: **NES, Master System, TurboGrafx-16, Game Boy, Game
 Boy Color, Game Boy Advance, Game Gear, Neo Geo Pocket and Neo Geo Pocket
 Color**. Those consoles had two face buttons,
 so X and Y are spare and turbo can have them. Genesis and SNES are left out
-because their pads use X and Y for real buttons. Which systems get it, and how
-fast, is in [turbo.md](turbo.md).
+because their pads use X and Y for real buttons.
 
 Diatom does the pulsing, not the emulator core, which is why it works the same
 on all nine rather than only on the one core that happens to implement turbo.

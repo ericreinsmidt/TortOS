@@ -287,10 +287,7 @@ Open **MENU > Over The Hare** (**Down To The Wire** on the Pixel 2), open its ad
 
 TortOS is C and SDL2. Games run in [diatom](https://github.com/ericreinsmidt/diatom), a small libretro frontend built for this device that starts once at boot and stays running.
 
-- [How it works](docs/how-it-works.md): the resident emulator, the boot, and card art off the render thread
-- [Configuration](docs/configuration.md): the two settings databases, `systems.cfg`, core options and turbo
 - [Building](docs/building.md): the toolchain, the card, the checks, and deploying to a device
-- [Design decisions](docs/decisions/) and [how menus behave](docs/menus.md)
 
 ## License
 

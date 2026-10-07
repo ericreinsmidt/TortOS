@@ -51,10 +51,9 @@ exists because something once broke in a way nothing noticed:
 | `check-stats` | play time is recorded, and a LAUNCH still writes nothing |
 | `check-sort` | a shelf sorts the way it says it does, and the same shelf twice the same way |
 | `check-bt` | a device name from the air is only ever data; an address is validated |
-| `check-backlog` | the backlog still says what is left, and has been swept recently |
 
 They are offline and need no device. A screen's rows are a pure function of
-its state precisely so the first two can exist - see `docs/decisions/`.
+its state precisely so the first two can exist.
 
 The host build renders exactly what the handheld renders, and can be asked for
 a single frame:
@@ -88,9 +87,7 @@ off when the launch loop exits.
 
 ```
 src/            the launcher (MIT)
-docs/           the guide, how it works, configuration and building; why the
-                code is shaped the way it is, in docs/decisions/; and the
-                rules a menu follows, in docs/menus.md
+docs/           the guide, and building
 mk/             cross build, payload, deployment
 tools/          the boot-animation and card generators, setbright, the
                 achievement fetcher, and the checks
