@@ -14,7 +14,7 @@ every control, menu row and setting, and the reasons behind them.
 | **Windows** | Right-click the card, `Format`, **exFAT**. |
 
 Both work - the kernel has both - and nothing on the card comes near FAT32's
-4 GB limit on a file. The [TortOS Installer](https://github.com/ericreinsmidt/TortOS-Installer)
+4 GB limit on a file. The [TortOS Installer](https://github.com/ericreinsmidt/tortos-installer)
 formats FAT32. By hand, exFAT is what every formatter offers at the size of card
 anyone actually uses, Windows' own included, so it is the one the steps above
 name.
@@ -145,7 +145,7 @@ than any one console:
 | **Wi-Fi** | the network's name when connected, or why it is not |
 | **Bluetooth** | the connected headset, or `not connected` - pair, connect and forget |
 | **Audio Output** | `Auto` or `Speaker`, and where Auto landed - see **Audio** below |
-| **Over The Hare** | the file server; needs Wi-Fi and says so when there is none. From v1.4.0, on the Pixel 2 it is **Down To The Wire**, over the USB cable, always at `10.42.0.1` |
+| **Over The Hare** | the file server; needs Wi-Fi and says so when there is none. On the Pixel 2 it is **Down To The Wire**, over the USB cable, always at `10.42.0.1` |
 | **Date & Time** | the clock and the time zone, set with left and right - see below |
 | **Auto Off** | how long without a button before the device powers itself down |
 | **UI Theme** | `Plain Jane` or `Fancy Pants` - which art the shelves wear |
@@ -348,7 +348,7 @@ to the shelf, and the shelf out of Muse. The exceptions are Over The Hare and a
 Box Art fetch, which only keep working while they are on screen.
 
 Albums go in `Music/`, a folder per artist and one inside it per album:
-`Music/Radiohead/The Bends/01 Planet Telex.mp3`. From v1.4.0, a folder of
+`Music/Radiohead/The Bends/01 Planet Telex.mp3`. A folder of
 tracks straight under `Music/` is filed under its artist when its tags say
 clearly who that is
 (the album artist, or the artist every track agrees on), moving to
