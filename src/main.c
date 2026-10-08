@@ -6610,6 +6610,8 @@ static void controls_screen(app *a)
 	ctl_page page = CTL_SHELF;
 	bool done = false;
 
+	ctl_set_fn_volume(plat_brightness_on_volume());
+
 	while (!done && !want_quit && a->running) {
 		menu_row rows[CTL_MAX_ROWS];
 		char head[80];
@@ -11140,7 +11142,10 @@ static void take_shot(app *a)
 		menu_row rows[CTL_MAX_ROWS];
 		char head[80];
 		ctl_page p = (ctl_page)(shot_controls % CTL_PAGES);
-		int n = ctl_rows(p, controls_dir(), rows);
+		int n;
+
+		ctl_set_fn_volume(plat_brightness_on_volume());
+		n = ctl_rows(p, controls_dir(), rows);
 
 		snprintf(head, sizeof head, "Controls: %s", ctl_page_name(p));
 		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);

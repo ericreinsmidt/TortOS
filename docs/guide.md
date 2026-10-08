@@ -5,6 +5,11 @@ every control, menu row and setting, and the reasons behind them.
 
 ## Installing
 
+The [TortOS Installer](https://github.com/ericreinsmidt/TortOS-Installer/releases/latest)
+does all of this for either device. By hand, the Brick's card is set up as
+below; the Pixel 2's is a disk image written over the whole card, as the
+[README](../README.md#install) says.
+
 **Format the card FAT32 or exFAT**, with a Master Boot Record partition scheme.
 
 | | |
@@ -123,13 +128,19 @@ matters to you - a card is the one part of this that gets reformatted.
 | **SELECT** | Muse, the music and audiobook player, from anywhere but a running game - the in-game menu included. Again to close it |
 | **POWER** | powers off. In a game, the game is saved first |
 
+**On the Pixel 2,** FUNCTION is MENU. It reports MENU when you let go of it,
+because it is also what turns the volume keys into brightness, the Pixel 2
+having no brightness keys of its own: FUNCTION with volume up or down is
+brightness, everywhere, including in game, and FUNCTION with both held is
+Muse's lock.
+
 MENU means three different menus depending on where you are, and each one is
 about the thing you are looking at: the firmware on the systems row, one
 console inside it, the running game in a game. Inside any of them MENU closes
 the whole menu at once - from Play Time or Wi-Fi straight back to where you
 were, or back into the game - and B goes back one screen at a time.
 
-**The Brick carries this table itself**, under **MENU > Controls**: five pages
+**The device carries this table itself**, under **MENU > Controls**: five pages
 that left and right step through - moving, the shelf, a game, Muse, and the
 buttons that work anywhere. It is the copy that is always to hand, and the one
 that follows your UI Direction, so the page shows the axes as they are on your
@@ -155,6 +166,10 @@ than any one console:
 | **ScreenScraper** | the account that brings covers with each game's year, genre and synopsis, `sign in`, or `not in this build` |
 | **Controls** | every button and what it does, a page per place |
 | **About TortOS** | version, address, battery, uptime |
+
+On the Pixel 2, which has no radio, the rows that need one are not there at
+all: Wi-Fi, Bluetooth, Box Art, Cheevos and ScreenScraper here, Box Art in a
+console's menu, and Album Art in Muse's.
 
 Date & Time has a row for each part of the clock and one for the time zone,
 each changed with left and right and set the moment it changes, so the time
@@ -250,9 +265,14 @@ volume, so the line says what it is without a glyph or a number on it.
 
 ## Audio
 
-Sound can come out of three places, and TortOS picks in a fixed order:
+Sound can come out of four places, and TortOS picks in a fixed order:
 
-**wired headphones, then Bluetooth, then the speaker.**
+**a USB-C headphone adapter, then wired headphones, then Bluetooth, then the
+speaker.**
+
+The adapter is the Pixel 2's, whose USB-C port takes one the moment it is
+plugged in; the Brick's port does not. Bluetooth is the Brick's; the Pixel 2
+has no radio.
 
 A cable wins outright, in every setting. Someone who physically plugged
 something in has said what they want more plainly than any menu can, and a
@@ -379,8 +399,10 @@ which some other firmwares call L3 and R3 - or pick Lock Screen in Muse's
 menu. The screen goes dark, which on a book playing measured about 6 hours of
 listening becoming 10, and every button is ignored except the volume keys,
 power, and a Bluetooth headset's play, pause and skip. Hold F1+F2 again to
-unlock. Power still turns the Brick off, with a book's place saved, and if the
-music stays paused past Auto Off the Brick turns itself off the same way.
+unlock. On the Pixel 2, which has no F1 or F2, it is FUNCTION with both volume
+keys, held for a second, to lock and to unlock. Power still turns the Brick
+off, with a book's place saved, and if the music stays paused past Auto Off
+the Brick turns itself off the same way.
 
 With something playing or paused, SELECT goes straight to **Now Playing**: the
 cover, the track, where in it you are, and what comes next.

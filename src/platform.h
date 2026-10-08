@@ -281,6 +281,10 @@ bool plat_battery(int *pct, bool *charging);
 bool plat_has_wifi(void);
 bool plat_has_bluetooth(void);
 
+/* Whether brightness is FUNCTION with the volume keys, the device having no
+ * brightness keys of its own. What MENU > Controls calls them (controls.h). */
+bool plat_brightness_on_volume(void);
+
 /* Date & Time (src/clock.h). Set the clock to `t`, and the hardware clock with
  * it, which keeps the time while the device is off: the Pixel 2 has nothing
  * else to set it from. False if the system clock would not take it. */

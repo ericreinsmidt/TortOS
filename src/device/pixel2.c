@@ -867,6 +867,9 @@ void plat_brightness_set(int level)
 bool plat_has_wifi(void)      { return false; }
 bool plat_has_bluetooth(void) { return false; }
 
+/* FUNCTION with volume up or down (key_event). */
+bool plat_brightness_on_volume(void) { return true; }
+
 /* ---- battery ---- */
 
 bool plat_battery(int *pct, bool *charging)

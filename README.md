@@ -59,10 +59,11 @@ https://github.com/user-attachments/assets/09b52bf2-bdb6-4a93-8613-27059d825ebf
 - **Two looks:** Plain Jane cards, or Fancy Pants photos of each console.
 - **RetroAchievements:** sign in on the device. A game's achievements download once and then work offline, and anything you unlock offline is sent later.
 - **Box art the Brick finds itself,** from libretro's collection with no account, or from ScreenScraper with a free one, which brings each game's year, genre and synopsis too. Or add your own.
-- **Over The Hare:** move games, music, audiobooks, saves and covers on and off the card from any browser on your Wi-Fi, behind a PIN.
+- **Over The Hare:** move games, music, audiobooks, saves and covers on and off the card from any browser on your Wi-Fi, behind a PIN. On the Pixel 2, which has no Wi-Fi, the same goes over its USB cable, as Down To The Wire.
 - **Autosave and resume,** plus six save slots for when you want a checkpoint.
 - **Turbo buttons:** X and Y press A and B for you, on the nine consoles whose controllers had two face buttons. On Game Boy Advance, L2 and R2 do the same for L and R.
 - **Fast forward:** hold MENU and press R1 to run a game at 2x, 3x or 4x, and once more to go back.
+- **A USB-C headphone adapter on the Pixel 2:** plug one in and the sound goes there, ahead of the headphone jack, in games and in Muse. It's a choice of its own in Audio Output.
 - **Bluetooth headphones,** paired on the device, with the Brick's volume buttons reaching them and their own buttons playing and skipping in Muse. Plug in wired ones and they take over.
 - **Muse, a music and audiobook player:** your albums and books on a shelf of their own covers, and every book picks up where you left it. SELECT opens Muse from anywhere, even the in-game menu, and it keeps playing when you close it. While it plays, the game is silent.
 - **Play Time:** how long you've played each game or console, today, this week, this month, this year or ever.
@@ -198,7 +199,7 @@ None of them is a driver, and none replaces anything the system needs to run.
 
 The volume buttons and F1/F2 (brightness) work everywhere.
 
-**On the Pixel 2,** FUNCTION is MENU, so everything on this page that uses MENU uses FUNCTION. It has no brightness keys: FUNCTION with volume up or down is brightness, everywhere, and Muse's pocket lock is FUNCTION with both volume keys.
+**On the Pixel 2,** FUNCTION is MENU, so everything on this page that uses MENU uses FUNCTION. It has no brightness keys: FUNCTION with volume up or down is brightness, everywhere, and Muse's pocket lock is FUNCTION with both volume keys, held for a second while music plays.
 
 **The Brick lists all of this itself,** under **MENU > Controls**: five pages, stepped through with left and right, so you never need this page to look a button up.
 
@@ -211,9 +212,11 @@ The volume buttons and F1/F2 (brightness) work everywhere.
 
 **Favorites' menu:** Sort By, with a console's four orders.
 
-**Muse's menu,** MENU on its shelf: Show (music or audiobooks, when the card has both), Sort By (artist or album title, or author or title for books), Album Art, and Rescan Folder for anything copied since the Brick was turned on.
+**Muse's menu,** MENU on its shelf: Show (music or audiobooks, when the card has both), Sort By (artist or album title, or author or title for books), Lock Screen (while music plays), Album Art, and Rescan Folder for anything copied since the Brick was turned on.
 
 **The in-game menu:** Continue, Save, Load, Display, Cheevos, Reset, Quit.
+
+**On the Pixel 2,** which has no radio, the rows that need one are left out: Wi-Fi, Bluetooth, Box Art, Cheevos, ScreenScraper and Album Art.
 
 </details>
 
@@ -249,9 +252,11 @@ Sign in to your RetroAchievements account under **MENU > Cheevos**. The first ti
 <details>
 <summary><b>Can I use Bluetooth headphones?</b></summary>
 
-Yes. Put them in pairing mode, open **MENU > Bluetooth**, press **Y** to search and **A** to pair. They reconnect by themselves from then on. Wired headphones always win when they're plugged in.
+Yes, on the Brick. Put them in pairing mode, open **MENU > Bluetooth**, press **Y** to search and **A** to pair. They reconnect by themselves from then on. Wired headphones always win when they're plugged in.
 
 The Brick's volume buttons set the headphones' volume, and the headphones' own volume buttons move the Brick's. On a few headphones, the Brick's buttons set only the starting volume; after that, change it on the headphones themselves. Play, pause and skip on the headphones control Muse.
+
+The Pixel 2 has no Bluetooth: use wired headphones, or a USB-C headphone adapter.
 
 </details>
 

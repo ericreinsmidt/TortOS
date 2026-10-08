@@ -4,6 +4,10 @@
 
 #include <stddef.h>
 
+static bool fn_volume;   /* see ctl_set_fn_volume */
+
+void ctl_set_fn_volume(bool on) { fn_volume = on; }
+
 static const char *const NAMES[CTL_PAGES] = {
 	[CTL_MOVING]   = "Moving",
 	[CTL_SHELF]    = "On the shelf",
@@ -116,7 +120,7 @@ static int muse(menu_row *out)
 	/* The pocket lock (#51). It took SELECT's row: "Close Muse" is SELECT
 	 * doing on Muse what the Anywhere page already says it does. F1/F2 are
 	 * L3/R3 to anyone coming from another CFW; the guide says so. */
-	out[n++] = (menu_row){ "F1+F2",      "Lock, held",    false };
+	out[n++] = (menu_row){ fn_volume ? "FN+both Vol" : "F1+F2", "Lock, held", false };
 	return n;
 }
 
@@ -130,7 +134,7 @@ static int anywhere(menu_row *out)
 	 * game it is a different menu, and that page says so. */
 	out[n++] = (menu_row){ "MENU",          "Settings",   false };
 	out[n++] = (menu_row){ "Volume rocker", "Sound",      false };
-	out[n++] = (menu_row){ "F1/F2",       "Brightness", false };
+	out[n++] = (menu_row){ fn_volume ? "FN+Vol" : "F1/F2", "Brightness", false };
 	out[n++] = (menu_row){ "POWER",         "Turn off",   false };
 	return n;
 }

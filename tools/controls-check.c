@@ -14,6 +14,7 @@
  *
  * No SDL, no device. ADR-0001.
  */
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -32,8 +33,19 @@ static void ck(int cond, const char *what)
 static const char *const BUTTONS[] = {
 	"Up/Down", "Left/Right", "A", "B", "X", "Y", "L1/R1", "X/Y/L2/R2",
 	"MENU", "SELECT", "POWER", "Volume rocker", "F1/F2", "F1+F2",
+	"FN+Vol", "FN+both Vol",
 };
 #define NBUTTONS ((int)(sizeof BUTTONS / sizeof BUTTONS[0]))
+
+/* The Brick's front function keys are FUNCTION with the volume keys on the
+ * Pixel 2 (ctl_set_fn_volume): each device's pages name its own, and never
+ * the other's. */
+static bool pixel;
+static int other_devices(const char *b)
+{
+	return pixel ? !strcmp(b, "F1/F2") || !strcmp(b, "F1+F2")
+	             : !strcmp(b, "FN+Vol") || !strcmp(b, "FN+both Vol");
+}
 
 /* A ceiling on the value, so a page of rows sits still to be read.
  *
@@ -103,6 +115,12 @@ static void every_button_somewhere(void)
 	printf("every button is somewhere\n");
 	for (i = 0; i < NBUTTONS; i++) {
 		int seen = pages_naming(BUTTONS[i]);
+
+		if (other_devices(BUTTONS[i])) {
+			snprintf(msg, sizeof msg, "%s is on a page of the wrong device", BUTTONS[i]);
+			ck(seen == 0, msg);
+			continue;
+		}
 
 		/* X / Y is the turbo pair and X and Y are themselves: the game page
 		 * naming the pair does not excuse the shelf page from naming X. */
@@ -240,10 +258,15 @@ int main(void)
 {
 	printf("controls: what MENU > Controls says\n");
 	pages_are_named();
-	every_button_somewhere();
-	no_page_repeats();
-	rows_fit();
 	direction_changes_the_shelf();
+	for (int d = 0; d < 2; d++) {
+		pixel = d == 1;
+		ctl_set_fn_volume(pixel);
+		printf("on the %s:\n", pixel ? "Pixel 2" : "Brick");
+		every_button_somewhere();
+		no_page_repeats();
+		rows_fit();
+	}
 
 	if (fails) {
 		printf("\n%d failure%s\n", fails, fails == 1 ? "" : "s");
