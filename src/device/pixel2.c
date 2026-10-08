@@ -250,6 +250,7 @@ static int fd_keys = -1;    /* "gpio-keys": volume */
 static int fd_power = -1;   /* "rk805 pwrkey" */
 static int jack_fd = -1;    /* "rk817_int Headphones": the jack switch, for the settings */
 static int dbg_input;
+static bool l2_down, r2_down;  /* the two together ask for the battery level (below) */
 
 /* Kernel code -> TortOS button, by what is printed on the key. Measured
  * 2026-10-01 pressing each in a known order: the A, B, X and Y caps send
@@ -330,6 +331,7 @@ void plat_input_flush(void)
 	drain(fd_pad);
 	drain(fd_keys);
 	drain(fd_power);
+	l2_down = r2_down = false;
 }
 
 /* No wait here, unlike the Brick: the keys are read straight from the kernel,
@@ -361,6 +363,36 @@ static bool fn_down;            /* FUNCTION is held */
 static bool fn_chorded;         /* and a volume key was used under it */
 static bool menu_release_next;  /* a MENU tap reported last poll ends this one */
 static in_button vol_as[2] = { IN_NONE, IN_NONE };  /* what each volume key went down as */
+
+/* L2 and R2 together flash the battery level on the lights on the side, which
+ * plastron's gauge owns: this only asks it to. Seen here only outside a game,
+ * since in one Diatom has the pad (and on GBA they are mGBA's turbo
+ * shoulders), and what a game left queued is thrown away unread. */
+static void ask_gauge(void)
+{
+	DIR *d = opendir("/proc");
+	struct dirent *e;
+
+	if (!d) return;
+	while ((e = readdir(d))) {
+		char path[48], comm[32];
+		ssize_t n;
+		int fd;
+
+		if (e->d_name[0] < '1' || e->d_name[0] > '9') continue;
+		snprintf(path, sizeof path, "/proc/%.16s/comm", e->d_name);
+		if ((fd = open(path, O_RDONLY | O_CLOEXEC)) < 0) continue;
+		n = read(fd, comm, sizeof comm - 1);
+		close(fd);
+		if (n <= 0) continue;
+		comm[n] = '\0';
+		if (!strcmp(comm, "gauge\n")) {
+			kill((pid_t)atoi(e->d_name), SIGUSR1);
+			break;
+		}
+	}
+	closedir(d);
+}
 
 static void key_event(in_state *st, const struct input_event *ev)
 {
@@ -403,6 +435,13 @@ static void key_event(in_state *st, const struct input_event *ev)
 	}
 	if (ev->code == KEY_POWER) {
 		plat_set_btn(st, IN_POWER, ev->value == 1);
+		return;
+	}
+	if (ev->code == BTN_TL2 || ev->code == BTN_TR2) {
+		bool both = l2_down && r2_down;
+
+		*(ev->code == BTN_TL2 ? &l2_down : &r2_down) = ev->value == 1;
+		if (!both && l2_down && r2_down) ask_gauge();
 		return;
 	}
 	for (i = 0; i < sizeof keymap / sizeof keymap[0]; i++)
