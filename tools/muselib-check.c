@@ -73,6 +73,46 @@ static void names(void)
 	CHECK(!strcmp(out, "1979"), "a track CALLED a number keeps it: got \"%s\"", out);
 	ml_track_name("Intro.opus", out, sizeof out);
 	CHECK(!strcmp(out, "Intro"), "no number: got \"%s\"", out);
+
+	/* Names some downloads come with, dots and underscores for spaces, shown
+	 * with spaces; the card's names are left as they are */
+	printf("names with dots for spaces\n");
+	ml_track_name("01..American.Music.mp3", out, sizeof out);
+	CHECK(!strcmp(out, "American Music"), "dotted track: got \"%s\"", out);
+	ml_track_name("31..Good.Feeling.(Live.At.The.Boathouse._.1991).mp3", out, sizeof out);
+	CHECK(!strcmp(out, "Good Feeling (Live At The Boathouse 1991)"),
+	      "a track keeps its year: got \"%s\"", out);
+	ml_track_name("06..Used.To.Be.mp3", out, sizeof out);
+	CHECK(!strcmp(out, "Used To Be"), "short words between: got \"%s\"", out);
+	ml_track_name("16..He.Likes.Me.mp3", out, sizeof out);
+	CHECK(!strcmp(out, "He Likes Me"), "one long word of three: got \"%s\"", out);
+	ml_track_name("07 R.E.M..mp3", out, sizeof out);
+	CHECK(!strcmp(out, "R.E.M."), "initials keep their dots: got \"%s\"", out);
+	ml_track_name("02 Mr. Brightside.mp3", out, sizeof out);
+	CHECK(!strcmp(out, "Mr. Brightside"), "a name with spaces is left alone: got \"%s\"", out);
+
+	snprintf(out, sizeof out, "%s",
+	         "Violent.Femmes.-.Why.Do.Birds.Sing_._Deluxe.Edition_._2021_.Mp3.320kbps._PMEDIA_._-xpost");
+	ml_clean_album(out, "Violent Femmes");
+	CHECK(!strcmp(out, "Why Do Birds Sing Deluxe Edition"),
+	      "a release name: got \"%s\"", out);
+	snprintf(out, sizeof out, "%s", "Violent.Femmes.-.Why.Do.Birds.Sing.2021.MP3");
+	ml_clean_album(out, NULL);
+	CHECK(!strcmp(out, "Violent Femmes - Why Do Birds Sing"),
+	      "a release name standing as its own artist: got \"%s\"", out);
+	snprintf(out, sizeof out, "%s", "George.Orwell.-.1984.MP3");
+	ml_clean_album(out, "George Orwell");
+	CHECK(!strcmp(out, "1984"), "a year as the whole title stays: got \"%s\"", out);
+	snprintf(out, sizeof out, "%s", "The Bends");
+	ml_clean_album(out, "Radiohead");
+	CHECK(!strcmp(out, "The Bends"), "an ordinary name is left alone: got \"%s\"", out);
+	snprintf(out, sizeof out, "%s", "Pablo Honey 1993");
+	ml_clean_album(out, "Radiohead");
+	CHECK(!strcmp(out, "Pablo Honey 1993"),
+	      "a year in a spaced name stays: got \"%s\"", out);
+	snprintf(out, sizeof out, "%s", "R.E.M.");
+	ml_clean_words(out);
+	CHECK(!strcmp(out, "R.E.M."), "an artist's initials stay: got \"%s\"", out);
 }
 
 static void scan(void)

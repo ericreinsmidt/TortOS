@@ -27,6 +27,102 @@ bool ml_is_audio(const char *name)
 	return false;
 }
 
+/* Whether `s` joins its words with dots or underscores instead of spaces:
+ * no space at all, two words or more, and one of them three letters or more,
+ * so "Used.To.Be" is words and "R.E.M." is initials */
+static bool scene_style(const char *s)
+{
+	int words = 0, long_words = 0, run = 0;
+
+	if (strchr(s, ' ')) return false;
+	for (; ; s++) {
+		if (*s && *s != '.' && *s != '_') { run++; continue; }
+		if (run) words++;
+		if (run >= 3) long_words++;
+		run = 0;
+		if (!*s) break;
+	}
+	return words >= 2 && long_words >= 1;
+}
+
+/* Spaces for dots and underscores, then one space at a time and none at the
+ * ends. True when it changed anything. */
+static bool unscene(char *s)
+{
+	char *r, *w;
+
+	if (!scene_style(s)) return false;
+	for (r = s; *r; r++)
+		if (*r == '.' || *r == '_') *r = ' ';
+	for (r = w = s; *r; r++)
+		if (*r != ' ' || (w > s && w[-1] != ' ')) *w++ = *r;
+	while (w > s && w[-1] == ' ') w--;
+	*w = '\0';
+	return true;
+}
+
+void ml_clean_words(char *s)
+{
+	unscene(s);
+}
+
+/* A word that only says what format or bitrate a download was */
+static bool format_word(const char *w, size_t n)
+{
+	static const char *const WORDS[] = {
+		"mp3", "flac", "aac", "m4a", "ogg", "opus", "wav", "web", "webrip",
+		"cd", "cdrip", "vinyl", "kbps", "320kbps", "256kbps", "192kbps",
+		"128kbps", "v0", "v2", "16bit", "24bit", "44khz", "48khz", NULL
+	};
+	int i;
+
+	for (i = 0; WORDS[i]; i++)
+		if (strlen(WORDS[i]) == n && !strncasecmp(w, WORDS[i], n)) return true;
+	return false;
+}
+
+void ml_clean_album(char *s, const char *artist)
+{
+	char out[128], clean_artist[128];
+	const char *p, *word;
+	size_t o = 0, al;
+	bool first = true;
+
+	if (!unscene(s)) return;
+	/* Its artist in front, when that leaves a name behind */
+	snprintf(clean_artist, sizeof clean_artist, "%s", artist ? artist : "");
+	unscene(clean_artist);
+	al = strlen(clean_artist);
+	p = s;
+	if (al && !strncasecmp(p, clean_artist, al) && !strncmp(p + al, " - ", 3) && p[al + 3])
+		p += al + 3;
+	/* Word by word, up to a release year, without the format words */
+	while (*p) {
+		size_t n;
+
+		while (*p == ' ') p++;
+		if (!*p) break;
+		word = p;
+		while (*p && *p != ' ') p++;
+		n = (size_t)(p - word);
+		if (!first && n == 4 && (word[0] == '1' || word[0] == '2') &&
+		    isdigit((unsigned char)word[1]) && isdigit((unsigned char)word[2]) &&
+		    isdigit((unsigned char)word[3]) &&
+		    (!strncmp(word, "19", 2) || !strncmp(word, "20", 2)))
+			break;
+		first = false;
+		if (format_word(word, n)) continue;
+		if (o && o + 1 < sizeof out) out[o++] = ' ';
+		if (o + n >= sizeof out) n = sizeof out - o - 1;
+		memcpy(out + o, word, n);
+		o += n;
+	}
+	out[o] = '\0';
+	/* A trailing lone dash, left where "Artist - " was the whole of it */
+	while (o > 0 && (out[o - 1] == '-' || out[o - 1] == ' ')) out[--o] = '\0';
+	if (o) snprintf(s, 128, "%s", out);
+}
+
 void ml_track_name(const char *file, char *out, int n)
 {
 	const char *p = file, *dot = strrchr(file, '.');
@@ -47,6 +143,7 @@ void ml_track_name(const char *file, char *out, int n)
 	if (len >= n) len = n - 1;
 	memcpy(out, p, (size_t)len);
 	out[len] = '\0';
+	ml_clean_words(out);
 }
 
 /* How much of a path is its folder: "A/B/c.mp3" is 3, "c.mp3" is 0. */
@@ -243,6 +340,14 @@ static bool scan_into(ml_lib *out, caps *c, const char *root, const char *prefix
 			break;
 		ar = &out->artists[out->nartists++];
 		snprintf(ar->name, sizeof ar->name, "%s", top.v[i]);
+		/* The shelf's names, the folders' untouched: an album's loses its
+		 * artist in front, which only the folder's own name still has */
+		for (j = before; j < out->nalbums; j++)
+			if (strcmp(out->albums[j].name, top.v[i]))
+				ml_clean_album(out->albums[j].name, top.v[i]);
+			else
+				ml_clean_album(out->albums[j].name, NULL);
+		ml_clean_words(ar->name);
 		ar->first = before;
 		ar->n = out->nalbums - before;
 		ar->book = book;

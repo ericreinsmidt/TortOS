@@ -67,6 +67,16 @@ bool ml_is_audio(const char *name);
  * "03 High And Dry.mp3" is "High And Dry". */
 void ml_track_name(const char *file, char *out, int n);
 
+/* Names as the shelf shows them, the card untouched. A name with no spaces
+ * whose words are joined by dots or underscores, the way some downloads come
+ * ("American.Music", "Used.To.Be", "Violent.Femmes.-.Why.Do.Birds.Sing_..."),
+ * gets spaces; "R.E.M." does not, a word of three letters or more being what
+ * tells words from initials. An album's also loses its artist in front
+ * ("Artist - "), a release year and everything after it, and words that only
+ * name a format ("Mp3", "320kbps"). */
+void ml_clean_words(char *s);
+void ml_clean_album(char *s, const char *artist);
+
 /* The album `track` - a path relative to the root - is in, or -1. By folder,
  * not by name: two artists can each have a "Greatest Hits", and the folder is
  * the one thing that tells them apart. */
