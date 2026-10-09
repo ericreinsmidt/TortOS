@@ -261,6 +261,11 @@ bool plat_usb_audio_present(void);
  * browser opens (addr may be NULL); false on a device that moves files over
  * Wi-Fi. */
 bool plat_cable_link(char *addr, size_t n);
+/* A fresh connection over that cable, as if it were plugged in again: the
+ * transfer screen asks for one as it opens, since a computer can drop the
+ * link while the device goes on believing it is up. Nothing on a device with
+ * no cable link. */
+void plat_cable_reconnect(void);
 /* kind: 1 = brightness, 2 = volume */
 void plat_osd_show(int kind, int val, int max);
 void plat_draw_osd(SDL_Renderer *r);

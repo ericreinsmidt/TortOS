@@ -5455,6 +5455,9 @@ static void xfer_screen(app *a)
 	unsigned    cover_at = 0, cover_next = 0;   /* the embedded covers, below */
 
 	g_logs_app = a;
+	/* A fresh link over the cable each time this opens: a computer can drop
+	 * it while the device believes it is still up (plat_cable_reconnect) */
+	if (cable) plat_cable_reconnect();
 	hare_set_logs(pack_logs);
 	hare_set_before_delete(muse_before_delete);
 	hare_set_after_rename(muse_after_rename);

@@ -825,6 +825,37 @@ bool plat_cable_link(char *addr, size_t n)
 	return true;
 }
 
+/* The USB controller lets go of the cable and takes it again, so the computer
+ * sees a new device plugged in. Seen 2026-10-08: the Mac dropped the Pixel as
+ * if unplugged while the controller here went on saying "configured" and never
+ * offered itself again; a restart was the only way back. A third of a second
+ * apart, long enough for the computer to notice it went. */
+void plat_cable_reconnect(void)
+{
+	static const struct timespec gap = { 0, 300 * 1000000L };
+	DIR *d = opendir("/sys/class/udc");
+	struct dirent *e;
+
+	if (!d) return;
+	while ((e = readdir(d))) {
+		char path[300];
+		int fd;
+
+		if (e->d_name[0] == '.') continue;
+		snprintf(path, sizeof path, "/sys/class/udc/%s/soft_connect", e->d_name);
+		if ((fd = open(path, O_WRONLY | O_CLOEXEC)) < 0) continue;
+		if (write(fd, "disconnect", 10) < 0) { /* left as it was */ }
+		close(fd);
+		nanosleep(&gap, NULL);
+		if ((fd = open(path, O_WRONLY | O_CLOEXEC)) < 0) continue;
+		if (write(fd, "connect", 7) < 0) { /* the next screen tries again */ }
+		close(fd);
+		fprintf(stderr, "wire: the cable connection made fresh\n");
+		break;
+	}
+	closedir(d);
+}
+
 /* No mute switch on this device. */
 bool plat_mute_poll(bool own_volume) { (void)own_volume; return false; }
 bool plat_muted(void) { return false; }

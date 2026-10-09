@@ -769,6 +769,7 @@ bool plat_cable_link(char *addr, size_t n)
 	(void)addr; (void)n;
 	return false;
 }
+void plat_cable_reconnect(void) { }
 
 /* The switch, checked wherever the jack is and for the same reason: this is
  * the one thing every screen does once a frame.
@@ -940,6 +941,7 @@ bool plat_cable_link(char *addr, size_t n)
 	(void)addr; (void)n;
 	return false;
 }
+void plat_cable_reconnect(void) { }
 static void jack_forget(void) { }
 static void mute_forget(void) { }
 void plat_backlight(bool on) { (void)on; }
