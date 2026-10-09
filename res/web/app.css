@@ -299,6 +299,20 @@ header {
 .row .acts button:hover, .row .acts a:hover { color: var(--text); border-color: var(--line); }
 .row .acts .danger:hover { color: var(--bad); border-color: var(--bad); }
 
+/* Tidy names' preview: every rename, old above new, before any is made */
+.tidy { max-width: var(--wrap); margin: 12px auto; padding: 14px 16px;
+        border: 1px solid var(--accent); border-radius: 10px; }
+.tidy h2 { margin: 0 0 10px; font-size: 17px; font-weight: 500; }
+.tidy ul { list-style: none; margin: 0; padding: 0; max-height: 50vh; overflow-y: auto; }
+.tidy li { padding: 6px 0; border-top: 1px solid var(--line); font-size: 15px;
+           display: flex; flex-direction: column; gap: 2px; }
+.tidy li .from { color: var(--dim); overflow-wrap: anywhere; }
+.tidy li .to { color: var(--text); overflow-wrap: anywhere; }
+.tidy li.skip .to { color: var(--bad); }
+.tidy .tidyacts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.tidy #tidygo { border-color: var(--accent); color: var(--accent); }
+.tidy #tidygo:disabled { opacity: 0.4; }
+
 .empty { color: var(--dim); text-align: center; padding: 48px 16px;
          margin: 0 auto; max-width: var(--wrap); }
 

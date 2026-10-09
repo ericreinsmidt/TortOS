@@ -139,6 +139,8 @@ async function go(path, hist) {
 			(b.dir - a.dir) || a.name.localeCompare(b.name, undefined, { numeric: true }));
 	}
 	draw();
+	$('tidy').hidden = !canTidy(cwd);
+	$('tidypanel').hidden = true;
 
 	const url = '#' + enc(cwd);
 	if (hist === 'replace') history.replaceState({ path: cwd }, '', url);
@@ -363,6 +365,66 @@ async function removeEntry(e, all) {
 		await go(cwd, 'none');
 	} catch (err) { toast(err.message, true); }
 }
+
+/* ---- Tidy names --------------------------------------------------------
+ *
+ * A music or audiobook folder's names as Muse's shelf shows them, made real
+ * on the card: "01..American.Music.mp3" to "01 American Music.mp3", and the
+ * folder to its album's name. The device works the names out with the
+ * shelf's own rules (/api/tidy), so the page and the shelf cannot disagree,
+ * and every rename is shown here before any is made. One that would land on
+ * a name already there is shown as skipped, and the device never makes it. */
+function canTidy(path) { return /^(music|books)\/./.test(path); }
+
+async function tidyShow() {
+	const here = cwd;
+	let plan;
+	try {
+		plan = await (await api('GET', '/api/tidy?p=' + enc(here))).json();
+	} catch (err) { toast(err.message, true); return; }
+	if (here !== cwd) return;                     /* moved on meanwhile */
+	if (!plan.items.length) { toast('The names here are tidy already'); return; }
+	const doing = plan.items.filter((i) => !i.skip).length;
+	$('tidyhead').textContent = doing === plan.items.length
+		? 'Tidy names: ' + doing + (doing === 1 ? ' rename' : ' renames')
+		: 'Tidy names: ' + doing + ' of ' + plan.items.length + ' (the rest would land on a name already there)';
+	const ul = $('tidylist');
+	ul.replaceChildren();
+	/* The folder first, then its files, as they will read */
+	for (const i of plan.items.slice().sort((a, b) => b.folder - a.folder)) {
+		const li = document.createElement('li');
+		if (i.skip) li.className = 'skip';
+		const from = document.createElement('span');
+		from.className = 'from';
+		from.textContent = (i.folder ? 'Folder: ' : '') + i.from;
+		const to = document.createElement('span');
+		to.className = 'to';
+		to.textContent = i.to + (i.skip ? ' (skipped: already there)' : '');
+		li.append(from, to);
+		ul.append(li);
+	}
+	$('tidygo').disabled = doing === 0;
+	$('tidypanel').hidden = false;
+	$('tidypanel').scrollIntoView({ block: 'nearest' });
+}
+
+async function tidyGo() {
+	const here = cwd;
+	$('tidygo').disabled = true;
+	try {
+		const res = await (await api('POST', '/api/tidy?p=' + enc(here))).json();
+		toast('Renamed ' + res.renamed + (res.skipped ? ', skipped ' + res.skipped : ''));
+		/* The folder may have a new name: go to it */
+		await go(here.slice(0, here.lastIndexOf('/') + 1) + res.folder, 'replace');
+	} catch (err) {
+		toast(err.message, true);
+		$('tidygo').disabled = false;
+	}
+}
+
+$('tidy').onclick = tidyShow;
+$('tidycancel').onclick = () => { $('tidypanel').hidden = true; };
+$('tidygo').onclick = tidyGo;
 
 $('newfolder').onclick = async () => {
 	if (!cwd) { toast('Pick a folder first', true); return; }

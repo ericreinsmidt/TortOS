@@ -123,6 +123,43 @@ void ml_clean_album(char *s, const char *artist)
 	if (o) snprintf(s, 128, "%s", out);
 }
 
+bool ml_tidy_file(const char *name, char *out, size_t n)
+{
+	const char *dot = strrchr(name, '.'), *p = name, *q;
+	char stem[256], num[8] = "";
+	size_t len;
+
+	if (!dot || dot == name) return false;
+	/* The track number, up to three digits, and whatever joined it on */
+	while (isdigit((unsigned char)*p)) p++;
+	q = p;
+	while (*q == ' ' || *q == '-' || *q == '.' || *q == '_') q++;
+	if (p > name && p - name <= 3 && q > p && q < dot) {
+		snprintf(num, sizeof num, "%.*s ", (int)(p - name), name);
+		p = q;
+	} else {
+		p = name;
+	}
+	len = (size_t)(dot - p);
+	if (len >= sizeof stem) return false;
+	memcpy(stem, p, len);
+	stem[len] = '\0';
+	if (!unscene(stem) || !stem[0]) return false;
+	if ((size_t)snprintf(out, n, "%s%s%s", num, stem, dot) >= n) return false;
+	return strcmp(out, name) != 0;
+}
+
+bool ml_tidy_folder(const char *name, const char *artist, char *out, size_t n)
+{
+	char s[128];
+
+	if (strlen(name) >= sizeof s) return false;
+	snprintf(s, sizeof s, "%s", name);
+	ml_clean_album(s, artist);
+	if (!s[0] || !strcmp(s, name)) return false;
+	return (size_t)snprintf(out, n, "%s", s) < n;
+}
+
 void ml_track_name(const char *file, char *out, int n)
 {
 	const char *p = file, *dot = strrchr(file, '.');

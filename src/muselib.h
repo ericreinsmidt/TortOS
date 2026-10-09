@@ -77,6 +77,13 @@ void ml_track_name(const char *file, char *out, int n);
 void ml_clean_words(char *s);
 void ml_clean_album(char *s, const char *artist);
 
+/* The same, as names to rename to on the card (Tidy names, on the transfer
+ * page): a file keeps its track number and its extension, so "01..American.
+ * Music.mp3" is "01 American Music.mp3", and a folder is named as the shelf
+ * shows it. False when there is nothing to change. */
+bool ml_tidy_file(const char *name, char *out, size_t n);
+bool ml_tidy_folder(const char *name, const char *artist, char *out, size_t n);
+
 /* The album `track` - a path relative to the root - is in, or -1. By folder,
  * not by name: two artists can each have a "Greatest Hits", and the folder is
  * the one thing that tells them apart. */

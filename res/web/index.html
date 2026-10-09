@@ -46,6 +46,8 @@
     <p id="dropmsg" class="dropmsg" role="status"></p>
     <div class="tools">
       <button id="newfolder" class="ghost" title="New folder">New folder</button>
+      <!-- In a music or audiobook folder: its names as Muse's shelf shows them. -->
+      <button id="tidy" class="ghost" title="Tidy names" hidden>Tidy names</button>
       <label class="ghost" for="picker">Upload</label>
       <input id="picker" type="file" multiple hidden>
       <!-- A whole folder - an album, a book - with the folders inside it. -->
@@ -54,6 +56,14 @@
     </div>
   </header>
 
+  <section id="tidypanel" class="tidy" hidden>
+    <h2 id="tidyhead"></h2>
+    <ul id="tidylist"></ul>
+    <div class="tidyacts">
+      <button id="tidycancel" class="ghost" type="button">Cancel</button>
+      <button id="tidygo" type="button">Rename all</button>
+    </div>
+  </section>
   <ul id="list" class="list"></ul>
   <p id="empty" class="empty" hidden>Nothing here yet.</p>
 

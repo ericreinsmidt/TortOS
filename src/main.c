@@ -5388,6 +5388,47 @@ static void muse_before_delete(const char *abs)
 	}
 }
 
+/* Tidy names on the transfer page renamed a music or audiobook folder: what
+ * is kept under its old name follows it. Its cover, from the .media beside it;
+ * what Album Art remembers of it; and a book's place, all keyed by the
+ * folder's path. The shelf is read again on the way out of the screen. */
+static void muse_after_rename(const char *from, const char *to)
+{
+	size_t card = strlen(P_CARD);
+	const char *frel, *trel, *fbase = strrchr(from, '/'), *tbase = strrchr(to, '/');
+	static const char *const EXT[] = { "jpg", "png" };
+	char cfrom[LIB_PATH * 2 + 300], cto[LIB_PATH * 2 + 300];
+	char key[LIB_PATH + 300], nkey[LIB_PATH + 300], val[LIB_PATH + 32];
+	int k;
+
+	if (strncmp(from, P_CARD, card) || from[card] != '/' ||
+	    strncmp(to, P_CARD, card) || to[card] != '/' || !fbase || !tbase)
+		return;
+	frel = from + card + 1;
+	trel = to + card + 1;
+	for (k = 0; k < 2; k++) {
+		snprintf(cfrom, sizeof cfrom, "%.*s/.media/%s.%s", (int)(fbase - from), from,
+		         fbase + 1, EXT[k]);
+		if (access(cfrom, F_OK) != 0) continue;
+		snprintf(cto, sizeof cto, "%.*s/.media/%s.%s", (int)(fbase - from), from,
+		         tbase + 1, EXT[k]);
+		rename(cfrom, cto);
+	}
+	snprintf(key, sizeof key, "museart.%s", frel);
+	if (db_get_str(db_lib(), key, val, sizeof val, "") && val[0]) {
+		db_del(db_lib(), key);
+		snprintf(nkey, sizeof nkey, "museart.%s", trel);
+		db_set_str(db_lib(), nkey, val);
+	}
+	snprintf(key, sizeof key, "book.%s", frel);
+	if (db_get_str(db_dev(), key, val, sizeof val, "") && val[0]) {
+		db_del(db_dev(), key);
+		snprintf(nkey, sizeof nkey, "book.%s", trel);
+		db_set_str(db_dev(), nkey, val);
+	}
+	fprintf(stderr, "muse: %s is now %s\n", frel, trel);
+}
+
 /* Album covers for the page, down with Muse's Album Art, and the covers the
  * shelf draws, down with Muse's shelf. */
 static bool  cover_file(int al, char *out, size_t n);
@@ -5416,6 +5457,7 @@ static void xfer_screen(app *a)
 	g_logs_app = a;
 	hare_set_logs(pack_logs);
 	hare_set_before_delete(muse_before_delete);
+	hare_set_after_rename(muse_after_rename);
 	/* Box art fetched by the page is Down To The Wire's alone (hareart.h);
 	 * a cover uploaded into a shelf's .media is shrunk on every device. */
 	hareart_init(&a->sys, P_ROMS);

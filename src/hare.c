@@ -47,6 +47,7 @@ static bool     g_shelf_changed;  /* something the shelf would show has moved */
 static char     g_last[128];
 static bool   (*g_pack_logs)(char *path, size_t pn, char *name, size_t nn);
 static void   (*g_before_delete)(const char *abs);
+static void   (*g_after_rename)(const char *from, const char *to);
 static char  *(*g_art_wanted)(size_t *len, char *why, size_t wn);
 static hare_art_fn g_art_match, g_art_crc, g_art_nointro;
 static void   (*g_after_write)(const char *abs);
@@ -274,6 +275,89 @@ void hare_set_logs(bool (*pack)(char *path, size_t pn, char *name, size_t nn))
 }
 
 void hare_set_before_delete(void (*fn)(const char *abs)) { g_before_delete = fn; }
+void hare_set_after_rename(void (*fn)(const char *from, const char *to)) { g_after_rename = fn; }
+
+/* ---- Tidy names --------------------------------------------------------
+ *
+ * A music or audiobook folder's names as the shelf shows them, made real on
+ * the card: its tracks' and its own (muselib's ml_tidy_file and
+ * ml_tidy_folder, the shelf's own rules, so the two cannot disagree). GET
+ * lists what would change and POST changes it. A name that would land on one
+ * already there, or on another track's new one, is skipped and never
+ * overwritten. Files first, the folder last, and the launcher told of the
+ * folder's new name to move what it keeps under the old one. */
+#define TIDY_MAX 400
+typedef struct {
+	char from[XFER_NAME_MAX + 1], to[XFER_NAME_MAX + 1];
+	bool folder, skip;
+} tidy_item;
+
+/* The music or audiobooks root a folder is inside, and not the root itself */
+static const xfer_root *tidy_root(const char *abs)
+{
+	int i;
+
+	for (i = 0; i < xfer_root_count(); i++) {
+		const xfer_root *rt = xfer_root_at(i);
+		size_t n = strlen(rt->path);
+
+		if (strcmp(rt->name, "music") && strcmp(rt->name, "books")) continue;
+		if (!strncmp(abs, rt->path, n) && abs[n] == '/' && abs[n + 1]) return rt;
+	}
+	return NULL;
+}
+
+static int tidy_by_from(const void *a, const void *b)
+{
+	return strcmp(((const tidy_item *)a)->from, ((const tidy_item *)b)->from);
+}
+
+/* What Tidy names would do to the folder at `abs`, or -1 when it can't be read */
+static int tidy_plan(const char *abs, const xfer_root *rt, tidy_item *it, int max)
+{
+	const char *base = strrchr(abs, '/') + 1;
+	size_t plen = (size_t)(base - 1 - abs);
+	char path[XFER_PATH_MAX], artist[XFER_NAME_MAX + 1] = "";
+	struct stat st;
+	struct dirent *e;
+	DIR *d;
+	int n = 0, i, k;
+
+	if (!(d = opendir(abs))) return -1;
+	while ((e = readdir(d)) && n < max - 1) {
+		if (e->d_name[0] == '.' || !ml_is_audio(e->d_name)) continue;
+		if (!ml_tidy_file(e->d_name, it[n].to, sizeof it[n].to) || !xfer_name_ok(it[n].to))
+			continue;
+		snprintf(it[n].from, sizeof it[n].from, "%s", e->d_name);
+		it[n].folder = false;
+		n++;
+	}
+	closedir(d);
+	qsort(it, (size_t)n, sizeof *it, tidy_by_from);
+	for (i = 0; i < n; i++) {
+		/* A name too long for the card's paths is skipped, like one taken */
+		it[i].skip = snprintf(path, sizeof path, "%s/%s", abs, it[i].to) >= (int)sizeof path ||
+		             stat(path, &st) == 0;
+		for (k = 0; k < i && !it[i].skip; k++)
+			if (!it[k].skip && !strcmp(it[k].to, it[i].to)) it[i].skip = true;
+	}
+	/* The folder, by its artist when it sits in one: Music/<artist>/<album> */
+	if (plen > strlen(rt->path)) {
+		const char *pb = abs + plen;
+
+		while (pb > abs && pb[-1] != '/') pb--;
+		snprintf(artist, sizeof artist, "%.*s", (int)(abs + plen - pb), pb);
+	}
+	if (ml_tidy_folder(base, artist[0] ? artist : NULL, it[n].to, sizeof it[n].to) &&
+	    xfer_name_ok(it[n].to)) {
+		snprintf(it[n].from, sizeof it[n].from, "%s", base);
+		it[n].folder = true;
+		it[n].skip = snprintf(path, sizeof path, "%.*s/%s", (int)plen, abs, it[n].to) >=
+		             (int)sizeof path || stat(path, &st) == 0;
+		n++;
+	}
+	return n;
+}
 
 void hare_set_art(char *(*wanted)(size_t *len, char *why, size_t wn),
                   hare_art_fn match, hare_art_fn crc, hare_art_fn nointro)
@@ -1034,6 +1118,91 @@ static void on_request(httpd_req *r, bool done, void *ctx)
 		note_write(abs);   /* it left one name and arrived at another */
 		note("renamed %s", base_of(dst));
 		httpd_reply(r, 200, "text/plain", "ok", 2, NULL);
+		return;
+	}
+
+	if (!strcmp(path, "/api/tidy") && (!strcmp(m, "GET") || !strcmp(m, "POST"))) {
+		static tidy_item it[TIDY_MAX];
+		char req[XFER_PATH_MAX], abs[XFER_PATH_MAX], from[XFER_PATH_MAX], to[XFER_PATH_MAX];
+		const xfer_root *rt;
+		bool apply = !strcmp(m, "POST");
+		int n, i, renamed = 0, skipped = 0;
+		struct stat st;
+		jbuf j = { 0 };
+
+		if (!done) { httpd_want_body(r, HTTPD_BODY_NONE, NULL); if (apply) return; }
+		httpd_query(r, "p", req, sizeof req);
+		if (!xfer_resolve(req, abs, sizeof abs)) {
+			httpd_reply_status(r, 403, "not somewhere you can write");
+			return;
+		}
+		if (stat(abs, &st) != 0 || !S_ISDIR(st.st_mode)) {
+			httpd_reply_status(r, 404, "not a folder");
+			return;
+		}
+		if (!(rt = tidy_root(abs))) {
+			httpd_reply_status(r, 400, "only a folder in Music or Audiobooks");
+			return;
+		}
+		if ((n = tidy_plan(abs, rt, it, TIDY_MAX)) < 0) {
+			httpd_reply_status(r, 500, strerror(errno));
+			return;
+		}
+		if (apply) {
+			/* Muse stopped first if it plays from in here */
+			if (n && g_before_delete) g_before_delete(abs);
+			for (i = 0; i < n; i++) {
+				if (it[i].skip) { skipped++; continue; }
+				if (it[i].folder) continue;
+				if (snprintf(from, sizeof from, "%s/%s", abs, it[i].from) >= (int)sizeof from ||
+				    snprintf(to, sizeof to, "%s/%s", abs, it[i].to) >= (int)sizeof to) {
+					skipped++;
+					continue;
+				}
+				if (rename(from, to) == 0) renamed++; else skipped++;
+			}
+			for (i = 0; i < n; i++) {
+				if (!it[i].folder || it[i].skip) continue;
+				snprintf(from, sizeof from, "%s", abs);
+				if (snprintf(to, sizeof to, "%.*s/%s", (int)(strrchr(abs, '/') - abs), abs,
+				             it[i].to) >= (int)sizeof to) {
+					skipped++;
+					continue;
+				}
+				if (rename(from, to) == 0) {
+					renamed++;
+					note_write(from);
+					if (g_after_rename) g_after_rename(from, to);
+					snprintf(abs, sizeof abs, "%s", to);
+				} else {
+					skipped++;
+				}
+			}
+			note_write(abs);
+			note("tidied %d names in %s", renamed, base_of(abs));
+		}
+		j.cap = 512 + (size_t)n * (2 * XFER_NAME_MAX + 64);
+		if (!(j.p = malloc(j.cap))) { httpd_reply_status(r, 500, "out of memory"); return; }
+		if (apply) {
+			jfmt(&j, "{\"renamed\":%d,\"skipped\":%d,\"folder\":", renamed, skipped);
+			jstr(&j, strrchr(abs, '/') + 1);
+			JLIT(&j, "}");
+		} else {
+			JLIT(&j, "{\"items\":[");
+			for (i = 0; i < n; i++) {
+				if (i) JLIT(&j, ",");
+				JLIT(&j, "{\"from\":");
+				jstr(&j, it[i].from);
+				JLIT(&j, ",\"to\":");
+				jstr(&j, it[i].to);
+				jfmt(&j, ",\"folder\":%s,\"skip\":%s}", it[i].folder ? "true" : "false",
+				     it[i].skip ? "true" : "false");
+			}
+			JLIT(&j, "]}");
+		}
+		if (j.over) httpd_reply_status(r, 500, "reply too long");
+		else        httpd_reply(r, 200, "application/json", j.p, j.used, NULL);
+		free(j.p);
 		return;
 	}
 

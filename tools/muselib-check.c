@@ -113,6 +113,23 @@ static void names(void)
 	snprintf(out, sizeof out, "%s", "R.E.M.");
 	ml_clean_words(out);
 	CHECK(!strcmp(out, "R.E.M."), "an artist's initials stay: got \"%s\"", out);
+
+	/* The same as names on the card, for Tidy names */
+	printf("names to rename to\n");
+	CHECK(ml_tidy_file("01..American.Music.mp3", out, sizeof out) &&
+	      !strcmp(out, "01 American Music.mp3"), "a track keeps its number: got \"%s\"", out);
+	CHECK(ml_tidy_file("31..Good.Feeling.(Live.At.The.Boathouse._.1991).mp3", out, sizeof out) &&
+	      !strcmp(out, "31 Good Feeling (Live At The Boathouse 1991).mp3"),
+	      "and its year: got \"%s\"", out);
+	CHECK(ml_tidy_file("Used.To.Be.flac", out, sizeof out) && !strcmp(out, "Used To Be.flac"),
+	      "no number: got \"%s\"", out);
+	CHECK(!ml_tidy_file("03 High And Dry.mp3", out, sizeof out), "a tidy name is left alone");
+	CHECK(!ml_tidy_file("07 R.E.M..mp3", out, sizeof out), "initials are left alone");
+	CHECK(!ml_tidy_file("1979.mp3", out, sizeof out), "a number for a name is left alone");
+	CHECK(ml_tidy_folder("Violent.Femmes.-.Why.Do.Birds.Sing_._Deluxe.Edition_._2021_.Mp3.320kbps._PMEDIA_._-xpost",
+	                     "Violent Femmes", out, sizeof out) &&
+	      !strcmp(out, "Why Do Birds Sing Deluxe Edition"), "a release folder: got \"%s\"", out);
+	CHECK(!ml_tidy_folder("The Bends", "Radiohead", out, sizeof out), "a tidy folder is left alone");
 }
 
 static void scan(void)

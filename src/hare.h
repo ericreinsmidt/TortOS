@@ -51,6 +51,12 @@ void hare_set_logs(bool (*pack)(char *path, size_t pn, char *name, size_t nn));
  * there. Unset, nothing is told. */
 void hare_set_before_delete(void (*fn)(const char *abs));
 
+/* Called with a folder's old and new absolute paths after Tidy names renamed
+ * it, so the launcher can move what it keeps under the old name: the cover in
+ * .media, Album Art's memory of it, an audiobook's place. Unset, nothing is
+ * told. */
+void hare_set_after_rename(void (*fn)(const char *from, const char *to));
+
 /* Box art for the web page, which the launcher answers because it knows the
  * shelves and the matching rule (hareart.c, artscrape.h). The browser fetches
  * the covers itself; these say which games want one and which each gets:
