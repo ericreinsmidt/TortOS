@@ -27,6 +27,13 @@
 	--line: #262a36;
 	--bad: #ff6b5e;
 	--radius: 14px;
+	/* The font sits high in its line: 0.05em of room over its capitals and
+	 * 0.25em under the baseline, so text centered in a box by its line reads
+	 * high. A box with a border shows it, and gives it back with its padding:
+	 * this much more on top and this much less underneath, or, where the
+	 * browser can cut the line down to the capitals (below), exactly. */
+	--pad-over: 0.1em;
+	--pad-under: -0.1em;
 	/* The reading column. A file listing is a name on the left and its size
 	 * and buttons on the right, so full-bleed on a desktop put half a meter of
 	 * nothing between the two halves of every row. */
@@ -149,9 +156,18 @@ button, .ghost {
 	border: 1px solid var(--line);
 	border-radius: 10px;
 	font: inherit;
-	padding: 10px 16px;
+	padding: calc(10px + var(--pad-over)) 16px calc(10px + var(--pad-under));
 	cursor: pointer;
 	white-space: nowrap;
+}
+/* The line cut down to its capitals and its baseline, which centers them in
+ * the box whatever the browser makes of the font's metrics, and the padding
+ * making up the height the line had: (1.45 - 0.702) / 2 em on each side, 1.45
+ * being the line and 0.702 the font's capitals. */
+@supports (text-box: trim-both cap alphabetic) {
+	:root { --pad-over: 0.374em; --pad-under: 0.374em; }
+	button, .ghost, .dropmsg, .toast, .row .acts a { text-box: trim-both cap alphabetic; }
+	.crumbs button, .row .name { text-box: normal; }   /* text, not boxes */
 }
 button:hover, .ghost:hover { border-color: var(--accent); }
 button:active, .ghost:active { background: #262a36; }
@@ -225,7 +241,10 @@ header {
 .crumbs .sep { color: var(--dim); }
 
 .tools { display: flex; gap: 8px; flex-shrink: 0; }
-.tools .ghost, .tools button { font-size: 15px; padding: 8px 12px; }
+.tools .ghost, .tools button {
+	font-size: 15px;
+	padding: calc(8px + var(--pad-over)) 12px calc(8px + var(--pad-under));
+}
 
 .list { list-style: none; margin: 0 auto; padding: 0; max-width: var(--wrap); }
 
@@ -292,7 +311,7 @@ header {
 	color: var(--dim);
 	font: inherit;
 	font-size: 14px;
-	padding: 6px 8px;
+	padding: calc(6px + var(--pad-over)) 8px calc(6px + var(--pad-under));
 	text-decoration: none;
 	cursor: pointer;
 }
@@ -361,7 +380,7 @@ header {
 	flex: 0 1 auto;
 	min-width: 0;
 	margin: 0;
-	padding: 7px 15px;
+	padding: calc(8px + var(--pad-over)) 15px calc(8px + var(--pad-under));
 	border: 1px dashed var(--line);
 	border-radius: 999px;
 	background: none;
@@ -446,7 +465,7 @@ header {
 	background: var(--panel-hi);
 	border: 1px solid var(--line);
 	border-radius: 10px;
-	padding: 10px 18px;
+	padding: calc(10px + var(--pad-over)) 18px calc(10px + var(--pad-under));
 	opacity: 0;
 	pointer-events: none;
 	transition: opacity .18s, transform .18s;
@@ -474,7 +493,10 @@ header {
 	.row::after { content: ""; order: 2; flex: 0 0 100%; height: 0; }
 	.row .size { order: 3; }
 	.row .acts { order: 4; margin-left: auto; gap: 4px; }
-	.row .acts button, .row .acts a { padding: 8px 12px; border-color: var(--line); }
+	.row .acts button, .row .acts a {
+		padding: calc(8px + var(--pad-over)) 12px calc(8px + var(--pad-under));
+		border-color: var(--line);
+	}
 	header { flex-wrap: wrap; }
 	.crumbs { flex: 1 1 100%; }
 	.tools { margin-left: auto; }
