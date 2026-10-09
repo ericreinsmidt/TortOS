@@ -51,11 +51,14 @@ void hare_set_logs(bool (*pack)(char *path, size_t pn, char *name, size_t nn));
  * there. Unset, nothing is told. */
 void hare_set_before_delete(void (*fn)(const char *abs));
 
-/* Called with a folder's old and new absolute paths after Tidy names renamed
- * it, so the launcher can move what it keeps under the old name: the cover in
- * .media, Album Art's memory of it, an audiobook's place. Unset, nothing is
- * told. */
-void hare_set_after_rename(void (*fn)(const char *from, const char *to));
+/* Called with the old and new absolute paths of a music or audiobook folder or
+ * file after the page renamed it, so the launcher can move what it keeps under
+ * the old name: the cover in .media, Album Art's memory of it, an audiobook's
+ * place, and the tracks' paths on the shelf it holds. Tidy names passes the
+ * folder, the same path twice when only its files were renamed, and `tidied`,
+ * which says the files in it may have been renamed too (by ml_tidy_file).
+ * Unset, nothing is told. */
+void hare_set_after_rename(void (*fn)(const char *from, const char *to, bool tidied));
 
 /* Box art for the web page, which the launcher answers because it knows the
  * shelves and the matching rule (hareart.c, artscrape.h). The browser fetches

@@ -126,6 +126,13 @@ static void names(void)
 	CHECK(!ml_tidy_file("03 High And Dry.mp3", out, sizeof out), "a tidy name is left alone");
 	CHECK(!ml_tidy_file("07 R.E.M..mp3", out, sizeof out), "initials are left alone");
 	CHECK(!ml_tidy_file("1979.mp3", out, sizeof out), "a number for a name is left alone");
+	CHECK(ml_tidy_file("03..Toes.mp3", out, sizeof out) && !strcmp(out, "03 Toes.mp3"),
+	      "a one-word track loses its dots: got \"%s\"", out);
+	CHECK(ml_tidy_file("03_Toes.mp3", out, sizeof out) && !strcmp(out, "03 Toes.mp3"),
+	      "and its underscore: got \"%s\"", out);
+	CHECK(!ml_tidy_file("03. Toes.mp3", out, sizeof out), "a number and a dot and a space is left alone");
+	CHECK(!ml_tidy_file("03 - Toes.mp3", out, sizeof out), "a number and a dash is left alone");
+	CHECK(!ml_tidy_file("1.5.mp3", out, sizeof out), "a number for a title is left alone");
 	CHECK(ml_tidy_folder("Violent.Femmes.-.Why.Do.Birds.Sing_._Deluxe.Edition_._2021_.Mp3.320kbps._PMEDIA_._-xpost",
 	                     "Violent Femmes", out, sizeof out) &&
 	      !strcmp(out, "Why Do Birds Sing Deluxe Edition"), "a release folder: got \"%s\"", out);

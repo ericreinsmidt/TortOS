@@ -5370,10 +5370,11 @@ static bool pack_logs(char *path, size_t pn, char *name, size_t nn)
 	return true;
 }
 
-/* A folder about to be deleted whole from Over The Hare: if Muse is playing
- * or paused on a file in it, stop Muse first. The shelf is rebuilt when the
- * screen closes, as for any change there; this is only so the player is not
- * left holding a file that is gone. */
+/* A folder about to be deleted whole from Over The Hare, or a folder or file
+ * about to be renamed there: if Muse is playing or paused on that file or on
+ * one in that folder, stop Muse first. The shelf is rebuilt when the screen
+ * closes, as for any change there; this is only so the player is not left
+ * holding a file that is gone. */
 static void muse_before_delete(const char *abs)
 {
 	const char *p = musec_path();
@@ -5382,23 +5383,90 @@ static void muse_before_delete(const char *abs)
 
 	if (!p[0]) return;
 	snprintf(full, sizeof full, "%s/%s", P_CARD, p);
-	if (!strncmp(full, abs, n) && full[n] == '/') {
-		fprintf(stderr, "muse: stopped, its folder is being deleted\n");
+	if (!strncmp(full, abs, n) && (full[n] == '/' || !full[n])) {
+		fprintf(stderr, "muse: stopped, what it played is being moved or deleted\n");
 		musec_stop();
 	}
 }
 
-/* Tidy names on the transfer page renamed a music or audiobook folder: what
- * is kept under its old name follows it. Its cover, from the .media beside it;
- * what Album Art remembers of it; and a book's place, all keyed by the
- * folder's path. The shelf is read again on the way out of the screen. */
-static void muse_after_rename(const char *from, const char *to)
+/* Rows of the settings keyed "<kind><folder>" or "<kind><folder>/...", which
+ * a folder renamed with everything in it takes along. Gathered first and
+ * changed after, so the rows are not rewritten under the read. */
+typedef struct key_move { struct key_move *next; char *key, *val; } key_move;
+typedef struct { size_t n; key_move *list; } key_moves;
+
+static bool key_under(const char *key, const char *value, void *ctx)
 {
-	size_t card = strlen(P_CARD);
+	key_moves *m = ctx;
+	key_move *k;
+
+	/* "Album" and "Album/CD1", not "Album 2" */
+	if (key[m->n] && key[m->n] != '/') return true;
+	if (!(k = calloc(1, sizeof *k))) return false;
+	k->key = strdup(key);
+	k->val = strdup(value);
+	k->next = m->list;
+	m->list = k;
+	return true;
+}
+
+static void keys_follow(db *d, const char *kind, const char *frel, const char *trel)
+{
+	char prefix[LIB_PATH + 16], nkey[LIB_PATH * 2 + 32];
+	key_moves m = { 0, NULL };
+	key_move *k;
+
+	if (snprintf(prefix, sizeof prefix, "%s%s", kind, frel) >= (int)sizeof prefix) return;
+	m.n = strlen(prefix);
+	db_each_prefix(d, prefix, key_under, &m);
+	while ((k = m.list)) {
+		m.list = k->next;
+		if (k->key && k->val &&
+		    snprintf(nkey, sizeof nkey, "%s%s%s", kind, trel, k->key + m.n) < (int)sizeof nkey) {
+			db_del(d, k->key);
+			db_set_str(d, nkey, k->val);
+		}
+		free(k->key);
+		free(k->val);
+		free(k);
+	}
+}
+
+/* A book's place names its file ("<seconds>\t<file>"): when that file was
+ * renamed, the place follows. With `to` NULL the file's new name is the one
+ * Tidy names would have given it, if that is there now. */
+static void book_file_follows(const char *folder, const char *from, const char *to)
+{
+	char key[LIB_PATH + 300], val[LIB_PATH + 32], tidy[256], there[LIB_PATH * 2 + 300];
+	char *tab;
+
+	snprintf(key, sizeof key, "book.%s", folder);
+	if (!db_get_str(db_dev(), key, val, sizeof val, "") || !(tab = strchr(val, '\t'))) return;
+	if (from && strcmp(tab + 1, from)) return;
+	if (!to) {
+		if (!ml_tidy_file(tab + 1, tidy, sizeof tidy)) return;
+		snprintf(there, sizeof there, "%s/%s/%s", P_CARD, folder, tidy);
+		if (access(there, F_OK) != 0) return;
+		to = tidy;
+	}
+	snprintf(tab + 1, sizeof val - (size_t)(tab + 1 - val), "%s", to);
+	db_set_str(db_dev(), key, val);
+}
+
+/* The transfer page renamed a music or audiobook folder or file, by hand or
+ * with Tidy names, which may also have renamed the files in the folder: what
+ * is kept under the old names follows. An album's cover, from the .media
+ * beside it; what Album Art remembers of it and a book's place, keyed by the
+ * folder's path, for it and any folder in it; and the shelf held in memory,
+ * until it is read again on the way out of the screen, so the page's lists
+ * find the album's cover meanwhile. */
+static void muse_after_rename(const char *from, const char *to, bool tidied)
+{
+	size_t card = strlen(P_CARD), fl;
 	const char *frel, *trel, *fbase = strrchr(from, '/'), *tbase = strrchr(to, '/');
 	static const char *const EXT[] = { "jpg", "png" };
 	char cfrom[LIB_PATH * 2 + 300], cto[LIB_PATH * 2 + 300];
-	char key[LIB_PATH + 300], nkey[LIB_PATH + 300], val[LIB_PATH + 32];
+	struct stat st;
 	int k;
 
 	if (strncmp(from, P_CARD, card) || from[card] != '/' ||
@@ -5406,27 +5474,49 @@ static void muse_after_rename(const char *from, const char *to)
 		return;
 	frel = from + card + 1;
 	trel = to + card + 1;
-	for (k = 0; k < 2; k++) {
-		snprintf(cfrom, sizeof cfrom, "%.*s/.media/%s.%s", (int)(fbase - from), from,
-		         fbase + 1, EXT[k]);
-		if (access(cfrom, F_OK) != 0) continue;
-		snprintf(cto, sizeof cto, "%.*s/.media/%s.%s", (int)(fbase - from), from,
-		         tbase + 1, EXT[k]);
-		rename(cfrom, cto);
+	fl = strlen(frel);
+	/* A file renamed by hand: its track, and a book's place if it was there */
+	if (stat(to, &st) == 0 && !S_ISDIR(st.st_mode)) {
+		for (k = 0; k < g_muse.ntracks; k++)
+			if (!strcmp(g_muse.tracks[k].path, frel))
+				snprintf(g_muse.tracks[k].path, sizeof g_muse.tracks[k].path, "%s", trel);
+		/* A rename names a sibling, so the folder is the same on both */
+		snprintf(cfrom, sizeof cfrom, "%.*s", (int)(fbase - frel), frel);
+		book_file_follows(cfrom, fbase + 1, tbase + 1);
+		fprintf(stderr, "muse: %s is now %s\n", frel, trel);
+		return;
 	}
-	snprintf(key, sizeof key, "museart.%s", frel);
-	if (db_get_str(db_lib(), key, val, sizeof val, "") && val[0]) {
-		db_del(db_lib(), key);
-		snprintf(nkey, sizeof nkey, "museart.%s", trel);
-		db_set_str(db_lib(), nkey, val);
+	/* Each track at its new path. Tidy names renamed a file in the folder
+	 * itself by ml_tidy_file unless that name was taken, so the same rule
+	 * finds it again; anything else kept its name. */
+	for (k = 0; k < g_muse.ntracks; k++) {
+		ml_track *t = &g_muse.tracks[k];
+		char tidy[256], np[LIB_PATH], there[LIB_PATH * 2 + 300];
+		const char *file;
+
+		if (strncmp(t->path, frel, fl) || t->path[fl] != '/') continue;
+		file = t->path + fl + 1;
+		if (tidied && !strchr(file, '/') && ml_tidy_file(file, tidy, sizeof tidy)) {
+			snprintf(there, sizeof there, "%s/%s/%s", P_CARD, trel, tidy);
+			if (access(there, F_OK) == 0) file = tidy;
+		}
+		if (snprintf(np, sizeof np, "%s/%s", trel, file) < (int)sizeof np)
+			snprintf(t->path, sizeof t->path, "%s", np);
 	}
-	snprintf(key, sizeof key, "book.%s", frel);
-	if (db_get_str(db_dev(), key, val, sizeof val, "") && val[0]) {
-		db_del(db_dev(), key);
-		snprintf(nkey, sizeof nkey, "book.%s", trel);
-		db_set_str(db_dev(), nkey, val);
+	if (strcmp(frel, trel)) {
+		for (k = 0; k < 2; k++) {
+			snprintf(cfrom, sizeof cfrom, "%.*s/.media/%s.%s", (int)(fbase - from), from,
+			         fbase + 1, EXT[k]);
+			if (access(cfrom, F_OK) != 0) continue;
+			snprintf(cto, sizeof cto, "%.*s/.media/%s.%s", (int)(fbase - from), from,
+			         tbase + 1, EXT[k]);
+			rename(cfrom, cto);
+		}
+		keys_follow(db_lib(), "museart.", frel, trel);
+		keys_follow(db_dev(), "book.", frel, trel);
 	}
-	fprintf(stderr, "muse: %s is now %s\n", frel, trel);
+	if (tidied) book_file_follows(trel, NULL, NULL);
+	if (strcmp(frel, trel)) fprintf(stderr, "muse: %s is now %s\n", frel, trel);
 }
 
 /* Album covers for the page, down with Muse's Album Art, and the covers the

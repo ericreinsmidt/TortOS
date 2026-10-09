@@ -47,7 +47,7 @@ static bool     g_shelf_changed;  /* something the shelf would show has moved */
 static char     g_last[128];
 static bool   (*g_pack_logs)(char *path, size_t pn, char *name, size_t nn);
 static void   (*g_before_delete)(const char *abs);
-static void   (*g_after_rename)(const char *from, const char *to);
+static void   (*g_after_rename)(const char *from, const char *to, bool tidied);
 static char  *(*g_art_wanted)(size_t *len, char *why, size_t wn);
 static hare_art_fn g_art_match, g_art_crc, g_art_nointro;
 static void   (*g_after_write)(const char *abs);
@@ -275,7 +275,10 @@ void hare_set_logs(bool (*pack)(char *path, size_t pn, char *name, size_t nn))
 }
 
 void hare_set_before_delete(void (*fn)(const char *abs)) { g_before_delete = fn; }
-void hare_set_after_rename(void (*fn)(const char *from, const char *to)) { g_after_rename = fn; }
+void hare_set_after_rename(void (*fn)(const char *from, const char *to, bool tidied))
+{
+	g_after_rename = fn;
+}
 
 /* ---- Tidy names --------------------------------------------------------
  *
@@ -1083,6 +1086,7 @@ static void on_request(httpd_req *r, bool done, void *ctx)
 		char req[XFER_PATH_MAX], to[XFER_NAME_MAX];
 		char abs[XFER_PATH_MAX], dst[XFER_PATH_MAX];
 		char *slash;
+		bool music;
 
 		if (!done) { httpd_want_body(r, HTTPD_BODY_NONE, NULL); return; }
 		httpd_query(r, "p", req, sizeof req);
@@ -1110,10 +1114,15 @@ static void on_request(httpd_req *r, bool done, void *ctx)
 			}
 			strcpy(slash + 1, dec);
 		}
+		/* In Music or Audiobooks, Muse stopped first if it plays this or from
+		 * in here, and the launcher told after, as for Tidy names */
+		music = tidy_root(abs) != NULL;
+		if (music && g_before_delete) g_before_delete(abs);
 		if (rename(abs, dst) != 0) {
 			httpd_reply_status(r, 500, strerror(errno));
 			return;
 		}
+		if (music && g_after_rename) g_after_rename(abs, dst, false);
 		note_write(dst);
 		note_write(abs);   /* it left one name and arrived at another */
 		note("renamed %s", base_of(dst));
@@ -1161,9 +1170,9 @@ static void on_request(httpd_req *r, bool done, void *ctx)
 				}
 				if (rename(from, to) == 0) renamed++; else skipped++;
 			}
+			snprintf(from, sizeof from, "%s", abs);
 			for (i = 0; i < n; i++) {
 				if (!it[i].folder || it[i].skip) continue;
-				snprintf(from, sizeof from, "%s", abs);
 				if (snprintf(to, sizeof to, "%.*s/%s", (int)(strrchr(abs, '/') - abs), abs,
 				             it[i].to) >= (int)sizeof to) {
 					skipped++;
@@ -1172,12 +1181,13 @@ static void on_request(httpd_req *r, bool done, void *ctx)
 				if (rename(from, to) == 0) {
 					renamed++;
 					note_write(from);
-					if (g_after_rename) g_after_rename(from, to);
 					snprintf(abs, sizeof abs, "%s", to);
 				} else {
 					skipped++;
 				}
 			}
+			/* Once, whatever was renamed: the folder's old path and its new */
+			if (renamed && g_after_rename) g_after_rename(from, abs, true);
 			note_write(abs);
 			note("tidied %d names in %s", renamed, base_of(abs));
 		}

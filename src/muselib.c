@@ -123,11 +123,20 @@ void ml_clean_album(char *s, const char *artist)
 	if (o) snprintf(s, 128, "%s", out);
 }
 
+/* A name rather than a number: "1.5.mp3" is not track 1 of something */
+static bool has_letter(const char *s)
+{
+	for (; *s; s++)
+		if (isalpha((unsigned char)*s)) return true;
+	return false;
+}
+
 bool ml_tidy_file(const char *name, char *out, size_t n)
 {
 	const char *dot = strrchr(name, '.'), *p = name, *q;
 	char stem[256], num[8] = "";
 	size_t len;
+	bool dotted = false;    /* the number joined on by dots or underscores alone */
 
 	if (!dot || dot == name) return false;
 	/* The track number, up to three digits, and whatever joined it on */
@@ -136,6 +145,7 @@ bool ml_tidy_file(const char *name, char *out, size_t n)
 	while (*q == ' ' || *q == '-' || *q == '.' || *q == '_') q++;
 	if (p > name && p - name <= 3 && q > p && q < dot) {
 		snprintf(num, sizeof num, "%.*s ", (int)(p - name), name);
+		dotted = strspn(p, "._") == (size_t)(q - p);
 		p = q;
 	} else {
 		p = name;
@@ -144,7 +154,10 @@ bool ml_tidy_file(const char *name, char *out, size_t n)
 	if (len >= sizeof stem) return false;
 	memcpy(stem, p, len);
 	stem[len] = '\0';
-	if (!unscene(stem) || !stem[0]) return false;
+	/* A title of one word has nothing to unscene, but "03..Toes" is the same
+	 * download as "01..American.Music" and loses its dots the same way */
+	if (!unscene(stem) && !(dotted && has_letter(stem))) return false;
+	if (!stem[0]) return false;
 	if ((size_t)snprintf(out, n, "%s%s%s", num, stem, dot) >= n) return false;
 	return strcmp(out, name) != 0;
 }
