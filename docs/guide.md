@@ -134,6 +134,15 @@ having no brightness keys of its own: FUNCTION with volume up or down is
 brightness, everywhere, including in game, and FUNCTION with both held is
 Muse's lock.
 
+**The Pixel 2's four side lights show the battery.** While it charges, a bar
+fills up from the bottom, starting from a light for each full quarter it
+already has: at 50% the bottom two stay lit and the other two fill in, and a
+full battery holds all four, still. On the battery, below 10%, the bottom
+light flashes red every five seconds. L2 and R2 together, outside a game,
+flash the level four times: all four lights at 75% and up, three at 50, two
+at 25, one at 10, and the bottom light red below that. The rest of the time
+they are dark.
+
 MENU means three different menus depending on where you are, and each one is
 about the thing you are looking at: the firmware on the systems row, one
 console inside it, the running game in a game. Inside any of them MENU closes

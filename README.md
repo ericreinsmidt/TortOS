@@ -199,7 +199,7 @@ None of them is a driver, and none replaces anything the system needs to run.
 
 The volume buttons and F1/F2 (brightness) work everywhere.
 
-**On the Pixel 2,** FUNCTION is MENU, so everything on this page that uses MENU uses FUNCTION. It has no brightness keys: FUNCTION with volume up or down is brightness, everywhere, and Muse's pocket lock is FUNCTION with both volume keys, held for a second while music plays.
+**On the Pixel 2,** FUNCTION is MENU, so everything on this page that uses MENU uses FUNCTION. It has no brightness keys: FUNCTION with volume up or down is brightness, everywhere, and Muse's pocket lock is FUNCTION with both volume keys, held for a second while music plays. The four lights on its side show the battery: a bar fills up from the bottom while it charges, the bottom light flashes red every five seconds below 10%, and L2 and R2 together, outside a game, flash the level, from four lights at 75% and up to the red one below 10%. Otherwise they're dark.
 
 **The Brick lists all of this itself,** under **MENU > Controls**: five pages, stepped through with left and right, so you never need this page to look a button up.
 
