@@ -55,4 +55,9 @@ int ctl_rows(ctl_page p, ctl_dir dir, menu_row *out);
  * FUNCTION with both. The Brick's names until it is set. */
 void ctl_set_fn_volume(bool on);
 
+/* Whether the device shows the battery on lights of its own and L2+R2 flashes
+ * the level there (the Pixel 2, plat_battery_lights): the shelf's page then
+ * says so. Not shown until it is set. */
+void ctl_set_battery_lights(bool on);
+
 #endif

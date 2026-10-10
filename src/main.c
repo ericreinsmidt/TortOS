@@ -6746,6 +6746,7 @@ static void controls_screen(app *a)
 	bool done = false;
 
 	ctl_set_fn_volume(plat_brightness_on_volume());
+	ctl_set_battery_lights(plat_battery_lights());
 
 	while (!done && !want_quit && a->running) {
 		menu_row rows[CTL_MAX_ROWS];
@@ -11280,6 +11281,7 @@ static void take_shot(app *a)
 		int n;
 
 		ctl_set_fn_volume(plat_brightness_on_volume());
+		ctl_set_battery_lights(plat_battery_lights());
 		n = ctl_rows(p, controls_dir(), rows);
 
 		snprintf(head, sizeof head, "Controls: %s", ctl_page_name(p));

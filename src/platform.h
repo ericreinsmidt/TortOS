@@ -290,6 +290,11 @@ bool plat_has_bluetooth(void);
  * brightness keys of its own. What MENU > Controls calls them (controls.h). */
 bool plat_brightness_on_volume(void);
 
+/* Whether the device shows the battery on lights of its own, L2 with R2
+ * flashing the level there outside a game (the Pixel 2's four side lights,
+ * which plastron's gauge drives). What MENU > Controls says. */
+bool plat_battery_lights(void);
+
 /* Date & Time (src/clock.h). Set the clock to `t`, and the hardware clock with
  * it, which keeps the time while the device is off: the Pixel 2 has nothing
  * else to set it from. False if the system clock would not take it. */

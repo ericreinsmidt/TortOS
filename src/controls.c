@@ -4,9 +4,11 @@
 
 #include <stddef.h>
 
-static bool fn_volume;   /* see ctl_set_fn_volume */
+static bool fn_volume;        /* see ctl_set_fn_volume */
+static bool battery_lights;   /* see ctl_set_battery_lights */
 
 void ctl_set_fn_volume(bool on) { fn_volume = on; }
+void ctl_set_battery_lights(bool on) { battery_lights = on; }
 
 static const char *const NAMES[CTL_PAGES] = {
 	[CTL_MOVING]   = "Moving",
@@ -68,6 +70,10 @@ static int shelf(ctl_dir dir, menu_row *out)
 	                                             : "Back",           false };
 	out[n++] = (menu_row){ "X", "Game details", false };
 	out[n++] = (menu_row){ "Y", "Favorite",     false };
+	/* Here rather than on Anywhere, which is full: it works outside a game,
+	 * and in one L2 and R2 are the game's */
+	if (battery_lights)
+		out[n++] = (menu_row){ "L2+R2", "Battery level", false };
 	return n;
 }
 

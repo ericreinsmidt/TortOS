@@ -901,6 +901,9 @@ bool plat_has_bluetooth(void) { return false; }
 /* FUNCTION with volume up or down (key_event). */
 bool plat_brightness_on_volume(void) { return true; }
 
+/* The side lights, and L2+R2 asking gauge for the level (key_event). */
+bool plat_battery_lights(void) { return true; }
+
 /* ---- battery ---- */
 
 bool plat_battery(int *pct, bool *charging)
