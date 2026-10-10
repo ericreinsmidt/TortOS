@@ -98,7 +98,7 @@ The [TortOS Installer](https://github.com/ericreinsmidt/TortOS-Installer/release
 With the [TortOS Installer](https://github.com/ericreinsmidt/TortOS-Installer/releases/latest), choose **TrimUI Brick** and **Fresh install**, then go on from step 4. By hand, from the start:
 
 1. **Format the card as FAT32 or exFAT,** with a Master Boot Record partition scheme. Both work; the TortOS Installer uses FAT32. On a Mac, open Disk Utility, choose *View > Show All Devices*, and erase the card itself rather than its volume.
-2. **Download `TortOS-v1.4.0.zip`** from [Releases](https://github.com/ericreinsmidt/TortOS/releases/latest) and unzip it.
+2. **Download `TortOS-v1.5.0.zip`** from [Releases](https://github.com/ericreinsmidt/TortOS/releases/latest) and unzip it.
 3. **Copy everything inside it to the root of the card:** `TortOS/`, `.tmp_update/`, `trimui/`, `Roms/`, `Music/`, `Audiobooks/`, `Bios/` and `Saves/`.
 4. **Put the card in the Brick and turn it on.** The first boot installs TortOS, and every boot after that starts it.
 5. **Add games** to the folders in `Roms/`, from the computer now or over Wi-Fi later.
@@ -112,7 +112,7 @@ The Pixel 2 has no system of its own to run on, so the card is the whole system:
 
 With the TortOS Installer, choose **GKD Pixel 2** and **Fresh install**, then go on from step 3. By hand, from the start:
 
-1. **Download `TortOS-v1.4.0-pixel2.img.xz`** from [Releases](https://github.com/ericreinsmidt/TortOS/releases/latest).
+1. **Download `TortOS-v1.5.0-pixel2.img.xz`** from [Releases](https://github.com/ericreinsmidt/TortOS/releases/latest).
 2. **Write it to the card** with any program that writes disk images, like Raspberry Pi Imager. It erases everything on the card.
 3. **Put the card in the Pixel 2 and turn it on.** The first boot takes a few seconds longer while it turns the rest of the card into space for games, music and saves. Every boot after that comes straight up.
 4. **Set the clock** under **MENU > Date & Time**, with the time zone. The Pixel 2 has no network to take the time from, and keeps it once it is set.
