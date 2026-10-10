@@ -114,6 +114,13 @@ static void names(void)
 	ml_clean_words(out);
 	CHECK(!strcmp(out, "R.E.M."), "an artist's initials stay: got \"%s\"", out);
 
+	/* What plays */
+	printf("what plays\n");
+	CHECK(ml_is_audio("01 Song.mp4") && ml_is_audio("01 Song.MP4"), "an mp4 plays");
+	CHECK(ml_is_audio("Book 3.m4b"), "an m4b plays");
+	CHECK(!ml_is_audio("01 Song.m4p"), "a locked m4p does not");
+	CHECK(!ml_is_audio(".hidden.mp3"), "a hidden file does not");
+
 	/* The same as names on the card, for Tidy names */
 	printf("names to rename to\n");
 	CHECK(ml_tidy_file("01..American.Music.mp3", out, sizeof out) &&

@@ -10,10 +10,11 @@
 #include <strings.h>
 #include <sys/stat.h>
 
-/* What FFmpeg on the device was measured playing (BACKLOG, the Muse spike),
- * plus the containers those codecs arrive in. */
+/* What FFmpeg on the device was measured playing, plus the containers those
+ * codecs arrive in. An .mp4 is the same container as an .m4a, often with
+ * nothing but sound in it; a video in one plays its sound alone. */
 static const char *AUDIO[] = {
-	"mp3", "m4a", "m4b", "aac", "flac", "ogg", "oga", "opus", "wav", NULL
+	"mp3", "m4a", "m4b", "mp4", "aac", "flac", "ogg", "oga", "opus", "wav", NULL
 };
 
 bool ml_is_audio(const char *name)

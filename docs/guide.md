@@ -377,7 +377,7 @@ folder at all, are moved into `Music/Singles/` the next time the shelf is
 read, a name already there getting " (2)", and Singles has a cover of its own
 at `Music/.media/Singles.png` until you replace it. Over The Hare
 reaches `Music/` too, and albums sent that way are on the shelf when you leave
-its screen. MP3, M4A, M4B, AAC, FLAC, Ogg, Opus and WAV play. Tracks play in
+its screen. MP3, M4A, M4B, MP4, AAC, FLAC, Ogg, Opus and WAV play. Tracks play in
 file-name order, and the number at the front of a file name is left off the
 name shown.
 
