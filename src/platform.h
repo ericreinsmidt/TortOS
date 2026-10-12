@@ -153,6 +153,10 @@ bool plat_resident_line(const char *fmt, ...);
  * changes, and before every RUN whether it changed or not, so it is safe to
  * call as often as the answer might have moved. */
 void plat_resident_quiet(bool on);
+/* Which ears hear what - Diatom's CHANNELS: "stereo", "mono", "left" or
+ * "right", already decided for where Diatom's sound goes (src/audioout.h).
+ * Sent like quiet: on a change, and before every RUN. */
+void plat_resident_channels(const char *mode);
 /* Where Diatom says its sound actually is (its ADR-0029), which may not be
  * where it was asked to put it - a sink that will not open, or one that died,
  * makes the port fall back and report the fallback. False until it has said. */

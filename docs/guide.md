@@ -165,6 +165,7 @@ than any one console:
 | **Wi-Fi** | the network's name when connected, or why it is not |
 | **Bluetooth** | the connected headset, or `not connected` - pair, connect and forget |
 | **Audio Output** | `Auto` or `Speaker`, and where Auto landed - see **Audio** below |
+| **Audio Channels** | `stereo`, `mono`, `mono left` or `mono right` - see **Audio** below |
 | **Over The Hare** | the file server; needs Wi-Fi and says so when there is none. On the Pixel 2 it is **Down To The Wire**, over the USB cable, always at `10.42.0.1` |
 | **Date & Time** | the clock and the time zone, set with left and right - see below |
 | **Auto Off** | how long without a button before the device powers itself down |
@@ -294,6 +295,13 @@ nothing `Auto` does not already do: `Auto` takes a headset whenever one is
 connected, and neither setting can route to one that is not there. The row
 shows where the sound actually went - `auto (wired)` - because `Auto` on its
 own names a rule, not a place you can hear.
+
+The **Audio Channels** row is for anyone who hears with one ear. `mono` plays
+the two channels as one in both ears, so nothing a game or a song puts on one
+side alone is lost. `mono left` and `mono right` put that sound in one ear
+only, with the other silent, on headphones, a Bluetooth headset or a USB-C
+adapter. On the speaker they play as `mono`, since a speaker is not on one
+ear. It covers games and Muse alike, and takes effect as you change it.
 
 The wired jack has its own volume range, not the speaker's. The two are about
 9 dB apart, and the level is re-mapped the moment a cable goes in or out, so

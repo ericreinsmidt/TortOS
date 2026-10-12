@@ -179,6 +179,11 @@ int sys_menu_build(const sys_ui *u, menu_row *out, menu_bufs *b,
 	else
 		snprintf(b->d, sizeof b->d, "%s", aout_dest_name(u->audio_dest));
 	full[PM_AUDIO]        = (menu_row){ "Audio Output", b->d, true };
+	/* Stereo, mono, or mono on one side, for a player who hears with one ear.
+	 * On every device and with every output: the speaker makes plain mono of
+	 * a side (src/audioout.h), and the row still says what was chosen. */
+	full[PM_CHANNELS]     = (menu_row){ "Audio Channels",
+	                                   aout_channels_name(u->audio_channels), true };
 	/* Files onto and off the device over Wi-Fi: a small web server on the LAN
 	 * that a phone or a laptop opens. Named for OTA, which is what everyone
 	 * already calls this, and for the other half of the fable - the tortoise

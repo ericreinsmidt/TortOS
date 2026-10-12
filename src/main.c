@@ -1819,6 +1819,37 @@ static void aout_save(aout_policy p)
 	db_set_str(db_dev(), "audioout", p == AOUT_SPEAKER ? "speaker" : "auto");
 }
 
+/* Which ears hear what, for a player who hears with one. Chosen once; what
+ * each program is told depends on where its own sound goes - see
+ * aout_channels_for. */
+static aout_channels g_channels;
+
+static aout_channels channels_load(void)
+{
+	char v[16];
+
+	db_get_str(db_dev(), "channels", v, sizeof v, "stereo");
+	return aout_channels_parse(v);
+}
+
+static void channels_save(aout_channels c)
+{
+	db_set_str(db_dev(), "channels", aout_channels_wire(c));
+}
+
+/* Diatom and Muse each by the device they were just given, because the two
+ * can be in different places: with Muse on a headset, Diatom is on the codec,
+ * and a side on the headset is still mono on the speaker. Both send only on a
+ * change, so this is cheap every tick. */
+static void channels_tell(const aout_state *s, const char *diatom_dev,
+                          const char *muse_dev)
+{
+	plat_resident_channels(aout_channels_wire(
+		aout_channels_for(g_channels, aout_dest_of(s, diatom_dev))));
+	musec_channels(aout_channels_wire(
+		aout_channels_for(g_channels, aout_dest_of(s, muse_dev))));
+}
+
 /* The connected sink, published by bt_reconnect in launch.sh.
  *
  * A file rather than asking Bluetooth ourselves: asking means forking
@@ -2067,6 +2098,7 @@ static void aout_apply(bool force)
 		link_seen[0] = '\0';
 		aout_tell_diatom(&s, out, force, false);
 		musec_sink(out);
+		channels_tell(&s, out, out);
 		bt_volume_follow("", false);
 		return;
 	}
@@ -2081,6 +2113,7 @@ static void aout_apply(bool force)
 	snprintf(link_seen, sizeof link_seen, "%s", out[0] ? g_bt_link : "");
 	aout_tell_diatom(&s, muse ? "" : out, force || (fresh && !muse), muse);
 	if (muse) musec_sink(out);
+	channels_tell(&s, muse ? "" : out, muse ? out : "");
 	bt_volume_follow(out, fresh);
 }
 
@@ -4608,6 +4641,7 @@ static int menu_build(app *a, screen_id screen, int sys,
 		}
 		u.audio_policy = ao.policy;
 		u.audio_dest   = aout_actual(&ao);
+		u.audio_channels = g_channels;
 
 		/* The connected headset's name.
 		 *
@@ -7241,6 +7275,17 @@ static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
 		 * next unplug must act on the new policy rather than on a cached
 		 * device string that happens to match. */
 		aout_apply(true);
+		return MENU_STAY;
+	}
+
+	/* Four positions, stepped either way like the card sets, A going forward.
+	 * Applied at once, to Muse and to Diatom if they are there to be told, so
+	 * a player trying them over music hears each as it is chosen. */
+	if (sel == PM_CHANNELS && (d || key == IN_ACCEPT)) {
+		g_channels = (aout_channels)((g_channels + (d ? d : 1) + AOUT_CHANNELS_COUNT)
+		                             % AOUT_CHANNELS_COUNT);
+		channels_save(g_channels);
+		aout_apply(false);
 		return MENU_STAY;
 	}
 
@@ -9969,6 +10014,16 @@ static void launch(app *a)
 		argv[n++] = (char *)"--system";          argv[n++] = bios;
 		argv[n++] = (char *)"--display";
 		argv[n++] = (char *)DMODES[a->view[o].dmode].name;
+		/* The channels too: this path is rare, but a player who hears with
+		 * one ear should not lose half a game to it. It plays on the codec,
+		 * so the cable decides between headphones and the speaker. */
+		{
+			aout_state cs = aout_now();
+
+			argv[n++] = (char *)"--channels";
+			argv[n++] = (char *)aout_channels_wire(
+				aout_channels_for(g_channels, aout_dest_of(&cs, "")));
+		}
 		argv[n++] = (char *)"--load-state";      argv[n++] = st;
 		argv[n++] = (char *)"--state-on-exit";   argv[n++] = st;
 		/* The Auto card's own path here, not the scratch the resident mode
@@ -11851,6 +11906,7 @@ int main(int argc, char *argv[])
 		 * device has no trust store of its own - res/ssl/README.md. */
 		a.auto_off = auto_off_load();
 		g_aout_policy = aout_load();
+		g_channels = channels_load();
 
 		snprintf(cp, sizeof cp, "%s/cacert.pem", P_ROOT);
 		net_set_ca_path(cp);

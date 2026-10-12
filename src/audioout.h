@@ -66,6 +66,45 @@ const char *aout_device(const aout_state *s);
 const char *aout_policy_name(aout_policy p);
 const char *aout_dest_name(aout_dest d);
 
+/* ---- which ears hear what --------------------------------------------------
+ *
+ * For a player who hears with one ear, after someone deaf in one asked for it
+ * (Eric, 2026-10-11). Stereo as things were made; mono, the two channels as
+ * one in both ears, which on its own puts everything in the ear that hears;
+ * and mono on one side only, with silence on the other, for a player who would
+ * rather have nothing in the other ear. Diatom and Muse do the mixing, each in
+ * its own stream - the codec has no mono, the Brick's ALSA chain is TrimUI's,
+ * and a Bluetooth sink bypasses any chain - so this side only decides. */
+typedef enum {
+	AOUT_STEREO = 0,
+	AOUT_MONO,
+	AOUT_MONO_LEFT,
+	AOUT_MONO_RIGHT,
+	AOUT_CHANNELS_COUNT
+} aout_channels;
+
+/* Where a device string reaches. "" is the codec, so the jack decides between
+ * wired and the speaker; the system's "usb" is the DAC; anything else is a
+ * sink. Each program asks for its own: with Muse on a headset, Diatom is on
+ * the codec, and the two need different mixes. */
+aout_dest     aout_dest_of(const aout_state *s, const char *dev);
+
+/* The mix a program sending to `d` makes of what was chosen. One side is about
+ * ears, and a speaker is not on one: the Brick's two are a few centimeters
+ * apart, so a side would only lose loudness, and the GKD Pixel 2 has one,
+ * which a side could silence altogether if the codec feeds it from the other
+ * channel. On the speaker, left and right are plain mono. Eric's call,
+ * 2026-10-11. */
+aout_channels aout_channels_for(aout_channels chosen, aout_dest d);
+
+/* The menu's names - "stereo", "mono", "mono left", "mono right" - and the
+ * ones on the wire to Diatom and Muse and in the settings database: "stereo",
+ * "mono", "left", "right". Parsing takes the wire names; anything else is
+ * stereo, which is what every output did before there was a choice. */
+const char   *aout_channels_name(aout_channels c);
+const char   *aout_channels_wire(aout_channels c);
+aout_channels aout_channels_parse(const char *wire);
+
 /* ---- the headphone jack, and why a remembered state is not enough --------- */
 
 /* "Nobody has acted on the jack yet, or whatever was acted on happened while

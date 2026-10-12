@@ -91,6 +91,7 @@ static const db_default device_defaults[] = {
 	{ "volume",     "8"  },
 	{ "brightness", "7"  },
 	{ "audioout",   "auto" },  /* auto | speaker - see src/audioout.h */
+	{ "channels",   "stereo" },/* stereo | mono | left | right - ditto */
 	{ "autooff",    "120" },   /* seconds without input, 0 is off */
 	{ "wifi",       "0"  },    /* what THIS device was last doing, not the */
 	{ "bluetooth",  "0"  },    /* shipped default - seeding merges the two */

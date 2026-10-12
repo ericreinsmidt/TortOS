@@ -2,6 +2,8 @@
 /* See src/audioout.h for why this is a file of its own. */
 #include "audioout.h"
 
+#include <string.h>
+
 aout_dest aout_resolve(const aout_state *s)
 {
 	/* A cable wins outright, in every policy. Someone who physically plugged
@@ -33,6 +35,45 @@ const char *aout_dest_name(aout_dest d)
 {
 	return d == AOUT_USB ? "usb" : d == AOUT_BT ? "bluetooth"
 	     : d == AOUT_WIRED ? "wired" : "speaker";
+}
+
+aout_dest aout_dest_of(const aout_state *s, const char *dev)
+{
+	if (!dev || !dev[0]) return s->wired ? AOUT_WIRED : AOUT_SPK;
+	return strcmp(dev, AOUT_USB_DEVICE) ? AOUT_BT : AOUT_USB;
+}
+
+aout_channels aout_channels_for(aout_channels chosen, aout_dest d)
+{
+	if (d == AOUT_SPK && (chosen == AOUT_MONO_LEFT || chosen == AOUT_MONO_RIGHT))
+		return AOUT_MONO;
+	return chosen;
+}
+
+static const char *const CHANNELS_NAME[AOUT_CHANNELS_COUNT] = {
+	"stereo", "mono", "mono left", "mono right",
+};
+static const char *const CHANNELS_WIRE[AOUT_CHANNELS_COUNT] = {
+	"stereo", "mono", "left", "right",
+};
+
+const char *aout_channels_name(aout_channels c)
+{
+	return c >= 0 && c < AOUT_CHANNELS_COUNT ? CHANNELS_NAME[c] : CHANNELS_NAME[0];
+}
+
+const char *aout_channels_wire(aout_channels c)
+{
+	return c >= 0 && c < AOUT_CHANNELS_COUNT ? CHANNELS_WIRE[c] : CHANNELS_WIRE[0];
+}
+
+aout_channels aout_channels_parse(const char *wire)
+{
+	int c;
+
+	for (c = 0; wire && c < AOUT_CHANNELS_COUNT; c++)
+		if (!strcmp(wire, CHANNELS_WIRE[c])) return (aout_channels)c;
+	return AOUT_STEREO;
 }
 
 bool aout_should_reapply(int remembered, bool wired_now, bool have_level)

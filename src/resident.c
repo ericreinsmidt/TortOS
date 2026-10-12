@@ -31,6 +31,9 @@ static int    d_pend_bri = -1, d_pend_bri_n;      /* EXIT hands levels back  */
 /* Diatom's QUIET, its ADR-0032: what the launcher wants, and what this
  * connection was last told. -1 is "never told", which a new connection is. */
 static int    d_quiet, d_quiet_said = -1;
+/* Diatom's CHANNELS, the same way: what the launcher wants, and what this
+ * connection was last told, "" being never. */
+static char   d_chan[8] = "stereo", d_chan_said[8];
 
 const char *plat_resident_socket(void)
 {
@@ -149,6 +152,7 @@ static bool dconnect(void)
 	d_audio_known = false;
 	d_audio_dev[0] = '\0';
 	d_quiet_said = -1;
+	d_chan_said[0] = '\0';
 	d_generation++;
 
 	dsock = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -291,6 +295,11 @@ bool plat_resident_send(const char *tag, const char *core, const char *rom,
 		 * sample - a game started while music plays never makes a sound -
 		 * and sent every time, a resident that restarted cannot start loud. */
 		if (dsend("SETQUIET\ton=%d", d_quiet)) d_quiet_said = d_quiet;
+		/* The channels for quiet's reasons: before RUN, so the first sample is
+		 * already in the right ear, and every time, so a resident that
+		 * restarted cannot start in stereo for a player who hears with one. */
+		if (dsend("SETCHANNELS\tmode=%s", d_chan))
+			snprintf(d_chan_said, sizeof d_chan_said, "%s", d_chan);
 
 		/* console and cheevos on RUN rather than after it, so a set is
 		 * watched from the first frame - an achievement can fire in the
@@ -365,6 +374,15 @@ void plat_resident_quiet(bool on)
 	 * and the next RUN sends it anyway. */
 	if (dsock >= 0 && d_quiet != d_quiet_said && dsend("SETQUIET\ton=%d", d_quiet))
 		d_quiet_said = d_quiet;
+}
+
+void plat_resident_channels(const char *mode)
+{
+	snprintf(d_chan, sizeof d_chan, "%s", mode && mode[0] ? mode : "stereo");
+	/* Only over a connection that exists, as quiet: the next RUN sends it. */
+	if (dsock >= 0 && strcmp(d_chan, d_chan_said) &&
+	    dsend("SETCHANNELS\tmode=%s", d_chan))
+		snprintf(d_chan_said, sizeof d_chan_said, "%s", d_chan);
 }
 
 bool plat_resident_line(const char *fmt, ...)

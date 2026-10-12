@@ -19,10 +19,12 @@
  *        SEEK    at=
  *        SPEED   x=                          0.5-2.0, pitch preserved
  *        SINK    device=                     an ALSA name; "default" is dmix
+ *        CHANNELS mode=                      stereo | mono | left | right
  *        STATUS
  *        COVER   path=  base=                write path's picture to base.jpg|png
  *        ARTIST  dir=                        who a folder of tracks is by
- *   out  READY   proto=2
+ *   out  READY   proto=3                     3 added CHANNELS
+ *        CHANNELS mode=                      the mix in force, after each CHANNELS
  *        STATE   state=playing|paused|stopped  path=
  *        META    title= artist= album= len= chapters=
  *        CHAPTER i= at= title=                 one per chapter, after META
@@ -120,6 +122,58 @@ static int   g_wake[2] = { -1, -1 };   /* player -> main: something to say */
 static dec  *g_dec;                    /* player thread only */
 static char  g_dev[128] = "default";   /* player thread only */
 static volatile sig_atomic_t g_quit;
+
+/* Which ears hear what, for a listener who hears with one: CHANNELS, as
+ * Diatom has it. Set by the socket thread, read by the player once a chunk;
+ * one int, so nothing tears. The launcher decides per output and never asks
+ * a speaker for one side. */
+enum { CH_STEREO, CH_MONO, CH_LEFT, CH_RIGHT, CH_COUNT };
+static const char *const CHANNELS_NAME[CH_COUNT] = { "stereo", "mono", "left", "right" };
+static volatile sig_atomic_t g_channels = CH_STEREO;
+
+/* Each output channel a mix of the two inputs, out_l = m[0] * l + m[1] * r
+ * and out_r = m[2] * l + m[3] * r. Mono is the average, not the sum, which
+ * would clip. A change walks the weights over 10 ms rather than jumping:
+ * stereo to one side otherwise cuts the other off in a sample, a click in
+ * that ear, mid-song. */
+static const float CHANNEL_MIX[CH_COUNT][4] = {
+	[CH_STEREO] = { 1.0f, 0.0f, 0.0f, 1.0f },
+	[CH_MONO]   = { 0.5f, 0.5f, 0.5f, 0.5f },
+	[CH_LEFT]   = { 0.5f, 0.5f, 0.0f, 0.0f },
+	[CH_RIGHT]  = { 0.0f, 0.0f, 0.5f, 0.5f },
+};
+#define MIX_STEP (1.0f / (DEC_RATE / 100))    /* a whole step in 10 ms */
+
+static int16_t clamp16(float v)
+{
+	return v > 32767.0f ? 32767 : v < -32768.0f ? -32768 : (int16_t)v;
+}
+
+/* `n` frames of `buf`, mixed in place. Player thread only. In stereo with no
+ * change still under way, it leaves the samples as they are. */
+static void mix_channels(int16_t *buf, int n)
+{
+	static float mix[4] = { 1.0f, 0.0f, 0.0f, 1.0f };
+	int c = g_channels, i, k;
+	const float *target = CHANNEL_MIX[c >= 0 && c < CH_COUNT ? c : CH_STEREO];
+
+	if (c == CH_STEREO && !memcmp(mix, target, sizeof mix)) return;
+	for (i = 0; i < n; i++) {
+		float l = buf[i * 2], r = buf[i * 2 + 1];
+
+		for (k = 0; k < 4; k++) {
+			if (mix[k] > target[k]) {
+				mix[k] -= MIX_STEP;
+				if (mix[k] < target[k]) mix[k] = target[k];
+			} else if (mix[k] < target[k]) {
+				mix[k] += MIX_STEP;
+				if (mix[k] > target[k]) mix[k] = target[k];
+			}
+		}
+		buf[i * 2]     = clamp16(mix[0] * l + mix[1] * r);
+		buf[i * 2 + 1] = clamp16(mix[2] * l + mix[3] * r);
+	}
+}
 
 static void wake(void)
 {
@@ -329,6 +383,7 @@ static void *player(void *arg)
 		 * not wait behind it. */
 		pthread_mutex_unlock(&S.mu);
 		n = dec_read(g_dec, buf, CHUNK);
+		if (n > 0) mix_channels(buf, n);
 		if (n > 0 && !pcm_write(buf, n)) { n = -1; lost = true; }
 		pthread_mutex_lock(&S.mu);
 
@@ -480,6 +535,19 @@ static void command(int fd, const char *line)
 		if (cover_extract(q.path, base, file, sizeof file) < 0)
 			say("no cover from %s", q.path);
 		send_line(fd, "COVER\tbase=%s\tfile=%s", clean(base, a, sizeof a), file);
+		return;
+	}
+	if (!strncmp(line, "CHANNELS", 8)) {
+		/* Here too: an int the player reads at its next chunk, so nothing to
+		 * queue behind a seek. A name it does not know changes nothing - the
+		 * answer says what is still in force. */
+		char m[16];
+		int c;
+
+		arg(line, "mode", m, sizeof m);
+		for (c = 0; c < CH_COUNT; c++)
+			if (!strcmp(m, CHANNELS_NAME[c])) { g_channels = c; break; }
+		send_line(fd, "CHANNELS\tmode=%s", CHANNELS_NAME[g_channels]);
 		return;
 	}
 	if (!strncmp(line, "ARTIST", 6)) {
@@ -685,7 +753,7 @@ int main(void)
 				if (cfd >= 0) close(cfd);
 				cfd = n;
 				have = 0;
-				send_line(cfd, "READY\tproto=2");
+				send_line(cfd, "READY\tproto=3");
 				announce(cfd, 1);
 			}
 		}

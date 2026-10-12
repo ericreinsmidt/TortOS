@@ -214,6 +214,35 @@ static void tortos_menu_offline(void)
 	ck(rows[PM_AUDIO].live, "Audio Output is reachable offline");
 	ck(!strcmp(val(&rows[PM_AUDIO]), "auto (speaker)"),
 	   "and Auto names where it landed rather than only saying Auto");
+	/* Directly under it, and as reachable: someone who hears with one ear
+	 * needs it with no radio and no cable as much as with both. */
+	ck(PM_CHANNELS == PM_AUDIO + 1, "Audio Channels sits under Audio Output");
+	ck(!strcmp(rows[PM_CHANNELS].label, "Audio Channels") && rows[PM_CHANNELS].live,
+	   "Audio Channels is reachable offline");
+	ck(!strcmp(val(&rows[PM_CHANNELS]), "stereo"), "and reads stereo until it is set");
+}
+
+/* The row names the choice, not what a speaker makes of it: mono left stays
+ * mono left with the cable out, where the speaker plays it as mono. */
+static void channels_row(void)
+{
+	sys_ui u;
+	menu_bufs b;
+	menu_row rows[MENU_MAX_ROWS];
+	const char *heading;
+	static const char *const want[AOUT_CHANNELS_COUNT] = {
+		"stereo", "mono", "mono left", "mono right",
+	};
+	int c;
+
+	memset(&u, 0, sizeof u);
+	printf("the Audio Channels row:\n");
+	u.audio_dest = AOUT_SPK;
+	for (c = 0; c < AOUT_CHANNELS_COUNT; c++) {
+		u.audio_channels = (aout_channels)c;
+		sys_menu_build(&u, rows, &b, &heading);
+		ck(!strcmp(val(&rows[PM_CHANNELS]), want[c]), "each choice names itself");
+	}
 }
 
 /* The row has to say a PLACE. "Auto" alone makes the player guess which of
@@ -1058,6 +1087,7 @@ int main(void)
 	info_rows();
 	ingame_rows();
 	audio_row();
+	channels_row();
 	if (fails) { printf("\n%d menu check(s) failed\n", fails); return 1; }
 	printf("\nok: menus contain what they should\n");
 	return 0;

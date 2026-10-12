@@ -157,6 +157,55 @@ static void names(void)
 	   "so do bluetooth and speaker");
 }
 
+/* ---- which ears hear what ---------------------------------------------------
+ *
+ * Four choices and four destinations, sixteen cases: every one, because the
+ * point of the setting is a player who cannot hear one side, and the case
+ * nobody thought of is the one that puts the sound there. */
+static void channels(void)
+{
+	aout_state s;
+	int c, d, n = 0;
+
+	printf("which ears hear what:\n");
+	for (c = 0; c < AOUT_CHANNELS_COUNT; c++)
+		for (d = AOUT_SPK; d <= AOUT_USB; d++) {
+			aout_channels got = aout_channels_for((aout_channels)c, (aout_dest)d);
+			aout_channels want = (aout_channels)c;
+
+			if (d == AOUT_SPK && (c == AOUT_MONO_LEFT || c == AOUT_MONO_RIGHT))
+				want = AOUT_MONO;
+			ck(got == want, "the mix for each choice and destination");
+			n++;
+		}
+	ck(n == 16, "sixteen combinations were actually tried");
+	ck(aout_channels_for(AOUT_MONO_LEFT, AOUT_SPK) == AOUT_MONO,
+	   "one side on the speaker is mono, never silence");
+	ck(aout_channels_for(AOUT_MONO_RIGHT, AOUT_WIRED) == AOUT_MONO_RIGHT,
+	   "one side on headphones is that side");
+	ck(aout_channels_for(AOUT_MONO_LEFT, AOUT_BT) == AOUT_MONO_LEFT,
+	   "and on a headset");
+
+	/* Each program's own destination, from the device it was given. */
+	s = st(AOUT_AUTO, false, BT);
+	ck(aout_dest_of(&s, "") == AOUT_SPK, "the codec with no cable is the speaker");
+	s.wired = true;
+	ck(aout_dest_of(&s, "") == AOUT_WIRED, "the codec with a cable is wired");
+	ck(aout_dest_of(&s, NULL) == AOUT_WIRED, "and NULL is the codec too");
+	ck(aout_dest_of(&s, BT) == AOUT_BT, "a sink's name is the sink");
+	ck(aout_dest_of(&s, AOUT_USB_DEVICE) == AOUT_USB, "the system's usb is the DAC");
+
+	/* Names, both ways. The wire names are Diatom's and Muse's; a stored value
+	 * nobody recognizes is stereo, what every output did before. */
+	for (c = 0; c < AOUT_CHANNELS_COUNT; c++)
+		ck(aout_channels_parse(aout_channels_wire((aout_channels)c)) == (aout_channels)c,
+		   "each wire name parses back to itself");
+	ck(!strcmp(aout_channels_wire(AOUT_MONO_LEFT), "left"), "the wire says left");
+	ck(!strcmp(aout_channels_name(AOUT_MONO_LEFT), "mono left"), "the menu says mono left");
+	ck(aout_channels_parse("both") == AOUT_STEREO, "an unknown name is stereo");
+	ck(aout_channels_parse(NULL) == AOUT_STEREO, "and so is none");
+}
+
 
 /* ---- the jack, and the handover that made this invisible ----------------- */
 
@@ -258,6 +307,7 @@ int main(void)
 	empty_sink();
 	every_case();
 	names();
+	channels();
 	usb_dac();
 	reapply_rule();
 	the_measured_case();

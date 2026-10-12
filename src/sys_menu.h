@@ -33,9 +33,11 @@
  * the end, after everything that changes something. */
 /* Date & Time is setup too, so it ends that group: on the Pixel 2, which has
  * no network to take the time from, it is the first thing to set. */
+/* Audio Channels directly under Audio Output: the two together are how the
+ * sound reaches you, where it goes and which ears hear what. */
 typedef enum {
 	PM_STATS,
-	PM_WIFI, PM_BT, PM_AUDIO, PM_XFER, PM_CLOCK,
+	PM_WIFI, PM_BT, PM_AUDIO, PM_CHANNELS, PM_XFER, PM_CLOCK,
 	PM_SLEEP, PM_THEME, PM_DIR, PM_SCRAPE, PM_ACHIEVEMENTS, PM_SS,
 	PM_CONTROLS, PM_ABOUT, PM_ROWS
 } pm_row;
@@ -86,7 +88,7 @@ typedef enum { SMM_COUNT, SMM_SHOW, SMM_SORT, SMM_LOCK, SMM_ART, SMM_RESCAN } sm
  * two cannot disagree about what row 2 is. */
 int sys_menu_muse_rows(bool books, bool both, bool no_wifi, sm_muse_row *out);
 
-#define MENU_MAX_ROWS 14
+#define MENU_MAX_ROWS 15
 
 /* The array every caller declares must hold every row a build can produce, and
  * on 2026-09-16 it stopped: PM_ROWS went to 13 against a cap of 12 when the
@@ -164,6 +166,9 @@ typedef struct {
 	 * on its own is a rule, not somewhere you can hear. */
 	aout_policy audio_policy;
 	aout_dest   audio_dest;
+	/* Which ears hear what, as chosen. The row names the choice, not what a
+	 * speaker makes of it: "mono left" stays mono left with the cable out. */
+	aout_channels audio_channels;
 
 	/* Bluetooth: the name of the connected headset, or NULL. The row used to
 	 * read "not yet" and be dead, which was true of the pairing screen and

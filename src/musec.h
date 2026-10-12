@@ -104,6 +104,10 @@ bool musec_heard(void);
  * tries a headset for up to a second, while the other side lets go, and falls
  * back to the default if it never does. */
 void musec_sink(const char *device);
+/* Which ears hear what: "stereo", "mono", "left" or "right", already decided
+ * for where Muse's sound goes (src/audioout.h). Sent only when it changes,
+ * and again to a daemon that has just said READY, since it starts in stereo. */
+void musec_channels(const char *mode);
 /* Make the next musec_sink send even if the device has not changed: for a
  * headset that dropped and came back under the same name, which Muse may
  * have fallen back from while it was gone. The daemon ignores a SINK for the

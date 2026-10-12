@@ -66,6 +66,7 @@ static char     g_sink_sent[128];   /* what it was last asked for, "" unknown */
 static char     g_sink_said[128];   /* what it last reported, "" not yet */
 static unsigned g_sink_ms;          /* when the ask went */
 static bool     g_sink_waiting;     /* asked, and no answer yet */
+static char     g_chan_sent[8];     /* the channels last asked for, "" none yet */
 static bool     g_asked;            /* PLAY or RESUME sent, not yet answered */
 static void   (*g_before_heard)(void);
 
@@ -95,6 +96,9 @@ static void drop(const char *why, int err)
 	 * until it says; its READY announcement does. */
 	g_sink_sent[0] = g_sink_said[0] = '\0';
 	g_sink_waiting = g_asked = false;
+	/* And it starts in stereo, so whatever was asked of the old one has to
+	 * be asked again. */
+	g_chan_sent[0] = '\0';
 }
 
 static void sendf(const char *fmt, ...)
@@ -470,6 +474,17 @@ void musec_sink(const char *device)
 	g_sink_waiting = true;
 	sendf("SINK\tdevice=%s", dev);
 	fprintf(stderr, "muse: sink -> %s\n", dev);
+}
+
+void musec_channels(const char *mode)
+{
+	const char *m = mode && mode[0] ? mode : "stereo";
+
+	if (g_fd < 0 || !g_sink_said[0]) return;   /* not connected, or not heard from */
+	if (!strcmp(m, g_chan_sent)) return;
+	snprintf(g_chan_sent, sizeof g_chan_sent, "%s", m);
+	sendf("CHANNELS\tmode=%s", m);
+	fprintf(stderr, "muse: channels -> %s\n", m);
 }
 
 void musec_sink_again(void)
