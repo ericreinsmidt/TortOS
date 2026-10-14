@@ -192,15 +192,50 @@ None of them is a driver, and none replaces anything the system needs to run.
 | **SELECT** | Muse, the music and audiobook player. Press it again to close |
 | **POWER** | Turn off |
 
-**In a game,** MENU opens Continue, Save, Load, Display, Cheevos, Reset and Quit when you let go of it, and SELECT in that menu opens Muse. Hold MENU and press R1 to fast forward: each press steps 2x, 3x, 4x and back to normal, and the game is silent while it's fast. While music plays the game is silent, and pausing the music brings its sound back. X and Y are turbo A and B, except on Genesis and SNES, where they're the controller's own buttons, and on Game Boy Advance L2 and R2 are turbo L and R. POWER saves the game and turns the Brick off.
+| Button | In a game |
+|---|---|
+| **MENU** | The in-game menu when you let go of it: Continue, Save, Load, Display, Cheevos, Reset and Quit |
+| **SELECT** | Muse, from the in-game menu |
+| **MENU + R1** | Fast forward: each press steps 2x, 3x, 4x and back to normal. The game is silent while it's fast |
+| **X/Y** | Turbo A and B, except on Genesis and SNES, where they're the controller's own buttons |
+| **L2/R2** | Turbo L and R, on Game Boy Advance |
+| **POWER** | Save the game and turn off |
 
-**On the cube,** up and down change console, left and right move through its games, and B opens that console's menu.
+While music plays the game is silent, and pausing the music brings its sound back.
 
-**In Muse,** A opens an album, plays a track or pauses it, L1 and R1 change track, left and right skip ten seconds (hold them to go faster: a minute a step after a second, five after three), and B goes back. A on a book carries on where you left it, and in a book with chapters L1 and R1 move by chapter. On Now Playing, Y changes the play mode for music: in order, repeat all, repeat one or shuffle. On a book, which always plays in order, Y changes the speed instead: 1x up to 2x, and 0.75x, kept for each book. To pocket the Brick while music plays, hold F1+F2 (the front function keys) for a second in Muse, or pick **Lock Screen** in its menu: the screen goes dark and only volume, power and your headset's buttons work, until you hold F1+F2 again.
+| Button | On the cube |
+|---|---|
+| **Up/Down** | Change console |
+| **Left/Right** | Move through its games |
+| **B** | That console's menu |
 
-The volume buttons and F1/F2 (brightness) work everywhere.
+| Button | In Muse |
+|---|---|
+| **A** | Open an album, or play or pause a track. On a book, carry on where you left it |
+| **B** | Back |
+| **L1/R1** | Change track, or chapter in a book that has them |
+| **Left/Right** | Skip ten seconds. Hold to go faster: a minute a step after a second, five after three |
+| **Y** | On Now Playing, the play mode for music (in order, repeat all, repeat one or shuffle), or the speed for a book (1x up to 2x, and 0.75x, kept for each book) |
+| **F1+F2**, held a second | Lock the screen while music plays, to pocket the Brick: only volume, power and your headset's buttons work until you hold them again. **Lock Screen** in Muse's menu does the same. F1 and F2 are the front function keys |
 
-**On the Pixel 2,** FUNCTION is MENU, so everything on this page that uses MENU uses FUNCTION. It has no brightness keys: FUNCTION with volume up or down is brightness, everywhere, and Muse's pocket lock is FUNCTION with both volume keys, held for a second while music plays. The four lights on its side show the battery: a bar fills up from the bottom while it charges, the bottom light flashes red every five seconds below 10%, and L2 and R2 together, outside a game, flash the level, from four lights at 75% and up to the red one below 10%. Otherwise they're dark.
+| Button | Everywhere |
+|---|---|
+| **Volume up/down** | Volume |
+| **F1/F2** | Dimmer and brighter |
+
+| Button | On the Pixel 2 |
+|---|---|
+| **FUNCTION** | MENU: everything on this page that uses MENU uses FUNCTION |
+| **FUNCTION + volume up/down** | Brighter and dimmer, as it has no brightness keys |
+| **FUNCTION + both volume keys**, held a second | Muse's lock, while music plays |
+| **L2 + R2**, outside a game | Flash the battery level on the side lights |
+
+| The Pixel 2's side lights | What they mean |
+|---|---|
+| A bar filling up from the bottom | Charging |
+| The bottom light flashing red every five seconds | Below 10% |
+| Lights flashing after L2 + R2 | The level: all four at 75% and up, down to the red one below 10% |
+| Dark | Otherwise |
 
 **The Brick lists all of this itself,** under **MENU > Controls**: five pages, stepped through with left and right, so you never need this page to look a button up.
 

@@ -128,20 +128,23 @@ matters to you - a card is the one part of this that gets reformatted.
 | **SELECT** | Muse, the music and audiobook player, from anywhere but a running game - the in-game menu included. Again to close it |
 | **POWER** | powers off. In a game, the game is saved first |
 
-**On the Pixel 2,** FUNCTION is MENU. It reports MENU when you let go of it,
-because it is also what turns the volume keys into brightness, the Pixel 2
-having no brightness keys of its own: FUNCTION with volume up or down is
-brightness, everywhere, including in game, and FUNCTION with both held is
-Muse's lock.
+**On the Pixel 2:**
 
-**The Pixel 2's four side lights show the battery.** While it charges, a bar
-fills up from the bottom, starting from a light for each full quarter it
-already has: at 50% the bottom two stay lit and the other two fill in, and a
-full battery holds all four, still. On the battery, below 10%, the bottom
-light flashes red every five seconds. L2 and R2 together, outside a game,
-flash the level four times: all four lights at 75% and up, three at 50, two
-at 25, one at 10, and the bottom light red below that. The rest of the time
-they are dark.
+| | |
+|---|---|
+| **FUNCTION** | MENU. It reports MENU when you let go of it, because it also turns the volume keys into brightness |
+| **FUNCTION+volume up/down** | brighter / dimmer, everywhere, including in game: the Pixel 2 has no brightness keys of its own |
+| **FUNCTION+both volume keys**, held a second | Muse's lock, while music plays |
+| **L2+R2** (outside a game) | flash the battery level on the side lights, below |
+
+**The Pixel 2's four side lights show the battery:**
+
+| | |
+|---|---|
+| **charging** | a bar fills up from the bottom, starting from a light for each full quarter it already has: at 50% the bottom two stay lit and the other two fill in. A full battery holds all four, still |
+| **below 10%**, on the battery | the bottom light flashes red every five seconds |
+| **L2+R2** (outside a game) | the level, flashed four times: all four lights at 75% and up, three at 50, two at 25, one at 10, the bottom light red below that |
+| **the rest of the time** | dark |
 
 MENU means three different menus depending on where you are, and each one is
 about the thing you are looking at: the firmware on the systems row, one
@@ -405,9 +408,9 @@ Playing and carries on where you left it: its place is kept every thirty
 seconds while it plays, whenever it pauses or moves to the next file, and when
 the Brick turns off. B from there is the book's files, and A on one starts it
 from its beginning. A book played to its end says Finished under its cover,
-and A on it starts it over. Books always play in order, so Y does nothing on
-their Now Playing, and on books Sort By is by author or by title and there is
-no Album Art. A book's cover is the one its files carry, or the picture in its
+and A on it starts it over. Books always play in order, so on their Now
+Playing Y changes the speed instead of the play mode, and on books Sort By is
+by author or by title and there is no Album Art. A book's cover is the one its files carry, or the picture in its
 folder: one named cover or folder, or the only one there.
 
 **Lock Screen**, for the Brick in a pocket: hold **F1+F2** together for a
