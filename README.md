@@ -180,83 +180,16 @@ None of them is a driver, and none replaces anything the system needs to run.
 
 ## Controls
 
-| Button | On the shelf |
+| Button | What it does |
 |---|---|
-| **D-pad** | Move. On a shelf of games or albums, the other direction jumps by letter |
-| **A** | Open a console, or start or continue a game |
-| **B** | Back |
-| **X** | The game's details |
-| **Y** | Favorite |
-| **L1/R1** | Jump a screenful |
-| **MENU** | Settings for the Brick, or for the shelf you're in |
-| **SELECT** | Muse, the music and audiobook player. Press it again to close |
-| **POWER** | Turn off |
+| **A / B** | Choose and back |
+| **MENU** | Settings for whatever you're looking at. In a game: save, load, quit and more |
+| **SELECT** | Muse, the music and audiobook player, from anywhere |
+| **MENU + R1** | Fast forward a game |
+| **X / Y** | In a game, turbo A and B. On the shelf, a game's details and favorite |
+| **POWER** | Save and turn off |
 
-| Button | In a game |
-|---|---|
-| **MENU** | The in-game menu when you let go of it: Continue, Save, Load, Display, Cheevos, Reset and Quit |
-| **SELECT** | Muse, from the in-game menu |
-| **MENU + R1** | Fast forward: each press steps 2x, 3x, 4x and back to normal. The game is silent while it's fast |
-| **X/Y** | Turbo A and B, except on Genesis and SNES, where they're the controller's own buttons |
-| **L2/R2** | Turbo L and R, on Game Boy Advance |
-| **POWER** | Save the game and turn off |
-
-While music plays the game is silent, and pausing the music brings its sound back.
-
-| Button | On the cube |
-|---|---|
-| **Up/Down** | Change console |
-| **Left/Right** | Move through its games |
-| **B** | That console's menu |
-
-| Button | In Muse |
-|---|---|
-| **A** | Open an album, or play or pause a track. On a book, carry on where you left it |
-| **B** | Back |
-| **L1/R1** | Change track, or chapter in a book that has them |
-| **Left/Right** | Skip ten seconds. Hold to go faster: a minute a step after a second, five after three |
-| **Y** | On Now Playing, the play mode for music (in order, repeat all, repeat one or shuffle), or the speed for a book (1x up to 2x, and 0.75x, kept for each book) |
-| **F1+F2**, held a second | Lock the screen while music plays, to pocket the Brick: only volume, power and your headset's buttons work until you hold them again. **Lock Screen** in Muse's menu does the same. F1 and F2 are the front function keys |
-
-| Button | Everywhere |
-|---|---|
-| **Volume up/down** | Volume |
-| **F1/F2** | Dimmer and brighter |
-
-| Button | On the Pixel 2 |
-|---|---|
-| **FUNCTION** | MENU: everything on this page that uses MENU uses FUNCTION |
-| **FUNCTION + volume up/down** | Brighter and dimmer, as it has no brightness keys |
-| **FUNCTION + both volume keys**, held a second | Muse's lock, while music plays |
-| **L2 + R2**, outside a game | Flash the battery level on the side lights |
-
-| The Pixel 2's side lights | What they mean |
-|---|---|
-| A bar filling up from the bottom | Charging |
-| The bottom light flashing red every five seconds | Below 10% |
-| Lights flashing after L2 + R2 | The level: all four at 75% and up, down to the red one below 10% |
-| Dark | Otherwise |
-
-**The Brick lists all of this itself,** under **MENU > Controls**: five pages, stepped through with left and right, so you never need this page to look a button up.
-
-<details>
-<summary>What's in each menu</summary>
-
-**The TortOS menu,** MENU on the consoles row: Play Time, Wi-Fi, Bluetooth, Audio Output, Audio Channels, Over The Hare (Down To The Wire on the Pixel 2), Date & Time, Auto Off, UI Theme, UI Direction, Box Art, Cheevos, ScreenScraper, Controls, About TortOS.
-
-**A console's menu,** MENU inside it: Sort By, Display Mode, Box Art for that console alone, and Rescan Folder for games copied since the Brick was turned on.
-
-**Favorites' menu:** Sort By, with a console's four orders.
-
-**Muse's menu,** MENU on its shelf: Show (music or audiobooks, when the card has both), Sort By (artist or album title, or author or title for books), Lock Screen (while music plays), Album Art, and Rescan Folder for anything copied since the Brick was turned on.
-
-**The in-game menu:** Continue, Save, Load, Display, Cheevos, Reset, Quit.
-
-**On the Pixel 2,** which has no radio, the rows that need one are left out: Wi-Fi, Bluetooth, Box Art, Cheevos, ScreenScraper and Album Art.
-
-</details>
-
-Every control, menu row and setting, in detail: [the guide](docs/guide.md).
+The device lists every button under **MENU > Controls**, and [the guide](docs/guide.md#controls-and-menus) covers every control, menu and setting in detail.
 
 ## FAQ
 
