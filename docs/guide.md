@@ -132,7 +132,7 @@ matters to you - a card is the one part of this that gets reformatted.
 
 | | |
 |---|---|
-| **FUNCTION** | MENU. It reports MENU when you let go of it, because it also turns the volume keys into brightness |
+| **FUNCTION** | MENU: opens the menu when pressed, and works as a modifier when held |
 | **FUNCTION+volume up/down** | brighter / dimmer, everywhere, including in game: the Pixel 2 has no brightness keys of its own |
 | **FUNCTION+both volume keys**, held a second | Muse's lock, while music plays |
 | **L2+R2** (outside a game) | flash the battery level on the side lights, below |
