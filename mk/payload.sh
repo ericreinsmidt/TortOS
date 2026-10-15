@@ -12,9 +12,15 @@
 #
 #   DEVICE=pixel2 TORTOS_ELF=... MUSE_ELF=... DIATOM_ELF=... VENDOR_DIR=... \
 #       OUT=... ZIP= mk/payload.sh
+#
+# NATIVE=1 with DEVICE=brick is the Brick's payload for plastron's own system
+# on it, which plastron builds the same way: none of what hooks into TrimUI's
+# firmware or what only it uses (its boot pictures, setbright, Bluetooth's
+# btplayer).
 set -e
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DEVICE=${DEVICE:-brick}
+NATIVE=${NATIVE:-0}
 case $DEVICE in
 brick)  OUT=${OUT:-$ROOT/out/sd};        LAUNCH=$ROOT/sd/tortos/launch.sh ;;
 pixel2) OUT=${OUT:-$ROOT/out/sd-pixel2}; LAUNCH=$ROOT/sd/pixel2/launch.sh ;;
@@ -30,9 +36,10 @@ VENDOR_DIR=${VENDOR_DIR:-$ROOT/vendor}
 # quietly falls back to libretro for everyone who installs it. A build without
 # one is fine for development; it is not fine to package. The pair comes from
 # .screenscraper.env (see the Makefile). ALLOW_NO_SS=1 packages one anyway.
-# Not checked for the Pixel: its launcher is built by plastron, which compiles
-# the pair in itself, from build-pixel2/ rather than build/.
-if [ "$DEVICE" = brick ] &&
+# Not checked for the Pixel or the Brick's own system: their launcher is built
+# by plastron, which compiles the pair in itself, from build-pixel2/ or
+# build-brick/ rather than build/.
+if [ "$DEVICE" = brick ] && [ "$NATIVE" != 1 ] &&
    { grep -q '^#define SS_DEVID *""' "$ROOT/build/ss_creds.h" 2>/dev/null ||
      [ ! -f "$ROOT/build/ss_creds.h" ]; }; then
 	if [ "${ALLOW_NO_SS:-0}" != 1 ]; then
@@ -115,10 +122,10 @@ fi
 
 chmod +x "$P/launch.sh" "$P/tortos.elf" "$P/diatom" "$P/muse"
 
-# What only the Brick has: the hook into TrimUI's firmware, Bluetooth, and the
-# boot pictures its firmware shows. The Pixel's system is plastron, whose
-# splash plays the boot animation itself.
-if [ "$DEVICE" = brick ]; then
+# What only the Brick on TrimUI's firmware has: the hook into it, Bluetooth,
+# and the boot pictures it shows. The Pixel's system, and the Brick's own, is
+# plastron, whose splash plays the boot animation itself.
+if [ "$DEVICE" = brick ] && [ "$NATIVE" != 1 ]; then
 	mkdir -p "$OUT/.tmp_update" "$OUT/trimui/app"
 	cp "$ROOT/build/setbright" "$P/"          # brightness before the boot animation
 	cp "$ROOT/build/btplayer" "$P/"           # lets a headset's volume through BlueZ
