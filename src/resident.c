@@ -237,8 +237,10 @@ static void (*d_on_speed)(int x);
 void plat_resident_on_speed(void (*fn)(int x)) { d_on_speed = fn; }
 
 static void (*d_on_tick)(void);
+static bool (*d_battery_empty)(void);
 
 void plat_resident_on_tick(void (*fn)(void)) { d_on_tick = fn; }
+void plat_resident_on_battery_empty(bool (*fn)(void)) { d_battery_empty = fn; }
 
 /* Has THIS GAME reported RUNNING yet?
  *
@@ -666,6 +668,15 @@ static int diatom_wait(void)
 		if (d_on_tick) d_on_tick();
 
 		if (device_power_pressed() && !sent_stop) {
+			plat_set_power_pressed(true);
+			sent_stop = 1;
+			stop_at = plat_now_ms();
+			dsend("STOP");
+		}
+		/* The battery about to run out: as the power button, so the game
+		 * saves on its way out rather than the PMIC cutting it off. */
+		if (!sent_stop && d_battery_empty && d_battery_empty()) {
+			fprintf(stderr, "battery: empty, ending the game and powering off\n");
 			plat_set_power_pressed(true);
 			sent_stop = 1;
 			stop_at = plat_now_ms();

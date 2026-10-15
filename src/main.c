@@ -68,6 +68,12 @@
 #include <unistd.h>
 
 #define BATT_LOW_PCT   10   /* show the low-battery dot at or below this */
+/* At or below this, off the charger, the device saves a running game and
+ * powers off rather than let the PMIC cut it at its own limit, which loses the
+ * game's progress since its last save and leaves the card dirty. A starting
+ * point, short of measuring where each device's reading sits when it gives
+ * out: both report 0% well before their PMIC's cutoff. */
+#define BATT_EMPTY_PCT  2
 #define TEX_KEEP_NEAR   8   /* card textures kept around the cursor, in view  */
 #define TEX_KEEP_FAR    4   /* ...and around the cursor of a system you left  */
 
@@ -2662,6 +2668,34 @@ static bool battery_low(void)
 	return low;
 }
 
+/* Too low to go on, cached as battery_low is. Asked by every screen through
+ * idle_due, and by the game's wait loop (plat_resident_on_battery_empty), so
+ * an empty battery ends things the way the power button does: a game saves
+ * on its way out, and power_off follows. Twice in a row, five seconds apart,
+ * so one stray reading never powers the device off. */
+static bool battery_empty(void)
+{
+	static unsigned last;
+	static int      seen;
+	static bool     primed;
+	unsigned now = plat_now_ms();
+
+	if (!primed || now - last >= 5000) {
+		int  pct;
+		bool charging;
+
+		primed = true;
+		last = now;
+		if (plat_battery(&pct, &charging) && !charging && pct <= BATT_EMPTY_PCT)
+			seen++;
+		else
+			seen = 0;
+		if (seen == 2)
+			fprintf(stderr, "battery: %d%%, empty; powering off\n", pct);
+	}
+	return seen >= 2;
+}
+
 /* On the charger, cached. Both halves of Auto Off ask this - the shelf every
  * frame, the in-game tick ten times a second - and every call is two sysfs
  * files opened, read and closed. Two seconds is well inside the shortest
@@ -2708,6 +2742,7 @@ static bool idle_due(app *a)
 {
 	int b;
 
+	if (battery_empty()) return true;
 	a->idle.seconds = a->auto_off;
 	for (b = 0; b < IN_COUNT; b++)
 		if (a->in.pressed[b] || a->in.down[b]) break;
@@ -11901,6 +11936,7 @@ int main(int argc, char *argv[])
 		plat_resident_on_unlock(on_cheevo_unlocked);
 		plat_resident_on_speed(on_speed);
 		plat_resident_on_tick(on_game_tick);
+		plat_resident_on_battery_empty(battery_empty);
 
 		/* Without this every HTTPS request fails verification, because the
 		 * device has no trust store of its own - res/ssl/README.md. */

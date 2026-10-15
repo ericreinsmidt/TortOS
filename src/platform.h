@@ -147,6 +147,11 @@ void plat_resident_on_speed(void (*fn)(int x));
  * control that always has to work stops working for as long as anything here
  * takes. NULL to stop. */
 void plat_resident_on_tick(void (*fn)(void));
+/* Asked from the same loop: whether the battery is too low to go on. When it
+ * says so the game is ended exactly as by the power button: STOP, so it saves
+ * on its way out, and the launcher's after-the-game check powers the device
+ * off. Must not block, for the same reason. NULL to stop. */
+void plat_resident_on_battery_empty(bool (*fn)(void));
 /* Diatom only: one protocol line (RESUME, STOP, SAVE\tpath=...), newline added. */
 bool plat_resident_line(const char *fmt, ...);
 /* Whether the game should be heard - Diatom's QUIET, its ADR-0032. Sent when it
