@@ -561,6 +561,7 @@ struct pl_ctl_elem_value {
 #define HP_CTL       "Headphone Volume"   /* 0-7, 6 dB a step, INVERTED */
 #define HP_CTL_QUIET 7                    /* its quiet end, for the cut */
 #define SWAP_CTL     "DAC Swap"           /* 1 crosses left and right */
+#define HPSW_CTL     "Headphone Switch"   /* the headphone stage, which the speaker runs off */
 #define VOL_MAX      PLAT_VOL_MAX         /* 21 positions, 0..20 - Diatom's scale */
 
 #define DISP_LCD_SET_BRIGHTNESS 0x102
@@ -663,10 +664,19 @@ static void ctl_set(const char *name, long val)
  * steps in sixes, and it attenuates the speaker as well, so it cannot be moved
  * for the jack alone. The headphone case is handled by its own window on
  * GAIN_CTL instead - see HP_RAW_TOP. The one exception is the cut, in
- * apply_volume. */
+ * apply_volume.
+ *
+ * HPSW_CTL on, always. With it and SPEAKER_CTL both off the codec stops taking
+ * samples (see apply_volume), so the cut, which turns SPEAKER_CTL off, is only
+ * safe while this one is on. TrimUI's system left it on; plastron's comes up
+ * with it off, and there every mute and every level 0 stopped the sound
+ * device instead of silencing it: Muse's clock stood still until the cut came
+ * off (found 2026-10-16). The speaker runs off this stage too, and with it
+ * off after being on the speaker was weak. */
 static void mixer_defaults(void)
 {
 	if (mixer_fd < 0) return;
+	ctl_set(HPSW_CTL, 1);
 	ctl_set(HP_CTL, 0);
 	ctl_set(SWAP_CTL, 0);
 }
