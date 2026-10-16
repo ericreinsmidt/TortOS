@@ -12,6 +12,7 @@
 #include <fcntl.h>
 #ifdef __linux__
 #include <linux/input.h>
+#include <sys/ioctl.h>
 #endif
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,9 +48,15 @@ enum {
 static SDL_Window *win;
 static SDL_Renderer *ren;
 static SDL_Joystick *joy;
-static int fd_power = -1; /* axp2202-pek: KEY_POWER */
-static int fd_keys = -1;  /* sunxi-keyboard: volume keys */
-static int fd_joy = -1;   /* TRIMUI Player1: raw, for the front F1/F2 keys */
+
+#define BITS_PER_LONG   (8 * (int)sizeof(long))
+#define NLONGS(max)     (((max) + BITS_PER_LONG) / BITS_PER_LONG)
+#define BIT_IS_SET(a,b) (((a)[(b) / BITS_PER_LONG] >> ((b) % BITS_PER_LONG)) & 1UL)
+
+static int fd_pad = -1;     /* "Brick Gamepad": raw, for the front F1/F2 keys */
+static int fd_keys = -1;    /* "sunxi-keyboard": volume */
+static int fd_power = -1;   /* "axp2202-pek" */
+static int jack_fd = -1;    /* "audiocodec sunxi Audio Jack": the jack switch, for the settings */
 
 /* TORTOS_INPUT_DEBUG=1 logs raw evdev codes and SDL button indices, so one
  * press tells you exactly which device a control arrives on. */
@@ -138,6 +145,36 @@ static void open_joystick(void)
 	}
 }
 
+#ifdef __linux__
+/* Every input device this file wants, found by what each reports, not by
+ * number, in one pass, as pixel2.c finds the Pixel 2's: there is no udev, and
+ * enumeration order is not a promise. Every node is kept but the ones not
+ * wanted, as closing one waits out an RCU grace period in the kernel. */
+static void input_scan(void)
+{
+	unsigned long keys[NLONGS(KEY_MAX)], sw[NLONGS(SW_MAX)];
+	char path[32];
+	int i, fd;
+
+	for (i = 0; i < 32; i++) {
+		bool kept = true;
+
+		snprintf(path, sizeof path, "/dev/input/event%d", i);
+		if ((fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC)) < 0) continue;
+		memset(keys, 0, sizeof keys);
+		memset(sw, 0, sizeof sw);
+		ioctl(fd, EVIOCGBIT(EV_KEY, sizeof keys), keys);
+		ioctl(fd, EVIOCGBIT(EV_SW, sizeof sw), sw);
+		if      (fd_pad < 0   && BIT_IS_SET(keys, BTN_SOUTH))           fd_pad = fd;
+		else if (fd_keys < 0  && BIT_IS_SET(keys, KEY_VOLUMEUP))        fd_keys = fd;
+		else if (fd_power < 0 && BIT_IS_SET(keys, KEY_POWER))           fd_power = fd;
+		else if (jack_fd < 0  && BIT_IS_SET(sw, SW_HEADPHONE_INSERT))   jack_fd = fd;
+		else kept = false;
+		if (!kept) close(fd);
+	}
+}
+#endif
+
 bool plat_input_init(void)
 {
 	char marker[512];
@@ -150,9 +187,10 @@ bool plat_input_init(void)
 	SDL_JoystickEventState(SDL_ENABLE);
 	open_joystick();
 #ifdef __linux__
-	if (fd_power < 0) fd_power = open("/dev/input/event1", O_RDONLY | O_NONBLOCK);
-	if (fd_keys < 0) fd_keys = open("/dev/input/event0", O_RDONLY | O_NONBLOCK);
-	if (fd_joy < 0) fd_joy = open("/dev/input/event3", O_RDONLY | O_NONBLOCK);
+	if (fd_pad < 0 || fd_keys < 0 || fd_power < 0) input_scan();
+	if (fd_pad < 0)   fprintf(stderr, "input: no gamepad found\n");
+	if (fd_keys < 0)  fprintf(stderr, "input: no volume keys found\n");
+	if (fd_power < 0) fprintf(stderr, "input: no power key found\n");
 #endif
 	return true;
 }
@@ -169,7 +207,7 @@ void plat_input_flush(void)
 	{
 		struct input_event ev;
 		int fds[3], i;
-		fds[0] = fd_power; fds[1] = fd_keys; fds[2] = fd_joy;
+		fds[0] = fd_power; fds[1] = fd_keys; fds[2] = fd_pad;
 		for (i = 0; i < 3; i++)
 			while (fds[i] >= 0 &&
 			       read(fds[i], &ev, sizeof ev) == (ssize_t)sizeof ev) { }
@@ -302,7 +340,7 @@ void plat_input_poll(in_state *st)
 	}
 	poll_raw_fd(fd_power, st);
 	poll_raw_fd(fd_keys, st);
-	poll_raw_fd(fd_joy, st);
+	poll_raw_fd(fd_pad, st);
 }
 
 /* The launcher and Diatom take turns on one framebuffer here, so there is
@@ -640,39 +678,12 @@ static void mixer_defaults(void)
  * controls and nothing under /sys for it, so the only way to ask is EVIOCGSW,
  * which is why this opens an input device rather than reading a file.
  *
- * Found by capability rather than by number. It is /dev/input/event2 today, but
- * that is an enumeration order and not a promise, and the cost of being wrong
- * is a volume ladder silently calibrated for the wrong output. */
-#define BITS_PER_LONG   (8 * (int)sizeof(long))
-#define SW_NLONGS       ((SW_MAX + BITS_PER_LONG) / BITS_PER_LONG)
-#define BIT_IS_SET(a,b) (((a)[(b) / BITS_PER_LONG] >> ((b) % BITS_PER_LONG)) & 1UL)
-
-static int jack_fd = -1;
-
-static void jack_open(void)
-{
-	unsigned long bits[SW_NLONGS];
-	char path[32];
-	int i, fd;
-
-	for (i = 0; i < 32; i++) {
-		snprintf(path, sizeof path, "/dev/input/event%d", i);
-		if ((fd = open(path, O_RDONLY | O_NONBLOCK)) < 0) continue;
-		memset(bits, 0, sizeof bits);
-		if (ioctl(fd, EVIOCGBIT(EV_SW, sizeof bits), bits) >= 0 &&
-		    BIT_IS_SET(bits, SW_HEADPHONE_INSERT)) {
-			jack_fd = fd;
-			return;
-		}
-		close(fd);
-	}
-	fprintf(stderr, "settings: no headphone jack input node; "
-	                "volume will use the speaker ladder\n");
-}
-
+ * Found by capability rather than by number, by input_scan with the rest: the
+ * cost of the wrong node is a volume ladder silently calibrated for the wrong
+ * output. */
 static int jack_present(void)
 {
-	unsigned long bits[SW_NLONGS];
+	unsigned long bits[NLONGS(SW_MAX)];
 
 	if (jack_fd < 0) return 0;
 	memset(bits, 0, sizeof bits);
@@ -868,7 +879,9 @@ void plat_settings_init(void)
 	if (mixer_fd < 0) fprintf(stderr, "settings: no /dev/snd/controlC0\n");
 	if (disp_fd  < 0) fprintf(stderr, "settings: no /dev/disp\n");
 	mixer_defaults();
-	jack_open();
+	if (jack_fd < 0) input_scan();
+	if (jack_fd < 0) fprintf(stderr, "settings: no headphone jack input node; "
+	                                 "volume will use the speaker ladder\n");
 
 	/* The player's last choice, and it wins. The two-tier lookup this
 	 * replaces - a saved level, then a shipped default - is one key each,
