@@ -9679,7 +9679,24 @@ static void game_menu(app *a)
 		 * stopped while the game was paused. Said before the game moves, not
 		 * a tick after it. */
 		plat_resident_quiet(musec_playing());
+		/* And the volume and the mute switch, both of which this menu had.
+		 *
+		 * On RESUME Diatom forgets its volume and reads it back from the
+		 * codec. With the switch down in this menu that read finds the gain
+		 * this side wrote for the cut and takes it for level 0, so putting
+		 * the switch back up in the game brought the sound back at 0: silent
+		 * until a volume key. Sending the level after RESUME, as every RUN
+		 * does, leaves Diatom nothing to guess. The mute goes first, or the
+		 * level would turn the sound back on with the switch still down. */
+		plat_resident_line("SETMUTE\ton=%d", plat_muted() ? 1 : 0);
 		plat_resident_line("RESUME");
+		{
+			int vol = plat_volume_get();
+
+			if (vol >= 0)
+				plat_resident_line("SETLEVEL\tkind=volume\tindex=%d\tcount=%d",
+				                   vol, PLAT_VOL_MAX + 1);
+		}
 	}
 	/* Nothing presents from here: the next frame on screen is the game's. */
 }
