@@ -29,6 +29,7 @@
 #ifdef __linux__
 
 #include <fcntl.h>
+#include <signal.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -348,17 +349,43 @@ int wifi_scan(wifi_net *out, int max)
  * here is going to come back and wait for it. */
 static bool g_dhcp_asked;   /* a lease has been requested for this join */
 
+#define DHCP_PID "/var/run/udhcpc.wlan0.pid"
+
+/* The client already running for wlan0, from its PID file, or 0. */
+static pid_t dhcp_running(void)
+{
+	char buf[16] = "";
+	int fd = open(DHCP_PID, O_RDONLY);
+	pid_t pid;
+
+	if (fd < 0) return 0;
+	if (read(fd, buf, sizeof buf - 1) < 0) buf[0] = '\0';
+	close(fd);
+	pid = (pid_t)atoi(buf);
+	return pid > 0 && kill(pid, 0) == 0 ? pid : 0;
+}
+
 static void dhcp_start(void)
 {
-	pid_t pid = fork();
+	pid_t pid;
 
+	/* No -q: the client stays, and renews the lease before it runs out. With
+	 * -q it took one address and left, so a session longer than the router's
+	 * lease kept an address the router could hand to someone else. Staying
+	 * means a second call finds it running: a new join gets a new lease by
+	 * asking that one to renew now (SIGUSR1) rather than starting another.
+	 * /etc/init.d/wpa_supplicant stops it with the radio. */
+	pid = dhcp_running();
+	if (pid) { kill(pid, SIGUSR1); return; }
+
+	pid = fork();
 	if (pid < 0) return;
 	if (pid == 0) {
 		if (fork() == 0) {
 			char *argv[] = { (char *)"/sbin/udhcpc", (char *)"-i", (char *)WLAN,
 			                 (char *)"-S", (char *)"-t", (char *)"5",
 			                 (char *)"-T", (char *)"7", (char *)"-b",
-			                 (char *)"-q", NULL };
+			                 (char *)"-p", (char *)DHCP_PID, NULL };
 			int null = open("/dev/null", O_RDWR);
 
 			if (null >= 0) { dup2(null, 1); dup2(null, 2); }
