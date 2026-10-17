@@ -12,6 +12,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 /* Signal as a word. dBm is the honest number and it is also jargon; the list
  * is sorted strongest first anyway, so the word only has to separate "this
@@ -35,6 +36,7 @@ void wifi_label(wifi_ui *w)
 	int i;
 
 	if (wifi_status(cur, sizeof cur, NULL, 0) != WIFI_CONNECTED) cur[0] = '\0';
+	w->connected = cur[0] != '\0';
 	for (i = 0; i < w->n; i++) {
 		const char *state = (cur[0] && !strcmp(cur, w->nets[i].ssid))
 		                    ? " - connected"
@@ -87,6 +89,17 @@ int wifi_build(void *ctx, menu_row *rows, int max, const char **heading)
 		w->scanning = false;
 		w->scanned = true;
 		if (got >= 0) w->n = got;
+		wifi_label(w);
+	}
+
+	/* A saved network rejoins on its own, and the address comes a few seconds
+	 * after the scan has finished: the list was labeled before it, said
+	 * "saved" while connected, and nothing labeled it again. So while the
+	 * radio is on and nothing shows as connected, look again once a second -
+	 * the look is also what asks for the address. Not every frame: each look
+	 * forks wpa_cli. */
+	if (w->on && !w->scanning && !w->connected && time(NULL) >= w->look_next) {
+		w->look_next = (long)time(NULL) + 1;
 		wifi_label(w);
 	}
 

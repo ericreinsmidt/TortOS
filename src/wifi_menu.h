@@ -17,6 +17,8 @@ typedef struct {
 	bool     on;
 	bool     scanning;   /* a scan is running; the list is provisional */
 	bool     scanned;    /* a scan has finished at least once this visit */
+	bool     connected;  /* the last labeling found a connection */
+	long     look_next;  /* when to look for one again (time(), seconds) */
 } wifi_ui;
 
 /* Signal as a word. dBm is the honest number and it is also jargon; the list is
