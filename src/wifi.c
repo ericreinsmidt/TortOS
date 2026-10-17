@@ -33,7 +33,7 @@
 #include <unistd.h>
 
 #define WPA_CLI  "/usr/sbin/wpa_cli"
-#define WPA_SOCK "/etc/wifi/sockets"
+#define WPA_SOCK "/var/run/wpa_supplicant"   /* wpa_supplicant's own default */
 #define WLAN     "wlan0"
 
 /* Run a command, capture stdout, return its exit status (-1 if it could not
