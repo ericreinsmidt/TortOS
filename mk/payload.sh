@@ -14,9 +14,9 @@
 #       OUT=... ZIP= mk/payload.sh
 #
 # NATIVE=1 with DEVICE=brick is the Brick's payload for plastron's own system
-# on it, which plastron builds the same way: none of what hooks into TrimUI's
-# firmware or what only it uses (its boot pictures, setbright, Bluetooth's
-# btplayer).
+# on it, which plastron builds the same way: its own launch.sh (sd/brick/),
+# and none of what hooks into TrimUI's firmware or what only it uses (its boot
+# pictures, setbright, Bluetooth's btplayer).
 set -e
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DEVICE=${DEVICE:-brick}
@@ -26,6 +26,7 @@ brick)  OUT=${OUT:-$ROOT/out/sd};        LAUNCH=$ROOT/sd/tortos/launch.sh ;;
 pixel2) OUT=${OUT:-$ROOT/out/sd-pixel2}; LAUNCH=$ROOT/sd/pixel2/launch.sh ;;
 *) echo "payload: unknown DEVICE $DEVICE (brick or pixel2)" >&2; exit 1 ;;
 esac
+[ "$DEVICE" = brick ] && [ "$NATIVE" = 1 ] && LAUNCH=$ROOT/sd/brick/launch.sh
 P=$OUT/TortOS
 TORTOS_ELF=${TORTOS_ELF:-$ROOT/build/tortos.elf}
 MUSE_ELF=${MUSE_ELF:-$ROOT/build/muse}
@@ -122,6 +123,10 @@ fi
 
 chmod +x "$P/launch.sh" "$P/tortos.elf" "$P/diatom" "$P/muse"
 
+# The headsets' ALSA config, on the Brick either way: its launch.sh sources it
+# at boot, and TortOS runs it after a pair or a forget.
+[ "$DEVICE" = brick ] && cp "$ROOT/sd/tortos/bt-alsa.sh" "$P/"
+
 # What only the Brick on TrimUI's firmware has: the hook into it, Bluetooth,
 # and the boot pictures it shows. The Pixel's system, and the Brick's own, is
 # plastron, whose splash plays the boot animation itself.
@@ -129,7 +134,6 @@ if [ "$DEVICE" = brick ] && [ "$NATIVE" != 1 ]; then
 	mkdir -p "$OUT/.tmp_update" "$OUT/trimui/app"
 	cp "$ROOT/build/setbright" "$P/"          # brightness before the boot animation
 	cp "$ROOT/build/btplayer" "$P/"           # lets a headset's volume through BlueZ
-	cp "$ROOT/sd/tortos/bt-alsa.sh" "$P/"     # sourced by launch.sh, run by the launcher
 	cp "$ROOT/res/boot/tortos-boot.mp4" "$P/"
 	cp "$ROOT/res/boot/bootlogo.bmp" "$P/"    # u-boot splash, applied on first boot
 	cp "$ROOT/res/boot/splash.png" "$P/"      # the pic2fb loading splash, likewise
