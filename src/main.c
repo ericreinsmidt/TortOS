@@ -6369,27 +6369,25 @@ static void bt_screen(app *a)
 				bool want = u.state != BT_READY;
 
 				/* The preference either way: launch.sh reads it at boot and
-				 * that is what starts or stops the stack. */
+				 * starts the stack or not. */
 				db_set_int(db_dev(), "bluetooth", want ? 1 : 0);
 				db_write_boot_env();
 
-				if (u.state == BT_NO_ADAPTER) {
-					/* Nothing to power. hciattach, bluetoothd and bluealsa
-					 * are launch.sh's to start, and on a card that booted
-					 * with Bluetooth off there is no adapter for
-					 * bluetoothctl to talk to - it waits for one that is
-					 * never coming rather than failing. Saying so beats
-					 * spawning a call that cannot succeed. */
-					snprintf(u.note, sizeof u.note,
-					         "Saved. Bluetooth starts at the next boot");
-					note_until = now + 4000;
+				wait_panel(a, "Bluetooth",
+				           want ? "Turning on..." : "Turning off...");
+				/* On: the stack first when there is no adapter (Bluetooth
+				 * was off at boot), so the switch works now rather than at
+				 * the next boot. Never bt_power without one: bluetoothctl
+				 * waits for a controller that is not coming. Off: the
+				 * adapter, then the stack and the radio's power. */
+				if (want && u.state == BT_NO_ADAPTER && !bt_up()) {
+					snprintf(u.note, sizeof u.note, "Bluetooth did not come up");
 				} else {
-					wait_panel(a, "Bluetooth",
-					           want ? "Turning on..." : "Turning off...");
 					bt_power(want);
+					if (!want) bt_down();
 					snprintf(u.note, sizeof u.note, "%s", want ? "On" : "Off");
-					note_until = now + 4000;
 				}
+				note_until = now + 4000;
 				next_refresh = 0;
 			} else if (u.cursor < u.n) {
 				bt_device *d = &u.dev[u.cursor];

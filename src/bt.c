@@ -16,7 +16,8 @@
 #include "bt.h"
 
 #define BLUETOOTHCTL "/usr/bin/bluetoothctl"
-#define BONDS        "/etc/lib/bluetooth"
+#define BONDS        "/var/lib/bluetooth"   /* bluetoothd's own default */
+#define BT_SCRIPT    "/etc/init.d/bluetooth"
 
 /* AA:BB:CC:DD:EE:FF and nothing else. Everything that reaches bluetoothctl as
  * an argument goes through this first: a name can be arbitrary, an address
@@ -558,6 +559,26 @@ bool bt_power(bool on)
 	return btctl(out, sizeof out, BT_ASK_S, "power", on ? "on" : "off") == 0;
 }
 
+/* The stack itself, from the system's script: the chip attached, bluetoothd
+ * and bluealsa. A clean start takes about 5 s; the deadline covers the
+ * script's three tries with a power cycle between. */
+bool bt_up(void)
+{
+	char out[512];
+	char *argv[] = { (char *)BT_SCRIPT, (char *)"start", NULL };
+
+	return run(argv, out, sizeof out, 70) == 0 &&
+	       access("/sys/class/bluetooth/hci0", F_OK) == 0;
+}
+
+void bt_down(void)
+{
+	char out[512];
+	char *argv[] = { (char *)BT_SCRIPT, (char *)"stop", NULL };
+
+	run(argv, out, sizeof out, 15);
+}
+
 bool bt_disconnect(const char *mac)
 {
 	char out[512];
@@ -666,6 +687,8 @@ bool bt_pair(const char *m, char *e, size_t n) { (void)m; if (e && n) e[0] = 0; 
 bool bt_connect(const char *m, char *e, size_t n) { (void)m; if (e && n) e[0] = 0; return false; }
 int  bt_mark_connected_now(bt_device *l, int n) { (void)l; (void)n; return 0; }
 bool bt_power(bool on) { (void)on; return false; }
+bool bt_up(void) { return false; }
+void bt_down(void) { }
 bool bt_disconnect(const char *m) { (void)m; return false; }
 int  bt_disconnect_others(const char *k) { (void)k; return 0; }
 bool bt_forget(const char *m) { (void)m; return false; }

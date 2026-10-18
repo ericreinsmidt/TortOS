@@ -21,7 +21,7 @@
 # 2026-09-05 - it failed in place and then worked immediately on restarting the
 # emulator with the file already there.
 #
-# The bond is persistent (/etc/lib/bluetooth/<adapter>/<device>/), so every
+# The bond is persistent (/var/lib/bluetooth/<adapter>/<device>/), so every
 # headset that could connect is known now, without waiting for one to. A PCM
 # for a headset that is not connected simply fails to open, and the port falls
 # back to the speaker and says so - which is ADR-0029's behavior anyway.
@@ -36,7 +36,7 @@ bt_pcm_name() {
 bt_write_asoundrc() {
 	rc=$USERDATA_PATH/.asoundrc
 	: > "$rc.tmp"
-	for d in /etc/lib/bluetooth/*/*:*; do
+	for d in /var/lib/bluetooth/*/*:*; do
 		[ -d "$d" ] || continue
 		grep -q '^Trusted=true' "$d/info" 2> /dev/null || continue
 		grep -q '^\[LinkKey\]' "$d/info" 2> /dev/null || continue   # see bt_reconnect

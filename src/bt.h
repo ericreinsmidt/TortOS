@@ -12,11 +12,10 @@
  *   JUDGE BY `info`, NEVER BY THE RETURN OF `connect`. bluetoothctl reports
  *   Failed for a2dp even when the link came up. Cost an evening.
  *
- *   BONDS LIVE IN /etc/lib/bluetooth/<adapter>/<device>/, not the
- *   /etc/bluetooth/keys/ that the init wrapper symlinks into being. bluetoothd
- *   has its storage path compiled in with --localstatedir=/etc and never reads
- *   the decoy. Reading the bonds directly is also how the paired list is built
- *   without forking anything.
+ *   BONDS LIVE IN /var/lib/bluetooth/<adapter>/<device>/, bluetoothd's own
+ *   default. (TrimUI's firmware built it with --localstatedir=/etc, so they
+ *   were in /etc/lib/bluetooth there.) Reading the bonds directly is also how
+ *   the paired list is built without forking anything.
  *
  * FORKING IS THE COST HERE. This process is ~119 MB, every query is a fork,
  * and the menu loop runs every frame - so nothing in here is called per frame.
@@ -101,11 +100,14 @@ bool bt_connect(const char *mac, char *err, size_t n);
  * own and useless right after the UI connects one: the file has not caught up,
  * so the row redraws saying "paired" and the screen looks like it did nothing.
  * Seen on the device 2026-09-06. */
-/* Power the adapter. This is the immediate half of the toggle and it only
- * works when the stack is already up - hciattach, bluetoothd and bluealsa are
- * started by launch.sh from the stored preference, so turning Bluetooth on
- * from a cold boot that had it off takes effect at the next boot. */
+/* Power the adapter. Only works with the stack up: bt_up starts it. */
 bool bt_power(bool on);
+
+/* The stack, by the system's /etc/init.d/bluetooth: bt_up attaches the chip
+ * and starts bluetoothd and bluealsa, and says whether hci0 came up; bt_down
+ * stops them and powers the radio off. */
+bool bt_up(void);
+void bt_down(void);
 
 bool bt_connected(const char *mac);
 
