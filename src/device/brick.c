@@ -9,14 +9,17 @@
 #include "device.h"
 #include "platform.h"
 
+#include <dirent.h>
 #include <fcntl.h>
 #ifdef __linux__
 #include <linux/input.h>
 #include <sys/ioctl.h>
 #endif
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 /* The front function keys report on the gamepad node as BTN_THUMBL/BTN_THUMBR
@@ -76,9 +79,58 @@ const char *P_FONT = "/mnt/SDCARD/TortOS/menu.ttf";
 
 SDL_Renderer *plat_renderer(void) { return ren; }
 
+/* The boot animation is plastron's splash, drawing into the framebuffer's
+ * last page until TortOS draws. EGL's setup moves the screen to an empty page
+ * before TortOS has drawn anything, which the splash puts back; so it is told
+ * when the next move is TortOS's first frame, with a SIGUSR1, as on the
+ * Pixel 2. By name, as nothing here knows its pid; none running (TrimUI's
+ * firmware, or the splash already gone) is nothing to tell. */
+static void signal_splash(int sig)
+{
+	DIR *proc = opendir("/proc");
+	struct dirent *e;
+
+	while (proc && (e = readdir(proc))) {
+		char path[64], comm[32] = { 0 };
+		int fd;
+
+		if (e->d_name[0] < '1' || e->d_name[0] > '9') continue;
+		snprintf(path, sizeof path, "/proc/%s/comm", e->d_name);
+		if ((fd = open(path, O_RDONLY | O_CLOEXEC)) < 0) continue;
+		if (read(fd, comm, sizeof comm - 1) > 0 && !strcmp(comm, "splash\n"))
+			kill(atoi(e->d_name), sig);
+		close(fd);
+	}
+	if (proc) closedir(proc);
+}
+
 /* The Brick's panel is the screen, so drawing to the screen is drawing to the
- * window. */
-void plat_present(void) { SDL_RenderPresent(ren); }
+ * window. The first present tells the splash first, and goes on the kernel's
+ * clock beside the splash's own lines, so the boot from power to shelf reads
+ * off one log, as on the Pixel 2. */
+void plat_present(void)
+{
+	static bool shown;
+
+	if (!shown) {
+		signal_splash(SIGUSR1);
+#ifdef __linux__
+		struct timespec now;
+		char line[64];
+		int fd;
+
+		clock_gettime(CLOCK_BOOTTIME, &now);
+		snprintf(line, sizeof line, "tortos: first frame at %.3f s\n",
+		         now.tv_sec + now.tv_nsec / 1e9);
+		if ((fd = open("/dev/kmsg", O_WRONLY | O_CLOEXEC)) >= 0) {
+			if (write(fd, line, strlen(line)) < 0) { /* not fatal */ }
+			close(fd);
+		}
+#endif
+		shown = true;
+	}
+	SDL_RenderPresent(ren);
+}
 void plat_draw_to_screen(void) { SDL_SetRenderTarget(ren, NULL); }
 
 bool plat_video_init(void)
