@@ -12307,7 +12307,16 @@ int main(int argc, char *argv[])
 			    now - last_render >= HEARTBEAT_MS) {
 				tick_tint(&a);
 				render(&a);
-				if (!last_render) t_mark("first frame");
+				/* With the first frame up, Diatom maps its cores now (its
+				 * PREMAP). Mapped the moment it listened, they were read off
+				 * the card beside this process's GPU libraries and firmware,
+				 * and the first frame came about 0.4 s later on most Brick
+				 * boots (measured 2026-10-18). A Diatom that predates it maps
+				 * them at once anyway; none at all, and this does nothing. */
+				if (!last_render) {
+					t_mark("first frame");
+					plat_resident_line("PREMAP");
+				}
 				last_render = plat_now_ms();
 			} else {
 				SDL_Delay(IDLE_POLL_MS);
