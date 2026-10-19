@@ -6383,6 +6383,12 @@ static void bt_screen(app *a)
 				if (want && u.state == BT_NO_ADAPTER && !bt_up()) {
 					snprintf(u.note, sizeof u.note, "Bluetooth did not come up");
 				} else {
+					/* The stack just started: the bonds are readable now
+					 * (on the Brick they're on plastron's state partition,
+					 * which bt_up mounts), so a PCM for each, as after a
+					 * pair. The one written at boot had none to read */
+					if (want && u.state == BT_NO_ADAPTER)
+						bt_asoundrc(P_ROOT, P_USERDATA);
 					bt_power(want);
 					if (!want) bt_down();
 					snprintf(u.note, sizeof u.note, "%s", want ? "On" : "Off");

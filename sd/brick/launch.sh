@@ -111,6 +111,11 @@ bt_on() {
 		echo "bt: Bluetooth did not come up" >> "$LOG"
 		return 1
 	}
+	# The headsets' PCMs again, now that their bonds can be read: they live on
+	# plastron's state partition, which Bluetooth's start mounts, so the write
+	# before start_resident found none. The emulator and Muse see the new
+	# file at their next open (ALSA_CONFIG_PATH, above)
+	command -v bt_write_asoundrc > /dev/null && bt_write_asoundrc
 	sleep 3          # let both profiles register with BlueZ before any connect
 	bt_reconnect
 }
