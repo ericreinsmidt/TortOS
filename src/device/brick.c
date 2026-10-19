@@ -138,6 +138,19 @@ bool plat_video_init(void)
 	SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
 #ifdef __linux__
 	SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengl");
+	/* plastron loads the GPU's display driver while TortOS starts rather than
+	 * before it, as nothing needs it until here: so this waits for it, which
+	 * it normally doesn't have to. Only where it is plastron's module, which
+	 * shows in /sys/module once loaded; 2 s at most. */
+	if (access("/usr/lib/brick/dc_sunxi.ko", F_OK) == 0) {
+		unsigned t0 = plat_now_ms(), waited;
+
+		while (access("/sys/module/dc_sunxi", F_OK) != 0 && plat_now_ms() - t0 < 2000)
+			usleep(2000);
+		waited = plat_now_ms() - t0;
+		if (waited >= 2)
+			fprintf(stderr, "video: waited %u ms for the GPU's display driver\n", waited);
+	}
 #endif
 	if (SDL_InitSubSystem(SDL_INIT_VIDEO) != 0) {
 		fprintf(stderr, "video init: %s\n", SDL_GetError());
