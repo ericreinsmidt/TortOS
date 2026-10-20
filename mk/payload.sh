@@ -51,13 +51,12 @@ fi
 # down reads it to create the ROM folders. Both run on the host, before any
 # database exists.
 cp "$ROOT/config/systems.cfg" "$P/"
-cp -R "$ROOT/res/cards/." "$P/cards/"     # the classic/ and fancy/ sets, as adb-deploy.sh pushes them
+cp -R "$ROOT/res/cards/." "$P/cards/"     # the classic/ and fancy/ sets
 cp "$ROOT/res/fonts/menu.ttf" "$P/"       # the UI face, and the in-game menu's
 cp "$ROOT/res/singles.png" "$P/"          # Muse's cover for Singles, the loose songs
 # Over The Hare's page. The launcher serves these off the card at P_WEB, so a
 # payload without them is a card whose transfer screen starts a server and then
-# answers its own page with a 404. adb-deploy.sh has always pushed them and
-# this did not, which is a difference that only shows on a built card - the
+# answers its own page with a 404, which only shows on a built card - the
 # reason to build one before calling it a release. The font goes in twice
 # rather than being kept in the repo twice: the launcher reads $P/menu.ttf and
 # a browser asks for /web/menu.ttf.

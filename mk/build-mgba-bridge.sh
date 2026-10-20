@@ -21,16 +21,16 @@
 # delete this script, and verify a save state made on this core still loads on
 # the official one. See MGBA-MBC2.md.
 #
-# Needs: docker, and the mgba-xbuild image (see MGBA-MBC2.md for its Dockerfile
-# - the cross toolchain image plus cmake, with bullseye-security stripped from
-# sources.list because it has rotated).
+# Needs: docker. Its image is mk/mgba-bridge.Dockerfile, built here; after
+# the first time, Docker has it cached.
 set -e
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 SRC=${1:-/tmp/tortos-mgba-bridge}
 PIN=e31759b24e7a4e3899285ff720d7b573ac328ae7   # libretro/mgba, what CORES.md pins
-FIX=543a19758                                   # mgba-emu/mgba, the upstream fix
+FIX=543a197582c30364584d773a974d7f991892fa43   # mgba-emu/mgba, the upstream fix
 
 command -v docker >/dev/null || { echo "need docker" >&2; exit 1; }
+docker build -q -f "$ROOT/mk/mgba-bridge.Dockerfile" -t mgba-xbuild "$ROOT/mk" >/dev/null
 
 if [ ! -d "$SRC/.git" ]; then
 	git clone --depth 40 -b master https://github.com/libretro/mgba.git "$SRC"
@@ -39,7 +39,9 @@ cd "$SRC"
 git fetch --depth 40 origin master
 git checkout -q "$PIN"
 git remote get-url up >/dev/null 2>&1 || git remote add up https://github.com/mgba-emu/mgba.git
-git fetch -q --depth 3 up master
+# The fix by its hash, not master's tip: it left the last few commits of
+# master long ago. Two deep so git show has its parent to diff against.
+git fetch -q --depth 2 up "$FIX"
 git checkout -q -- src/gb/mbc.c
 git show "$FIX" -- src/gb/mbc.c | git apply
 # project(mGBA) declares C and CXX; there is no cross g++ in the image and the

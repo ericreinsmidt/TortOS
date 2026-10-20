@@ -1,20 +1,18 @@
 # Building TortOS
 
-Everything cross-compiles in TortOS's own toolchain image - a stock Debian
-cross-compiler pinned by digest, built by `mk/toolchain.Dockerfile`, linking
-against the device's own SDL2 in `sysroot/`. So the only host requirements are
-Docker and (for regenerating art) Python with Pillow, plus ffmpeg.
+Both devices run TortOS on [plastron](https://github.com/ericreinsmidt/plastron),
+and plastron's build is what builds TortOS for them: it runs `mk/cross.mk`
+with its own cross-compiler and libraries, and `mk/payload.sh` to lay out what
+goes on the card, from this working tree (its Makefile's `TORTOS_SRC`). This
+Makefile is for everything else. The host needs Docker (for plastron and the
+mGBA core) and, for regenerating art, Python with Pillow, plus ffmpeg.
 
 ```sh
-make toolchain  # the cross-compiler      -> tortos-toolchain   (once)
-mk/fetch-sysroot.sh  # the device's SDL2  -> sysroot/           (once, needs adb)
-make            # the launcher            -> build/tortos.elf
+make check      # every check below, offline, in a second or two (also plain `make`)
 make vendor     # five libretro cores     -> vendor/
 mk/build-mgba-bridge.sh  # the sixth      -> vendor/            (see below)
-make payload    # the installable card    -> out/sd/ and out/TortOS-v1.6.0.zip
 make native     # host build of the launcher, for working on how it looks
 make boot       # regenerate the boot animation
-make check      # every check below, offline, in a second or two
 ```
 
 **mGBA is built rather than fetched, and is meant to stop being.** Every MBC2
@@ -23,13 +21,10 @@ Race, Golf, X, both Final Fantasy Legends - a regression reported as
 mgba-emu/mgba#3859 and fixed upstream the same day, but in no downloadable core
 because libretro builds mGBA from a fork that has not synced.
 `mk/build-mgba-bridge.sh` builds that same pinned tree with only upstream's own
-fix applied, hardened to match the official build. Without it `make payload`
+fix applied, hardened to match the official build. Without it the payload
 refuses the card rather than shipping one whose Game Boy, Game Boy Color and
 Game Boy Advance shelves open onto nothing. Restore the fetch and delete the
 script the day that fork syncs.
-
-`make payload` needs a built diatom binary (`DIATOM_ELF`, defaulting to a
-sibling checkout).
 
 `make check` runs before every commit. Each part can be run alone, and each
 exists because something once broke in a way nothing noticed:
@@ -73,29 +68,32 @@ a sequence of them reads back as a list of what was actually drawn.
 
 ## On device
 
-```sh
-make adb          # push everything over USB
-make adb-elf      # just the launcher
-make adb-restart  # kill the launcher so launch.sh picks the new one up
-make adb-log
-```
+Build in plastron's checkout: `make brick BRICK_TARGET=tortos-rebuild` for the
+Brick, or `make` for the Pixel 2's whole card image. A full `make brick` also
+writes a card image.
 
-**Never `kill` `launch.sh` itself.** The boot hook's failsafe powers the device
-off when the launch loop exits.
+A plastron development build of the Brick has a shell on the USB cable: the
+Brick is 10.55.0.2, the computer is given 10.55.0.1, and `telnet 10.55.0.2`
+gets a shell, with no password. Files go over nc: on the Brick,
+`nc -l -p 5555 > /tmp/new-tortos.elf`, then on the computer
+`nc -N 10.55.0.2 5555 < tortos.elf`. Compare checksums on both ends before
+moving it into place in `/mnt/SDCARD/TortOS/`. Keep telnet commands short; long
+lines arrive cut off. The cable shell is never in a release.
+
+On the Pixel 2, copy the built files into `TortOS/` on the card.
 
 ## Layout
 
 ```
 src/            the launcher (MIT)
 docs/           the guide, and building
-mk/             cross build, payload, deployment
-tools/          the boot-animation and card generators, setbright, the
-                achievement fetcher, and the checks
+mk/             the device build plastron runs, the payload, the cores
+tools/          the boot-animation and card generators, the achievement
+                fetcher, and the checks
 res/            the boot animation, the system cards, the font, Over The
                 Hare's page, and the marks and screenshots the README shows
 config/         systems.cfg as shipped; the rest is compiled in
-sd/             the boot hook and launch.sh as they land on the card
-sysroot/        fetched: the device's own SDL2, for linking (mk/fetch-sysroot.sh)
+sd/             each device's launch.sh, and bt-alsa.sh, as they land on the card
 vendor/         the libretro cores: five fetched and hash-pinned, mGBA
                 built by mk/build-mgba-bridge.sh
 ```

@@ -1,27 +1,16 @@
-# TortOS's own toolchain: a stock Debian cross-compiler pinned by digest, with
-# the device's SDL2 in sysroot/. Every dependency is TortOS's own or the
-# TrimUI's SDK. Build it once with `make toolchain`, and the sysroot once with
-# `mk/fetch-sysroot.sh` (needs the device on adb).
-IMAGE := tortos-toolchain
-# The Brick is .100. The .101 this used to say is the address in the global
-# notes, and it is wrong - every SSH target needed BRICK= on the command line
-# to work at all.
-BRICK ?= 192.168.1.100
-# UserKnownHostsFile=/dev/null is not laziness: when the recorded host key does
-# not match, ssh DISABLES password authentication to protect the password, and
-# every SSH target here fails with "Permission denied (publickey,password)"
-# while the credential is perfectly correct. The device is on the LAN and gets
-# reflashed, so its key changes; there is nothing here worth pinning it for.
-SSH := sshpass -p 'tina' ssh -o StrictHostKeyChecking=no \
-       -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@$(BRICK)
+# TortOS. The device builds, for the TrimUI Brick and the GKD Pixel 2, are
+# plastron's (github.com/ericreinsmidt/plastron): its Buildroot builds the
+# launcher and Muse with mk/cross.mk and lays out the card with mk/payload.sh,
+# and the version below is read from here. What this Makefile does is the rest:
+# the offline checks, a host build of the launcher, the cores, and the assets.
+# docs/building.md says how to work on a device.
 
-.PHONY: all clean native toolchain vendor boot checkmark payload release install-card \
-        adb adb-elf adb-res adb-vendor adb-restart adb-run adb-log \
+.PHONY: all clean native vendor boot checkmark \
         check check-cheevos check-hare check-httpd check-idle check-rahash \
         check-raset check-xfer check-menus check-artscrape check-artrun check-audioout \
-        check-db check-stats check-sort check-bt check-ss storeprobe deploy restart logs
+        check-db check-stats check-sort check-bt check-ss
 
-all: build/tortos.elf
+all: check
 
 # Everything offline, in one command. There was no umbrella target: every check
 # had to be remembered by name, which is a suite in the same sense that a list
@@ -41,90 +30,19 @@ check:
 	if [ $$fail -ne 0 ]; then printf '\nsome checks FAILED\n' >&2; exit 1; fi; \
 	printf '\nok: every check passed\n'
 
-# One version number: the zip name and the About page both read it from here.
+# One version number: plastron reads it from here for the card and the About
+# page (its package/tortos/tortos.mk).
 VERSION ?= 1.6.0
-
-# It reaches the code on the compile line, where make cannot see it change, so
-# v1.0.1 first built as a 1.0 elf. A different VERSION from the last build's
-# deletes the elf here, while the makefile is read and before any target is
-# looked at, and has the container rebuild with -B. Both halves were measured:
-# a stamp file the elf depends on is not enough, because make compares whole
-# seconds and one written in the second the last build finished is not newer;
-# and the deletion alone is not enough, because the container can still see
-# the deleted elf (the same stale view described under build/tortos.elf).
-ifneq ($(VERSION),$(shell cat build/version 2>/dev/null))
-$(shell mkdir -p build && rm -f build/tortos.elf && echo '$(VERSION)' > build/version)
-VERSION_CHANGED := -B
-endif
 
 # The ScreenScraper developer pair, from .screenscraper.env in this directory
 # (gitignored, never committed). A value already in the environment wins, and
 # no file is still a supported build: the defines come out empty and art falls
-# back to libretro. payload.sh is what refuses to ship a build like that.
+# back to libretro. plastron's build reads the same file for the devices.
 SS_ENV := .screenscraper.env
 ss_value = $(shell [ -f $(SS_ENV) ] && sed -n 's/^$(1)=//p' $(SS_ENV) | head -1)
 SS_DEVID ?= $(call ss_value,SS_DEVID)
 SS_DEVPASS ?= $(call ss_value,SS_DEVPASS)
 export SS_DEVID SS_DEVPASS
-
-# The header the pair is compiled from, regenerated on the host every run.
-# mk/cross.mk's creds target only replaces it when the contents change, so the
-# elf relinks exactly when the pair does - not when the file's date says so.
-build/ss_creds.h: FORCE
-	@$(MAKE) --no-print-directory -f mk/cross.mk creds
-
-build/tortos.elf: $(wildcard src/*.c) $(wildcard src/*.h) $(wildcard src/device/*.c) mk/cross.mk \
-                  $(wildcard src/muse/*.c) $(wildcard src/muse/*.h) tools/musectl.c \
-                  tools/btplayer.c \
-                  build/ss_creds.h
-	@docker image inspect $(IMAGE) > /dev/null 2>&1 || { \
-		echo "toolchain image missing; run: make toolchain" >&2; exit 1; }
-	@[ -d sysroot/usr/include/SDL2 ] || { \
-		echo "no sysroot; run: mk/fetch-sysroot.sh (needs the device)" >&2; exit 1; }
-	@# -e VAR with no value passes the HOST's value through, so the pair
-	@# reaches the container without appearing in this command line.
-	docker run --rm -e SS_DEVID -e SS_DEVPASS -v $(CURDIR):/work -w /work $(IMAGE) \
-		make $(VERSION_CHANGED) -f mk/cross.mk SYSROOT=/work/sysroot VERSION=$(VERSION) creds build/tortos.elf build/muse build/musectl build/btplayer
-	@# Refuse to be quiet about an output older than its own source.
-	@#
-	@# Docker on macOS can show the container a stale mtime for a file the host
-	@# just wrote, so make inside the container decides a target is current when
-	@# it is not. Nothing fails: the build reports success, the push reports
-	@# success, and the device runs the PREVIOUS binary. It happened on
-	@# 2026-09-04 - a string change to src/main.c produced a byte-identical elf
-	@# and was deployed and "verified" before anyone noticed the elf was older
-	@# than the file it was built from.
-	@#
-	@# Diatom's tools/brick-make.sh has carried this check since 2026-08-25,
-	@# where the same thing cost an hour twice. A comment here used to claim
-	@# mk/cross.mk carried one too. It did not.
-	@for src in $(wildcard src/*.c) $(wildcard src/*.h) $(wildcard src/device/*.c) mk/cross.mk build/ss_creds.h; do \
-		if [ "$$src" -nt build/tortos.elf ]; then \
-			echo "STALE: build/tortos.elf is older than $$src" >&2; \
-			echo "  the container did not rebuild. rm build/tortos.elf and try again." >&2; \
-			exit 1; \
-		fi; \
-	done
-	@# And the other binaries this builds, which went unchecked until
-	@# 2026-09-26: build/btplayer came out 26 minutes older than its source,
-	@# silently, and a deploy's hash check could not see it - it compares the
-	@# stale build with the copy made from it. Caught only by grepping the
-	@# binary for a string from the change.
-	@for src in $(wildcard src/muse/*.c) $(wildcard src/muse/*.h); do \
-		if [ "$$src" -nt build/muse ]; then \
-			echo "STALE: build/muse is older than $$src" >&2; \
-			echo "  the container did not rebuild. rm build/muse and try again." >&2; \
-			exit 1; \
-		fi; \
-	done
-	@for pair in musectl:tools/musectl.c btplayer:tools/btplayer.c; do \
-		bin=build/$${pair%%:*}; src=$${pair#*:}; \
-		if [ "$$src" -nt "$$bin" ]; then \
-			echo "STALE: $$bin is older than $$src" >&2; \
-			echo "  the container did not rebuild. rm $$bin and try again." >&2; \
-			exit 1; \
-		fi; \
-	done
 
 # The check binaries are rebuilt every time, deliberately.
 #
@@ -132,9 +50,7 @@ build/tortos.elf: $(wildcard src/*.c) $(wildcard src/*.h) $(wildcard src/device/
 # - so editing a source and re-running a check inside the same second silently
 # tests the PREVIOUS binary. That is not theoretical: it happened three times on
 # 2026-08-30 while checking whether a check actually catches the bug it claims
-# to, and each time a clean source read as a failing one. The device build above
-# now carries a staleness check for the same reason, where a rebuild is
-# too slow to just repeat.
+# to, and each time a clean source read as a failing one.
 #
 # A check that quietly tests the wrong binary is worse than no check.
 FORCE:
@@ -307,10 +223,6 @@ build-native/ss-check: tools/ss-check.c src/ss.c src/ss.h src/ssfetch.c src/ssfe
 	      -DTORTOS_VERSION='"check"' \
 	      -o $@ tools/ss-check.c src/ss.c src/ssfetch.c src/db.c src/net.c src/urlenc.c src/rajson.c
 
-# One-time: the cross-compiler image. Pinned by digest, so it does not drift.
-toolchain:
-	docker build -f mk/toolchain.Dockerfile -t $(IMAGE) mk
-
 # Host build of the launcher, for working on how the shelf looks.
 native:
 	$(MAKE) -f mk/native.mk VERSION=$(VERSION)
@@ -329,32 +241,6 @@ vendor:
 # rule is kept in step with config/systems.cfg by tools/recolor-cards.py.
 boot:
 	python3 tools/genboot.py
-
-# What a session record costs to commit, measured on the filesystem you point
-# it at. Built here rather than described in a commit message, because the
-# numbers behind the game-stats storage decision will be re-run: the SD card
-# and /mnt/UDISK answer differently, and so did this Mac, which is the reason
-# the probe exists rather than an argument about fsync counts.
-#
-#   make storeprobe && adb push build/storeprobe /tmp/storeprobe
-#   adb shell '/tmp/storeprobe /mnt/SDCARD/.userdata/tg3040 60'
-#
-# It writes only inside <dir>/storeprobe.tmp and removes it on the way out.
-storeprobe:
-	@docker image inspect $(IMAGE) > /dev/null 2>&1 || { \
-		echo "toolchain image missing; run: make toolchain" >&2; exit 1; }
-	docker run --rm -v $(CURDIR):/work -w /work $(IMAGE) \
-		make -f mk/cross.mk build/storeprobe
-	@# The same guard build/tortos.elf carries, and it earned its place on the
-	@# first run of this target: after `rm -f build/storeprobe` the container
-	@# still reported "up to date" and produced nothing, because Docker on macOS
-	@# showed it a stale view of a file the host had just deleted.
-	@[ -f build/storeprobe ] || { \
-		echo "STALE: the container reported success and produced nothing." >&2; \
-		echo "  run it again." >&2; exit 1; }
-	@[ tools/storeprobe.c -nt build/storeprobe ] && { \
-		echo "STALE: build/storeprobe is older than tools/storeprobe.c" >&2; \
-		exit 1; } || true
 
 # Fourteen config files became two databases, so properties that used to be
 # obvious from looking at a text file now need asserting - chiefly that a
@@ -457,105 +343,11 @@ build-native/museart-check: tools/museart-check.c src/museart.c src/museart.h \
 	      -o $@ tools/museart-check.c src/museart.c src/urlenc.c src/rajson.c
 
 # src/main.c hand-keeps a copy of the mark that C cannot import from
-# tools/markdef.py. payload depends on this for the same reason payload.sh
+# tools/markdef.py. Run it before a release, for the same reason payload.sh
 # refuses a card whose systems.cfg names cores vendor/ does not have: the
 # failure is silent otherwise, and it ships.
 checkmark:
 	python3 tools/checkmark.py
-
-payload: all checkmark
-	VERSION=$(VERSION) ./mk/payload.sh
-
-release: payload
-	@echo "out/TortOS-v$(VERSION).zip"
-
-# Copy the assembled payload onto a mounted FAT32 card. CARD must be set.
-install-card: payload
-	@[ -n "$(CARD)" ] || { echo "usage: make install-card CARD=/Volumes/YOURCARD"; exit 1; }
-	./mk/install-card.sh "$(CARD)"
-
-# --- ADB over USB: works with no WiFi and no SSH, whenever the device is on.
-adb: all
-	./mk/adb-deploy.sh all
-adb-elf: all
-	./mk/adb-deploy.sh elf
-adb-res:
-	./mk/adb-deploy.sh res
-adb-vendor:
-	./mk/adb-deploy.sh vendor
-
-# Every target below picks the TrimUI out of whatever else is plugged in, the
-# same way mk/adb-deploy.sh does. A bare `adb shell` fails with "more than one
-# device" the moment anything else is attached - and adb re-connects remembered
-# network devices BY ITSELF, so this breaks without anyone plugging anything in.
-# It failed exactly that way on 2026-09-04 with a stale 192.168.1.247:5555 entry
-# reappearing between one command and the next, and the failure looks like the
-# restart simply not happening.
-ADBSEL = adb -s $$(adb devices | awk '/\tdevice$$/{print $$1}' | while read s; do \
-	if adb -s "$$s" shell 'grep -qi TG.040 /proc/cpuinfo && echo yes' 2>/dev/null \
-	   | grep -q yes; then echo "$$s"; break; fi; done)
-
-# Kill the launcher so launch.sh's restart loop picks up a freshly pushed
-# build. NEVER kill launch.sh itself: the boot hook's failsafe powers the
-# device off when the launch loop exits.
-adb-restart:
-	$(ADBSEL) shell 'killall -q tortos.elf; exit 0'
-
-# Restart the resident emulator too -- needed after pushing a new diatom.
-adb-restart-all:
-	$(ADBSEL) shell 'killall -q diatom; killall -q tortos.elf; exit 0'
-
-# Run the launcher by hand with its output on your terminal: the fastest way
-# to tell "the scan is wrong" from "the display is wrong".
-adb-run:
-	$(ADBSEL) shell 'killall -q tortos.elf; cd /mnt/SDCARD/TortOS && \
-	  ROMS_PATH=/mnt/SDCARD/Roms \
-	  LD_LIBRARY_PATH=/mnt/SDCARD/TortOS/lib:/usr/trimui/lib \
-	  ./tortos.elf 2>&1' | head -60
-
-adb-log:
-	$(ADBSEL) shell 'tail -60 /mnt/SDCARD/.userdata/tg3040/logs/tortos.log 2>/dev/null'
-
-# --- Push to a running device over SSH. BRICK=<ip> to override.
-#
-# The card art rides along, because a set of system images that does not reach
-# the device is a change that silently does nothing - and the only sign is the
-# shelf looking exactly as it did before.
-#
-# THREE FAULTS LIVED IN HERE, all of them invisible because BRICK defaulted to
-# an address the device is not at, so this target was never once run:
-#
-#   - tortos.cfg was in the file list. It was deleted in 89ca6e5 when settings
-#     moved into the database.
-#   - the -C chain is RELATIVE AND CUMULATIVE. After `-C ../sd/tortos` the
-#     working directory is sd/tortos, so `-C ../res/fonts` resolved to
-#     sd/res/fonts and the font was never sent. It needs ../../ from there.
-#   - the card art was never included at all.
-#
-# The first two both surface at the far end as "tar: short read", which names
-# neither the file nor even which side failed. Run the sending tar on its own
-# if this ever breaks again; it says exactly what it could not find.
-#
-# NOT a match for `make adb all`, which also sends Over The Hare's web assets,
-# the boot video, the bootlogo and splash, the CA bundle and Diatom itself.
-# Those change rarely and two of them are applied once and guarded by markers;
-# this target is for the loop you are actually in, which is the launcher and
-# what it draws.
-deploy: all
-	@# Silent, every line that carries $(SSH): it expands to the password, and
-	@# make echoes a recipe before running it - into a terminal, a CI log, or a
-	@# transcript. The same reason mk/cross.mk writes the ScreenScraper key
-	@# into a header rather than onto a compile line.
-	@tar -cf - -C build tortos.elf muse musectl btplayer -C ../config systems.cfg \
-	    -C ../sd/tortos launch.sh bt-alsa.sh -C ../../res/fonts menu.ttf | \
-	    $(SSH) 'tar -xf - -C /mnt/SDCARD/TortOS'
-	@tar -cf - -C res cards | $(SSH) 'tar -xf - -C /mnt/SDCARD/TortOS'
-
-restart:
-	@$(SSH) 'killall -q tortos.elf; exit 0'
-
-logs:
-	@$(SSH) 'tail -60 /mnt/SDCARD/.userdata/tg3040/logs/tortos.log 2>/dev/null'
 
 clean:
 	rm -rf build build-native out

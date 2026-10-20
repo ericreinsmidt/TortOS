@@ -23,8 +23,8 @@ copied onto the card as `TortOS/THIRD-PARTY-LICENSES.md` by `mk/payload.sh`.
 
 TortOS ships no launcher, emulator or settings library from another project.
 Volume and brightness are TortOS's own code against the device's ALSA control
-and display-engine interfaces, and the toolchain is a stock Debian
-cross-compiler pinned by digest (`mk/toolchain.Dockerfile`).
+and display-engine interfaces, and the devices' builds use the cross-compiler
+plastron's Buildroot builds.
 
 The SDL2 libraries TortOS links against are the device's own, in
 `/usr/trimui/lib`, and are not redistributed on the card.

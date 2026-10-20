@@ -194,7 +194,7 @@ void plat_set_btn(in_state *st, in_button b, bool down)
  * program, so one assignment reaches all of them - including modal loops that
  * were written later and would otherwise have to remember. The keyboard was
  * exactly that case: it checked quit_requested and not main's want_quit, so
- * SIGTERM was ignored while it was open and `make adb-restart` silently did
+ * SIGTERM was ignored while it was open, and a restart from the shell did
  * nothing until the process was killed with -9. */
 static volatile sig_atomic_t g_terminating;
 

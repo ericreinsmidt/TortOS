@@ -1,6 +1,6 @@
-# Runs inside the TortOS toolchain container. CC comes from the image; SYSROOT
-# is passed in and holds the device's own SDL2 libraries, so what links is
-# byte-identical to what runs.
+# plastron's build runs this (its package/tortos/tortos.mk): CC is its
+# cross-compiler, and SYSROOT its staging directory, which holds the same SDL2
+# and FFmpeg the device's system is built with, so what links is what runs.
 BUILD := build
 # Every device shares src/*.c; DEVICE picks the one device file built with it.
 DEVICE ?= brick
@@ -57,9 +57,9 @@ $(BUILD)/tortos.elf: $(SRC) $(CREDS) $(wildcard src/*.h)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(SRC) $(LDLIBS)
 
 # Muse, the audio player's engine: a second binary, not part of tortos.elf -
-# SRC above is src/*.c, which does not descend into src/muse/. Linked against the device's own FFmpeg 6.1 (mk/fetch-sysroot.sh
-# puts the libraries and the matching headers in the sysroot); ALSA is reached
-# with dlopen, so it needs no header and no -lasound.
+# SRC above is src/*.c, which does not descend into src/muse/. Linked against
+# the FFmpeg in SYSROOT; ALSA is reached with dlopen, so it needs no header and
+# no -lasound.
 MUSE_SRC := $(wildcard src/muse/*.c)
 $(BUILD)/muse: $(MUSE_SRC) $(wildcard src/muse/*.h)
 	mkdir -p $(BUILD)
