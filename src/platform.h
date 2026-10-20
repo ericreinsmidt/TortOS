@@ -158,6 +158,10 @@ bool plat_resident_line(const char *fmt, ...);
  * changes, and before every RUN whether it changed or not, so it is safe to
  * call as often as the answer might have moved. */
 void plat_resident_quiet(bool on);
+/* Whether Diatom draws the low-battery disc over the game - its LOWBATTERY,
+ * ADR-0040: 0 none, 1 steady, 2 blinking. Sent like quiet: on a change, and
+ * before every RUN. */
+void plat_resident_low_battery(int level);
 /* Which ears hear what - Diatom's CHANNELS: "stereo", "mono", "left" or
  * "right", already decided for where Diatom's sound goes (src/audioout.h).
  * Sent like quiet: on a change, and before every RUN. */

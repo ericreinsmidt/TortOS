@@ -68,6 +68,10 @@
 #include <unistd.h>
 
 #define BATT_LOW_PCT   10   /* show the low-battery dot at or below this */
+/* At or below this, off the charger, the dot blinks: the last minutes before
+ * BATT_EMPTY_PCT ends the game and powers off, which a steady dot gave no
+ * warning of. */
+#define BATT_CRITICAL_PCT 5
 /* At or below this, off the charger, the device saves a running game and
  * powers off rather than let the PMIC cut it at its own limit, which loses the
  * game's progress since its last save and leaves the card dirty. A starting
@@ -2220,8 +2224,9 @@ static void aout_retry_in_game(void)
 /* Auto Off while a game runs. Diatom holds the clock, because it owns the pad
  * and this process is blocked in plat_resident_wait; the launcher's part is
  * telling it the number and keeping that number true as the charger comes and
- * goes. See on_charger, which lives beside battery_low. */
+ * goes. See on_charger, which lives beside battery_level. */
 static bool on_charger(void);
+static int  battery_level(void); /* the low-battery disc, sent mid-game below */
 static int  g_idle_secs;         /* the Auto Off setting, 0 off */
 static bool g_idle_charging;     /* what was true when SETIDLE was last sent */
 
@@ -2240,6 +2245,10 @@ static void on_game_tick(void)
 	 * change is sent. */
 	muse_poll();
 	plat_resident_quiet(musec_playing());
+	/* The low-battery disc over the game, which Diatom draws (its ADR-0040)
+	 * as this process can draw nothing while a game runs, blinking when
+	 * critical. Sent only on a change; the level is read every five seconds. */
+	plat_resident_low_battery(battery_level());
 
 	/* Play time. Writes at most one unsynced row and usually nothing, and
 	 * never an fsync: measured on the card, an fsync is 1.56 ms median but
@@ -2654,21 +2663,26 @@ static void draw_shell(SDL_Renderer *r, float cx, float cy, float rad,
 	}
 }
 
-static bool battery_low(void)
+/* 0 when the battery is fine or charging, 1 when it is low, 2 when it is
+ * critical. Read every five seconds. */
+static int battery_level(void)
 {
 	static Uint32 next_check;
-	static bool low;
+	static int level;
 	Uint32 now = SDL_GetTicks();
 	if (next_check == 0 || now >= next_check) {
 		next_check = now + 5000;
 		int pct;
 		bool charging;
-		low = plat_battery(&pct, &charging) && !charging && pct <= BATT_LOW_PCT;
+		level = 0;
+		if (plat_battery(&pct, &charging) && !charging && pct <= BATT_LOW_PCT)
+			level = pct <= BATT_CRITICAL_PCT ? 2 : 1;
 	}
-	return low;
+	return level;
 }
 
-/* Too low to go on, cached as battery_low is. Asked by every screen through
+
+/* Too low to go on, cached as battery_level is. Asked by every screen through
  * idle_due, and by the game's wait loop (plat_resident_on_battery_empty), so
  * an empty battery ends things the way the power button does: a game saves
  * on its way out, and power_off follows. Twice in a row, five seconds apart,
@@ -2700,7 +2714,7 @@ static bool battery_empty(void)
  * frame, the in-game tick ten times a second - and every call is two sysfs
  * files opened, read and closed. Two seconds is well inside the shortest
  * timeout anyone can set, so the lag is not observable. Same trick and the
- * same reasoning as battery_low() above.
+ * same reasoning as battery_level() above.
  *
  * plat_battery leaves its out-parameter alone when it fails, so the answer is
  * written before the call rather than after it. */
@@ -2760,6 +2774,28 @@ static bool idle_due_ctx(void *ctx) { return idle_due((app *)ctx); }
 
 /* The one piece of chrome: a small accent disc, top right, when the battery is
  * low. Drawn with horizontal spans -- SDL has no circle. */
+static void draw_low_battery_dot(SDL_Renderer *r);
+static void redraw_at(Uint32 t);   /* below, with the rest of the redraw clock */
+
+/* The dot as the battery has it: steady when low, blinking when critical, a
+ * second on and a second off, slow enough not to pull at the eye. Returns how
+ * long until it changes by itself, in ms, and tells the shelf's loop the same,
+ * so a screen that only draws when something moves still blinks it. Diatom
+ * blinks its own over a game on the same rhythm (its ADR-0040). */
+static unsigned draw_battery_dot(SDL_Renderer *r)
+{
+	Uint32 now, flip;
+	int level = battery_level();
+
+	if (level == 0) return (unsigned)-1;
+	if (level == 1) { draw_low_battery_dot(r); return (unsigned)-1; }
+	now = plat_now_ms();
+	flip = 1000 - now % 1000;
+	redraw_at(now + flip);
+	if ((now / 1000) % 2 == 0) draw_low_battery_dot(r);
+	return flip;
+}
+
 static void draw_low_battery_dot(SDL_Renderer *r)
 {
 	int cx = TORTOS_SCREEN_W - 34, cy = 34, rad = 9;
@@ -3533,7 +3569,7 @@ static void draw_shelf(app *a)
 	if (a->sys.count <= 0) draw_no_games(a);
 	else if (a->screen == SCREEN_SYSTEMS) draw_systems(a);
 	else draw_games(a);
-	if (battery_low()) draw_low_battery_dot(a->r);
+	draw_battery_dot(a->r);
 }
 
 static void render(app *a)
@@ -8413,7 +8449,10 @@ static unsigned np_draw(app *a, const mu_now *mn, const char *next)
 	        : (state ? "A: play    L1/R1: track    Left/Right: seek    Y: mode"
 	                 : "A: pause    L1/R1: track    Left/Right: seek    Y: mode"),
 	        TORTOS_SCREEN_W / 2, TORTOS_SCREEN_H - 72, 0, UI_TEXT_DIM);
-	if (battery_low()) draw_low_battery_dot(r);
+	{
+		unsigned dot = draw_battery_dot(r);
+		if (dot < wait) wait = dot;
+	}
 	return wait;
 }
 
@@ -9527,6 +9566,10 @@ static void gm_backdrop(app *a, void *ctx)
 	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 	SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
 	SDL_RenderFillRect(a->r, NULL);
+	/* The low-battery disc, as on the shelf: this menu is drawn by this
+	 * process, so it is drawn here; in the game Diatom draws it. This loop
+	 * draws every frame, so the blink needs nothing more. */
+	draw_battery_dot(a->r);
 }
 
 /* Power here stops the GAME. The device is not going anywhere, and the wait
@@ -9893,6 +9936,8 @@ static void launch(app *a)
 	/* Whether this game should be heard - quiet while Muse plays, Diatom's
 	 * ADR-0032. Stated before the RUN goes out, which sends it. */
 	plat_resident_quiet(musec_playing());
+	/* And whether the battery is low, so the disc is over its first frame. */
+	plat_resident_low_battery(battery_level());
 
 	/* A game resumed at boot waited 71 and 47 ms for the resident on the
 	 * Pixel 2 (2026-10-05, a DAC plugged in), where it had been falling back
