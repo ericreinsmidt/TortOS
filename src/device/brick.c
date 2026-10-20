@@ -638,7 +638,7 @@ static int ctl_io(const char *name, long *val, int write)
  * what this costs is a frame-budget question rather than a tidiness one.
  * Measured on the card 2026-09-05: the atomic_open/atomic_commit this replaces
  * was 3.03 ms median with a 9.27 ms tail, against a 16.7 ms frame. The two
- * writes below are 0.48 ms each with a 0.59 ms tail. tools/storeprobe.c. */
+ * writes below are 0.48 ms each with a 0.59 ms tail. */
 static void levels_save(void)
 {
 	db_set_int(db_dev(), "volume", cur_vol);

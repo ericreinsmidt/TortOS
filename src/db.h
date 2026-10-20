@@ -24,7 +24,7 @@
  * Measured on the card, 2026-09-05, against what this replaces: a settings
  * write through atomic_open/atomic_commit costs 3.03 ms median with a 9.27 ms
  * tail, and every volume nudge pays it while a game is running. The same write
- * here is 0.48 ms with a 0.59 ms tail. See tools/storeprobe.c.
+ * here is 0.48 ms with a 0.59 ms tail.
  */
 #ifndef TORTOS_DB_H
 #define TORTOS_DB_H

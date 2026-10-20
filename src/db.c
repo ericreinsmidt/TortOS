@@ -145,7 +145,7 @@ const db_default *db_defaults(db_scope scope, size_t *count)
  * WAL and synchronous=NORMAL for both. NORMAL leaves the same ~33 s writeback
  * window an unsynced write has, which is the right trade for a volume level:
  * losing the last nudge to a power cut costs nothing, and FULL costs 5x per
- * write to prevent it. Measured, see tools/storeprobe.c. */
+ * write to prevent it. Measured on the card, 2026-09-05. */
 static const char SCHEMA[] =
 	"PRAGMA journal_mode=WAL;"
 	"PRAGMA synchronous=NORMAL;"

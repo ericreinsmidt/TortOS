@@ -77,9 +77,3 @@ $(BUILD)/musectl: tools/musectl.c
 $(BUILD)/btplayer: tools/btplayer.c
 	mkdir -p $(BUILD)
 	$(CC) -O2 -mcpu=cortex-a53 -Wall -Wextra -std=gnu11 -o $@ $< -ldl
-
-# A libc-only probe, no SDL. It dlopens the device's own libsqlite3 rather than
-# linking it, because there is no sqlite3.h on the device or in the sysroot.
-$(BUILD)/storeprobe: tools/storeprobe.c
-	mkdir -p $(BUILD)
-	$(CC) -O2 -mcpu=cortex-a53 -Wall -Wextra -std=gnu11 -o $@ $< -ldl
