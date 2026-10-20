@@ -225,8 +225,8 @@ static unsigned t_back0;
  * Everything between EXIT and the first frame of the fade blocks and none of it
  * presents, so the panel holds whatever the launcher drew last - which after a
  * quit is the in-game menu, over a frame of the game that has ended. Measured
- * on the device: 123ms of it, 52 in plat_leds_off's seventy-nine sysfs writes
- * and 69 rebuilding the focused card off the SD card.
+ * on the device: 123ms of it, 52 in the LED writes that ran here then (since
+ * removed) and 69 rebuilding the focused card off the SD card.
  *
  * One present, black, because the fade that follows starts from black and the
  * two should agree. This is not the buffer-establishing that was tried and
@@ -3698,10 +3698,6 @@ static void anim_poweroff(app *a)
 
 static void power_off(app *a)
 {
-	/* Here rather than only on the return path: launch.sh runs its leds_off
-	 * before each restart of the launcher, and a power-off breaks that loop
-	 * instead of going round it, so this is the last chance to darken them. */
-	plat_leds_off();
 	remember_place(a);
 	book_keep(true);
 	plat_request_poweroff();
@@ -10160,9 +10156,7 @@ static void launch(app *a)
 	 * the whole session. idle_due notices the gap on its own, which is what
 	 * stops this from being a list of places to remember. */
 
-	/* This one exits without power_off(), so it darkens the lights itself. */
 	if (access(TORTOS_POWEROFF_FLAG, F_OK) == 0) {
-		plat_leds_off();
 		a->running = false;
 		return;
 	}
@@ -10182,12 +10176,6 @@ static void launch(app *a)
 	 * draws and presents exactly once. */
 	render(a);
 	fprintf(stderr, "exit: back in %u ms\n", plat_now_ms() - t_back0);
-	/* Seventy-nine open/write/close round trips through sysfs, measured at
-	 * 35-52ms. Nothing about them is urgent and the panel is what the player
-	 * is waiting on, so they happen once the shelf is up rather than while it
-	 * is still black. The two paths above that leave without reaching here do
-	 * it themselves. */
-	plat_leds_off();
 }
 
 /* ---------- input --------------------------------------------------------- */
@@ -12093,8 +12081,6 @@ int main(int argc, char *argv[])
 	 * the shipped default ahead of the level the player last chose. */
 	plat_settings_init();
 	t_mark("settings");
-	plat_leds_off();
-	t_mark("video+input");
 
 	/* Before ui_init, which is where the sizes are decided; it persists across
 	 * the ui_quit/ui_init pair the standalone-emulator fallback goes through. */

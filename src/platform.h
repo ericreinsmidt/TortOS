@@ -209,7 +209,6 @@ bool plat_resident_rect(SDL_Rect *out);
 bool plat_resident_sync_rect(int timeout_ms);
 
 void plat_request_poweroff(void);
-void plat_leds_off(void);
 
 /* The two level scales, stated once. TortOS shares them verbatim with
  * launch.sh and with Diatom, so a level crossing the socket needs no

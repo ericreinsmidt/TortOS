@@ -489,9 +489,6 @@ bool device_power_pressed(void)
 	return pressed;
 }
 
-/* No LEDs on this device. */
-void plat_leds_off(void) { }
-
 /* ---- volume and brightness ------------------------------------------------- */
 
 /* The codec's controls by ioctl on /dev/snd/controlC0, the kernel's struct

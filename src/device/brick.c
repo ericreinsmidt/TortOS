@@ -429,42 +429,6 @@ bool device_power_pressed(void)
 	return pressed;
 }
 
-#ifdef __linux__
-static void write_str(const char *path, const char *val)
-{
-	int fd = open(path, O_WRONLY);
-	if (fd < 0) return;
-	if (write(fd, val, strlen(val)) < 0) { /* best effort */ }
-	close(fd);
-}
-#endif
-
-void plat_leds_off(void)
-{
-#ifdef __linux__
-	/* Stop the animation engine, scale every group to zero, then zero all 23
-	 * raw channels directly -- so it holds whatever state the stock input
-	 * daemon left the engine in. */
-	write_str("/sys/class/led_anim/effect_enable", "0");
-	static const char *groups[] = { "l", "r", "lr", "m", "f1", "f2" };
-	char path[96];
-	for (size_t i = 0; i < sizeof groups / sizeof *groups; i++) {
-		snprintf(path, sizeof path, "/sys/class/led_anim/effect_rgb_hex_%s", groups[i]);
-		write_str(path, "000000 ");
-	}
-	write_str("/sys/class/led_anim/max_scale", "0");
-	write_str("/sys/class/led_anim/max_scale_lr", "0");
-	write_str("/sys/class/led_anim/max_scale_f1f2", "0");
-	for (int n = 0; n < 23; n++) {
-		for (const char *c = "rgb"; *c; c++) {
-			snprintf(path, sizeof path,
-			         "/sys/class/leds/sunxi_led%d%c/brightness", n, *c);
-			write_str(path, "0");
-		}
-	}
-#endif
-}
-
 /* ---- volume and brightness, straight at the hardware ----------------------
  *
  * TortOS's own code, against the same two device interfaces the emulator uses.
