@@ -222,10 +222,7 @@ void plat_request_poweroff(void);
  * first run, then overwritten by every nudge of the rocker. There is no longer
  * a saved value and a fallback to reconcile, which is why this takes nothing -
  * it used to be handed the config defaults so the precedence rule lived in one
- * place, and now the precedence has nowhere to disagree with itself.
- *
- * launch.sh applies the same level to the boot animation before this process
- * exists, from the boot.env the launcher exports. See src/db.h. */
+ * place, and now the precedence has nowhere to disagree with itself. */
 void plat_settings_init(void);
 int  plat_volume_get(void);
 int  plat_brightness_get(void);

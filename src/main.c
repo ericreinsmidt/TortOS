@@ -7063,7 +7063,6 @@ static menu_result clock_key(app *a, void *ctx, in_button key, int sel)
 		db_get_str(db_lib(), "timezone", id, sizeof id, "America/New_York");
 		z = clock_zone_step(id, d);
 		db_set_str(db_lib(), "timezone", CLOCK_ZONES[z].id);
-		db_write_boot_env();
 		plat_clock_zone(CLOCK_ZONES[z].id);
 	}
 	return MENU_STAY;
@@ -11700,7 +11699,7 @@ int main(int argc, char *argv[])
 			db_shutdown();
 			return 1;
 		}
-		/* Three of these keys are exported for launch.sh, and a value the
+		/* Two of these keys are exported for launch.sh, and a value the
 		 * database holds but boot.env does not is a setting that takes effect
 		 * everywhere except at boot. Setting wifi=1 and rebooting into a
 		 * radio that stays down is how that was found. */

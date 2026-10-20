@@ -501,7 +501,7 @@ db *db_lib(void) { return g_lib; }
 bool db_write_boot_env(void)
 {
 	static char last[512];
-	char body[512], tz[64];
+	char body[512];
 	char tmp[1100];
 	FILE *f;
 	int n;
@@ -510,23 +510,16 @@ bool db_write_boot_env(void)
 
 	/* Shell-sourced, so every value is quoted and nothing is computed here.
 	 * The launcher already resolved "the player's choice, else the shipped
-	 * default" by seeding, which is why this is four lines and launch.sh no
-	 * longer needs a fallback for each one. */
-	db_get_str(g_lib, "timezone", tz, sizeof tz, "America/New_York");
+	 * default" by seeding, which is why launch.sh needs no fallback for
+	 * either. */
 	n = snprintf(body, sizeof body,
 	             "# Written by TortOS from the settings database. Derived, not\n"
 	             "# authoritative: delete it and the next settings change\n"
 	             "# rewrites it. Sourced by launch.sh before tortos.elf runs.\n"
 	             "WIFI='%d'\n"
-	             "BLUETOOTH='%d'\n"
-	             /* A single quote in a timezone name would break the shell that
-	              * sources this. None exist, and a value that could is dropped
-	              * rather than escaped: a wrong TZ is cheaper than an
-	              * unbootable launch.sh. */
-	             "TIMEZONE='%s'\n",
+	             "BLUETOOTH='%d'\n",
 	             db_get_int(g_dev, "wifi", 0) ? 1 : 0,
-	             db_get_int(g_dev, "bluetooth", 0) ? 1 : 0,
-	             strchr(tz, '\'') ? "UTC" : tz);
+	             db_get_int(g_dev, "bluetooth", 0) ? 1 : 0);
 	if (n < 0 || n >= (int)sizeof body) return false;
 
 	/* NOTHING TO DO IF NOTHING CHANGED, and this is not an optimization for

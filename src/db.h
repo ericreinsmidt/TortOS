@@ -130,9 +130,8 @@ db  *db_dev(void);      /* per handheld  */
 db  *db_lib(void);      /* per card      */
 
 /* --- boot.env -------------------------------------------------------------
- * launch.sh needs five values before tortos.elf exists: the panel brightness
- * for before the boot animation, the timezone, and whether each radio should
- * come up. It is POSIX shell with busybox sed, and there is no sqlite3 binary
+ * launch.sh needs two values before tortos.elf exists: whether each radio
+ * should come up. It is POSIX shell with busybox sed, and there is no sqlite3 binary
  * on the device, so it cannot read a database.
  *
  * So the launcher exports what the shell needs. The database stays
@@ -142,7 +141,7 @@ db  *db_lib(void);      /* per card      */
  * It is also FASTER than what it replaces. launch.sh used to run six seds
  * across four files, each one a fork; this is a single `.` of one file.
  *
- * Rewritten whenever one of the five changes, not at shutdown: a handheld is
+ * Rewritten whenever either changes, not at shutdown: a handheld is
  * switched off by holding a button or by running the battery flat, and neither
  * is a chance to save anything. */
 bool db_write_boot_env(void);

@@ -226,9 +226,11 @@ static void boot_env_says_what_the_shell_needs(void)
 {
 	const char *path = "/tmp/tortos-db-check-boot.env";
 	char line[256];
-	int seen_bright = 0, seen_wifi = 0, seen_bt = 0, seen_tz = 0;
-	/* seen_bright: brightness must NOT be in it any more - only TrimUI's
-	 * launch.sh read it, to set the panel before its boot animation. */
+	int seen_bright = 0, seen_tz = 0, seen_wifi = 0, seen_bt = 0;
+	/* seen_bright and seen_tz: neither must be in it any more. Only TrimUI's
+	 * launch.sh read the brightness, to set the panel before its boot
+	 * animation, and nothing read the timezone: the launcher sets TZ itself,
+	 * and Muse inherits it. */
 	FILE *f;
 
 	printf("boot.env carries the values launch.sh reads:\n");
@@ -250,13 +252,13 @@ static void boot_env_says_what_the_shell_needs(void)
 		if (!strncmp(line, "BRIGHTNESS=", 11))          seen_bright = 1;
 		if (!strcmp(line, "WIFI='1'\n"))                seen_wifi = 1;
 		if (!strcmp(line, "BLUETOOTH='1'\n"))           seen_bt = 1;
-		if (!strcmp(line, "TIMEZONE='Europe/Berlin'\n")) seen_tz = 1;
+		if (!strncmp(line, "TIMEZONE=", 9))            seen_tz = 1;
 	}
 	fclose(f);
 	ck(!seen_bright, "brightness is not in it");
+	ck(!seen_tz,     "nor the timezone");
 	ck(seen_wifi,   "wifi is the stored value");
 	ck(seen_bt,     "bluetooth is the stored value, from the device scope");
-	ck(seen_tz,     "timezone is the stored value, from the library scope");
 
 	/* The format is a contract with a reader written in another language:
 	 * launch.sh sources the file. A quoting change here would break the boot,
@@ -267,11 +269,11 @@ static void boot_env_says_what_the_shell_needs(void)
 		char got[128] = { 0 };
 
 		snprintf(cmd, sizeof cmd,
-		         "sh -c '. %s; printf \"%%s %%s %%s\" \"$WIFI\" \"$BLUETOOTH\" \"$TIMEZONE\"'",
+		         "sh -c '. %s; printf \"%%s %%s\" \"$WIFI\" \"$BLUETOOTH\"'",
 		         path);
 		r = popen(cmd, "r");
 		if (r) { if (!fgets(got, sizeof got, r)) got[0] = '\0'; pclose(r); }
-		ck(!strcmp(got, "1 1 Europe/Berlin"), "a POSIX shell can source it");
+		ck(!strcmp(got, "1 1"), "a POSIX shell can source it");
 	}
 
 	/* Derived, not authoritative: losing it must cost nothing. This is also
