@@ -9,9 +9,9 @@
  *
  * libasound directly rather than through SDL, because Diatom's ADR-0030 found
  * SDL cannot drive a bluealsa device string and a headset is a requirement.
- * And reached with dlopen, the way src/db.c reaches sqlite: the sysroot has no
- * ALSA headers, the device has the library, and nine functions do not justify
- * fetching a header tree for them.
+ * And reached with dlopen, the way src/db.c reaches sqlite: written for
+ * TrimUI's system, which had no ALSA headers, and nine functions declared here
+ * are all it uses.
  *
  * `default` goes through the Brick's dmix, which is what lets Muse play over a
  * running game without either of them knowing. It NEVER touches the mixer:

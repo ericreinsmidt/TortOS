@@ -12,9 +12,11 @@
 #include "db.h"
 
 /* --- libsqlite3, declared rather than included ---------------------------
- * There is no sqlite3.h on the device or in the sysroot. These nine entry
- * points are the whole surface this file uses, and the C ABI for them has been
- * stable since 3.x. The device ships 3.12.2. */
+ * Written for TrimUI's system, which had no sqlite3.h. plastron's has one, but
+ * these nine entry points are the whole surface this file uses, the C ABI for
+ * them has been stable since 3.x, and reaching the library with dlopen leaves
+ * the launcher on its shipped defaults, not unable to start, when it is
+ * missing. */
 typedef struct sqlite3 sqlite3;
 typedef struct sqlite3_stmt sqlite3_stmt;
 

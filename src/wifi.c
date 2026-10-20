@@ -16,8 +16,8 @@
  * visible in /proc/<pid>/cmdline. Closing that means speaking the control
  * protocol over its unix socket directly instead of shelling out at all.
  * Worth doing if this device ever runs anything untrusted; today the only
- * processes on it are the launcher, the emulator and the stock firmware, and
- * anything that could read that cmdline is already root.
+ * processes on it are the launcher, the emulator and plastron's own services,
+ * and anything that could read that cmdline is already root.
  */
 #include <stdio.h>
 #include <stdlib.h>

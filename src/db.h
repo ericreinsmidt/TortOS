@@ -17,9 +17,10 @@
  * Flattening those into one file would silently move a session token between
  * devices, which is the one thing the old layout was careful about.
  *
- * There is no sqlite3.h on the device and none in the sysroot, so this dlopens
- * libsqlite3 and declares the entry points it needs - the same way the host
- * reaches zlib. The device ships 3.12.2 in /usr/lib.
+ * This dlopens libsqlite3 and declares the entry points it needs, the same way
+ * the host reaches zlib: written for TrimUI's system, which had no sqlite3.h,
+ * and kept because a missing library then leaves the launcher on its shipped
+ * defaults rather than unable to start.
  *
  * Measured on the card, 2026-09-05, against what this replaces: a settings
  * write through atomic_open/atomic_commit costs 3.03 ms median with a 9.27 ms

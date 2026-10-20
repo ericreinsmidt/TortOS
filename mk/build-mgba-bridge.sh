@@ -19,7 +19,7 @@
 #
 # WHEN LIBRETRO SYNCS: restore the `fetch_core mgba` line in fetch-vendor.sh,
 # delete this script, and verify a save state made on this core still loads on
-# the official one. See MGBA-MBC2.md.
+# the official one.
 #
 # Needs: docker. Its image is mk/mgba-bridge.Dockerfile, built here; after
 # the first time, Docker has it cached.

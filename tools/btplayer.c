@@ -18,10 +18,11 @@
  * launch.sh's bt_on starts it after bluetoothd and bt_off stops it, because a
  * bluetoothd that restarts has forgotten it.
  *
- * libdbus is the device's own, reached with dlopen: the sysroot carries no
- * headers for it, so the handful of types used are declared here. Every call
- * the headset makes on the player - play, pause, from its buttons - is answered
- * UnknownMethod by libdbus, which BlueZ passes on as a failure and nothing more.
+ * libdbus is the device's own, reached with dlopen: written for TrimUI's
+ * system, which had no headers for it, so the handful of types used are
+ * declared here. Every call the headset makes on the player - play, pause,
+ * from its buttons - is answered UnknownMethod by libdbus, which BlueZ passes
+ * on as a failure and nothing more.
  *
  * It also mends a volume BlueZ lost. BlueZ 5.54 hands a headset's report only
  * to the A2DP transports that exist at that moment, and keeps the value in the

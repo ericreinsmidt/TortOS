@@ -108,10 +108,10 @@ static void shrink_now(const char *path)
 	 * to RGBA32 before writing, with no flag to stop it; handing it an RGB24
 	 * surface and the original RGB24 image produced byte-identical RGBA files.
 	 * Getting RGB out means writing the PNG here instead - chunk framing, CRCs
-	 * and adaptive row filtering, against a zlib the sysroot does not carry
-	 * yet. Deliberately not done: a hand-rolled encoder that is subtly wrong
-	 * corrupts art silently, and decoding has since moved off the render
-	 * thread (src/texload.c), so 3ms of decode is no longer what anyone feels. */
+	 * and adaptive row filtering. Deliberately not done: a hand-rolled encoder
+	 * that is subtly wrong corrupts art silently, and decoding has since moved
+	 * off the render thread (src/texload.c), so 3ms of decode is no longer what
+	 * anyone feels. */
 	if (snprintf(tmp, sizeof tmp, "%s.tmp", path) < (int)sizeof tmp &&
 	    IMG_SavePNG(dst, tmp) == 0) {
 		fprintf(stderr, "art: %dx%d -> %dx%d %ums %s\n",

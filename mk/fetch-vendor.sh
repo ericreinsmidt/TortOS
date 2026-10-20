@@ -7,9 +7,9 @@
 #   the cores need  libc libm librt libstdc++ libgcc_s ld-linux
 #   tortos.elf needs libSDL2 libSDL2_image libSDL2_ttf libm libdl libc
 #
-# Every one of those ships in the device's own firmware under /usr/trimui/lib
-# or /usr/lib. Settings are TortOS's own code in src/device/brick.c, against the
-# device's ALSA control and display-engine interfaces.
+# Every one of those is in plastron's system, under /usr/lib. Settings are
+# TortOS's own code in src/device/, against each device's ALSA controls and
+# display.
 #
 # Cores come from libretro's own buildbot, pinned by sha256 - the same hashes
 # Diatom's CORES.md verifies, because they are the same binaries. The
@@ -63,8 +63,8 @@ fetch_core snes9x2010        3933890f520abb9dbb0e5276460785b20ce54d25f552b369caf
 # has not synced since 2026-08-06.
 #
 # RESTORE THE LINE ABOVE AND DELETE THE BRIDGE the day that fork syncs. The
-# official binary will contain exactly the change we are carrying. See
-# MGBA-MBC2.md, which also records what to re-verify when swapping back.
+# official binary will contain exactly the change we are carrying.
+# mk/build-mgba-bridge.sh says what to re-verify when swapping back.
 fetch_core genesis_plus_gx   3673a22b906509461e23a5a118b1d1bec15cbda105f260cbcbc08a16b2124e48
 fetch_core mednafen_pce_fast aca90a14b18108c86398da2267ef40d5145eaddbc1c1b310614d745b258552b1
 fetch_core mednafen_ngp      a2015668f9a9403b8bf6941b550fae2c618f37b79173e8ba27c95b95f96bdd99

@@ -10,14 +10,10 @@ CC ?= aarch64-linux-gnu-gcc
 VERSION ?= 0.0
 CFLAGS := -DTORTOS_VERSION='"$(VERSION)"' -O2 -mcpu=cortex-a53 -Wall -Wextra -Wno-unused-parameter -std=gnu11 \
           -I$(SYSROOT)/usr/include/SDL2 -D_GNU_SOURCE
-# --allow-shlib-undefined: the device's SDL2_ttf pulls FT_* out of freetype,
-# and SDL2/SDL2_image reach for more of the firmware besides. Those resolve on
-# the device at runtime, where they exist. The flag permits undefined symbols
-# in SHARED LIBRARIES only - anything THIS code calls and cannot find is still
-# a link error, which is what makes the link a real check that TortOS uses no
-# SDL function the shipped libraries lack.
-LDFLAGS := -L$(SYSROOT)/usr/lib -Wl,-rpath-link,$(SYSROOT)/usr/lib \
-           -Wl,--allow-shlib-undefined
+# No undefined symbols allowed, in this code or in the libraries it links:
+# SYSROOT has SDL and everything SDL needs, so the link checks that TortOS uses
+# no function the system's libraries lack, and that those libraries resolve.
+LDFLAGS := -L$(SYSROOT)/usr/lib -Wl,-rpath-link,$(SYSROOT)/usr/lib
 LDLIBS := -lSDL2 -lSDL2_image -lSDL2_ttf -lm -ldl
 
 # The ScreenScraper developer pair, from the environment into a GENERATED
@@ -66,11 +62,6 @@ $(BUILD)/muse: $(MUSE_SRC) $(wildcard src/muse/*.h)
 	$(CC) -O2 -mcpu=cortex-a53 -Wall -Wextra -Wno-unused-parameter -std=gnu11 \
 	      -D_GNU_SOURCE -I$(SYSROOT)/usr/include $(LDFLAGS) -o $@ $(MUSE_SRC) \
 	      -lavformat -lavcodec -lavfilter -lswresample -lavutil -lpthread -ldl
-
-# Talks to Muse by hand over ssh; the device's BusyBox nc has no -U.
-$(BUILD)/musectl: tools/musectl.c
-	mkdir -p $(BUILD)
-	$(CC) -O2 -mcpu=cortex-a53 -Wall -Wextra -std=gnu11 -o $@ $<
 
 # Registers a do-nothing media player with BlueZ so a headset's absolute
 # volume is not dropped; see the file. libdbus by dlopen, like ALSA in Muse.
