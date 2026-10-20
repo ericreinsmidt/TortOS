@@ -1,33 +1,23 @@
 #!/usr/bin/env python3
-"""Render the TortOS boot animation and the still images that bracket it.
+"""Render TortOS's boot animation, the flyby.
 
-Run from the repo root:  python3 tools/genboot.py
+Run from the repo root:  python3 tools/genboot.py   (or make boot)
 
-Outputs (all under res/boot/):
-  tortos-boot.mp4   1024x768, 30 fps, exactly 72 frames (2.400 s), H.264.
-  bootlogo.bmp      frame 0 as a 24-bit BMP, for the bootloader splash slot.
-  splash.png        frame 0 as a PNG, for tooling that wants a lossless copy.
+Output: res/boot/tortos-fly.mp4, 1024x768, 60 fps, 36 frames (0.60 s), H.264,
+and its PNG frames in build/boot-frames.
 
-Frame 0 is pure black on purpose, and asserted before anything is written. The
-stock splash is replaced by bootlogo.bmp so the handoff into the animation is a
-continuation rather than a cut, and that only works if the first frame matches
-what the bootloader left on the panel.
+plastron plays it on both devices as its splash, from the moment the panel has
+a framebuffer until TortOS's first frame; its scripts/make-splash-frames.py
+turns it into the frames it ships. Those boots are fast, the shelf up about
+half a second after the panel lights, so the wordmark is there from frame 0,
+large and low on the screen, and is seen however fast the boot is. Above it the
+turtle flies in head first from the left edge and shoots across and off the
+right with the lockup's three speed bars streaming behind him, fading toward
+their tails. Then the wordmark holds alone, and the splash keeps the last frame
+up until TortOS draws. At 60 fps, as he moves about 60 px a frame.
 
-THE LENGTH IS A CONTRACT, NOT A PREFERENCE. launch.sh starts this in the
-background and the launcher blocks on /tmp/tortos_bootanim until ffmpeg clears
-it, so anything longer than the launcher's own startup is time the player
-spends waiting at a picture. Today the launcher is ready about 1.06 s after it
-starts, and roughly 90 lines of launch.sh run between this starting and the
-launcher starting, so 2.4 s finishes first and nobody waits. The launcher
-reports it if that ever stops being true: wait_for_boot_anim calls
-t_mark("anim wait"), which prints only when it actually waited. A `boot: anim
-wait` line in tortos.log means this file got too long or startup got faster.
-
-The last beat is a still hold, and the frame it holds is the finished lockup -
-the same composition as tortos-lockup.svg, from the same constants. When
-ffmpeg exits, nothing clears the framebuffer, so that frame stays on the panel
-until the launcher presents. It is on screen longer than any other frame in the
-file and is the one worth getting right.
+The turtle, the wordmark and the bars are the lockup's (tools/genmark.py's
+tortos-lockup.svg), from the same constants.
 
 Everything is drawn at 3x and downsampled with LANCZOS: the shell is all
 diagonal hexagon edges and PIL's polygon rasterizer has no antialiasing of its
@@ -40,7 +30,7 @@ import shutil
 import subprocess
 import sys
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFont
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT_DIR = os.path.join(ROOT, "res", "boot")
@@ -48,8 +38,6 @@ TMP_DIR = os.path.join(ROOT, "build", "boot-frames")
 FONT_PATH = os.path.join(ROOT, "res", "fonts", "wordmark.ttf")
 
 W, H = 1024, 768
-FPS = 30
-N_FRAMES = 72                      # 2.400 s exactly
 SS = 3                             # supersample factor
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -88,8 +76,6 @@ def bar_pts(x0, x1, yc):
 _raw_left = min(min(p[0] for p in bar_pts(a, b, y)) for (y, a, b, _) in BARS_RAW)
 _raw_right = 650.0 + INK_R
 DX = DESIGN_W / 2 - (_raw_left + _raw_right) / 2      # center the lockup
-WORD_X = 650.0 + DX
-BARS = [(y, a + DX, b + DX, c) for (y, a, b, c) in BARS_RAW]
 LOCK_L, LOCK_R = _raw_left + DX, _raw_right + DX
 
 # ---- fit that lockup into the 4:3 boot frame -------------------------------
@@ -102,19 +88,6 @@ R = 40.0                                              # turtle cell radius
 
 def X(v): return (OX + v * SCALE) * SS
 def Y(v): return (OY + v * SCALE) * SS
-
-
-# ---- timing, in frames -----------------------------------------------------
-F_FADE   = (0, 8)        # black -> the shell appears
-F_BACK   = (8, 20)       # reverse toward the left edge, coiling
-F_SET    = (20, 24)      # held, loaded
-F_ZIP    = (24, 46)      # launch and exit
-F_WORD   = (0.46, 0.84)  # fractions OF the zip
-F_BARS   = (0.60, 1.00)
-F_SETTLE = (46, 56)      # the lockup eases the last of the way in
-# 56..71 is a still hold: half a second, and the frame left on the panel.
-
-START_CX, BACK_CX, EXIT_CX = 470.0, 250.0, 1560.0
 
 
 def hexpts(cx, cy, r, sx, sy):
@@ -132,73 +105,110 @@ def draw_turtle(d, cx, cy, r, sx, sy, alpha):
               fill=CYAN + (alpha,), outline=(0, 0, 0, alpha), width=max(1, int(3 * SS * SCALE)))
 
 
-def eo(t): return 1 - (1 - t) ** 3
-def ei(t): return t * t * t
 def cl(t): return max(0.0, min(1.0, t))
-def lerp(a, b, t): return a + (b - a) * t
-def span(n, lo, hi): return cl((n - lo) / float(hi - lo)) if hi > lo else 1.0
 
 
-def render(n, font):
-    im = Image.new("RGBA", (W * SS, H * SS), BG + (255,))
-    d = ImageDraw.Draw(im, "RGBA")
+# ---- the flyby -------------------------------------------------------------
+FLY_FPS = 60
+FLY_SX, FLY_SY = 1.30, 0.92   # stretched with speed
+F_FLY = (0, 22)          # head in at the left edge -> gone off the right
+FLY_FRAMES = 36          # his bars are gone by then; the rest hold the wordmark
+FLY_BAR_LEN = 1.7        # his speed bars, this many times the lockup's lengths
+FLY_GAP = 40.0           # design units between his back and his bars' heads
+FLY_WORD_SCALE = 1.8     # the wordmark, this much larger than in the lockup
+FLY_WORD_CY = 0.66       # the middle of its cap height, down the screen
+FLY_ABOVE = 90.0         # px between his shell and the top of the wordmark
 
-    # --- the turtle ---------------------------------------------------------
-    show, cx, sx, sy, a = True, START_CX, 1.0, 1.0, 255
-    if n < F_FADE[1]:
-        a = int(255 * span(n, F_FADE[0], F_FADE[1]))
-    elif n < F_BACK[1]:
-        e = eo(span(n, F_BACK[0], F_BACK[1]))
-        cx = lerp(START_CX, BACK_CX, e); sx = lerp(1.0, 0.84, e); sy = lerp(1.0, 1.12, e)
-    elif n < F_SET[1]:
-        cx, sx, sy = BACK_CX, 0.84, 1.12
-    elif n < F_ZIP[1]:
-        t = span(n, F_ZIP[0], F_ZIP[1])
-        cx = BACK_CX + (EXIT_CX - BACK_CX) * (ei(t / 0.26) * 0.10 if t < 0.26
-                                              else 0.10 + eo((t - 0.26) / 0.74) * 0.90)
-        if t < 0.16:
-            k = eo(t / 0.16); sx = lerp(0.84, 1.34, k); sy = lerp(1.12, 1.00, k)
-        else:
-            k = eo(cl((t - 0.16) / 0.34)); sx = lerp(1.34, 1.00, k); sy = 1.0
-        if OX + (cx - math.sqrt(3) * R * sx - R) * SCALE > W:
-            show = False
-    else:
-        show = False
-    if show and a > 3:
-        draw_turtle(d, X(cx), Y(BASELINE - TCAP / 2), R * SCALE * SS, sx, sy, a)
 
-    # --- the wordmark, sliding in behind him --------------------------------
-    zt = span(n, F_ZIP[0], F_ZIP[1]) if n >= F_ZIP[0] else 0.0
-    if n >= F_ZIP[1]:
-        zt = 1.0
-    wt = eo(cl((zt - F_WORD[0]) / (F_WORD[1] - F_WORD[0])))
-    if n >= F_SETTLE[0]:
-        wt = 1.0
-    if wt > 0.01:
-        wx = WORD_X - 430.0 * (1 - wt)
-        L = Image.new("RGBA", im.size, (0, 0, 0, 0)); ld = ImageDraw.Draw(L)
-        al = int(255 * wt)
-        ld.polygon([(X(wx + px * K), Y(BASELINE - py * K)) for px, py in T_PTS],
-                   fill=LTGRN + (al,))
-        ox = wx + T_ADV * K + TUCK
-        ld.text((X(ox), Y(BASELINE)), "ort", font=font, fill=LTGRN + (al,), anchor="ls")
-        tw = ld.textlength("ort", font=font)
-        ld.text((X(ox) + tw, Y(BASELINE)), "OS", font=font, fill=CYAN + (al,), anchor="ls")
-        im = Image.alpha_composite(im, L); d = ImageDraw.Draw(im, "RGBA")
+def fly_turtle_px():
+    """His center at the start, in px: the right cell just off the left edge,
+    so only the head shows; and at the end, the left cell just off the right."""
+    r = R * SCALE
+    start = -(math.sqrt(3) * r + r) * FLY_SX - 1
+    end = W + (math.sqrt(3) * r + r) * FLY_SX + 1
+    return start, end
 
-    # --- the speed bars, in behind the wordmark -----------------------------
-    lt = eo(cl((zt - F_BARS[0]) / (F_BARS[1] - F_BARS[0])))
-    if n >= F_SETTLE[1]:
-        lt = 1.0
-    elif n >= F_SETTLE[0]:
-        lt = max(lt, eo(span(n, F_SETTLE[0], F_SETTLE[1])))
-    if lt > 0.01:
-        off = 500.0 * (1 - lt)
-        for (yc, x0, x1, col) in BARS:
-            pts = [(X(px - off), Y(py)) for px, py in bar_pts(x0, x1, yc)]
-            d.polygon(pts, fill=col + (int(255 * lt),))
+
+def fly_word(font_big):
+    """The wordmark alone, large and low, centered across: a layer to put
+    under every frame."""
+    k = SCALE * FLY_WORD_SCALE
+    cy = FLY_WORD_CY * H
+
+    def wx(x): return (W / 2.0 + (x - INK_R / 2.0) * k) * SS
+    def wy(y): return (cy + (y - (BASELINE - TCAP / 2.0)) * k) * SS
+
+    L = Image.new("RGBA", (W * SS, H * SS), (0, 0, 0, 0)); ld = ImageDraw.Draw(L)
+    ld.polygon([(wx(px_ * K), wy(BASELINE - py_ * K)) for px_, py_ in T_PTS],
+               fill=LTGRN + (255,))
+    ox = T_ADV * K + TUCK
+    ld.text((wx(ox), wy(BASELINE)), "ort", font=font_big, fill=LTGRN + (255,), anchor="ls")
+    tw = ld.textlength("ort", font=font_big)
+    ld.text((wx(ox) + tw, wy(BASELINE)), "OS", font=font_big, fill=CYAN + (255,), anchor="ls")
+    return L
+
+
+def render(n, word):
+    im = Image.alpha_composite(Image.new("RGBA", (W * SS, H * SS), BG + (255,)), word)
+
+    # His line, in design units: his shell FLY_ABOVE px above the wordmark
+    word_top = FLY_WORD_CY * H - TCAP / 2.0 * SCALE * FLY_WORD_SCALE
+    cy = (word_top - FLY_ABOVE - 2.5 * R * SCALE * FLY_SY - OY) / SCALE
+    start, end = fly_turtle_px()
+    step = (end - start) / (F_FLY[1] - F_FLY[0])
+    cx = (start + step * n - OX) / SCALE
+    head = cx - (math.sqrt(3) * R + R) * FLY_SX - FLY_GAP     # his bars' heads
+    longest = max(b - a for (_, a, b, _) in BARS_RAW) * FLY_BAR_LEN
+
+    # --- his speed bars, fading toward their tails ---------------------------
+    # Drawn solid on a layer of their own, their alpha then multiplied by a
+    # ramp from head to tail. (Polygons drawn straight onto an RGBA image take
+    # their alpha literally rather than blending, so the fade is composited.)
+    if X(head - longest) < W * SS:
+        L = Image.new("RGBA", im.size, (0, 0, 0, 0))
+        for (yc, x0, x1, col) in BARS_RAW:
+            length = (x1 - x0) * FLY_BAR_LEN
+            y = cy + (yc - (T_TOP + TCAP / 2))
+            bar = Image.new("RGBA", im.size, (0, 0, 0, 0))
+            ImageDraw.Draw(bar).polygon(
+                [(X(px_), Y(py_)) for px_, py_ in bar_pts(head - length, head, y)],
+                fill=col + (255,))
+            tail_x, head_x = X(head - length), X(head)
+            ramp = bytes(int(255 * cl((x - tail_x) / (head_x - tail_x)) ** 1.5)
+                         for x in range(im.size[0]))
+            fade = Image.frombytes("L", (im.size[0], 1), ramp).resize(im.size, Image.NEAREST)
+            bar.putalpha(ImageChops.multiply(bar.getchannel("A"), fade))
+            L = Image.alpha_composite(L, bar)
+        im = Image.alpha_composite(im, L)
+
+    # --- the turtle ----------------------------------------------------------
+    if n < F_FLY[1]:
+        d = ImageDraw.Draw(im, "RGBA")
+        draw_turtle(d, X(cx), Y(cy), R * SCALE * SS, FLY_SX, FLY_SY, 255)
 
     return im.convert("RGB").resize((W, H), Image.LANCZOS)
+
+
+def main():
+    os.makedirs(OUT_DIR, exist_ok=True)
+    font = ImageFont.truetype(FONT_PATH, int(FSIZE * SCALE * FLY_WORD_SCALE * SS))
+    word = fly_word(font)
+    if os.path.isdir(TMP_DIR):
+        shutil.rmtree(TMP_DIR)
+    os.makedirs(TMP_DIR)
+    for i in range(FLY_FRAMES):
+        render(i, word).save(os.path.join(TMP_DIR, "f%04d.png" % i))
+    mp4 = os.path.join(OUT_DIR, "tortos-fly.mp4")
+    subprocess.run([
+        find_ffmpeg(), "-y", "-loglevel", "error",
+        "-framerate", str(FLY_FPS), "-start_number", "0",
+        "-i", os.path.join(TMP_DIR, "f%04d.png"),
+        "-frames:v", str(FLY_FRAMES), "-fps_mode", "passthrough",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20",
+        "-movflags", "+faststart", mp4,
+    ], check=True)
+    print("%s  %d frames, %.2f s, %d bytes" % (
+        mp4, FLY_FRAMES, FLY_FRAMES / float(FLY_FPS), os.path.getsize(mp4)))
 
 
 def find_ffmpeg():
@@ -209,44 +219,6 @@ def find_ffmpeg():
     if not found:
         sys.exit("ffmpeg not found on PATH")
     return found
-
-
-def main():
-    os.makedirs(OUT_DIR, exist_ok=True)
-    if os.path.isdir(TMP_DIR):
-        shutil.rmtree(TMP_DIR)
-    os.makedirs(TMP_DIR)
-    font = ImageFont.truetype(FONT_PATH, int(FSIZE * SCALE * SS))
-
-    first = None
-    for i in range(N_FRAMES):
-        frame = render(i, font)
-        if i == 0:
-            first = frame
-        frame.save(os.path.join(TMP_DIR, "f%04d.png" % i))
-        if (i + 1) % 12 == 0 or i == N_FRAMES - 1:
-            print("  frame %2d/%d" % (i + 1, N_FRAMES))
-
-    if first.convert("RGB").getextrema() != ((BG[0], BG[0]), (BG[1], BG[1]), (BG[2], BG[2])):
-        sys.exit("frame 0 is not the flat background color")
-
-    bmp = os.path.join(OUT_DIR, "bootlogo.bmp")
-    png = os.path.join(OUT_DIR, "splash.png")
-    first.convert("RGB").save(bmp)
-    first.convert("RGB").save(png)
-
-    mp4 = os.path.join(OUT_DIR, "tortos-boot.mp4")
-    subprocess.run([
-        find_ffmpeg(), "-y", "-loglevel", "error",
-        "-framerate", str(FPS), "-start_number", "0",
-        "-i", os.path.join(TMP_DIR, "f%04d.png"),
-        "-frames:v", str(N_FRAMES), "-fps_mode", "passthrough",
-        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20",
-        "-movflags", "+faststart", mp4,
-    ], check=True)
-
-    for path in (mp4, bmp, png):
-        print("%s  %d bytes" % (path, os.path.getsize(path)))
 
 
 if __name__ == "__main__":
