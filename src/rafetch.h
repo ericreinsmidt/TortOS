@@ -99,7 +99,6 @@ void ra_sync_abandon(void);
  * 0 still working, 1 the set is written, -1 idle or failed. */
 void ra_fetch_begin(const char *rom_hash, const char *set_path);
 int  ra_fetch_step(void);
-long ra_fetch_gameid(void);
 
 /* Submit one unlock, softcore. Signed the way rcheevos signs it -
  * md5(achievement id + username + hardcore flag) - because the server checks

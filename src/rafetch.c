@@ -228,8 +228,6 @@ static char g_fq_hash[33];
 static char g_fq_set[1024];
 static char g_fq_tmp[256];
 
-long ra_fetch_gameid(void) { return g_fq_game; }
-
 static void fq_stop(int state)
 {
 	if (g_fq_tmp[0]) { unlink(g_fq_tmp); g_fq_tmp[0] = '\0'; }

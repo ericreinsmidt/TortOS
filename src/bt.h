@@ -109,8 +109,6 @@ bool bt_power(bool on);
 bool bt_up(void);
 void bt_down(void);
 
-bool bt_connected(const char *mac);
-
 bool bt_disconnect(const char *mac);
 /* Disconnect every connected bonded device but `keep`, and return how many.
  * For the Bluetooth screen, where connecting a headset means choosing it. */

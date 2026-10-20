@@ -63,7 +63,6 @@ double musec_speed(void);
  * M4B's; a folder of MP3s has none, its files are its parts). A book with more
  * than one moves by chapter on L1 and R1 - see musec_next. */
 int         musec_chapters(void);
-double      musec_chapter_at(int i);
 const char *musec_chapter_title(int i);
 /* The chapter the playing position is in, or -1 with none. */
 int         musec_chapter_now(void);

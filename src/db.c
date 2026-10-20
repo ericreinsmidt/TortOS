@@ -517,7 +517,6 @@ bool db_write_boot_env(void)
 	             "# Written by TortOS from the settings database. Derived, not\n"
 	             "# authoritative: delete it and the next settings change\n"
 	             "# rewrites it. Sourced by launch.sh before tortos.elf runs.\n"
-	             "BRIGHTNESS='%d'\n"
 	             "WIFI='%d'\n"
 	             "BLUETOOTH='%d'\n"
 	             /* A single quote in a timezone name would break the shell that
@@ -525,18 +524,16 @@ bool db_write_boot_env(void)
 	              * rather than escaped: a wrong TZ is cheaper than an
 	              * unbootable launch.sh. */
 	             "TIMEZONE='%s'\n",
-	             db_get_int(g_dev, "brightness", 7),
 	             db_get_int(g_dev, "wifi", 0) ? 1 : 0,
 	             db_get_int(g_dev, "bluetooth", 0) ? 1 : 0,
 	             strchr(tz, '\'') ? "UTC" : tz);
 	if (n < 0 || n >= (int)sizeof body) return false;
 
 	/* NOTHING TO DO IF NOTHING CHANGED, and this is not an optimization for
-	 * its own sake. levels_save calls this on every nudge of the volume
-	 * rocker, including while a game is running - and volume is not one of the
-	 * four values here. Writing anyway put a file replacement back on the path
-	 * the database was meant to take it off: measured at 3.03 ms median and
-	 * 9.27 ms at the tail, against a 16.7 ms frame. */
+	 * its own sake. Writing a file that has not changed put a replacement on
+	 * paths the database was meant to take it off (the volume rocker used to
+	 * call this): measured at 3.03 ms median and 9.27 ms at the tail, against a
+	 * 16.7 ms frame. */
 	/* Unless it is not there. The memo is about avoiding a rewrite, not about
 	 * refusing to create the file: this thing's whole license to be a cache is
 	 * that deleting it costs nothing, and skipping here would make a deleted

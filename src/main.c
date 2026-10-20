@@ -242,33 +242,6 @@ static void present_black(app *a)
 	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 }
 
-/* The boot animation plays in a background process while everything below
- * runs -- the card scan, GL init, font and asset decode, the lot. Both it and
- * this process draw to /dev/fb0, so presenting now would fight it: last
- * writer wins, at 60fps against its 30. Wait for it to clear the marker, then
- * draw.
- *
- * Bounded, because a boot that hangs behind a stuck decoder would be a far
- * worse bug than a seam in an animation. An absent marker means no animation
- * is playing -- every launcher restart after this one -- and this returns at
- * once. */
-static void wait_for_boot_anim(void)
-{
-	const char *flag = getenv("TORTOS_ANIM_FLAG");
-	unsigned start;
-
-	if (!flag || !*flag || access(flag, F_OK) != 0) return;
-	start = plat_now_ms();
-	while (access(flag, F_OK) == 0) {
-		if (plat_now_ms() - start > 8000u) {
-			fprintf(stderr, "boot: animation flag stuck, drawing anyway\n");
-			break;
-		}
-		SDL_Delay(8);
-	}
-	t_mark("anim wait");
-}
-
 /* ---------- per-system display mode --------------------------------------- */
 
 /* Keyed on the system's tag rather than its folder or its place in the list,
@@ -7430,8 +7403,7 @@ static void build_child_env(void)
 	snprintf(env_buf[4], sizeof env_buf[4], "SHARED_USERDATA_PATH=%s", P_SHARED);
 	snprintf(env_buf[5], sizeof env_buf[5], "LOGS_PATH=%s/logs", P_USERDATA);
 	snprintf(env_buf[6], sizeof env_buf[6], "HOME=%s", P_USERDATA);
-	snprintf(env_buf[7], sizeof env_buf[7], "LD_LIBRARY_PATH=%s/lib:/usr/trimui/lib", P_ROOT);
-	for (i = 0; i <= 7; i++) child_env[n++] = env_buf[i];
+	for (i = 0; i <= 6; i++) child_env[n++] = env_buf[i];
 	child_env[n] = NULL;
 }
 
@@ -12225,10 +12197,6 @@ int main(int argc, char *argv[])
 			goto done;
 		}
 	}
-
-	/* Everything above ran while the boot animation was on screen. Only now
-	 * is it this process's turn to own the framebuffer. */
-	wait_for_boot_anim();
 
 	/* Nothing pressed during the boot is honored. How long that takes is the
 	 * device's to say - see plat_input_settle. */

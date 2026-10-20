@@ -227,9 +227,11 @@ static void boot_env_says_what_the_shell_needs(void)
 	const char *path = "/tmp/tortos-db-check-boot.env";
 	char line[256];
 	int seen_bright = 0, seen_wifi = 0, seen_bt = 0, seen_tz = 0;
+	/* seen_bright: brightness must NOT be in it any more - only TrimUI's
+	 * launch.sh read it, to set the panel before its boot animation. */
 	FILE *f;
 
-	printf("boot.env carries the five values launch.sh reads:\n");
+	printf("boot.env carries the values launch.sh reads:\n");
 	scrub();
 	unlink(path);
 	ck(db_init(DEV, LIB, path), "both databases open");
@@ -245,39 +247,31 @@ static void boot_env_says_what_the_shell_needs(void)
 	ck(f != NULL, "and the file is there");
 	if (!f) { db_shutdown(); return; }
 	while (fgets(line, sizeof line, f)) {
-		if (!strcmp(line, "BRIGHTNESS='3'\n"))          seen_bright = 1;
+		if (!strncmp(line, "BRIGHTNESS=", 11))          seen_bright = 1;
 		if (!strcmp(line, "WIFI='1'\n"))                seen_wifi = 1;
 		if (!strcmp(line, "BLUETOOTH='1'\n"))           seen_bt = 1;
 		if (!strcmp(line, "TIMEZONE='Europe/Berlin'\n")) seen_tz = 1;
 	}
 	fclose(f);
-	ck(seen_bright, "brightness is the stored value, not the default");
+	ck(!seen_bright, "brightness is not in it");
 	ck(seen_wifi,   "wifi is the stored value");
 	ck(seen_bt,     "bluetooth is the stored value, from the device scope");
 	ck(seen_tz,     "timezone is the stored value, from the library scope");
 
-	/* The format is a contract with two readers written in another language:
-	 * launch.sh sources the file, and tortos-bootbright.sh - which runs from
-	 * the rootfs before launch.sh - seds one value out of it. A quoting change
-	 * here would break the boot, so both are exercised rather than eyeballed. */
+	/* The format is a contract with a reader written in another language:
+	 * launch.sh sources the file. A quoting change here would break the boot,
+	 * so it is exercised rather than eyeballed. */
 	{
 		char cmd[512];
 		FILE *r;
 		char got[128] = { 0 };
 
 		snprintf(cmd, sizeof cmd,
-		         "sh -c '. %s; printf \"%%s %%s\" \"$BRIGHTNESS\" \"$TIMEZONE\"'",
+		         "sh -c '. %s; printf \"%%s %%s %%s\" \"$WIFI\" \"$BLUETOOTH\" \"$TIMEZONE\"'",
 		         path);
 		r = popen(cmd, "r");
 		if (r) { if (!fgets(got, sizeof got, r)) got[0] = '\0'; pclose(r); }
-		ck(!strcmp(got, "3 Europe/Berlin"), "a POSIX shell can source it");
-
-		snprintf(cmd, sizeof cmd,
-		         "sed -n \"s/^BRIGHTNESS='\\(.*\\)'$/\\1/p\" %s", path);
-		got[0] = '\0';
-		r = popen(cmd, "r");
-		if (r) { if (!fgets(got, sizeof got, r)) got[0] = '\0'; pclose(r); }
-		ck(!strcmp(got, "3\n"), "and bootbright's sed extracts the brightness");
+		ck(!strcmp(got, "1 1 Europe/Berlin"), "a POSIX shell can source it");
 	}
 
 	/* Derived, not authoritative: losing it must cost nothing. This is also
@@ -287,9 +281,8 @@ static void boot_env_says_what_the_shell_needs(void)
 	ck(db_write_boot_env(), "it rewrites after being deleted");
 	ck(!access(path, F_OK), "and the file is really there again");
 
-	/* Unchanged content must not rewrite. levels_save calls this on every
-	 * nudge of the volume rocker, while a game is running, and volume is not
-	 * one of the four values in here. */
+	/* Unchanged content must not rewrite: a rewrite costs a file replacement
+	 * (3 ms median, 9 ms at the tail) on whatever path called it. */
 	{
 		struct stat a, b;
 		stat(path, &a);
@@ -298,7 +291,7 @@ static void boot_env_says_what_the_shell_needs(void)
 		stat(path, &b);
 		ck(a.st_mtime == b.st_mtime, "and does not touch the file");
 
-		db_set_int(db_dev(), "brightness", 9);
+		db_set_int(db_dev(), "wifi", 0);
 		ck(db_write_boot_env(), "a changed value writes");
 		stat(path, &b);
 		ck(a.st_mtime != b.st_mtime, "and does touch it");

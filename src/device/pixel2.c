@@ -758,7 +758,6 @@ static void levels_save(void)
 {
 	db_set_int(db_dev(), "volume", cur_vol);
 	db_set_int(db_dev(), "brightness", cur_bright);
-	db_write_boot_env();
 }
 
 void plat_settings_init(void)

@@ -25,9 +25,6 @@ bool ss_run_begin(const char *folder, const char *file, const char *stem,
 int  ss_run_step(void);
 void ss_run_cancel(void);
 
-/* What the run learned, valid once ss_run_step has returned 0. */
-const ss_result *ss_run_result(void);
-
 /* Where it got to, for a screen to say. Never a URL: that carries the
  * account. */
 const char *ss_run_where(void);

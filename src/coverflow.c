@@ -708,13 +708,6 @@ bool cf_draw(coverflow *cf, SDL_Renderer *r, int screen_w, int screen_h,
 	return cf->active;
 }
 
-/* Direction unknown - the cursor moved by something other than a press, such
- * as a letter jump or a list rebuild. Only a two-item ring cares. */
-void cf_set_cursor(coverflow *cf, int cursor, int count)
-{
-	cf_set_cursor_dir(cf, cursor, count, 0);
-}
-
 void cf_tick(coverflow *cf, int count)
 {
 	step_anim(cf, count);

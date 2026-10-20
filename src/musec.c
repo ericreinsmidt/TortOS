@@ -639,8 +639,6 @@ double musec_speed(void) { return g_speed; }
 
 int musec_chapters(void) { return g_nch; }
 
-double musec_chapter_at(int i) { return i >= 0 && i < g_nch ? g_ch_at[i] : 0; }
-
 const char *musec_chapter_title(int i) { return i >= 0 && i < g_nch ? g_ch_title[i] : ""; }
 
 int musec_chapter_now(void)

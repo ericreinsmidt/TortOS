@@ -73,7 +73,7 @@ export SS_DEVID SS_DEVPASS
 build/ss_creds.h: FORCE
 	@$(MAKE) --no-print-directory -f mk/cross.mk creds
 
-build/tortos.elf: $(wildcard src/*.c) $(wildcard src/*.h) $(wildcard src/device/*.c) tools/setbright.c mk/cross.mk \
+build/tortos.elf: $(wildcard src/*.c) $(wildcard src/*.h) $(wildcard src/device/*.c) mk/cross.mk \
                   $(wildcard src/muse/*.c) $(wildcard src/muse/*.h) tools/musectl.c \
                   tools/btplayer.c \
                   build/ss_creds.h
@@ -84,7 +84,7 @@ build/tortos.elf: $(wildcard src/*.c) $(wildcard src/*.h) $(wildcard src/device/
 	@# -e VAR with no value passes the HOST's value through, so the pair
 	@# reaches the container without appearing in this command line.
 	docker run --rm -e SS_DEVID -e SS_DEVPASS -v $(CURDIR):/work -w /work $(IMAGE) \
-		make $(VERSION_CHANGED) -f mk/cross.mk SYSROOT=/work/sysroot VERSION=$(VERSION) creds build/tortos.elf build/setbright build/muse build/musectl build/btplayer
+		make $(VERSION_CHANGED) -f mk/cross.mk SYSROOT=/work/sysroot VERSION=$(VERSION) creds build/tortos.elf build/muse build/musectl build/btplayer
 	@# Refuse to be quiet about an output older than its own source.
 	@#
 	@# Docker on macOS can show the container a stale mtime for a file the host
@@ -105,8 +105,6 @@ build/tortos.elf: $(wildcard src/*.c) $(wildcard src/*.h) $(wildcard src/device/
 			exit 1; \
 		fi; \
 	done
-	@[ tools/setbright.c -nt build/setbright ] && { \
-		echo "STALE: build/setbright is older than tools/setbright.c" >&2; exit 1; } || true
 	@# And the other binaries this builds, which went unchecked until
 	@# 2026-09-26: build/btplayer came out 26 minutes older than its source,
 	@# silently, and a deploy's hash check could not see it - it compares the
@@ -548,7 +546,7 @@ deploy: all
 	@# make echoes a recipe before running it - into a terminal, a CI log, or a
 	@# transcript. The same reason mk/cross.mk writes the ScreenScraper key
 	@# into a header rather than onto a compile line.
-	@tar -cf - -C build tortos.elf setbright muse musectl btplayer -C ../config systems.cfg \
+	@tar -cf - -C build tortos.elf muse musectl btplayer -C ../config systems.cfg \
 	    -C ../sd/tortos launch.sh bt-alsa.sh -C ../../res/fonts menu.ttf | \
 	    $(SSH) 'tar -xf - -C /mnt/SDCARD/TortOS'
 	@tar -cf - -C res cards | $(SSH) 'tar -xf - -C /mnt/SDCARD/TortOS'

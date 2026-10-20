@@ -227,9 +227,9 @@ typedef SDL_Texture *(*cf_tex_fn)(void *ctx, int index, int *w, int *h,
                                   float *content_bottom);
 
 void cf_reset(coverflow *cf, int cursor);
-/* Move toward cursor (shortest path when wrapping). */
-void cf_set_cursor(coverflow *cf, int cursor, int count);
-/* Same, with the direction the user actually pressed: -1, 0 or +1. A ring of
+/* Move toward cursor (shortest path when wrapping), with the direction the
+ * user actually pressed: -1, 0 or +1 (0 when the cursor moved by something
+ * other than a press, such as a letter jump or a list rebuild). A ring of
  * two has both neighbors one step away, so it is the only size where the
  * shortest-path arithmetic cannot work out which way to turn. */
 void cf_set_cursor_dir(coverflow *cf, int cursor, int count, int dir);

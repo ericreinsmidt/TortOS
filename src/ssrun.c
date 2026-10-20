@@ -42,7 +42,6 @@ static struct {
 static int  g_left = -1;
 static bool g_toomany;
 
-const ss_result *ss_run_result(void) { return &g_run.got; }
 const char      *ss_run_where(void)  { return g_run.where; }
 int              ss_run_left(void)   { return g_left; }
 bool             ss_run_too_many(void) { return g_toomany; }
