@@ -111,9 +111,9 @@ const char *plat_coreopt(const char *tag, int i)
 }
 
 /* ---- turbo, read once from the library database -------------------------- */
-/* One canonical map per system tag, handed to Diatom after RUN. Its ADR-0028
- * makes a pulse a property of a BINDING, so `x:a~3,y:b~3` is the whole feature:
- * X becomes a turbo A and Y a turbo B, three frames pressed and three released.
+/* One canonical map per system tag, handed to Diatom after RUN. Diatom makes a
+ * pulse a property of a BINDING, so `x:a~3,y:b~3` is the whole feature: X
+ * becomes a turbo A and Y a turbo B, three frames pressed and three released.
  *
  * Per system because it is only safe where those two buttons are SPARE. Seven of
  * the eleven consoles here have two face buttons; a Genesis 6-button pad and a
@@ -338,7 +338,7 @@ bool plat_spawn_detached(char *const argv[], const char *const envkv[],
 	 * That froze the Brick on 2026-09-18: Muse held a dead launcher's end of
 	 * Diatom's socket, so Diatom never saw it close, and the restarted
 	 * launcher blocked in connect before its first frame. Diatom's half is
-	 * its ADR-0033; this is ours.
+	 * that the newest connection wins; this is ours.
 	 *
 	 * By number up to the limit, not by listing /proc/self/fd: listing
 	 * allocates, and after fork in a threaded process only async-signal-safe

@@ -25,9 +25,9 @@ The file is read by two programs and is deliberately one file:
     76195     0xH06f3=0_0xH0400=3_0xH00ba=0_0xH06f0<d0xH06f0
 
 Diatom reads the bare `<id>\\t<condition>` lines and skips every `#` line, which
-its format says it will (Diatom ADR-0026). TortOS reads the `#` lines for the
-menu. One file means the set being evaluated and the list being shown cannot
-drift apart, which two files would eventually do.
+its format says it will. TortOS reads the `#` lines for the menu. One file
+means the set being evaluated and the list being shown cannot drift apart,
+which two files would eventually do.
 
 CREDENTIALS come from RA_USER and RA_PASS, or --user/--password, or a prompt.
 Nothing is written to disk and nothing is stored here.

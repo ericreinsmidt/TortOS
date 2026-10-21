@@ -1,8 +1,8 @@
 /* What a menu row is. No SDL, no renderer, nothing device-specific.
  *
- * Separated from main.c on purpose. ADR-0001 says a screen's build function
- * must be callable with no renderer and no device, so that "given this state,
- * what does this menu contain" is answerable by `make check` - and that is only
+ * Separated from main.c on purpose. A screen's build function must be
+ * callable with no renderer and no device, so that "given this state, what
+ * does this menu contain" is answerable by `make check` - and that is only
  * true if the types it needs can be included without dragging SDL in with them.
  *
  * The conventions, and the five defects that produced them: docs/menus.md.

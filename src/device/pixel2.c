@@ -9,7 +9,7 @@
  * panel. Measured on this GPU 2026-10-01: a turned present holds the panel's
  * full 60 fps.
  *
- * The display is shared with Diatom by passing DRM master (Diatom's ADR-0036):
+ * The display is shared with Diatom by passing DRM master:
  * device_display_release before a game presents, device_display_take when the
  * launcher has the screen back. */
 #include "audioout.h"
@@ -350,8 +350,8 @@ void plat_input_quit(void) { }
 
 /* FUNCTION is MENU, and also the modifier that makes the volume keys
  * brightness: this device has no brightness keys, and MENU plus volume is
- * brightness in games too (Diatom's ADR-0037), so the same chord does the same
- * thing on both sides of a launch.
+ * brightness in games too, so the same chord does the same thing on both
+ * sides of a launch.
  *
  * A key that is both cannot report MENU when it goes down, because nothing yet
  * says whether a volume key will follow. So MENU is reported when FUNCTION

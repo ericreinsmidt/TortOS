@@ -7,14 +7,14 @@
 
 /* The output: ALSA, opened by name, at 48 kHz S16 stereo.
  *
- * libasound directly rather than through SDL, because Diatom's ADR-0030 found
- * SDL cannot drive a bluealsa device string and a headset is a requirement.
+ * libasound directly rather than through SDL, because Diatom found SDL cannot
+ * drive a bluealsa device string and a headset is a requirement.
  *
  * `default` goes through the Brick's dmix, which is what lets Muse play over a
  * running game without either of them knowing. It NEVER touches the mixer:
  * the launcher owns the mute switch and cuts HpSpeaker Switch below the mix,
  * and a producer that writes that control to turn the speaker on is exactly
- * the bug ADR-0031 exists to forbid. */
+ * the bug that ownership exists to forbid. */
 
 bool pcm_open(const char *device);   /* "default", or a bluealsa PCM name */
 void pcm_close(void);

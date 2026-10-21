@@ -28,8 +28,8 @@ static SDL_Rect d_rect;
 static bool     d_rect_known;
 static int    d_pend_vol = -1, d_pend_vol_n;      /* LEVEL events, held until */
 static int    d_pend_bri = -1, d_pend_bri_n;      /* EXIT hands levels back  */
-/* Diatom's QUIET, its ADR-0032: what the launcher wants, and what this
- * connection was last told. -1 is "never told", which a new connection is. */
+/* Diatom's QUIET: what the launcher wants, and what this connection was last
+ * told. -1 is "never told", which a new connection is. */
 static int    d_quiet, d_quiet_said = -1;
 static int    d_lowbat, d_lowbat_said = -1;
 /* Diatom's CHANNELS, the same way: what the launcher wants, and what this
@@ -64,9 +64,9 @@ static bool dsend(const char *fmt, ...)
 	if (n == 0 || line[n - 1] != '\n') line[n++] = '\n';
 	/* send and MSG_NOSIGNAL, not write. Nothing in this process ignores
 	 * SIGPIPE, so a write into a connection Diatom had closed - it restarted,
-	 * or a newer client displaced this one (its ADR-0033) - killed the
-	 * launcher outright, and launch.sh had to bring it back. A closed socket
-	 * is an answer here, not a crash: the next call connects again. */
+	 * or a newer client displaced this one - killed the launcher outright,
+	 * and launch.sh had to bring it back. A closed socket is an answer here,
+	 * not a crash: the next call connects again. */
 	if (send(dsock, line, (size_t)n, MSG_NOSIGNAL) != n) { dclose(); return false; }
 	return true;
 }
@@ -294,17 +294,17 @@ bool plat_resident_send(const char *tag, const char *core, const char *rom,
 			}
 		}
 
-		/* Quiet BEFORE RUN, and on every RUN. Diatom holds it across RUN
-		 * (its ADR-0032), so sent first it is in force from the game's first
-		 * sample - a game started while music plays never makes a sound -
-		 * and sent every time, a resident that restarted cannot start loud. */
+		/* Quiet BEFORE RUN, and on every RUN. Diatom holds it across RUN,
+		 * so sent first it is in force from the game's first sample - a
+		 * game started while music plays never makes a sound - and sent
+		 * every time, a resident that restarted cannot start loud. */
 		if (dsend("SETQUIET\ton=%d", d_quiet)) d_quiet_said = d_quiet;
 		/* The channels for quiet's reasons: before RUN, so the first sample is
 		 * already in the right ear, and every time, so a resident that
 		 * restarted cannot start in stereo for a player who hears with one. */
 		if (dsend("SETCHANNELS\tmode=%s", d_chan))
 			snprintf(d_chan_said, sizeof d_chan_said, "%s", d_chan);
-		/* The low-battery disc for quiet's reasons too (Diatom's ADR-0040):
+		/* The low-battery disc for quiet's reasons too:
 		 * a game started on a low battery shows it from its first frame. */
 		if (dsend("SETLOWBATTERY\ton=%d\tblink=%d", d_lowbat > 0, d_lowbat == 2))
 			d_lowbat_said = d_lowbat;
@@ -313,7 +313,7 @@ bool plat_resident_send(const char *tag, const char *core, const char *rom,
 		 * watched from the first frame - an achievement can fire in the
 		 * opening seconds and Diatom cannot evaluate what it has not been
 		 * given yet. Both are ignored by an older Diatom, which is what
-		 * ADR-0009 promises about unknown keys. */
+		 * its protocol promises about unknown keys. */
 		/* The display goes to Diatom before the game does: it presents its
 		 * first frame as soon as the load is done, and cannot while this
 		 * process holds it. */
@@ -329,11 +329,11 @@ bool plat_resident_send(const char *tag, const char *core, const char *rom,
 			return false;
 		}
 
-		/* AFTER RUN, never before: RUN resets the map to identity (Diatom's
-		 * ADR-0020, so a table sent for one game cannot silently govern the
-		 * next), and a map sent first would be discarded by the very launch it
-		 * was meant for. The race is benign - no input reaches a core before
-		 * RUNNING, which Diatom emits once the load completes.
+		/* AFTER RUN, never before: RUN resets the map to identity (so a table
+		 * sent for one game cannot silently govern the next), and a map sent
+		 * first would be discarded by the very launch it was meant for. The
+		 * race is benign - no input reaches a core before RUNNING, which
+		 * Diatom emits once the load completes.
 		 *
 		 * Logged either way. A map that does nothing looks identical to one
 		 * that was never sent, one that was refused, and a test rig that could
@@ -346,11 +346,10 @@ bool plat_resident_send(const char *tag, const char *core, const char *rom,
 			if (tm && *tm) dsend("SETMAP\tmap=%s", tm);
 		}
 
-		/* The launcher owns levels while it draws (Diatom's ADR-0020), and
-		 * it is done drawing the moment the game is up - so the last thing
-		 * it does is hand over WHERE THE LEVELS ARE. Without this, a game
-		 * starts at whatever the mixer was left at rather than at the
-		 * volume the shelf shows.
+		/* The launcher owns levels while it draws, and it is done drawing
+		 * the moment the game is up - so the last thing it does is hand
+		 * over WHERE THE LEVELS ARE. Without this, a game starts at whatever
+		 * the mixer was left at rather than at the volume the shelf shows.
 		 *
 		 * `count` is POSITIONS, not the top index - Diatom answers with
 		 * BRIGHT_LEVELS + 1 and rescales by it. Brightness said 11 for a
@@ -367,7 +366,7 @@ bool plat_resident_send(const char *tag, const char *core, const char *rom,
 		/* And the mute, ON EVERY RUN and not only when it changes. A state
 		 * sent only on transition is wrong exactly once - the first time -
 		 * which here means a game started with the switch already down comes
-		 * up loud. Diatom's ADR-0031. */
+		 * up loud. */
 		dsend("SETMUTE\ton=%d", plat_muted() ? 1 : 0);
 		return true;
 	}
@@ -412,8 +411,8 @@ bool plat_resident_line(const char *fmt, ...)
 	 * before the first game of a session there IS no socket - the connection
 	 * was only ever made by plat_resident_send on the way into a game.
 	 *
-	 * That made every state write from the shelf a silent no-op. ADR-0029's
-	 * audio output is the first state the launcher sets while nothing is
+	 * That made every state write from the shelf a silent no-op. Audio
+	 * output is the first state the launcher sets while nothing is
 	 * running, and it spent 2026-09-05 announcing routes in the log that
 	 * Diatom had never been told about, because the line went nowhere and
 	 * nobody looked at the return.
@@ -430,8 +429,8 @@ bool plat_resident_line(const char *fmt, ...)
 	if (!strncmp(line, "RESUME", 6)) device_display_release();
 	if (dsend("%s", line)) return true;
 	/* Closed under us - Diatom restarted, or a newer client displaced this
-	 * connection (its ADR-0033). dsend has closed our end, so this is a fresh
-	 * connection, and nothing of the line reached the old one to repeat. */
+	 * connection. dsend has closed our end, so this is a fresh connection,
+	 * and nothing of the line reached the old one to repeat. */
 	if (!dconnect()) return false;
 	return dsend("%s", line);
 }
@@ -442,14 +441,13 @@ const char *plat_resident_last_preview(void) { return d_preview; }
  * same job plat_run does for the one-shot binary, except the signal ends the
  * GAME rather than the process, so residency survives to serve the next one. */
 /* One LEVEL line: "LEVEL\tkind=volume\tindex=8\tcount=21". The values are
- * held rather than applied - Diatom owns the hardware while the game runs
- * (its ADR-0020), and applying over the top is exactly the fight the state
- * plane exists to end. They are applied when EXIT or PAUSED hands ownership
- * back. */
-/* Where Diatom says the sound ACTUALLY is (its ADR-0029). Not necessarily
- * where it was told to put it: a sink that will not open, or one that died
- * under it, makes the port fall back and say so. Reported to the launcher so a
- * menu can show the truth instead of the request. */
+ * held rather than applied - Diatom owns the hardware while the game runs,
+ * and applying over the top is exactly the fight the state plane exists to
+ * end. They are applied when EXIT or PAUSED hands ownership back. */
+/* Where Diatom says the sound ACTUALLY is. Not necessarily where it was told
+ * to put it: a sink that will not open, or one that died under it, makes the
+ * port fall back and say so. Reported to the launcher so a menu can show the
+ * truth instead of the request. */
 static void d_note_audio(const char *l)
 {
 	const char *d = strstr(l, "device=");
@@ -600,8 +598,7 @@ static int diatom_wait(void)
 		 *
 		 * The cut reaches the game's audio because HpSpeaker Switch sits
 		 * below the mixer: measured 2026-09-16 by muting a tone played from a
-		 * second process while Diatom held the dmix slave. See BACKLOG 28 and
-		 * Diatom's ADR-0031. */
+		 * second process while Diatom held the dmix slave. See BACKLOG 28. */
 		plat_mute_poll(false);
 		while ((l = dline(100))) {
 			if      (strncmp(l, "RUNNING", 7) == 0) d_got_running = 1;
@@ -645,10 +642,10 @@ static int diatom_wait(void)
 				 *
 				 * Diatom has always sent it: on_crash emits
 				 * "EXIT reason=crash signal=SIGSEGV" from the signal
-				 * handler, and ADR-0009 makes `signal=` free to add because
-				 * unknown keys are ignored. It was reported and discarded,
-				 * which is worse than never having been sent - it looks
-				 * like a firmware with nothing to say about the failure.
+				 * handler, and Diatom's protocol makes `signal=` free to add
+				 * because unknown keys are ignored. It was reported and
+				 * discarded, which is worse than never having been sent - it
+				 * looks like a firmware with nothing to say about the failure.
 				 *
 				 * Only the ones that are not a clean quit. Logging every
 				 * EXIT would put a line in the log for every game anyone

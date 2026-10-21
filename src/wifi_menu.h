@@ -1,7 +1,7 @@
 /* The Wi-Fi screen's state and its row building, with no SDL and no renderer.
  *
  * Split from main.c so `make check` can ask what the menu contains for a given
- * state - the requirement ADR-0001 rests on. The half that needs a screen
+ * state - the requirement the menus rest on. The half that needs a screen
  * (wifi_key, wifi_screen) stays in main.c; this half is answerable offline.
  */
 #ifndef TORTOS_WIFI_MENU_H

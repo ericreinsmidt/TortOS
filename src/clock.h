@@ -6,8 +6,8 @@
  * device is off. The Brick sets its clock over Wi-Fi, but had no way to choose
  * a time zone either, so both get the same screen.
  *
- * Split out of main.c under ADR-0001, like sys_menu.c: tools/clock-check.c
- * links this file alone. Setting the clock itself is plat_clock_set. */
+ * Split out of main.c, like sys_menu.c: tools/clock-check.c links this file
+ * alone. Setting the clock itself is plat_clock_set. */
 #ifndef CLOCK_H
 #define CLOCK_H
 

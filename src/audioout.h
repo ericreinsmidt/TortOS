@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: MIT */
 /* Where the system's sound goes, as a decision rather than as a device.
  *
- * Diatom's ADR-0029 says the launcher owns WHICH output and the port owns
- * opening it. This is that ownership, on this side: three facts in, one device
- * string out. It is deliberately the SYSTEM's audio output and not "Diatom's
- * sink" - the audiobook and music daemon will read the same answer, and naming
- * it the narrow way is the thing that would have to be undone.
+ * In Diatom, the launcher owns WHICH output and the port owns opening it. This
+ * is that ownership, on this side: three facts in, one device string out. It
+ * is deliberately the SYSTEM's audio output and not "Diatom's sink" - the
+ * audiobook and music daemon will read the same answer, and naming it the
+ * narrow way is the thing that would have to be undone.
  *
  * No SDL, no device reads, no protocol. The gathering lives in main.c; this is
  * only the rule, so tools/audioout-check.c can hold it to that rule without a
@@ -137,7 +137,7 @@ bool aout_should_reapply(int remembered, bool wired_now, bool have_level);
  * ladder constants in the caller.
  *
  * `level_max` is the top index, not a count. The two differ by one, and this
- * takes the index form deliberately: ADR-0020 pins the other convention on the
+ * takes the index form deliberately: Diatom pins the other convention on the
  * wire, and having both spelled the same way here is how they get confused. */
 int aout_level_to_raw(int level, int level_max, int win_top, int win_bottom);
 

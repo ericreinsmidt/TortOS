@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: MIT */
 /* The Bluetooth screen, minus the screen.
  *
- * State and row building only. This file must never include SDL: ADR-0001 says
- * a build function has to be callable with no renderer and no device, and
+ * State and row building only. This file must never include SDL: a build
+ * function has to be callable with no renderer and no device, and
  * tools/menu-check.c links it directly to prove it. The first version of this
  * screen built its rows inside main.c, which meant nothing could check them.
  *

@@ -5,9 +5,9 @@
  * system, because a menu that repeated the firmware's settings while a shelf
  * of NES games sat behind it would be answering a question nobody asked.
  *
- * Split out of main.c under ADR-0001 so that what these menus CONTAIN can be
- * checked on a build machine. Nothing here may include SDL: tools/menu-check.c
- * links this file without it, and that is the whole point.
+ * Split out of main.c so that what these menus CONTAIN can be checked on a
+ * build machine. Nothing here may include SDL: tools/menu-check.c links this
+ * file without it, and that is the whole point.
  *
  * The caller reads the device and fills a sys_ui; this file turns that into
  * rows. Wi-Fi state in particular is asked for by the caller because asking

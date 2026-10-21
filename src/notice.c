@@ -102,11 +102,11 @@ bool notice_render(const char *heading, const char *body, const char *path)
 	if (maxw > NOTICE_MAX_W) maxw = NOTICE_MAX_W;
 	maxw -= padx * 2;
 	/* Not optional. Diatom REFUSES an overlay wider than the panel rather than
-	 * clipping it (its ADR-0027), which is the right call there and means a
-	 * long name would silently show nothing at all. 144 of the achievement
-	 * titles in the 180-ROM test library are over 40 characters and the
-	 * longest is 64 - "From Johnny, Harris, Brooklyn Bob, and Reggie! Yeah
-	 * Even Reggie!" - so this is the common case, not the edge. */
+	 * clipping it, which is the right call there and means a long name would
+	 * silently show nothing at all. 144 of the achievement titles in the
+	 * 180-ROM test library are over 40 characters and the longest is 64 -
+	 * "From Johnny, Harris, Brooklyn Bob, and Reggie! Yeah Even Reggie!" - so
+	 * this is the common case, not the edge. */
 	ui_fit_text(fb, body, bodyfit, sizeof bodyfit, maxw);
 	ui_fit_text(fh, heading, headfit, sizeof headfit, maxw);
 	body = bodyfit;

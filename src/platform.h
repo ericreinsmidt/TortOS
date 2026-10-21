@@ -117,7 +117,7 @@ bool plat_resident_ready(void);
 bool plat_resident_await(unsigned max_ms, unsigned *waited_ms);
 /* `console` is a RetroAchievements console id and `cheevos` a set file for
  * Diatom to watch; 0 and NULL mean the game has no achievements, which is the
- * ordinary case. Diatom ADR-0026.
+ * ordinary case.
  *
  * Eight positional arguments, five of them paths, is one past comfortable -
  * the call already passes the same state path twice in a row. A struct is the
@@ -135,8 +135,8 @@ int  plat_resident_wait(void);
 void plat_resident_on_unlock(void (*fn)(int id));
 
 /* Called from inside plat_resident_wait when Diatom reports its fast-forward
- * step, 1 to 4 (its ADR-0034): on every MENU+R1, and again when a game resumes
- * fast. A callback for the unlock's reason. NULL to stop. */
+ * step, 1 to 4: on every MENU+R1, and again when a game resumes fast. A
+ * callback for the unlock's reason. NULL to stop. */
 void plat_resident_on_speed(void (*fn)(int x));
 
 /* Called from inside plat_resident_wait roughly ten times a second, which is
@@ -155,21 +155,21 @@ void plat_resident_on_tick(void (*fn)(void));
 void plat_resident_on_battery_empty(bool (*fn)(void));
 /* Diatom only: one protocol line (RESUME, STOP, SAVE\tpath=...), newline added. */
 bool plat_resident_line(const char *fmt, ...);
-/* Whether the game should be heard - Diatom's QUIET, its ADR-0032. Sent when it
- * changes, and before every RUN whether it changed or not, so it is safe to
- * call as often as the answer might have moved. */
+/* Whether the game should be heard - Diatom's QUIET. Sent when it changes, and
+ * before every RUN whether it changed or not, so it is safe to call as often
+ * as the answer might have moved. */
 void plat_resident_quiet(bool on);
-/* Whether Diatom draws the low-battery disc over the game - its LOWBATTERY,
- * ADR-0040: 0 none, 1 steady, 2 blinking. Sent like quiet: on a change, and
- * before every RUN. */
+/* Whether Diatom draws the low-battery disc over the game - its LOWBATTERY:
+ * 0 none, 1 steady, 2 blinking. Sent like quiet: on a change, and before
+ * every RUN. */
 void plat_resident_low_battery(int level);
 /* Which ears hear what - Diatom's CHANNELS: "stereo", "mono", "left" or
  * "right", already decided for where Diatom's sound goes (src/audioout.h).
  * Sent like quiet: on a change, and before every RUN. */
 void plat_resident_channels(const char *mode);
-/* Where Diatom says its sound actually is (its ADR-0029), which may not be
- * where it was asked to put it - a sink that will not open, or one that died,
- * makes the port fall back and report the fallback. False until it has said. */
+/* Where Diatom says its sound actually is, which may not be where it was asked
+ * to put it - a sink that will not open, or one that died, makes the port fall
+ * back and report the fallback. False until it has said. */
 bool plat_resident_audio(char *out, size_t cap);
 /* Forget that report: a SETAUDIO has just gone, and until Diatom answers it -
  * its audio_set always does - what it said last describes the moment before. */
@@ -186,21 +186,21 @@ unsigned plat_resident_generation(void);
 /* Path from the most recent PREVIEW message, or "" - the menu's backdrop. */
 const char *plat_resident_last_preview(void);
 /* Core options the launcher wants applied to every game, read once from
- * the coreopt. namespace. Diatom keeps no per-core knowledge (its ADR-0019
- * and register section 12), so the per-core opinions live here. Each entry is
- * a whole "key=value" string; a core that does not declare the key ignores it.
+ * the coreopt. namespace. Diatom keeps no per-core knowledge (its register
+ * section 12), so the per-core opinions live here. Each entry is a whole
+ * "key=value" string; a core that does not declare the key ignores it.
  * Applied BEFORE the game loads, because options marked (Restart) are read at
  * retro_load_game and setting one afterwards does nothing until next launch. */
 int         plat_coreopt_count(const char *tag);
 const char *plat_coreopt(const char *tag, int i);
-/* The turbo map for this system, or NULL. Diatom's ADR-0028, docs/turbo.md. */
+/* The turbo map for this system, or NULL. See docs/turbo.md. */
 const char *plat_turbo_map(const char *tag);
 
 /* Where Diatom is actually drawing the game, from its DISPLAY message. False
  * until it has said, which is the standalone path and the first moments of a
  * launch. Cached rather than asked for: Diatom reports it from the one place
- * its mode or rect can change, settling included (its ADR-0022), so the last
- * one heard is current. */
+ * its mode or rect can change, settling included, so the last one heard is
+ * current. */
 bool plat_resident_rect(SDL_Rect *out);
 /* Read replies for up to timeout_ms, stopping as soon as a DISPLAY arrives.
  * For changing the mode from the in-game menu: Diatom answers a SETDISPLAY with
@@ -256,7 +256,7 @@ bool plat_muted(void);
 /* Is a cable in the headphone jack? SW_HEADPHONE_INSERT on the codec's input
  * node, the same switch the volume ladder above already follows.
  *
- * Exposed because ADR-0029 puts the choice of OUTPUT in the launcher, and a
+ * Exposed because Diatom puts the choice of OUTPUT in the launcher, and a
  * cable outranks everything else (src/audioout.c). The port keeps reading the
  * switch for its own reason - which volume window to use - so both halves ask
  * the hardware rather than one telling the other something it could get wrong. */

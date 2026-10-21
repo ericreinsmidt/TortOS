@@ -1,8 +1,8 @@
 /* What the game info screen contains, as rows rather than as pixels.
  *
- * Split out of main.c under ADR-0001 so a check can ask what this screen says
- * about a game without a card, a renderer or a device. Nothing here may
- * include SDL - tools/menu-check.c links it without one.
+ * Split out of main.c so a check can ask what this screen says about a game
+ * without a card, a renderer or a device. Nothing here may include SDL -
+ * tools/menu-check.c links it without one.
  *
  * gi_gather stays in main.c, because reading a card is exactly the half that
  * does not belong here. */

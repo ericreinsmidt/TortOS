@@ -22,7 +22,7 @@
  * player's hands says, and it is the copy that cannot be out of date by being
  * on a different device.
  *
- * Split out of main.c under ADR-0001, the way sys_menu.c is: no SDL here, so
+ * Split out of main.c, the way sys_menu.c is: no SDL here, so
  * tools/controls-check.c can link it and read what these pages contain
  * without a renderer. */
 

@@ -95,14 +95,14 @@ build-native/httpd-check: tools/httpd-check.c src/httpd.c src/httpd.h src/xfer.h
 check-xfer: build-native/xfer-check
 	@./build-native/xfer-check
 
-# What a menu contains, for a given state. The point of ADR-0001: a screen's
-# build function takes state and produces rows with no renderer and no device,
-# so this is answerable here instead of by looking at a handheld. Every menu
-# defect this screen has had was some form of "nobody noticed the list was
-# wrong", and every one of them needed a device to see.
+# What a menu contains, for a given state. The point of the menu design: a
+# screen's build function takes state and produces rows with no renderer and
+# no device, so this is answerable here instead of by looking at a handheld.
+# Every menu defect this screen has had was some form of "nobody noticed the
+# list was wrong", and every one of them needed a device to see.
 #
 # It links the pure halves of the screens and NOT SDL. If it ever needs SDL to
-# link, ADR-0001 has failed - reopen it rather than adding the flag.
+# link, the menu design has failed - reopen it rather than adding the flag.
 check-menus: build-native/menu-check
 	@./build-native/menu-check
 

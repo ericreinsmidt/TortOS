@@ -24,7 +24,7 @@
 # The bond is persistent (/var/lib/bluetooth/<adapter>/<device>/), so every
 # headset that could connect is known now, without waiting for one to. A PCM
 # for a headset that is not connected simply fails to open, and the port falls
-# back to the speaker and says so - which is ADR-0029's behavior anyway.
+# back to the speaker and says so - which is Diatom's behavior anyway.
 #
 # One per device rather than one reused name, so switching headsets needs no
 # restart. bt_pcm_name is the single place the naming is decided.

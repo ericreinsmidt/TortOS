@@ -1,13 +1,13 @@
 /* What does a menu contain, for a given state?
  *
- * This check is the point of ADR-0001. A screen's build function takes state
- * and produces rows, touching no renderer and no device, so the answer can be
- * had here rather than by looking at a handheld. Every menu defect this
+ * This check is the point of the menu design. A screen's build function takes
+ * state and produces rows, touching no renderer and no device, so the answer
+ * can be had here rather than by looking at a handheld. Every menu defect this
  * project has had was some form of "nobody noticed the list was wrong", and
  * every one of them needed a device to see.
  *
- * If this file ever needs SDL to link, the decision has failed. Do not add it -
- * reopen ADR-0001 instead.
+ * If this file ever needs SDL to link, the menu design has failed. Do not add
+ * it - reopen the design instead.
  */
 #include "../src/wifi_menu.h"
 #include "../src/sys_menu.h"

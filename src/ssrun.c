@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: MIT */
 /* See ssrun.h. Apart from ssfetch.c on purpose: this half reaches for the
- * card, the shrinker and the shelf's paths, while that half is the reading and
- * the judging and is linked by tools/ss-check.c with no SDL anywhere near it.
- * ADR-0001 is what that seam is for. */
+ * card, the shrinker and the shelf's paths, while that half is the reading
+ * and the judging and is linked by tools/ss-check.c with no SDL anywhere
+ * near it. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

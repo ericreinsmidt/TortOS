@@ -4,8 +4,7 @@
 
 #include <stdbool.h>
 
-/* A line of text, rendered to the file Diatom composites over a running game
- * (its ADR-0027).
+/* A line of text, rendered to the file Diatom composites over a running game.
  *
  * This exists because the display has exactly one owner at a time. While a
  * game runs, that is Diatom, and this process must not present - so it cannot

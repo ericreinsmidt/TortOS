@@ -852,8 +852,8 @@ bool plat_mute_poll(bool own_volume)
 	 *
 	 * This side cuts because it is immediate: 100 ms, the resident loop's
 	 * period. The SETMUTE is what makes the cut STICK, since Diatom writes
-	 * the same controls whenever it applies a level (ADR-0031). Neither alone
-	 * is enough - one is fast and one is durable. */
+	 * the same controls whenever it applies a level. Neither alone is
+	 * enough - one is fast and one is durable. */
 	plat_resident_tell("SETMUTE\ton=%d", muted == 1 ? 1 : 0);
 	{
 		long on = (muted != 1);

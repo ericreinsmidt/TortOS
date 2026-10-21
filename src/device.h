@@ -27,7 +27,7 @@ void device_levels_forget(void);
  * present (RUN, and the wait that follows a RESUME), take once it has handed
  * the screen back (PAUSED, EXIT, or the game gone). Nothing on a device where
  * both can draw to one framebuffer by turns, which is the Brick; passing DRM
- * master on one that drives its display through KMS (Diatom's ADR-0036). */
+ * master on one that drives its display through KMS. */
 void device_display_release(void);
 void device_display_take(void);
 

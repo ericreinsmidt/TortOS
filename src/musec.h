@@ -98,7 +98,7 @@ bool musec_heard(void);
 
 /* The output. bluealsa here gives a headset to one process at a time, so it
  * is handed between Diatom and Muse rather than shared: whoever may be heard
- * holds it (ADR-0032 already quiets a game while music plays). `device` is an
+ * holds it (Diatom already quiets a game while music plays). `device` is an
  * ALSA name, or "" for the default. Sent only when it changes; the daemon
  * tries a headset for up to a second, while the other side lets go, and falls
  * back to the default if it never does. */

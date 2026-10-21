@@ -343,8 +343,8 @@ static void event(const char *line)
  * AVRCP keyboard and writes as `<action> <stamp>` (tools/btplayer.c). Here and
  * not in any one screen, because musec_poll runs wherever Muse matters - the
  * shelf, the menus, a game's tick, Muse's own screens. Only ever Muse, even in
- * a game: pausing the music is what brings the game's sound back (ADR-0032),
- * and a headset's button never reaches into the game itself - Eric's call,
+ * a game: pausing the music is what brings the game's sound back, and a
+ * headset's button never reaches into the game itself - Eric's call,
  * 2026-09-26. A new stamp is a new press; the one found at start is only
  * noted. Read every tenth of a second, before anything that could return
  * early, so a press made while Muse was not running is used up, not replayed

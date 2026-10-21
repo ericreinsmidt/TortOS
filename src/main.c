@@ -1776,7 +1776,7 @@ static char     g_watch_active[LIB_PATH * 2];
  * DIFFERENT game can be recognized and dropped. Written at every launch. */
 static char g_game_set[LIB_PATH * 2];
 
-/* ---- where the system's sound goes (Diatom's ADR-0029) ------------------- */
+/* ---- where the system's sound goes --------------------------------------- */
 
 /* The policy is a setting; the other two facts are read from the device. The
  * RULE that combines them is src/audioout.c, where it can be checked without a
@@ -1877,8 +1877,8 @@ static aout_state aout_now(void)
 
 /* Where Diatom actually IS, which is not always where it was told to go: a
  * sink that will not open, or one that died under it, makes the port fall back
- * and report the fallback (ADR-0029). A non-empty device is the named sink; an
- * empty one is the codec, where the cable decides what you hear.
+ * and report the fallback. A non-empty device is the named sink; an empty one
+ * is the codec, where the cable decides what you hear.
  *
  * Falls back to the launcher's own resolution until Diatom has said anything -
  * on the desktop build it never will. */
@@ -2053,7 +2053,7 @@ static void bt_volume_follow(const char *out, bool fresh)
  * A Bluetooth headset cannot be shared - bluealsa 3.1 gives an A2DP PCM to one
  * client at a time, measured 2026-09-25 - so it is HANDED between them, and it
  * goes to whoever may be heard: Muse while it plays, which is exactly when
- * ADR-0032 has already quieted the game, and Diatom otherwise.
+ * the game has already been quieted, and Diatom otherwise.
  *
  * Release before acquire, or the second open fails and falls back. Towards
  * Muse, Diatom is told first and Muse's SINK retries for a second while Diatom
@@ -2212,15 +2212,15 @@ static void on_game_tick(void)
 	/* Muse, bounded: read what has arrived, and send at most one PLAY when a
 	 * track ends - which is what keeps an album going through a game.
 	 *
-	 * And the game goes quiet while it plays - Diatom's ADR-0032, followed
+	 * And the game goes quiet while it plays - Diatom's QUIET, followed
 	 * here at ten a second, which is how pausing the music or the album
 	 * ending brings the game's sound back within a tenth of a second. Only a
 	 * change is sent. */
 	muse_poll();
 	plat_resident_quiet(musec_playing());
-	/* The low-battery disc over the game, which Diatom draws (its ADR-0040)
-	 * as this process can draw nothing while a game runs, blinking when
-	 * critical. Sent only on a change; the level is read every five seconds. */
+	/* The low-battery disc over the game, which Diatom draws as this process
+	 * can draw nothing while a game runs, blinking when critical. Sent only
+	 * on a change; the level is read every five seconds. */
 	plat_resident_low_battery(battery_level());
 
 	/* Play time. Writes at most one unsynced row and usually nothing, and
@@ -2238,7 +2238,7 @@ static void on_game_tick(void)
 	 * fire at all. */
 	/* A cable plugged in mid-game, or a headset that connected or walked out
 	 * of range, moves the sound without leaving the game. That is the whole
-	 * point of ADR-0029 making this a state rather than a launch argument. */
+	 * point of Diatom making this a state rather than a launch argument. */
 	g_game_ticking = true;             /* see bt_volume_follow */
 	aout_apply(false);
 	g_game_ticking = false;
@@ -2290,8 +2290,8 @@ static void on_game_tick(void)
 	/* A FETCH CAN OUTLIVE THE GAME IT WAS FOR, and handing over the wrong set
 	 * is not a cosmetic mistake. This runs on the game tick, so the game that
 	 * started the fetch may have ended and another may be running - and below,
-	 * SETCHEEVOS hands the set to Diatom mid-game, which ADR-0026 makes the
-	 * normal path precisely because a download can still be in flight.
+	 * SETCHEEVOS hands the set to Diatom mid-game, which its protocol makes
+	 * the normal path precisely because a download can still be in flight.
 	 *
 	 * Nothing downstream would catch it. rcheevos would evaluate one game's
 	 * conditions against another game's memory, and a condition that matched
@@ -2358,7 +2358,7 @@ static void on_cheevo_unlocked(int id)
 	chv_earned_save();
 
 	/* And say so, on screen, now. This process owns no display while a game
-	 * runs, so it renders the line and Diatom composites it (its ADR-0027).
+	 * runs, so it renders the line and Diatom composites it.
 	 * Rendering is safe here; presenting would not be. */
 	for (i = 0; i < chv_count(); i++)
 		if (chv_at(i)->id == id) { c = chv_at(i); break; }
@@ -2381,10 +2381,10 @@ static void on_cheevo_unlocked(int id)
 }
 
 /* Called from inside plat_resident_wait when Diatom says the fast-forward step
- * changed, or that a game resumed fast (its ADR-0034). Drawn as an unlock
- * notice is - rendered here, composited there - and shorter, since it says a
- * word. The step, not the speed reached: on a heavy SNES or GBA game 3x and
- * 4x both run about 2.5x, and that figure moves from scene to scene. */
+ * changed, or that a game resumed fast. Drawn as an unlock notice is -
+ * rendered here, composited there - and shorter, since it says a word. The
+ * step, not the speed reached: on a heavy SNES or GBA game 3x and 4x both run
+ * about 2.5x, and that figure moves from scene to scene. */
 static void on_speed(int x)
 {
 	char p[CFG_STR * 2], body[16];
@@ -2754,7 +2754,7 @@ static void redraw_at(Uint32 t);   /* below, with the rest of the redraw clock *
  * second on and a second off, slow enough not to pull at the eye. Returns how
  * long until it changes by itself, in ms, and tells the shelf's loop the same,
  * so a screen that only draws when something moves still blinks it. Diatom
- * blinks its own over a game on the same rhythm (its ADR-0040). */
+ * blinks its own over a game on the same rhythm. */
 static unsigned draw_battery_dot(SDL_Renderer *r)
 {
 	Uint32 now, flip;
@@ -4623,10 +4623,10 @@ static wifi_state menu_wifi(char *ssid, int cap)
 
 /* Gather what the device currently is, and hand it to sys_menu_build.
  *
- * The split is ADR-0001's: this half is allowed to fork wpa_cli and read the
- * app, the other half is not allowed to do anything but produce rows. That is
- * what lets tools/menu-check.c state a whole device situation in a struct
- * initializer and ask what the menu says about it.
+ * The split: this half is allowed to fork wpa_cli and read the app, the other
+ * half is not allowed to do anything but produce rows. That is what lets
+ * tools/menu-check.c state a whole device situation in a struct initializer
+ * and ask what the menu says about it.
  *
  * Returns the row count, so the input loop never needs to know which of the
  * two menus it is driving. */
@@ -4808,7 +4808,7 @@ static bool confirm_panel(app *a, const char *heading, const char *msg,
 	}
 }
 
-/* ---- the menu runner (ADR-0001) --------------------------------------- */
+/* ---- the menu runner -------------------------------------------------- */
 
 /* Wi-Fi is the largest menu: the switch, WIFI_MAX_NETS networks, a rule and a
  * note. Distinct from MENU_MAX_ROWS, which is the system menu's own count and
@@ -4833,8 +4833,8 @@ typedef enum {
 /* Fill `rows`, name the screen, and return how many rows. MUST NOT touch the
  * renderer or the event loop, and the part that actually decides what the rows
  * SAY must be a separate function in a file the check can link - src/wifi_menu.c
- * and src/sys_menu.c are those files. ADR-0001 says the decision has failed if
- * that stops being true.
+ * and src/sys_menu.c are those files. The design has failed if that stops
+ * being true.
  *
  * Reading the device from here is allowed and unavoidable: a row that reports
  * the network has to ask every frame. What makes it checkable is that the
@@ -4853,7 +4853,7 @@ typedef int (*menu_build_fn)(void *ctx, menu_row *rows, int max,
 
 /* How the panel is drawn, as opposed to what is in it. Everything here needs
  * the renderer or the app, which is exactly why it is not in the build
- * function - see ADR-0001. */
+ * function. */
 typedef struct {
 	/* 0: measure these rows. The system menu passes menu_shelf_width, a width
 	 * measured once across every system and every display mode, because a
@@ -5006,7 +5006,7 @@ static menu_exit menu_run_body(app *a, const menu_style *st,
 /* One screen, one loop. Owns polling, power, idle, quit, back, volume,
  * brightness, the cursor and the whole frame, so that no screen can forget any
  * of them - which every menu defect this project has had came down to. See
- * docs/menus.md and ADR-0001.
+ * docs/menus.md.
  *
  * The flush is here rather than in the body: the press that opens a screen must
  * not also close it, and the press that closes one must not arrive again at
@@ -7393,12 +7393,12 @@ static void tortos_menu(app *a)
 
 /* The paused frame, drawn where the game actually is.
  *
- * Diatom reports its rect with every DISPLAY message (its ADR-0022 put it there
- * so a launcher need not recompute it from geometry it does not have), and the
- * preview it writes is the CORE'S frame - 256x224 for an NES, no display mode
- * applied. Stretching that to the panel, which is what this used to do, showed
- * a game that looked nothing like the one paused underneath at any mode that
- * does not fill the screen, and made the picture jump size the moment MENU was
+ * Diatom reports its rect with every DISPLAY message (put there so a launcher
+ * need not recompute it from geometry it does not have), and the preview it
+ * writes is the CORE'S frame - 256x224 for an NES, no display mode applied.
+ * Stretching that to the panel, which is what this used to do, showed a game
+ * that looked nothing like the one paused underneath at any mode that does
+ * not fill the screen, and made the picture jump size the moment MENU was
  * pressed.
  *
  * Falls back to filling the panel when Diatom has not said - the standalone
@@ -7683,7 +7683,7 @@ static void gm_cycle_display(app *a, int d)
 }
 
 /* What the in-game menu needs from the app, handed to gm_rows to become rows.
- * Same split as everywhere else - see ADR-0001. */
+ * Same split as everywhere else. */
 static int gm_build(app *a, menu_row *out, gm_bufs *b)
 {
 	gm_ui u;
@@ -9530,9 +9530,9 @@ static menu_result gm_key(app *a, void *ctx, in_button key, int sel)
 
 	/* Applied to the running game at once, not on resume: the whole point of
 	 * this row being here rather than on the shelf is judging the mode against
-	 * the game it is being applied to. Diatom takes SETDISPLAY while paused
-	 * (its ADR-0020), answers with the new rect, and the backdrop behind this
-	 * menu redraws into it. */
+	 * the game it is being applied to. Diatom takes SETDISPLAY while paused,
+	 * answers with the new rect, and the backdrop behind this menu redraws
+	 * into it. */
 	if (sel == GM_DISPLAY && (key == IN_LEFT || key == IN_RIGHT)) {
 		gm_cycle_display(a, key == IN_RIGHT ? 1 : -1);
 		return MENU_STAY;
@@ -9708,8 +9708,8 @@ static void respawn_resident(app *a)
 	if (plat_resident_ready()) return;
 
 	/* The resident is Diatom. It maps every core in the directory it is given
-	 * and keeps them (its ADR-0006), so the directory is the only thing handed
-	 * over and nothing here changes when a system is added. */
+	 * and keeps them, so the directory is the only thing handed over and
+	 * nothing here changes when a system is added. */
 	snprintf(elf, sizeof elf, "%s/diatom", P_ROOT);
 	if (access(elf, X_OK) != 0) return;
 	snprintf(save, sizeof save, "%s/Saves", P_CARD);
@@ -9770,12 +9770,11 @@ static void launch(app *a)
 
 	/* A disc that needs firmware, before anything tries to run it.
 	 *
-	 * Diatom checks this too (its ADR-0017) and answers bios_missing, but that
-	 * answer has never been reachable: it acts on a `firmware=` key the
-	 * launcher has never sent. So the core was asked to load a CD with no
-	 * System Card, refused it the way it refuses a corrupt ROM, and the shelf
-	 * came back with nothing said - which is a long way from "needs
-	 * Bios/syscard3.pce".
+	 * Diatom checks this too and answers bios_missing, but that answer has
+	 * never been reachable: it acts on a `firmware=` key the launcher has
+	 * never sent. So the core was asked to load a CD with no System Card,
+	 * refused it the way it refuses a corrupt ROM, and the shelf came back
+	 * with nothing said - which is a long way from "needs Bios/syscard3.pce".
 	 *
 	 * Disc images only. A HuCard needs no System Card, and refusing every
 	 * cartridge on the shelf because a CD would have needed one is a worse
@@ -9875,7 +9874,7 @@ static void launch(app *a)
 	a->resume_menu = false;
 
 	/* Whether this game should be heard - quiet while Muse plays, Diatom's
-	 * ADR-0032. Stated before the RUN goes out, which sends it. */
+	 * QUIET. Stated before the RUN goes out, which sends it. */
 	plat_resident_quiet(musec_playing());
 	/* And whether the battery is low, so the disc is over its first frame. */
 	plat_resident_low_battery(battery_level());

@@ -12,7 +12,7 @@
  * The rest is what the rows have to be to fit: a name and something it does,
  * kept short enough not to scroll.
  *
- * No SDL, no device. ADR-0001.
+ * No SDL, no device.
  */
 #include <stdbool.h>
 #include <stdio.h>

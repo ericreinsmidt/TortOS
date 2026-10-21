@@ -86,7 +86,7 @@ void ra_sync_abandon(void);
  * are its achievements - and doing them before the launch put most of a second
  * between pressing A and the game appearing. So the game starts with no set,
  * these run behind it, and the launcher hands the set over with SETCHEEVOS
- * once it lands. That message exists for exactly this: ADR-0026 calls it "the
+ * once it lands. That message exists for exactly this: Diatom calls it "the
  * normal path whenever the set is still downloading when the player presses
  * A", and then the first version blocked instead.
  *

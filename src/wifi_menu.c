@@ -1,10 +1,10 @@
 /* The Wi-Fi screen, minus the screen.
  *
- * State and row building only. This file must never include SDL: ADR-0001 says
- * a build function has to be callable with no renderer and no device, and
+ * State and row building only. This file must never include SDL: a build
+ * function has to be callable with no renderer and no device, and
  * tools/menu-check.c links it directly to prove it. If that stops being true
- * the decision has failed and should be reopened rather than the requirement
- * quietly dropped.
+ * the menu design has failed and should be reopened rather than the
+ * requirement quietly dropped.
  *
  * The half that needs a screen - wifi_key, wifi_screen - stays in main.c.
  */
@@ -82,7 +82,7 @@ int wifi_build(void *ctx, menu_row *rows, int max, const char **heading)
 	 * provisional list of saved networks is replaced by what the radio heard.
 	 *
 	 * This is still the only place rows are built, and it still touches no
-	 * renderer - ADR-0001's requirement holds. */
+	 * renderer. */
 	if (w->scanning && wifi_scan_poll() == 1) {
 		int got = wifi_scan_take(w->nets, WIFI_MAX_NETS);
 

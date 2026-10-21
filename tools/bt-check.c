@@ -170,8 +170,8 @@ static void labels(void)
 
 /* The rows themselves. This is why bt_menu.c exists as its own SDL-free file:
  * the first version of this screen built its rows inside main.c, where nothing
- * could reach them. ADR-0001 says a build function has to be callable with no
- * renderer and no device. */
+ * could reach them. A build function has to be callable with no renderer and
+ * no device. */
 static void rows_are_shaped_like_the_others(void)
 {
 	bt_ui u = { 0 };

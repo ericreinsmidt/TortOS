@@ -7,11 +7,10 @@
 
 /* RetroAchievements, the launcher's half.
  *
- * The division is Diatom's ADR-0025 and ADR-0026: Diatom evaluates conditions
- * against every frame, because they compare against the PREVIOUS frame and
- * this process only sees the socket every 100ms. This side owns everything
- * else - which set belongs to which game, what an achievement is called, and
- * what the player has already earned.
+ * The division: Diatom evaluates conditions against every frame, because they
+ * compare against the PREVIOUS frame and this process only sees the socket
+ * every 100ms. This side owns everything else - which set belongs to which
+ * game, what an achievement is called, and what the player has already earned.
  *
  * A set lives at `Roms/<System>/.cheevos/<name>.set`, beside the box art in
  * `.media/`, and is put there host-side by `tools/ra-sets.py`. There is no
@@ -64,8 +63,8 @@ int         chv_new_this_session(void);
 
 /* Write what Diatom should watch: the set minus what is already earned.
  * Diatom has no account and no idea what earned means, so filtering is this
- * side's job (ADR-0026). Streams the source file rather than holding it -
- * a single condition string has been measured at 30,897 characters.
+ * side's job. Streams the source file rather than holding it - a single
+ * condition string has been measured at 30,897 characters.
  * False means nothing is left to watch, and the caller should not send it. */
 bool chv_write_active(const char *path);
 
