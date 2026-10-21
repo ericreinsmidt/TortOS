@@ -12,14 +12,9 @@
 TORTOS_DIR=/mnt/SDCARD/TortOS
 SDCARD=/mnt/SDCARD
 
-export PLATFORM=tg3040
-export DEVICE=brick
-export SDCARD_PATH=$SDCARD
 export BIOS_PATH=$SDCARD/Bios
 export ROMS_PATH=$SDCARD/Roms
 export SAVES_PATH=$SDCARD/Saves
-export CHEATS_PATH=$SDCARD/Cheats
-export SYSTEM_PATH=$TORTOS_DIR
 export CORES_PATH=$TORTOS_DIR/cores
 export USERDATA_PATH=$SDCARD/.userdata/tg3040
 export SHARED_USERDATA_PATH=$SDCARD/.userdata/shared

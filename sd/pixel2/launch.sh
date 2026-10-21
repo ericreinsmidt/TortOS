@@ -11,14 +11,9 @@
 TORTOS_DIR=/mnt/SDCARD/TortOS
 SDCARD=/mnt/SDCARD
 
-export PLATFORM=pixel2
-export DEVICE=pixel2
-export SDCARD_PATH=$SDCARD
 export BIOS_PATH=$SDCARD/Bios
 export ROMS_PATH=$SDCARD/Roms
 export SAVES_PATH=$SDCARD/Saves
-export CHEATS_PATH=$SDCARD/Cheats
-export SYSTEM_PATH=$TORTOS_DIR
 export CORES_PATH=$TORTOS_DIR/cores
 export USERDATA_PATH=$SDCARD/.userdata/pixel2
 export SHARED_USERDATA_PATH=$SDCARD/.userdata/shared

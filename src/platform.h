@@ -80,7 +80,8 @@ bool in_repeat(in_state *st, in_button b);
 void plat_terminate(void);
 
 /* Run a child to completion, watching the power button while it runs.
- * envkv is a NULL-terminated array of "KEY=value" strings. */
+ * envkv is a NULL-terminated array of "KEY=value" strings added to this
+ * process's own environment, or NULL for that environment alone. */
 int  plat_run(char *const argv[], const char *const envkv[], const char *workdir);
 bool plat_run_power_pressed(void);
 /* Say that something equivalent to a power press has happened, for the paths

@@ -7376,32 +7376,6 @@ static void tortos_menu(app *a)
 
 /* ---------- launching ----------------------------------------------------- */
 
-static char env_buf[10][CFG_STR * 2];
-static const char *child_env[24];
-
-static void build_child_env(void)
-{
-	static const char *fixed[] = {
-		"PLATFORM=tg3040", "DEVICE=brick",
-		"SDCARD_PATH=/mnt/SDCARD",
-		"BIOS_PATH=/mnt/SDCARD/Bios",
-		"CHEATS_PATH=/mnt/SDCARD/Cheats",
-		"SAVES_PATH=/mnt/SDCARD/Saves",
-	};
-	size_t i;
-	int n = 0;
-	for (i = 0; i < sizeof fixed / sizeof *fixed; i++) child_env[n++] = fixed[i];
-	snprintf(env_buf[0], sizeof env_buf[0], "ROMS_PATH=%s", P_ROMS);
-	snprintf(env_buf[1], sizeof env_buf[1], "SYSTEM_PATH=%s", P_ROOT);
-	snprintf(env_buf[2], sizeof env_buf[2], "CORES_PATH=%s/cores", P_ROOT);
-	snprintf(env_buf[3], sizeof env_buf[3], "USERDATA_PATH=%s", P_USERDATA);
-	snprintf(env_buf[4], sizeof env_buf[4], "SHARED_USERDATA_PATH=%s", P_SHARED);
-	snprintf(env_buf[5], sizeof env_buf[5], "LOGS_PATH=%s/logs", P_USERDATA);
-	snprintf(env_buf[6], sizeof env_buf[6], "HOME=%s", P_USERDATA);
-	for (i = 0; i <= 6; i++) child_env[n++] = env_buf[i];
-	child_env[n] = NULL;
-}
-
 /* The in-game menu - the launcher's, over Diatom's pause.
  *
  * MENU in a game makes Diatom write a preview of the frame, stop presenting,
@@ -9754,7 +9728,7 @@ static void respawn_resident(app *a)
 	argv[7] = (char *)"--system"; argv[8] = bios;
 	argv[9] = NULL;
 	fprintf(stderr, "resident emulator is gone, starting diatom\n");
-	plat_spawn_detached(argv, child_env, P_ROOT);
+	plat_spawn_detached(argv, NULL, P_ROOT);
 }
 
 static void launch(app *a)
@@ -10111,7 +10085,7 @@ static void launch(app *a)
 			}
 		}
 		argv[n] = NULL;
-		fprintf(stderr, "diatom exited %d\n", plat_run(argv, child_env, P_ROOT));
+		fprintf(stderr, "diatom exited %d\n", plat_run(argv, NULL, P_ROOT));
 
 		if (!plat_video_init() || !plat_input_init()) { a->running = false; return; }
 		a->r = plat_renderer();
@@ -11895,7 +11869,6 @@ int main(int argc, char *argv[])
 
 	t_boot0 = plat_now_ms();
 	paths_init();
-	build_child_env();
 
 	/* Before anything reads a setting. Two databases, because the files this
 	 * replaced kept per-device and per-card data apart on purpose - see db.h.
