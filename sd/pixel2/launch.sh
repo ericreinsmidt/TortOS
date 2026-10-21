@@ -33,9 +33,23 @@ for d in "$BIOS_PATH" "$ROMS_PATH" "$SAVES_PATH" "$USERDATA_PATH" "$LOGS_PATH" \
 	[ -d "$d" ] || mkdir -p "$d"
 done
 
+# One log per boot, carrying the launcher and everything it starts. Ten boots
+# kept: this one and tortos.log.1 to .9, newest first. One wasn't enough: a
+# player's report can come several reboots after the fault. Only the last
+# boot's log is moved out of the way here; the older ones shift along in the
+# background, where nothing waits on them (in line, the renames took 260 ms of
+# the boot on TrimUI's firmware, measured 2026-10-02).
 LOG=$LOGS_PATH/tortos.log
-[ -f "$LOG" ] && mv -f "$LOG" "$LOG.1"
+[ -f "$LOG" ] && mv -f "$LOG" "$LOG.prev"
 : > "$LOG"
+(
+	i=9
+	while [ $i -gt 1 ]; do
+		[ -f "$LOG.$((i - 1))" ] && mv -f "$LOG.$((i - 1))" "$LOG.$i"
+		i=$((i - 1))
+	done
+	[ -f "$LOG.prev" ] && mv -f "$LOG.prev" "$LOG.1"
+) &
 
 # Running already? By the pid file and /proc, rather than pidof's walk of
 # every process. A pid reused after a crash is caught by the name.

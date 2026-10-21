@@ -16,7 +16,7 @@ export BIOS_PATH=$SDCARD/Bios
 export ROMS_PATH=$SDCARD/Roms
 export SAVES_PATH=$SDCARD/Saves
 export CORES_PATH=$TORTOS_DIR/cores
-export USERDATA_PATH=$SDCARD/.userdata/tg3040
+export USERDATA_PATH=$SDCARD/.userdata/brick
 export SHARED_USERDATA_PATH=$SDCARD/.userdata/shared
 export LOGS_PATH=$USERDATA_PATH/logs
 export HOME=$USERDATA_PATH
@@ -37,6 +37,14 @@ BACKLIGHT=/usr/lib/brick/backlight
 # with the shell's own built-ins wherever one will do: every helper program is
 # a process start, and on the Pixel they added up to 93 ms before the launcher
 # started (measured 2026-10-01). The radios go in the background.
+
+# The settings folder was named after TrimUI's model for the Brick, tg3040,
+# until 2026-10-21. A card that still has it and not the new one has it renamed
+# once, which on the same card costs nothing. With both there, neither is
+# touched: merging two sets of settings is not a guess to make at boot.
+OLD_USERDATA=$SDCARD/.userdata/tg3040
+[ -d "$OLD_USERDATA" ] && [ ! -e "$USERDATA_PATH" ] &&
+	mv "$OLD_USERDATA" "$USERDATA_PATH"
 
 # Only on a fresh card are any of these missing
 for d in "$BIOS_PATH" "$ROMS_PATH" "$SAVES_PATH" "$USERDATA_PATH" "$LOGS_PATH" \
@@ -61,6 +69,8 @@ LOG=$LOGS_PATH/tortos.log
 	done
 	[ -f "$LOG.prev" ] && mv -f "$LOG.prev" "$LOG.1"
 ) &
+[ -d "$OLD_USERDATA" ] &&
+	echo "launch: $OLD_USERDATA left as it is: $USERDATA_PATH is there too" >> "$LOG"
 
 # The settings this script needs before TortOS runs, which TortOS writes out
 # for it (there is no sqlite3 here to read its database). Sourced rather than
