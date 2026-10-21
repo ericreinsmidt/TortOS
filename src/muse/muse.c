@@ -10,7 +10,7 @@
  *
  * Separate from the launcher so that music survives the launcher restarting,
  * which is the one argument for a second process that did not go stale when
- * the launcher grew worker threads (BACKLOG, the Muse scoping).
+ * the launcher grew worker threads.
  *
  * THE PROTOCOL, one line each way, tab-separated key=value after a verb:
  *

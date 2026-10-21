@@ -193,7 +193,7 @@ const char *plat_resident_last_preview(void);
  * retro_load_game and setting one afterwards does nothing until next launch. */
 int         plat_coreopt_count(const char *tag);
 const char *plat_coreopt(const char *tag, int i);
-/* The turbo map for this system, or NULL. See docs/turbo.md. */
+/* The turbo map for this system, or NULL. */
 const char *plat_turbo_map(const char *tag);
 
 /* Where Diatom is actually drawing the game, from its DISPLAY message. False

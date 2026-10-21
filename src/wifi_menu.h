@@ -27,7 +27,7 @@ typedef struct {
  *
  * The -72 boundary is NOT validated. Measured throughput exists at two points
  * only - unusable at -73, fine at -58 - and the cliff is somewhere in that 15
- * dB. Left where it is rather than moved on a hunch; see BACKLOG. */
+ * dB. Left where it is rather than moved on a hunch. */
 const char *wifi_strength(int dbm);
 
 void wifi_label(wifi_ui *w);

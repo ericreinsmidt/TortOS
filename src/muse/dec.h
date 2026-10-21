@@ -11,9 +11,9 @@
  *
  * Everything goes through the device's own FFmpeg 6.1 - the libraries in
  * /usr/lib, which is why there is no decoder of our own here. Measured on the
- * Brick 2026-09-17 (BACKLOG, the Muse spike): MP3, AAC, M4B, FLAC and Opus at
- * 88-116x realtime and about 1% of a core, 12-14 MB resident, with the M4B's
- * chapters and every file's tags read by the same library. */
+ * Brick 2026-09-17: MP3, AAC, M4B, FLAC and Opus at 88-116x realtime and
+ * about 1% of a core, 12-14 MB resident, with the M4B's chapters and every
+ * file's tags read by the same library. */
 
 #define DEC_RATE     48000
 #define DEC_CHANNELS 2

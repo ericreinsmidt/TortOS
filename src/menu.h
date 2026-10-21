@@ -4,8 +4,6 @@
  * callable with no renderer and no device, so that "given this state, what
  * does this menu contain" is answerable by `make check` - and that is only
  * true if the types it needs can be included without dragging SDL in with them.
- *
- * The conventions, and the five defects that produced them: docs/menus.md.
  */
 #ifndef TORTOS_MENU_H
 #define TORTOS_MENU_H

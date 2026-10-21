@@ -19,7 +19,7 @@
  * binary still contains both strings, `strings` finds them in seconds, and
  * encrypting them with a key shipped beside them would be the same secret with
  * an extra step. What it stops is the automated harvesting of public
- * repositories, which is how these are actually taken. BACKLOG 31.
+ * repositories, which is how these are actually taken.
  *
  * The player pair is asked for on the device and required rather than
  * optional, which is what bounds the rest: every request spends that player's

@@ -46,7 +46,7 @@ static const db_default library_defaults[] = {
 	 * them both. A three-button Genesis takes west for its A - measured
 	 * 2026-09-06 with Streets of Rage 2 - so it has one free button where
 	 * turbo needs two, and SNES uses all four. MD and SFC are absent for that
-	 * reason and not by oversight. docs/turbo.md has the table. */
+	 * reason and not by oversight. */
 	{ "turbo.NES",  "x:a~3,y:b~3" },
 	{ "turbo.SMS",  "x:a~3,y:b~3" },
 	{ "turbo.PCE",  "x:a~3,y:b~3" },

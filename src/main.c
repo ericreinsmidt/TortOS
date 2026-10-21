@@ -2035,7 +2035,7 @@ static void bt_volume_follow(const char *out, bool fresh)
 	v = (level * 127 + (count - 1) / 2) / (count - 1);
 	/* And again for a different headset at the same level: with two connected
 	 * the sound can move between them, and a link handle is no help there - it
-	 * is reused (#44). */
+	 * is reused. */
 	if (!fresh && v == sent && !strcmp(out, sent_to)) return;
 	if ((int)(now - retry_at) < 0) return;
 	if (!btvol_set(out, v)) { retry_at = now + 2000; return; }
@@ -3717,7 +3717,7 @@ static void power_off(app *a)
  * cannot drift apart. The slab is sized to its own widest row with the same
  * padding on every side, rather than to a number picked once and left behind
  * by the next label someone adds. */
-/* menu_row and the row kinds: src/menu.h; the rules: docs/menus.md. */
+/* menu_row and the row kinds: src/menu.h. */
 
 #define MENU_RADIUS 20
 /* The system's one accent: this menu, the volume OSD, and the mark's center
@@ -5005,8 +5005,7 @@ static menu_exit menu_run_body(app *a, const menu_style *st,
 
 /* One screen, one loop. Owns polling, power, idle, quit, back, volume,
  * brightness, the cursor and the whole frame, so that no screen can forget any
- * of them - which every menu defect this project has had came down to. See
- * docs/menus.md.
+ * of them - which every menu defect this project has had came down to.
  *
  * The flush is here rather than in the body: the press that opens a screen must
  * not also close it, and the press that closes one must not arrive again at
@@ -5349,7 +5348,7 @@ static int hare_rows(menu_row *out, const char *who, const char *moved,
 	 * "12 KB in / 41 MB out" scrolled on every real session - just browsing
 	 * moves bytes both ways, so both numbers are never zero - and a still
 	 * caught it mid-word. Rendered 2026-09-30, this fits even at
-	 * "1.2 GB / 413.5 MB". Backlog 37. */
+	 * "1.2 GB / 413.5 MB". */
 	out[1] = (menu_row){ "In / out", moved, false };
 	out[2] = (menu_row){ "Now",      now,   false };
 	return 3;
@@ -5930,7 +5929,7 @@ static void art_screen(app *a, const char *only, const char *one,
 	 * just quit may still be holding it. */
 	sync_abandon();
 
-	/* SCREENSCRAPER FIRST, FOR ONE GAME. BACKLOG 27 settled the order: them
+	/* SCREENSCRAPER FIRST, FOR ONE GAME. That is the settled order: them
 	 * when the player has an account, libretro when they do not and libretro
 	 * again when they cannot answer - a miss, a refusal, or a name that does
 	 * not survive the check.
@@ -7869,7 +7868,7 @@ static bool cheevo_detail_screen(app *a, SDL_Texture *bg, bool over_shelf,
  * The same shape as the achievement card above and for the same reason: there
  * is nothing here to choose between, so it is drawn with no cursor and scrolls
  * itself. A synopsis averages 670 characters and the longest on the test card
- * is 2,221 (BACKLOG item 27), so most of them fit and the long ones walk.
+ * is 2,221, so most of them fit and the long ones walk.
  *
  * Over the shelf rather than a paused frame: this is reached from the shelf,
  * where the info screen already dims the same way. */
@@ -11684,8 +11683,8 @@ int main(int argc, char *argv[])
 
 	/* --meta <file>: fill the card's games table from scraped rows.
 	 *
-	 * The scrape runs on a computer for now (BACKLOG item 27), and from there
-	 * the card's database cannot simply be written: the launcher holds it open
+	 * The scrape runs on a computer for now, and from there the card's
+	 * database cannot simply be written: the launcher holds it open
 	 * in WAL mode for as long as the device is on, and swapping the file under
 	 * a live SQLite handle is how a card loses its favorites and its play time.
 	 * Measured on this device: a 76 KB library.db beside a 161 KB -wal.
@@ -11776,8 +11775,8 @@ int main(int argc, char *argv[])
 	 *
 	 * The same art_begin/art_step the screen drives, stepped from here instead
 	 * of from a frame loop, so a long run does not depend on somebody holding
-	 * the device - and so that BACKLOG 27's "re-scraping just those four is a
-	 * five-minute job" is a command rather than a menu to navigate over adb.
+	 * the device - and so that re-scraping just a few games is a five-minute
+	 * job with a command rather than a menu to navigate.
 	 *
 	 * Headless, so it must NOT touch video: the live launcher is presenting
 	 * while this runs, and two presenters wedge the display engine. It also

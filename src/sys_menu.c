@@ -1,5 +1,5 @@
 /* What the two MENU-button menus contain. See src/sys_menu.h for why this is
- * a file of its own, and docs/menus.md for the rules the rows follow.
+ * a file of its own.
  *
  * No SDL, no device reads, no forks. Everything this needs arrives in sys_ui. */
 #include <stdio.h>
@@ -207,9 +207,9 @@ int sys_menu_build(const sys_ui *u, menu_row *out, menu_bufs *b,
 	 * offered turned out to be too narrow to matter - src/ui.c. */
 	full[PM_THEME]        = (menu_row){ "UI Theme",  u->cards,     true };
 	full[PM_DIR]          = (menu_row){ "UI Direction", u->cards_dir, true };
-	/* Not "Sleep". The device has no suspend and is not getting one - see the
-	 * backlog. This powers off, and resume-into-game brings you back where you
-	 * were, which is what sleep would have been for. */
+	/* Not "Sleep". The device has no suspend and is not getting one. This
+	 * powers off, and resume-into-game brings you back where you were, which
+	 * is what sleep would have been for. */
 	sys_menu_auto_off_label(u->auto_off, b->c, sizeof b->c);
 	full[PM_SCRAPE]       = (menu_row){ "Box Art",   NEEDS_WIFI(net), net };
 	full[PM_ACHIEVEMENTS] = (menu_row){ "Cheevos",

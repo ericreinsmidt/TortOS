@@ -1,9 +1,7 @@
 /* SPDX-License-Identifier: MIT */
 /* Bluetooth audio, over the stock BlueZ. Like wifi.h, none of this is TortOS's
- * own stack - it is a client of firmware that already works, and the four
- * things that were not obvious about getting it working are in the backlog.
- *
- * Three of them matter to this file:
+ * own stack - it is a client of a system that already works. Three things about
+ * getting it working were not obvious, and all three matter to this file:
  *
  *   THE AGENT IS THE WHOLE BALLGAME. A headset will not pair without one, and
  *   bluetoothctl only registers a default agent in interactive mode. Every

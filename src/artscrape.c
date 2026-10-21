@@ -419,9 +419,9 @@ enum { P_SYSTEM, P_SS, P_SS_WAIT, P_TRY, P_TRY_WAIT, P_INDEX, P_INDEX_WAIT,
 
 /* ---- pass zero: ScreenScraper ------------------------------------------
  *
- * BACKLOG 27 settled the order and Replace Box Art has followed it for one
- * game since 2026-09-16: ScreenScraper when the player has an account,
- * libretro when they do not and libretro again whenever they cannot answer.
+ * The order was settled, and Replace Box Art has followed it for one game
+ * since 2026-09-16: ScreenScraper when the player has an account, libretro
+ * when they do not and libretro again whenever they cannot answer.
  * This is that order over a whole shelf.
  *
  * It costs nothing when there is nothing to do, because P_SYSTEM has already
@@ -502,8 +502,8 @@ static art_progress g_st;
 /* ---- the log --------------------------------------------------------------
  *
  * Every request, what came back and how long it took, plus a line per system
- * and one for the run. BACKLOG 47: a scrape that felt slow on a fresh card had
- * nothing in the log but the resizes, so there was nothing to measure it by.
+ * and one for the run: a scrape that felt slow on a fresh card had nothing in
+ * the log but the resizes, so there was nothing to measure it by.
  *
  * The check defines ART_QUIET. It runs whole scrapes against a stub, and the
  * stub's traffic would bury its own report. */

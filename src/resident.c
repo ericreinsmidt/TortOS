@@ -598,7 +598,7 @@ static int diatom_wait(void)
 		 *
 		 * The cut reaches the game's audio because HpSpeaker Switch sits
 		 * below the mixer: measured 2026-09-16 by muting a tone played from a
-		 * second process while Diatom held the dmix slave. See BACKLOG 28. */
+		 * second process while Diatom held the dmix slave. */
 		plat_mute_poll(false);
 		while ((l = dline(100))) {
 			if      (strncmp(l, "RUNNING", 7) == 0) d_got_running = 1;

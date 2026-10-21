@@ -77,8 +77,8 @@ void db_each_prefix(db *d, const char *prefix, db_each_fn fn, void *ctx);
  * Every field is stored even though the screen shows two of them. Measured
  * 2026-09-15 over 78 real replies: a synopsis averages 670 characters and the
  * whole card is 1.7 MB of text, while re-scraping 1,708 games to add a column
- * later is an hour on one thread (BACKLOG item 27). Storing it is the cheap
- * side of that trade by a wide margin.
+ * later is an hour on one thread. Storing it is the cheap side of that trade
+ * by a wide margin.
  *
  * The synopsis cap is 4 KB against a longest-seen 2,221 characters. A longer
  * one is truncated rather than refused: half a synopsis still reads. */

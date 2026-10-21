@@ -819,7 +819,7 @@ void plat_cable_reconnect(void) { }
  * two would fight over one control - so the switch reaches a game by being
  * told to it, not by both of them reading the same pin. Deciding what a
  * physical control MEANS is the launcher's job; being quiet when asked is the
- * emulator's. See BACKLOG 28. */
+ * emulator's. */
 bool plat_mute_poll(bool own_volume)
 {
 	int now = mute_switch_down() ? 1 : 0;

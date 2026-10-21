@@ -92,8 +92,7 @@ static void take_from_splash(void)
 	fprintf(stderr, "video: took the display from the splash in %u ms\n",
 	        (unsigned)(SDL_GetTicks() - t0));
 	/* On the kernel's clock, beside the splash's "panel lit", so the boot
-	 * from power to shelf reads off one log (docs/boot-time.md in
-	 * plastron). */
+	 * from power to shelf reads off one log. */
 	{
 		struct timespec now;
 		char line[64];

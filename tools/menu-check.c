@@ -130,7 +130,7 @@ static void scanned_state(void)
 }
 
 /* The bands are a judgment on a measured number and the boundary is not
- * validated - see BACKLOG. Pinned here so it cannot move by accident. */
+ * validated. Pinned here so it cannot move by accident. */
 static void strength_words(void)
 {
 	printf("signal words:\n");

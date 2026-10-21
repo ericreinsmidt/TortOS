@@ -123,7 +123,7 @@ static int muse(menu_row *out)
 	/* B is not here. It goes back in Muse exactly as it does everywhere else,
 	 * and the shelf's page already says so - and with the rule above the
 	 * footer this page has room for five, not six. */
-	/* The pocket lock (#51). It took SELECT's row: "Close Muse" is SELECT
+	/* The pocket lock. It took SELECT's row: "Close Muse" is SELECT
 	 * doing on Muse what the Anywhere page already says it does. F1/F2 are
 	 * L3/R3 to anyone coming from another CFW; the guide says so. */
 	out[n++] = (menu_row){ fn_volume ? "FN+both Vol" : "F1+F2", "Lock, held", false };

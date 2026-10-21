@@ -78,7 +78,7 @@ typedef enum {
  * both kinds, since with one there is nothing to choose between. So the rows
  * move, and which one is where is sys_menu_muse_rows's to say.
  *
- * Lock Screen is the pocket lock (#51), the way to find it without knowing
+ * Lock Screen is the pocket lock, the way to find it without knowing
  * F1+F2 held: live while music plays, and saying so when it does not. */
 typedef enum { SMM_COUNT, SMM_SHOW, SMM_SORT, SMM_LOCK, SMM_ART, SMM_RESCAN } sm_muse_row;
 #define SM_MUSE_ROWS 6
@@ -153,7 +153,7 @@ typedef struct {
 	 * RetroAchievements one: whether this build can reach them at all. The
 	 * developer key comes from the environment at build time and a build
 	 * without it cannot sign anybody in, so the row has three states rather
-	 * than two - see src/ss.h and BACKLOG 31. */
+	 * than two - see src/ss.h. */
 	bool        ss_have;     /* this build carries a developer key */
 	bool        ss_in;
 	const char *ss_name;     /* only read when ss_in */

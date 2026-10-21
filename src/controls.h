@@ -5,7 +5,7 @@
 #include "menu.h"
 
 /* Every button, and what it does where: the one place ON THE DEVICE that says
- * so. Eric's, 2026-09-18, backlog 36.
+ * so. Eric's, 2026-09-18.
  *
  * The controls that need it most are the ones no screen announces. SELECT
  * opens Muse from anywhere, the volume keys and F1/F2 work everywhere, and Y

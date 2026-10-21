@@ -107,7 +107,7 @@ static long now_ms(void)
  *
  * The scraper used to say nothing at all, which is how twelve of the most
  * famous games on a fresh card came back with covers and no text and nothing
- * in the log to say why. BACKLOG 47. */
+ * in the log to say why. */
 static void say_reply(const char *how, long bytes, int parse_ms, const char *what)
 {
 	char curl[24] = "";
