@@ -17,11 +17,6 @@
  * Flattening those into one file would silently move a session token between
  * devices, which is the one thing the old layout was careful about.
  *
- * This dlopens libsqlite3 and declares the entry points it needs, the same way
- * the host reaches zlib: written for TrimUI's system, which had no sqlite3.h,
- * and kept because a missing library then leaves the launcher on its shipped
- * defaults rather than unable to start.
- *
  * Measured on the card, 2026-09-05, against what this replaces: a settings
  * write through atomic_open/atomic_commit costs 3.03 ms median with a 9.27 ms
  * tail, and every volume nudge pays it while a game is running. The same write
@@ -37,10 +32,6 @@
 typedef struct db db;
 
 typedef enum { DB_DEVICE, DB_LIBRARY } db_scope;
-
-/* False when libsqlite3 cannot be loaded at all. Callers decide what that
- * means; nothing here pretends a missing library is an empty database. */
-bool db_available(void);
 
 /* Opens, creates the schema if absent, and seeds any key the compiled-in
  * defaults for this scope declare and the file does not already hold. A

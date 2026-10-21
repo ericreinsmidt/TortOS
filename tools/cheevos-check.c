@@ -116,10 +116,6 @@ int main(void)
 	snprintf(g_active, sizeof g_active, "/tmp/tortos-chv-%ld.active", (long)getpid());
 	snprintf(g_store,  sizeof g_store,  "/tmp/tortos-chv-%ld-dev.db", (long)getpid());
 	snprintf(g_lib,    sizeof g_lib,    "/tmp/tortos-chv-%ld-lib.db", (long)getpid());
-	if (!db_available()) {
-		printf("cheevos: no libsqlite3 on this machine, so nothing was checked\n");
-		return 77;
-	}
 	store_reset();
 
 	printf("cheevos: the launcher's half\n");

@@ -65,7 +65,7 @@ build-native/cheevos-check: tools/cheevos-check.c src/cheevos.c src/cheevos.h \
                             src/atomic.c src/atomic.h src/db.c src/db.h FORCE
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
-	      -o $@ tools/cheevos-check.c src/cheevos.c src/atomic.c src/db.c
+	      -o $@ tools/cheevos-check.c src/cheevos.c src/atomic.c src/db.c -lsqlite3
 
 # Hare's routes: is anything reachable without the PIN? check-xfer proves a
 # path cannot climb out of a root; this proves the routes actually ask it, and
@@ -197,7 +197,7 @@ check-rahash: build-native/rahash-check
 build-native/rahash-check: tools/rahash-check.c src/rahash.c src/rahash.h FORCE
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
-	      -o $@ tools/rahash-check.c src/rahash.c
+	      -o $@ tools/rahash-check.c src/rahash.c -lz
 
 # The two set converters - one C on the device, one Python in the bulk tool -
 # over real RetroAchievements responses. Needs credentials and a network;
@@ -208,7 +208,7 @@ check-raset: build-native/raset-check
 build-native/raset-check: tools/raset-check.c src/rafetch.c src/rajson.c src/rahash.c src/net.c src/atomic.c src/db.c FORCE
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g -DTORTOS_VERSION='"check"' \
-	      -o $@ tools/raset-check.c src/rafetch.c src/rajson.c src/rahash.c src/net.c src/atomic.c src/db.c
+	      -o $@ tools/raset-check.c src/rafetch.c src/rajson.c src/rahash.c src/net.c src/atomic.c src/db.c -lsqlite3 -lz
 
 # Whether this build can reach ScreenScraper, and whether an account survives
 # a restart. The live half needs a network and .screenscraper.env, and skips
@@ -221,7 +221,7 @@ build-native/ss-check: tools/ss-check.c src/ss.c src/ss.h src/ssfetch.c src/ssfe
 	@$(MAKE) -f mk/native.mk creds
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g -Ibuild-native \
 	      -DTORTOS_VERSION='"check"' \
-	      -o $@ tools/ss-check.c src/ss.c src/ssfetch.c src/db.c src/net.c src/urlenc.c src/rajson.c
+	      -o $@ tools/ss-check.c src/ss.c src/ssfetch.c src/db.c src/net.c src/urlenc.c src/rajson.c -lsqlite3
 
 # Host build of the launcher, for working on how the shelf looks.
 native:
@@ -246,48 +246,36 @@ boot:
 # obvious from looking at a text file now need asserting - chiefly that a
 # shipped default never overwrites a choice, which is a bug this project
 # already shipped once.
-#
-# Exit 77 means no libsqlite3 on this machine. That fails rather than skips:
-# the launcher needs it too, so a machine without it cannot run TortOS at all.
 check-db: build-native/db-check
-	@./build-native/db-check; s=$$?; \
-	if [ $$s -eq 77 ]; then \
-		echo "  install sqlite3 - the launcher needs it, not just this check" >&2; \
-	fi; exit $$s
+	@./build-native/db-check
 
 build-native/db-check: tools/db-check.c src/db.c src/db.h src/atomic.c FORCE
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
-	      -o $@ tools/db-check.c src/db.c src/atomic.c
+	      -o $@ tools/db-check.c src/db.c src/atomic.c -lsqlite3
 
 # Play time. The assertion that earns this its place is that a LAUNCH writes
 # nothing: that is a claim about a path nobody watches, and it stops being true
 # one reasonable-looking write at a time.
 check-stats: build-native/stats-check
-	@./build-native/stats-check; s=$$?; \
-	if [ $$s -eq 77 ]; then \
-		echo "  install sqlite3 - the launcher needs it, not just this check" >&2; \
-	fi; exit $$s
+	@./build-native/stats-check
 
 build-native/stats-check: tools/stats-check.c src/stats.c src/stats.h src/db.c src/atomic.c FORCE
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
-	      -o $@ tools/stats-check.c src/stats.c src/db.c src/atomic.c
+	      -o $@ tools/stats-check.c src/stats.c src/db.c src/atomic.c -lsqlite3
 
 # What order a shelf ends up in. Two of the four orders read the session rows,
 # so this links stats and the database - but not library.c: game_entry is a
 # struct in the header and nothing here scans a directory.
 check-sort: build-native/sort-check
-	@./build-native/sort-check; s=$$?; \
-	if [ $$s -eq 77 ]; then \
-		echo "  install sqlite3 - the launcher needs it, not just this check" >&2; \
-	fi; exit $$s
+	@./build-native/sort-check
 
 build-native/sort-check: tools/sort-check.c src/sort.h src/library.h src/stats.c \
                          src/stats.h src/db.c src/atomic.c FORCE
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
-	      -o $@ tools/sort-check.c src/stats.c src/db.c src/atomic.c
+	      -o $@ tools/sort-check.c src/stats.c src/db.c src/atomic.c -lsqlite3
 
 # Bluetooth. A device NAME is arbitrary bytes chosen by whoever owns the
 # headset, arriving over the air into a process running as root; an ADDRESS is

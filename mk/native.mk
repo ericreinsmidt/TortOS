@@ -18,7 +18,11 @@ $(shell mkdir -p $(BUILD) && rm -f $(BUILD)/tortos && echo '$(VERSION)' > $(BUIL
 endif
 CFLAGS := -DTORTOS_VERSION='"$(VERSION)"' -O1 -g -Wall -Wextra -Wno-unused-parameter -std=gnu11 -D_GNU_SOURCE \
           $(shell pkg-config --cflags $(PKGS))
-LDLIBS := $(shell pkg-config --libs $(PKGS)) -lm
+LDLIBS := $(shell pkg-config --libs $(PKGS)) -lsqlite3 -lz -lm
+# ALSA only on Linux: src/btvol.c is a no-op without it, on the Mac
+ifeq ($(shell uname -s),Linux)
+  LDLIBS += -lasound
+endif
 
 # The same generated header the device build uses, for the same reason, so the
 # host build can talk to ScreenScraper too. See mk/cross.mk.

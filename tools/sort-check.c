@@ -232,10 +232,6 @@ static void favorites_carry_their_owners(void)
 
 int main(void)
 {
-	if (!db_available()) {
-		printf("sort-check: no libsqlite3 here, so nothing was checked\n");
-		return 77;
-	}
 	the_table_is_consistent();
 	by_name();
 	by_play_time();

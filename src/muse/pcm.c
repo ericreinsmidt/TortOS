@@ -2,7 +2,7 @@
 /* See pcm.h. */
 #include "pcm.h"
 
-#include <dlfcn.h>
+#include <alsa/asoundlib.h>
 #include <errno.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -10,24 +10,6 @@
 #include <syslog.h>
 #include <time.h>
 #include <unistd.h>
-
-/* libasound's own values, which are ABI and have not moved in two decades. */
-#define SND_PCM_STREAM_PLAYBACK       0
-#define SND_PCM_FORMAT_S16_LE         2
-#define SND_PCM_ACCESS_RW_INTERLEAVED 3
-
-typedef struct snd_pcm snd_pcm_t;
-
-static int         (*a_open)(snd_pcm_t **, const char *, int, int);
-static int         (*a_set_params)(snd_pcm_t *, int, int, unsigned, unsigned,
-                                   int, unsigned);
-static long        (*a_writei)(snd_pcm_t *, const void *, unsigned long);
-static int         (*a_recover)(snd_pcm_t *, int, int);
-static int         (*a_drop)(snd_pcm_t *);
-static int         (*a_prepare)(snd_pcm_t *);
-static int         (*a_delay)(snd_pcm_t *, long *);
-static int         (*a_close)(snd_pcm_t *);
-static const char *(*a_strerror)(int);
 
 static snd_pcm_t *g_pcm;
 static char       g_err[128];
@@ -94,42 +76,15 @@ long pcm_in_write_ms(void)
 	return since ? now_ms() - since : 0;
 }
 
-static bool bind(void)
-{
-	static void *h;
-
-	if (h) return true;
-	h = dlopen("libasound.so.2", RTLD_NOW);
-	if (!h) { snprintf(g_err, sizeof g_err, "no libasound: %s", dlerror()); return false; }
-	a_open       = dlsym(h, "snd_pcm_open");
-	a_set_params = dlsym(h, "snd_pcm_set_params");
-	a_writei     = dlsym(h, "snd_pcm_writei");
-	a_recover    = dlsym(h, "snd_pcm_recover");
-	a_drop       = dlsym(h, "snd_pcm_drop");
-	a_prepare    = dlsym(h, "snd_pcm_prepare");
-	a_delay      = dlsym(h, "snd_pcm_delay");
-	a_close      = dlsym(h, "snd_pcm_close");
-	a_strerror   = dlsym(h, "snd_strerror");
-	if (!a_open || !a_set_params || !a_writei || !a_recover || !a_drop ||
-	    !a_prepare || !a_delay || !a_close || !a_strerror) {
-		snprintf(g_err, sizeof g_err, "libasound is missing a function");
-		dlclose(h);
-		h = NULL;
-		return false;
-	}
-	return true;
-}
-
 bool pcm_open(const char *device)
 {
 	int r;
 
-	if (!bind()) return false;
 	pcm_close();
-	r = a_open(&g_pcm, device, SND_PCM_STREAM_PLAYBACK, 0);
+	r = snd_pcm_open(&g_pcm, device, SND_PCM_STREAM_PLAYBACK, 0);
 	g_last = r < 0 ? r : 0;
 	if (r < 0) {
-		snprintf(g_err, sizeof g_err, "open %s: %s", device, a_strerror(r));
+		snprintf(g_err, sizeof g_err, "open %s: %s", device, snd_strerror(r));
 		pcm_note("%s", g_err);
 		g_pcm = NULL;
 		return false;
@@ -138,8 +93,8 @@ bool pcm_open(const char *device)
 	 * to resample again would be the awrate path this exists to avoid.
 	 * 200 ms of latency: long enough that a busy frame in a running game does
 	 * not starve it, short enough that pause and seek feel immediate. */
-	r = a_set_params(g_pcm, SND_PCM_FORMAT_S16_LE, SND_PCM_ACCESS_RW_INTERLEAVED,
-	                 2, 48000, 0, 200000);
+	r = snd_pcm_set_params(g_pcm, SND_PCM_FORMAT_S16_LE,
+	                       SND_PCM_ACCESS_RW_INTERLEAVED, 2, 48000, 0, 200000);
 	/* Except a headset that is not running at 48 kHz, where ALSA has to
 	 * resample or nothing plays. A headset picks the rate when IT starts the
 	 * connection: the OpenFit came back at 44.1 kHz on reconnecting by itself
@@ -156,17 +111,19 @@ bool pcm_open(const char *device)
 
 		pcm_close();
 		snprintf(plug, sizeof plug, "plug:%s", device);
-		r = a_open(&g_pcm, plug, SND_PCM_STREAM_PLAYBACK, 0);
+		r = snd_pcm_open(&g_pcm, plug, SND_PCM_STREAM_PLAYBACK, 0);
 		if (r >= 0)
-			r = a_set_params(g_pcm, SND_PCM_FORMAT_S16_LE,
-			                 SND_PCM_ACCESS_RW_INTERLEAVED, 2, 48000, 1, 200000);
+			r = snd_pcm_set_params(g_pcm, SND_PCM_FORMAT_S16_LE,
+			                       SND_PCM_ACCESS_RW_INTERLEAVED, 2, 48000, 1,
+			                       200000);
 		else
 			g_pcm = NULL;
 		if (r >= 0)
 			fprintf(stderr, "muse: %s is not at 48 kHz; ALSA resamples it\n", device);
 	}
 	if (r < 0) {
-		snprintf(g_err, sizeof g_err, "set params on %s: %s", device, a_strerror(r));
+		snprintf(g_err, sizeof g_err, "set params on %s: %s", device,
+		         snd_strerror(r));
 		g_last = r;
 		pcm_note("%s", g_err);
 		pcm_close();
@@ -181,7 +138,7 @@ void pcm_close(void)
 {
 	if (g_pcm) {
 		pcm_note("close");
-		a_close(g_pcm);
+		snd_pcm_close(g_pcm);
 	}
 	g_pcm = NULL;
 }
@@ -193,7 +150,7 @@ bool pcm_write(const int16_t *frames, int n)
 		long w;
 
 		g_write_since = t0;
-		w = a_writei(g_pcm, frames, (unsigned long)n);
+		w = snd_pcm_writei(g_pcm, frames, (unsigned long)n);
 		g_write_since = 0;
 
 		/* A write is ~21 ms of audio into a 200 ms buffer, so a quarter of a
@@ -201,15 +158,16 @@ bool pcm_write(const int16_t *frames, int n)
 		 * stall starts as exactly that. */
 		if ((took = now_ms() - t0) > 250)
 			pcm_note("write of %d frames took %ld ms (%s)", n, took,
-			          w < 0 ? a_strerror((int)w) : "ok");
+			          w < 0 ? snd_strerror((int)w) : "ok");
 		if (w < 0) {
 			/* An underrun is ordinary - a pause, a slow card read - and
 			 * recover re-prepares the stream. Anything else is not. */
-			int r = a_recover(g_pcm, (int)w, 1);
+			int r = snd_pcm_recover(g_pcm, (int)w, 1);
 
-			pcm_note("write: %s, recover %s", a_strerror((int)w), r < 0 ? a_strerror(r) : "ok");
+			pcm_note("write: %s, recover %s", snd_strerror((int)w),
+			         r < 0 ? snd_strerror(r) : "ok");
 			if (r < 0) {
-				snprintf(g_err, sizeof g_err, "write: %s", a_strerror((int)w));
+				snprintf(g_err, sizeof g_err, "write: %s", snd_strerror((int)w));
 				return false;
 			}
 			continue;
@@ -237,16 +195,16 @@ void pcm_drop(void)
 		return;
 	}
 	pcm_note("drop+prepare");
-	a_drop(g_pcm);
-	a_prepare(g_pcm);
+	snd_pcm_drop(g_pcm);
+	snd_pcm_prepare(g_pcm);
 	g_written = 0;
 }
 
 long pcm_queued(void)
 {
-	long d = 0;
+	snd_pcm_sframes_t d = 0;
 
-	if (!g_pcm || a_delay(g_pcm, &d) < 0 || d < 0) return 0;
+	if (!g_pcm || snd_pcm_delay(g_pcm, &d) < 0 || d < 0) return 0;
 	return d;
 }
 

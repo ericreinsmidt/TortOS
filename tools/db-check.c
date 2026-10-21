@@ -450,11 +450,6 @@ static void a_dump_hides_credentials(void)
 
 int main(void)
 {
-	if (!db_available()) {
-		/* Not a pass dressed as a skip: say which, and say it loudly. */
-		printf("db-check: no libsqlite3 on this machine, so nothing was checked\n");
-		return 77;
-	}
 	scrub();
 	opens_and_seeds();
 	a_default_never_beats_a_choice();

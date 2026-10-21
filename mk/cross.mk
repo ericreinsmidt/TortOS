@@ -14,7 +14,7 @@ CFLAGS := -DTORTOS_VERSION='"$(VERSION)"' -O2 -mcpu=cortex-a53 -Wall -Wextra -Wn
 # SYSROOT has SDL and everything SDL needs, so the link checks that TortOS uses
 # no function the system's libraries lack, and that those libraries resolve.
 LDFLAGS := -L$(SYSROOT)/usr/lib -Wl,-rpath-link,$(SYSROOT)/usr/lib
-LDLIBS := -lSDL2 -lSDL2_image -lSDL2_ttf -lm -ldl
+LDLIBS := -lSDL2 -lSDL2_image -lSDL2_ttf -lsqlite3 -lz -lasound -lm
 
 # The ScreenScraper developer pair, from the environment into a GENERATED
 # HEADER rather than onto the compile line.
@@ -54,17 +54,16 @@ $(BUILD)/tortos.elf: $(SRC) $(CREDS) $(wildcard src/*.h)
 
 # Muse, the audio player's engine: a second binary, not part of tortos.elf -
 # SRC above is src/*.c, which does not descend into src/muse/. Linked against
-# the FFmpeg in SYSROOT; ALSA is reached with dlopen, so it needs no header and
-# no -lasound.
+# the FFmpeg and ALSA in SYSROOT.
 MUSE_SRC := $(wildcard src/muse/*.c)
 $(BUILD)/muse: $(MUSE_SRC) $(wildcard src/muse/*.h)
 	mkdir -p $(BUILD)
 	$(CC) -O2 -mcpu=cortex-a53 -Wall -Wextra -Wno-unused-parameter -std=gnu11 \
 	      -D_GNU_SOURCE -I$(SYSROOT)/usr/include $(LDFLAGS) -o $@ $(MUSE_SRC) \
-	      -lavformat -lavcodec -lavfilter -lswresample -lavutil -lpthread -ldl
+	      -lavformat -lavcodec -lavfilter -lswresample -lavutil -lasound -lpthread
 
 # Registers a do-nothing media player with BlueZ so a headset's absolute
-# volume is not dropped; see the file. libdbus by dlopen, like ALSA in Muse.
+# volume is not dropped; see the file. libdbus by dlopen.
 $(BUILD)/btplayer: tools/btplayer.c
 	mkdir -p $(BUILD)
 	$(CC) -O2 -mcpu=cortex-a53 -Wall -Wextra -std=gnu11 -o $@ $< -ldl

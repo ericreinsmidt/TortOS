@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: MIT */
 /* See db.h. No SDL and no platform header, deliberately, so the check can link
  * it without a window - the same reason atomic.c is kept clean. */
-#include <dlfcn.h>
+#include <sqlite3.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -11,75 +11,7 @@
 #include "cards.h"
 #include "db.h"
 
-/* --- libsqlite3, declared rather than included ---------------------------
- * Written for TrimUI's system, which had no sqlite3.h. plastron's has one, but
- * these nine entry points are the whole surface this file uses, the C ABI for
- * them has been stable since 3.x, and reaching the library with dlopen leaves
- * the launcher on its shipped defaults, not unable to start, when it is
- * missing. */
-typedef struct sqlite3 sqlite3;
-typedef struct sqlite3_stmt sqlite3_stmt;
-
-static int  (*sq_open_v2)(const char *, sqlite3 **, int, const char *);
-static int  (*sq_close)(sqlite3 *);
-static int  (*sq_exec)(sqlite3 *, const char *, void *, void *, char **);
-static int  (*sq_prepare)(sqlite3 *, const char *, int, sqlite3_stmt **, const char **);
-static int  (*sq_step)(sqlite3_stmt *);
-static int  (*sq_finalize)(sqlite3_stmt *);
-static int  (*sq_bind_text)(sqlite3_stmt *, int, const char *, int, void *);
-static int  (*sq_bind_int)(sqlite3_stmt *, int, int);
-static const unsigned char *(*sq_column_text)(sqlite3_stmt *, int);
-static void (*sq_free)(void *);
-
-#define SQ_OK    0
-#define SQ_ROW   100
-#define SQ_DONE  101
-#define SQ_OPEN_RW_CREATE 0x00000006      /* READWRITE | CREATE */
-#define SQ_TRANSIENT ((void *)-1)
-
 struct db { sqlite3 *h; };
-
-static int loaded;      /* 0 not tried, 1 ok, -1 failed */
-
-static void *dl_sqlite(void)
-{
-	static const char *names[] = {
-		"libsqlite3.so.0",      /* what the device actually ships */
-		"libsqlite3.so",
-		"libsqlite3.dylib",     /* so the check runs on a dev machine */
-	};
-	for (unsigned i = 0; i < sizeof names / sizeof *names; i++) {
-		void *h = dlopen(names[i], RTLD_NOW);
-		if (h) return h;
-	}
-	return NULL;
-}
-
-bool db_available(void)
-{
-	void *h;
-
-	if (loaded) return loaded > 0;
-	loaded = -1;
-	if (!(h = dl_sqlite())) return false;
-
-	sq_open_v2    = dlsym(h, "sqlite3_open_v2");
-	sq_close      = dlsym(h, "sqlite3_close");
-	sq_exec       = dlsym(h, "sqlite3_exec");
-	sq_prepare    = dlsym(h, "sqlite3_prepare_v2");
-	sq_step       = dlsym(h, "sqlite3_step");
-	sq_finalize   = dlsym(h, "sqlite3_finalize");
-	sq_bind_text  = dlsym(h, "sqlite3_bind_text");
-	sq_bind_int   = dlsym(h, "sqlite3_bind_int");
-	sq_column_text = dlsym(h, "sqlite3_column_text");
-	sq_free       = dlsym(h, "sqlite3_free");
-
-	if (!sq_open_v2 || !sq_close || !sq_exec || !sq_prepare || !sq_step ||
-	    !sq_finalize || !sq_bind_text || !sq_bind_int || !sq_column_text)
-		return false;
-	loaded = 1;
-	return true;
-}
 
 /* --- the defaults, compiled in ------------------------------------------
  * Shipped in the binary rather than as a .db in the payload, so there is no
@@ -177,9 +109,9 @@ static const char GAMES_SCHEMA[] =
 static bool run(db *d, const char *sql)
 {
 	char *err = NULL;
-	int rc = sq_exec(d->h, sql, NULL, NULL, &err);
-	if (err && sq_free) sq_free(err);
-	return rc == SQ_OK;
+	int rc = sqlite3_exec(d->h, sql, NULL, NULL, &err);
+	if (err) sqlite3_free(err);
+	return rc == SQLITE_OK;
 }
 
 db *db_open(const char *path, db_scope scope)
@@ -188,11 +120,12 @@ db *db_open(const char *path, db_scope scope)
 	const db_default *def;
 	size_t n, i;
 
-	if (!path || !*path || !db_available()) return NULL;
+	if (!path || !*path) return NULL;
 	if (!(d = calloc(1, sizeof *d))) return NULL;
 
-	if (sq_open_v2(path, &d->h, SQ_OPEN_RW_CREATE, NULL) != SQ_OK) {
-		if (d->h) sq_close(d->h);
+	if (sqlite3_open_v2(path, &d->h, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE,
+	                    NULL) != SQLITE_OK) {
+		if (d->h) sqlite3_close(d->h);
 		free(d);
 		return NULL;
 	}
@@ -233,7 +166,7 @@ db *db_open(const char *path, db_scope scope)
 void db_close(db *d)
 {
 	if (!d) return;
-	if (d->h) sq_close(d->h);
+	if (d->h) sqlite3_close(d->h);
 	free(d);
 }
 
@@ -245,13 +178,13 @@ bool db_get_str(db *d, const char *key, char *out, size_t n, const char *fallbac
 
 	if (out && n) out[0] = '\0';
 	if (d && key && out && n &&
-	    sq_prepare(d->h, "SELECT value FROM settings WHERE key=?;", -1, &st, NULL) == SQ_OK) {
-		sq_bind_text(st, 1, key, -1, SQ_TRANSIENT);
-		if (sq_step(st) == SQ_ROW && (v = sq_column_text(st, 0))) {
+	    sqlite3_prepare_v2(d->h, "SELECT value FROM settings WHERE key=?;", -1, &st, NULL) == SQLITE_OK) {
+		sqlite3_bind_text(st, 1, key, -1, SQLITE_TRANSIENT);
+		if (sqlite3_step(st) == SQLITE_ROW && (v = sqlite3_column_text(st, 0))) {
 			snprintf(out, n, "%s", (const char *)v);
 			got = true;
 		}
-		sq_finalize(st);
+		sqlite3_finalize(st);
 	}
 	if (!got && out && n) snprintf(out, n, "%s", fallback ? fallback : "");
 	return got;
@@ -277,11 +210,11 @@ bool db_has(db *d, const char *key)
 	bool found = false;
 
 	if (!d || !key) return false;
-	if (sq_prepare(d->h, "SELECT 1 FROM settings WHERE key=?;", -1, &st, NULL) != SQ_OK)
+	if (sqlite3_prepare_v2(d->h, "SELECT 1 FROM settings WHERE key=?;", -1, &st, NULL) != SQLITE_OK)
 		return false;
-	sq_bind_text(st, 1, key, -1, SQ_TRANSIENT);
-	found = sq_step(st) == SQ_ROW;
-	sq_finalize(st);
+	sqlite3_bind_text(st, 1, key, -1, SQLITE_TRANSIENT);
+	found = sqlite3_step(st) == SQLITE_ROW;
+	sqlite3_finalize(st);
 	return found;
 }
 
@@ -293,13 +226,13 @@ bool db_set_str(db *d, const char *key, const char *val)
 	if (!d || !key || !val) return false;
 	/* INSERT OR REPLACE rather than UPSERT: 3.12.2 predates ON CONFLICT,
 	 * and the device is the oldest sqlite this has to run against. */
-	if (sq_prepare(d->h, "INSERT OR REPLACE INTO settings(key,value) VALUES(?,?);",
-	               -1, &st, NULL) != SQ_OK)
+	if (sqlite3_prepare_v2(d->h, "INSERT OR REPLACE INTO settings(key,value) VALUES(?,?);",
+	               -1, &st, NULL) != SQLITE_OK)
 		return false;
-	sq_bind_text(st, 1, key, -1, SQ_TRANSIENT);
-	sq_bind_text(st, 2, val, -1, SQ_TRANSIENT);
-	ok = sq_step(st) == SQ_DONE;
-	sq_finalize(st);
+	sqlite3_bind_text(st, 1, key, -1, SQLITE_TRANSIENT);
+	sqlite3_bind_text(st, 2, val, -1, SQLITE_TRANSIENT);
+	ok = sqlite3_step(st) == SQLITE_DONE;
+	sqlite3_finalize(st);
 	return ok;
 }
 
@@ -316,11 +249,11 @@ bool db_del(db *d, const char *key)
 	bool ok;
 
 	if (!d || !key) return false;
-	if (sq_prepare(d->h, "DELETE FROM settings WHERE key=?;", -1, &st, NULL) != SQ_OK)
+	if (sqlite3_prepare_v2(d->h, "DELETE FROM settings WHERE key=?;", -1, &st, NULL) != SQLITE_OK)
 		return false;
-	sq_bind_text(st, 1, key, -1, SQ_TRANSIENT);
-	ok = sq_step(st) == SQ_DONE;
-	sq_finalize(st);
+	sqlite3_bind_text(st, 1, key, -1, SQLITE_TRANSIENT);
+	ok = sqlite3_step(st) == SQLITE_DONE;
+	sqlite3_finalize(st);
 	return ok;
 }
 
@@ -328,7 +261,7 @@ bool db_del(db *d, const char *key)
 
 static void col_str(sqlite3_stmt *st, int i, char *out, size_t n)
 {
-	const unsigned char *v = sq_column_text(st, i);
+	const unsigned char *v = sqlite3_column_text(st, i);
 	snprintf(out, n, "%s", v ? (const char *)v : "");
 }
 
@@ -339,13 +272,13 @@ bool db_game_get(db *d, const char *folder, const char *file, game_meta *out)
 
 	if (out) memset(out, 0, sizeof *out);
 	if (!d || !folder || !file || !out) return false;
-	if (sq_prepare(d->h,
+	if (sqlite3_prepare_v2(d->h,
 	               "SELECT year,publisher,developer,players,genres,esrb,note,synopsis"
-	               " FROM games WHERE folder=? AND file=?;", -1, &st, NULL) != SQ_OK)
+	               " FROM games WHERE folder=? AND file=?;", -1, &st, NULL) != SQLITE_OK)
 		return false;
-	sq_bind_text(st, 1, folder, -1, SQ_TRANSIENT);
-	sq_bind_text(st, 2, file, -1, SQ_TRANSIENT);
-	if (sq_step(st) == SQ_ROW) {
+	sqlite3_bind_text(st, 1, folder, -1, SQLITE_TRANSIENT);
+	sqlite3_bind_text(st, 2, file, -1, SQLITE_TRANSIENT);
+	if (sqlite3_step(st) == SQLITE_ROW) {
 		col_str(st, 0, out->year,      sizeof out->year);
 		col_str(st, 1, out->publisher, sizeof out->publisher);
 		col_str(st, 2, out->developer, sizeof out->developer);
@@ -356,7 +289,7 @@ bool db_game_get(db *d, const char *folder, const char *file, game_meta *out)
 		col_str(st, 7, out->synopsis,  sizeof out->synopsis);
 		got = true;
 	}
-	sq_finalize(st);
+	sqlite3_finalize(st);
 	return got;
 }
 
@@ -368,27 +301,27 @@ bool db_game_set(db *d, const char *folder, const char *file, const game_meta *m
 	if (!d || !folder || !file || !m) return false;
 	/* INSERT OR REPLACE for the same reason db_set_str uses it: the device
 	 * ships sqlite 3.12.2, which predates ON CONFLICT. */
-	if (sq_prepare(d->h,
+	if (sqlite3_prepare_v2(d->h,
 	               "INSERT OR REPLACE INTO games(folder,file,year,publisher,developer,"
 	               "players,genres,esrb,note,synopsis,scraped)"
-	               " VALUES(?,?,?,?,?,?,?,?,?,?,?);", -1, &st, NULL) != SQ_OK)
+	               " VALUES(?,?,?,?,?,?,?,?,?,?,?);", -1, &st, NULL) != SQLITE_OK)
 		return false;
-	sq_bind_text(st,  1, folder,        -1, SQ_TRANSIENT);
-	sq_bind_text(st,  2, file,          -1, SQ_TRANSIENT);
-	sq_bind_text(st,  3, m->year,       -1, SQ_TRANSIENT);
-	sq_bind_text(st,  4, m->publisher,  -1, SQ_TRANSIENT);
-	sq_bind_text(st,  5, m->developer,  -1, SQ_TRANSIENT);
-	sq_bind_text(st,  6, m->players,    -1, SQ_TRANSIENT);
-	sq_bind_text(st,  7, m->genres,     -1, SQ_TRANSIENT);
-	sq_bind_text(st,  8, m->esrb,       -1, SQ_TRANSIENT);
-	sq_bind_text(st,  9, m->note,       -1, SQ_TRANSIENT);
-	sq_bind_text(st, 10, m->synopsis,   -1, SQ_TRANSIENT);
+	sqlite3_bind_text(st,  1, folder,        -1, SQLITE_TRANSIENT);
+	sqlite3_bind_text(st,  2, file,          -1, SQLITE_TRANSIENT);
+	sqlite3_bind_text(st,  3, m->year,       -1, SQLITE_TRANSIENT);
+	sqlite3_bind_text(st,  4, m->publisher,  -1, SQLITE_TRANSIENT);
+	sqlite3_bind_text(st,  5, m->developer,  -1, SQLITE_TRANSIENT);
+	sqlite3_bind_text(st,  6, m->players,    -1, SQLITE_TRANSIENT);
+	sqlite3_bind_text(st,  7, m->genres,     -1, SQLITE_TRANSIENT);
+	sqlite3_bind_text(st,  8, m->esrb,       -1, SQLITE_TRANSIENT);
+	sqlite3_bind_text(st,  9, m->note,       -1, SQLITE_TRANSIENT);
+	sqlite3_bind_text(st, 10, m->synopsis,   -1, SQLITE_TRANSIENT);
 	/* When, so a re-scrape can skip what it already has and a stale row can be
 	 * told from one that was never written. Not in game_meta: nothing on a
 	 * screen asks for it. */
-	sq_bind_int(st, 11, (int)time(NULL));
-	ok = sq_step(st) == SQ_DONE;
-	sq_finalize(st);
+	sqlite3_bind_int(st, 11, (int)time(NULL));
+	ok = sqlite3_step(st) == SQLITE_DONE;
+	sqlite3_finalize(st);
 	return ok;
 }
 
@@ -409,18 +342,18 @@ void db_each_prefix(db *d, const char *prefix, db_each_fn fn, void *ctx)
 	memcpy(hi, prefix, n + 1);
 	hi[n - 1]++;
 
-	if (sq_prepare(d->h, "SELECT key,value FROM settings "
+	if (sqlite3_prepare_v2(d->h, "SELECT key,value FROM settings "
 	                     "WHERE key >= ? AND key < ? ORDER BY key;",
-	               -1, &st, NULL) != SQ_OK)
+	               -1, &st, NULL) != SQLITE_OK)
 		return;
-	sq_bind_text(st, 1, prefix, -1, SQ_TRANSIENT);
-	sq_bind_text(st, 2, hi, -1, SQ_TRANSIENT);
-	while (sq_step(st) == SQ_ROW) {
-		k = sq_column_text(st, 0);
-		v = sq_column_text(st, 1);
+	sqlite3_bind_text(st, 1, prefix, -1, SQLITE_TRANSIENT);
+	sqlite3_bind_text(st, 2, hi, -1, SQLITE_TRANSIENT);
+	while (sqlite3_step(st) == SQLITE_ROW) {
+		k = sqlite3_column_text(st, 0);
+		v = sqlite3_column_text(st, 1);
 		if (!fn(k ? (const char *)k : "", v ? (const char *)v : "", ctx)) break;
 	}
-	sq_finalize(st);
+	sqlite3_finalize(st);
 }
 
 /* Whether a key's VALUE is a credential, by the name it was given.
@@ -447,14 +380,14 @@ void db_dump(db *d, FILE *out)
 	const unsigned char *k, *v;
 
 	if (!d || !out) return;
-	if (sq_prepare(d->h, "SELECT key,value FROM settings ORDER BY key;",
-	               -1, &st, NULL) != SQ_OK) {
+	if (sqlite3_prepare_v2(d->h, "SELECT key,value FROM settings ORDER BY key;",
+	               -1, &st, NULL) != SQLITE_OK) {
 		fprintf(out, "  (cannot read settings)\n");
 		return;
 	}
-	while (sq_step(st) == SQ_ROW) {
-		k = sq_column_text(st, 0);
-		v = sq_column_text(st, 1);
+	while (sqlite3_step(st) == SQLITE_ROW) {
+		k = sqlite3_column_text(st, 0);
+		v = sqlite3_column_text(st, 1);
 		/* THE SECRETS ARE COUNTED, NOT PRINTED. This tool exists because
 		 * there is no sqlite3 on the device, so it is run over adb and its
 		 * output lands in a terminal, a log, a paste or a screen share. It
@@ -472,7 +405,7 @@ void db_dump(db *d, FILE *out)
 		fprintf(out, "  %-16s %s\n", k ? (const char *)k : "?",
 		        v ? (const char *)v : "");
 	}
-	sq_finalize(st);
+	sqlite3_finalize(st);
 }
 
 /* --- the two open handles ------------------------------------------------ */

@@ -320,10 +320,6 @@ static void formatting(void)
 
 int main(void)
 {
-	if (!db_available()) {
-		printf("stats-check: no libsqlite3 here, so nothing was checked\n");
-		return 77;
-	}
 	launch_writes_nothing();
 	a_short_session_leaves_no_marker();
 	a_long_session_marks_and_checkpoints();

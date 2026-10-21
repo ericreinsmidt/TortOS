@@ -11893,8 +11893,6 @@ int main(int argc, char *argv[])
 		 * looking at the log will find it. */
 		if (!db_init(dev, lib, env)) {
 			fprintf(stderr, "settings: cannot open the database at %s\n", dev);
-			if (!db_available())
-				fprintf(stderr, "settings: libsqlite3 did not load\n");
 			fprintf(stderr, "settings: continuing on the shipped defaults - "
 			                "favorites, turbo and core options will be absent, "
 			                "and nothing set here will be remembered\n");

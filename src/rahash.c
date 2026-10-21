@@ -1,12 +1,12 @@
 /* SPDX-License-Identifier: MIT */
 /* See rahash.h. Three pieces: MD5, enough zip to reach the ROM, and
  * RetroAchievements' per-console rule about how much of it counts. */
-#include <dlfcn.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <zlib.h>
 
 #include "rahash.h"
 
@@ -109,47 +109,6 @@ static void md5_hex(md5_ctx *m, char *out)
 
 /* ------------------------------------------------------------ the zip ---- */
 
-/* zlib by dlopen rather than by linking, for the reason Diatom's zip.c gives:
- * the device ships libz.so.1 in firmware and the cross toolchain carries no
- * aarch64 zlib to link against. A STORED entry needs none of it, so the
- * dependency is honestly optional rather than pretend-optional. */
-typedef struct {
-	const unsigned char *next_in;  unsigned avail_in;  unsigned long total_in;
-	unsigned char       *next_out; unsigned avail_out; unsigned long total_out;
-	const char *msg; void *state;
-	void *zalloc, *zfree, *opaque;
-	int data_type; unsigned long adler, reserved;
-} z_streamish;
-
-static int  (*p_inflateInit2_)(z_streamish *, int, const char *, int);
-static int  (*p_inflate)(z_streamish *, int);
-static int  (*p_inflateEnd)(z_streamish *);
-static int  zlib_tried;
-
-static bool zlib_ready(void)
-{
-	void *h;
-
-	if (zlib_tried) return p_inflate != NULL;
-	zlib_tried = 1;
-	/* The device's name first, then the host's. The native build is how the
-	 * two hashers get checked against each other (make check-rahash), so it
-	 * has to work here too - and it did not, which is exactly the sort of
-	 * thing a check that only ever ran on the device would never have said. */
-	h = dlopen("libz.so.1", RTLD_NOW | RTLD_LOCAL);
-	if (!h) h = dlopen("libz.so", RTLD_NOW | RTLD_LOCAL);
-	if (!h) h = dlopen("libz.1.dylib", RTLD_NOW | RTLD_LOCAL);
-	if (!h) h = dlopen("libz.dylib", RTLD_NOW | RTLD_LOCAL);
-	if (!h) {
-		fprintf(stderr, "rahash: no zlib; only uncompressed ROMs can be hashed\n");
-		return false;
-	}
-	p_inflateInit2_ = dlsym(h, "inflateInit2_");
-	p_inflate       = dlsym(h, "inflate");
-	p_inflateEnd    = dlsym(h, "inflateEnd");
-	return p_inflateInit2_ && p_inflate && p_inflateEnd;
-}
-
 static uint16_t rd16(const unsigned char *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
 static uint32_t rd32(const unsigned char *p)
 {
@@ -239,18 +198,17 @@ static unsigned char *zip_largest(const char *path, size_t *out_len)
 	if (best_m == 0) {
 		memcpy(un, comp, best_u);
 	} else {
-		z_streamish z;
+		z_stream z;
 		int rc;
 
-		if (!zlib_ready()) goto fail;
 		memset(&z, 0, sizeof z);
 		z.next_in = comp; z.avail_in = best_c;
 		z.next_out = un;  z.avail_out = best_u;
 		/* -15: raw deflate, no zlib wrapper, which is what a zip stores. */
-		if (p_inflateInit2_(&z, -15, "1.2.8", (int)sizeof z) != 0) goto fail;
-		rc = p_inflate(&z, 4 /* Z_FINISH */);
-		p_inflateEnd(&z);
-		if (rc != 1 /* Z_STREAM_END */ || z.total_out != best_u) goto fail;
+		if (inflateInit2(&z, -15) != Z_OK) goto fail;
+		rc = inflate(&z, Z_FINISH);
+		inflateEnd(&z);
+		if (rc != Z_STREAM_END || z.total_out != best_u) goto fail;
 	}
 	free(comp);
 	*out_len = best_u;
