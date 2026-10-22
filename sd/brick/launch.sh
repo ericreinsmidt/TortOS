@@ -232,12 +232,23 @@ bt_reconnect() {
 		# sink moves with the screen rather than up to a pass later. A file
 		# and not a signal: TortOS has no pid for this loop, and a signal to
 		# the wrong shell would be launch.sh itself.
+		#
+		# And at once when a link comes or goes: the links are looked at every
+		# two seconds (hcitool's list, which dials nothing), so a headset
+		# switched off is withdrawn, and one switched back on, which connects
+		# by itself, is published on its new link, within about two seconds.
+		# A headset turned off and on inside one pass was never seen to go,
+		# so the song that had fallen back to the speaker was never sent back
+		# to it (2026-10-22).
+		cons=$(hcitool con 2> /dev/null)
 		n=0
 		wait=20
 		[ $soon -gt 0 ] && [ $soon -le 15 ] && wait=1
 		while [ $n -lt $wait ] && [ ! -e /tmp/tortos_btpass ]; do
 			sleep 1
 			n=$((n + 1))
+			[ $((n % 2)) -eq 0 ] &&
+				[ "$(hcitool con 2> /dev/null)" != "$cons" ] && break
 		done
 		rm -f /tmp/tortos_btpass
 	done
