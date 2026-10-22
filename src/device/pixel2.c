@@ -901,15 +901,18 @@ bool plat_battery_lights(void) { return true; }
 
 /* ---- battery ---- */
 
+/* A level written to /tmp/tortos_fake_batt stands in for the gauge, off the
+ * charger, for testing the low and empty battery: written from a shell, so it
+ * can change while a game runs, and gone at power-off. */
 bool plat_battery(int *pct, bool *charging)
 {
-	const char *fake = getenv("TORTOS_FAKE_BATT");
+	int fake = read_int("/tmp/tortos_fake_batt");
 	char st[32] = { 0 };
 	FILE *s;
 	int v;
 
-	if (fake && *fake) {
-		if (pct) *pct = atoi(fake);
+	if (fake >= 0) {
+		if (pct) *pct = fake;
 		if (charging) *charging = false;
 		return true;
 	}
