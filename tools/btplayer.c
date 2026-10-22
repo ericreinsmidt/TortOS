@@ -18,11 +18,9 @@
  * plastron's /etc/init.d/bluetooth starts it after bluetoothd and bluealsa and
  * stops it first, because a bluetoothd that restarts has forgotten it.
  *
- * libdbus is the device's own, reached with dlopen: written for TrimUI's
- * system, which had no headers for it, so the handful of types used are
- * declared here. Every call the headset makes on the player - play, pause,
- * from its buttons - is answered UnknownMethod by libdbus, which BlueZ passes
- * on as a failure and nothing more.
+ * Every call the headset makes on the player - play, pause, from its buttons -
+ * is answered UnknownMethod by libdbus, which BlueZ passes on as a failure and
+ * nothing more.
  *
  * It also mends a volume BlueZ lost. BlueZ 5.54 hands a headset's report only
  * to the A2DP transports that exist at that moment, and keeps the value in the
@@ -57,7 +55,7 @@
  * watched, and a press is written to /tmp/tortos_btkey as `<action> <stamp>`
  * for the launcher to hand to Muse: toggle, pause, next or prev.
  */
-#include <dlfcn.h>
+#include <dbus/dbus.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/input.h>
@@ -67,107 +65,39 @@
 #include <time.h>
 #include <unistd.h>
 
-typedef struct { const char *name, *message; unsigned bits; void *pad; } dbus_error;
-typedef struct { void *pad[16]; } dbus_iter;      /* at least DBusMessageIter's size */
-typedef struct {
-	void (*unregister_fn)(void *, void *);
-	int  (*message_fn)(void *, void *, void *);
-	void (*pad[4])(void *);
-} dbus_vtable;
-
-#define BUS_SYSTEM      1
-#define TYPE_OBJECT     ((int)'o')
-#define TYPE_ARRAY      ((int)'a')
-#define TYPE_STRING     ((int)'s')
-#define TYPE_DICT_ENTRY ((int)'e')
-#define TYPE_UINT16     ((int)'q')
-#define NOT_HANDLED     1
 #define PLAYER_PATH     "/org/tortos/player"
 
-static void *(*bus_get)(int, dbus_error *);
-static void  (*error_init)(dbus_error *);
-static void  (*error_free)(dbus_error *);
-static void *(*new_call)(const char *, const char *, const char *, const char *);
-static void  (*message_unref)(void *);
-static void  (*iter_init_append)(void *, dbus_iter *);
-static int   (*append_basic)(dbus_iter *, int, const void *);
-static int   (*open_container)(dbus_iter *, int, const char *, dbus_iter *);
-static int   (*close_container)(dbus_iter *, dbus_iter *);
-static void *(*send_block)(void *, void *, int, dbus_error *);
-static int   (*register_path)(void *, const char *, const dbus_vtable *, void *);
-static int   (*dispatch)(void *, int);
-static void  (*add_match)(void *, const char *, dbus_error *);
-static int   (*add_filter)(void *, int (*)(void *, void *, void *), void *, void (*)(void *));
-static int   (*is_signal)(void *, const char *, const char *);
-static int   (*iter_init)(void *, dbus_iter *);
-static int   (*iter_type)(dbus_iter *);
-static void  (*iter_recurse)(dbus_iter *, dbus_iter *);
-static int   (*iter_next)(dbus_iter *);
-static void  (*iter_get)(dbus_iter *, void *);
-static const char *(*message_path)(void *);
-
-static int on_message(void *conn, void *msg, void *data)
+static DBusHandlerResult on_message(DBusConnection *conn, DBusMessage *msg, void *data)
 {
 	(void)conn; (void)msg; (void)data;
-	return NOT_HANDLED;
-}
-
-static bool bind_libdbus(void)
-{
-	void *lib = dlopen("libdbus-1.so.3", RTLD_NOW);
-
-	if (!lib) return false;
-#define SYM(v, n) if (!(*(void **)&v = dlsym(lib, n))) return false
-	SYM(bus_get,          "dbus_bus_get");
-	SYM(error_init,       "dbus_error_init");
-	SYM(error_free,       "dbus_error_free");
-	SYM(new_call,         "dbus_message_new_method_call");
-	SYM(message_unref,    "dbus_message_unref");
-	SYM(iter_init_append, "dbus_message_iter_init_append");
-	SYM(append_basic,     "dbus_message_iter_append_basic");
-	SYM(open_container,   "dbus_message_iter_open_container");
-	SYM(close_container,  "dbus_message_iter_close_container");
-	SYM(send_block,       "dbus_connection_send_with_reply_and_block");
-	SYM(register_path,    "dbus_connection_register_object_path");
-	SYM(dispatch,         "dbus_connection_read_write_dispatch");
-	SYM(add_match,        "dbus_bus_add_match");
-	SYM(add_filter,       "dbus_connection_add_filter");
-	SYM(is_signal,        "dbus_message_is_signal");
-	SYM(iter_init,        "dbus_message_iter_init");
-	SYM(iter_type,        "dbus_message_iter_get_arg_type");
-	SYM(iter_recurse,     "dbus_message_iter_recurse");
-	SYM(iter_next,        "dbus_message_iter_next");
-	SYM(iter_get,         "dbus_message_iter_get_basic");
-	SYM(message_path,     "dbus_message_get_path");
-#undef SYM
-	return true;
+	return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
 }
 
 /* RegisterPlayer(o path, a{sv} {}). An empty dict is valid: BlueZ reads the
  * properties it is given and needs none. */
-static bool register_player(void *conn)
+static bool register_player(DBusConnection *conn)
 {
 	const char *path = PLAYER_PATH;
-	void *msg, *reply;
-	dbus_iter args, dict;
-	dbus_error err;
+	DBusMessage *msg, *reply;
+	DBusMessageIter args, dict;
+	DBusError err;
 
-	error_init(&err);
-	msg = new_call("org.bluez", "/org/bluez/hci0", "org.bluez.Media1", "RegisterPlayer");
+	dbus_error_init(&err);
+	msg = dbus_message_new_method_call("org.bluez", "/org/bluez/hci0", "org.bluez.Media1", "RegisterPlayer");
 	if (!msg) return false;
-	iter_init_append(msg, &args);
-	append_basic(&args, TYPE_OBJECT, &path);
-	open_container(&args, TYPE_ARRAY, "{sv}", &dict);
-	close_container(&args, &dict);
-	reply = send_block(conn, msg, 5000, &err);
-	message_unref(msg);
+	dbus_message_iter_init_append(msg, &args);
+	dbus_message_iter_append_basic(&args, DBUS_TYPE_OBJECT_PATH, &path);
+	dbus_message_iter_open_container(&args, DBUS_TYPE_ARRAY, "{sv}", &dict);
+	dbus_message_iter_close_container(&args, &dict);
+	reply = dbus_connection_send_with_reply_and_block(conn, msg, 5000, &err);
+	dbus_message_unref(msg);
 	if (!reply) {
 		fprintf(stderr, "btplayer: RegisterPlayer: %s\n",
 		        err.message ? err.message : "no reply");
-		error_free(&err);
+		dbus_error_free(&err);
 		return false;
 	}
-	message_unref(reply);
+	dbus_message_unref(reply);
 	return true;
 }
 
@@ -180,49 +110,49 @@ static long now_ms(void)
 
 /* A method call with up to two string-ish arguments, waiting for the reply.
  * The reply for the caller to read and unref, or NULL on any error. */
-static void *call(void *conn, const char *path, const char *iface, const char *method,
+static DBusMessage *call(DBusConnection *conn, const char *path, const char *iface, const char *method,
                   int t1, const char *a1, int t2, const char *a2)
 {
-	void *msg = new_call("org.bluez", path, iface, method), *reply;
-	dbus_iter args;
-	dbus_error err;
+	DBusMessage *msg = dbus_message_new_method_call("org.bluez", path, iface, method), *reply;
+	DBusMessageIter args;
+	DBusError err;
 
 	if (!msg) return NULL;
-	iter_init_append(msg, &args);
-	if (a1) append_basic(&args, t1, &a1);
-	if (a2) append_basic(&args, t2, &a2);
-	error_init(&err);
-	reply = send_block(conn, msg, 5000, &err);
-	message_unref(msg);
-	if (!reply) error_free(&err);
+	dbus_message_iter_init_append(msg, &args);
+	if (a1) dbus_message_iter_append_basic(&args, t1, &a1);
+	if (a2) dbus_message_iter_append_basic(&args, t2, &a2);
+	dbus_error_init(&err);
+	reply = dbus_connection_send_with_reply_and_block(conn, msg, 5000, &err);
+	dbus_message_unref(msg);
+	if (!reply) dbus_error_free(&err);
 	return reply;
 }
 
-static bool has_volume(void *conn, const char *transport)
+static bool has_volume(DBusConnection *conn, const char *transport)
 {
-	void *r = call(conn, transport, "org.freedesktop.DBus.Properties", "Get",
-	               TYPE_STRING, "org.bluez.MediaTransport1", TYPE_STRING, "Volume");
+	DBusMessage *r = call(conn, transport, "org.freedesktop.DBus.Properties", "Get",
+	               DBUS_TYPE_STRING, "org.bluez.MediaTransport1", DBUS_TYPE_STRING, "Volume");
 
 	if (!r) return false;
-	message_unref(r);
+	dbus_message_unref(r);
 	return true;
 }
 
 /* The transport's device, e.g. /org/bluez/hci0/dev_C0_86_B3_A7_48_7F. */
-static bool device_of(void *conn, const char *transport, char *out, size_t n)
+static bool device_of(DBusConnection *conn, const char *transport, char *out, size_t n)
 {
-	void *r = call(conn, transport, "org.freedesktop.DBus.Properties", "Get",
-	               TYPE_STRING, "org.bluez.MediaTransport1", TYPE_STRING, "Device");
-	dbus_iter it, var;
+	DBusMessage *r = call(conn, transport, "org.freedesktop.DBus.Properties", "Get",
+	               DBUS_TYPE_STRING, "org.bluez.MediaTransport1", DBUS_TYPE_STRING, "Device");
+	DBusMessageIter it, var;
 	const char *dev = NULL;
 
 	if (!r) return false;
-	if (iter_init(r, &it) && iter_type(&it) == (int)'v') {
-		iter_recurse(&it, &var);
-		if (iter_type(&var) == TYPE_OBJECT) iter_get(&var, &dev);
+	if (dbus_message_iter_init(r, &it) && dbus_message_iter_get_arg_type(&it) == DBUS_TYPE_VARIANT) {
+		dbus_message_iter_recurse(&it, &var);
+		if (dbus_message_iter_get_arg_type(&var) == DBUS_TYPE_OBJECT_PATH) dbus_message_iter_get_basic(&var, &dev);
 	}
 	if (dev) snprintf(out, n, "%s", dev);
-	message_unref(r);
+	dbus_message_unref(r);
 	return dev != NULL;
 }
 
@@ -230,24 +160,24 @@ static bool device_of(void *conn, const char *transport, char *out, size_t n)
  * of, then AVRCP again on the device, so the headset reports once more - now
  * that the transport exists to take it. AVRCP is only the control channel:
  * the audio does not stop, and the transport is not recreated by it. */
-static void mend(void *conn, const char *transport)
+static void mend(DBusConnection *conn, const char *transport)
 {
 	static const char *avrcp = "0000110e-0000-1000-8000-00805f9b34fb";
 	char dev[160];
-	void *r;
+	DBusMessage *r;
 
 	if (!device_of(conn, transport, dev, sizeof dev)) return;
 	if ((r = call(conn, "/org/bluez/hci0", "org.bluez.Media1", "UnregisterPlayer",
-	              TYPE_OBJECT, PLAYER_PATH, 0, NULL)))
-		message_unref(r);
+	              DBUS_TYPE_OBJECT_PATH, PLAYER_PATH, 0, NULL)))
+		dbus_message_unref(r);
 	if (!register_player(conn)) return;
 	if ((r = call(conn, dev, "org.bluez.Device1", "DisconnectProfile",
-	              TYPE_STRING, avrcp, 0, NULL)))
-		message_unref(r);
+	              DBUS_TYPE_STRING, avrcp, 0, NULL)))
+		dbus_message_unref(r);
 	sleep(1);
 	if ((r = call(conn, dev, "org.bluez.Device1", "ConnectProfile",
-	              TYPE_STRING, avrcp, 0, NULL)))
-		message_unref(r);
+	              DBUS_TYPE_STRING, avrcp, 0, NULL)))
+		dbus_message_unref(r);
 }
 
 /* Transports to look at, and when. Stage 0 is the first look, two seconds
@@ -274,48 +204,48 @@ static void publish_volume(const char *transport, unsigned volume)
 
 /* PropertiesChanged(s interface, a{sv} changed, as invalidated), on a
  * transport: its Volume, if that is what changed. */
-static void on_properties(void *msg)
+static void on_properties(DBusMessage *msg)
 {
-	dbus_iter args, dict, entry, var;
-	const char *iface, *key, *path = message_path(msg);
+	DBusMessageIter args, dict, entry, var;
+	const char *iface, *key, *path = dbus_message_get_path(msg);
 
-	if (!path || !iter_init(msg, &args) || iter_type(&args) != TYPE_STRING) return;
-	iter_get(&args, &iface);
+	if (!path || !dbus_message_iter_init(msg, &args) || dbus_message_iter_get_arg_type(&args) != DBUS_TYPE_STRING) return;
+	dbus_message_iter_get_basic(&args, &iface);
 	if (strcmp(iface, "org.bluez.MediaTransport1")) return;
-	if (!iter_next(&args) || iter_type(&args) != TYPE_ARRAY) return;
-	for (iter_recurse(&args, &dict); iter_type(&dict) == TYPE_DICT_ENTRY; iter_next(&dict)) {
+	if (!dbus_message_iter_next(&args) || dbus_message_iter_get_arg_type(&args) != DBUS_TYPE_ARRAY) return;
+	for (dbus_message_iter_recurse(&args, &dict); dbus_message_iter_get_arg_type(&dict) == DBUS_TYPE_DICT_ENTRY; dbus_message_iter_next(&dict)) {
 		unsigned short volume;
 
-		iter_recurse(&dict, &entry);
-		iter_get(&entry, &key);
-		if (strcmp(key, "Volume") || !iter_next(&entry)) continue;
-		iter_recurse(&entry, &var);
-		if (iter_type(&var) != TYPE_UINT16) continue;
-		iter_get(&var, &volume);
+		dbus_message_iter_recurse(&dict, &entry);
+		dbus_message_iter_get_basic(&entry, &key);
+		if (strcmp(key, "Volume") || !dbus_message_iter_next(&entry)) continue;
+		dbus_message_iter_recurse(&entry, &var);
+		if (dbus_message_iter_get_arg_type(&var) != DBUS_TYPE_UINT16) continue;
+		dbus_message_iter_get_basic(&var, &volume);
 		if (now_ms() < g_quiet_until) continue;
 		publish_volume(path, volume);
 	}
 }
 
-static int on_signal(void *conn, void *msg, void *data)
+static DBusHandlerResult on_signal(DBusConnection *conn, DBusMessage *msg, void *data)
 {
-	dbus_iter args, dict, entry;
+	DBusMessageIter args, dict, entry;
 	const char *path = NULL, *iface;
 	int i;
 
 	(void)conn; (void)data;
-	if (is_signal(msg, "org.freedesktop.DBus.Properties", "PropertiesChanged")) {
+	if (dbus_message_is_signal(msg, "org.freedesktop.DBus.Properties", "PropertiesChanged")) {
 		on_properties(msg);
-		return NOT_HANDLED;
+		return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
 	}
-	if (!is_signal(msg, "org.freedesktop.DBus.ObjectManager", "InterfacesAdded"))
-		return NOT_HANDLED;
-	if (!iter_init(msg, &args) || iter_type(&args) != TYPE_OBJECT) return NOT_HANDLED;
-	iter_get(&args, &path);
-	if (!iter_next(&args) || iter_type(&args) != TYPE_ARRAY) return NOT_HANDLED;
-	for (iter_recurse(&args, &dict); iter_type(&dict) == TYPE_DICT_ENTRY; iter_next(&dict)) {
-		iter_recurse(&dict, &entry);
-		iter_get(&entry, &iface);
+	if (!dbus_message_is_signal(msg, "org.freedesktop.DBus.ObjectManager", "InterfacesAdded"))
+		return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+	if (!dbus_message_iter_init(msg, &args) || dbus_message_iter_get_arg_type(&args) != DBUS_TYPE_OBJECT_PATH) return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+	dbus_message_iter_get_basic(&args, &path);
+	if (!dbus_message_iter_next(&args) || dbus_message_iter_get_arg_type(&args) != DBUS_TYPE_ARRAY) return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+	for (dbus_message_iter_recurse(&args, &dict); dbus_message_iter_get_arg_type(&dict) == DBUS_TYPE_DICT_ENTRY; dbus_message_iter_next(&dict)) {
+		dbus_message_iter_recurse(&dict, &entry);
+		dbus_message_iter_get_basic(&entry, &iface);
 		if (strcmp(iface, "org.bluez.MediaTransport1")) continue;
 		for (i = 0; i < WATCHED && g_watch[i].path[0]; i++) { }
 		if (i == WATCHED) break;
@@ -325,10 +255,10 @@ static int on_signal(void *conn, void *msg, void *data)
 		g_quiet_until = now_ms() + 4000;
 		break;
 	}
-	return NOT_HANDLED;
+	return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
 }
 
-static void look(void *conn)
+static void look(DBusConnection *conn)
 {
 	int i;
 
@@ -436,22 +366,18 @@ static void read_keyboards(void)
 
 int main(void)
 {
-	static const dbus_vtable vt = { NULL, on_message, { NULL } };
-	void *conn;
-	dbus_error err;
+	static const DBusObjectPathVTable vt = { .message_function = on_message };
+	DBusConnection *conn;
+	DBusError err;
 	int tries;
 
-	if (!bind_libdbus()) {
-		fprintf(stderr, "btplayer: libdbus-1.so.3 is missing or incomplete\n");
-		return 1;
-	}
-	error_init(&err);
-	conn = bus_get(BUS_SYSTEM, &err);
+	dbus_error_init(&err);
+	conn = dbus_bus_get(DBUS_BUS_SYSTEM, &err);
 	if (!conn) {
 		fprintf(stderr, "btplayer: system bus: %s\n", err.message ? err.message : "?");
 		return 1;
 	}
-	if (!register_path(conn, PLAYER_PATH, &vt, NULL)) {
+	if (!dbus_connection_register_object_path(conn, PLAYER_PATH, &vt, NULL)) {
 		fprintf(stderr, "btplayer: cannot export %s\n", PLAYER_PATH);
 		return 1;
 	}
@@ -462,10 +388,10 @@ int main(void)
 	if (tries == 10) return 1;
 	fprintf(stderr, "btplayer: registered %s\n", PLAYER_PATH);
 
-	add_match(conn, "type='signal',sender='org.bluez',"
+	dbus_bus_add_match(conn, "type='signal',sender='org.bluez',"
 	          "interface='org.freedesktop.DBus.ObjectManager',member='InterfacesAdded'", &err);
-	add_filter(conn, on_signal, NULL, NULL);
-	add_match(conn, "type='signal',sender='org.bluez',"
+	dbus_connection_add_filter(conn, on_signal, NULL, NULL);
+	dbus_bus_add_match(conn, "type='signal',sender='org.bluez',"
 	          "interface='org.freedesktop.DBus.Properties',member='PropertiesChanged',"
 	          "arg0='org.bluez.MediaTransport1'", &err);
 	/* A tenth of a second, so a headset's key is seen as soon as it is
@@ -473,7 +399,7 @@ int main(void)
 	{
 		long next_find = 0;
 
-		while (dispatch(conn, 100)) {
+		while (dbus_connection_read_write_dispatch(conn, 100)) {
 			look(conn);
 			if (now_ms() >= next_find) {
 				find_keyboards();

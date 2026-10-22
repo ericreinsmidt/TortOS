@@ -63,7 +63,10 @@ $(BUILD)/muse: $(MUSE_SRC) $(wildcard src/muse/*.h)
 	      -lavformat -lavcodec -lavfilter -lswresample -lavutil -lasound -lpthread
 
 # Registers a do-nothing media player with BlueZ so a headset's absolute
-# volume is not dropped; see the file. libdbus by dlopen.
+# volume is not dropped, and hands a headset's keys to Muse; see the file.
+# Linked against SYSROOT's libdbus, whose arch header lives under lib.
 $(BUILD)/btplayer: tools/btplayer.c
 	mkdir -p $(BUILD)
-	$(CC) -O2 -mcpu=cortex-a53 -Wall -Wextra -std=gnu11 -o $@ $< -ldl
+	$(CC) -O2 -mcpu=cortex-a53 -Wall -Wextra -std=gnu11 \
+	      -I$(SYSROOT)/usr/include/dbus-1.0 -I$(SYSROOT)/usr/lib/dbus-1.0/include \
+	      $(LDFLAGS) -o $@ $< -ldbus-1
