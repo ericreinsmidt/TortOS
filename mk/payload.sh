@@ -6,7 +6,10 @@
 # ZIP= for no zip:
 #
 #   DEVICE=brick TORTOS_ELF=... MUSE_ELF=... DIATOM_ELF=... VENDOR_DIR=... \
-#       OUT=... ZIP= mk/payload.sh
+#       BTPLAYER_ELF=... OUT=... ZIP= mk/payload.sh
+#
+# BTPLAYER_ELF only for a device with Bluetooth: tools/btplayer.c, which
+# plastron's /etc/init.d/bluetooth runs from the card.
 #
 # TrimUI's own firmware is no longer supported, so there is one Brick payload,
 # plastron's. NATIVE=1, which used to choose it, is accepted and ignored.
@@ -34,6 +37,7 @@ mkdir -p "$P/cards" "$P/cores" "$P/res/web" \
 
 cp "$TORTOS_ELF" "$P/tortos.elf"
 cp "$MUSE_ELF" "$P/muse"                  # the audio player's engine; Muse cannot play without it
+[ -n "$BTPLAYER_ELF" ] && cp "$BTPLAYER_ELF" "$P/btplayer"   # a headset's keys and volume
 cp "$LAUNCH" "$P/launch.sh"
 # Which TortOS this is, for plastron: the Pixel's image copies its TortOS/ over
 # the card's only when it is newer than the card's (/etc/init.d/tortos), so a
@@ -95,6 +99,7 @@ if [ -n "$missing" ]; then
 fi
 
 chmod +x "$P/launch.sh" "$P/tortos.elf" "$P/diatom" "$P/muse"
+[ -f "$P/btplayer" ] && chmod +x "$P/btplayer"
 
 # The headsets' ALSA config: the Brick's launch.sh sources it at boot, and
 # TortOS runs it after a pair or a forget.

@@ -15,8 +15,8 @@
  * `<name> - A2DP` control sends SetAbsoluteVolume, and the change is heard.
  *
  * It has to stay alive: BlueZ unregisters a player whose owner leaves the bus.
- * launch.sh's bt_on starts it after bluetoothd and bt_off stops it, because a
- * bluetoothd that restarts has forgotten it.
+ * plastron's /etc/init.d/bluetooth starts it after bluetoothd and bluealsa and
+ * stops it first, because a bluetoothd that restarts has forgotten it.
  *
  * libdbus is the device's own, reached with dlopen: written for TrimUI's
  * system, which had no headers for it, so the handful of types used are
