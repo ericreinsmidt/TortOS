@@ -57,11 +57,12 @@ WIFI=0
 BOOT_ENV=$USERDATA_PATH/boot.env
 [ -f "$BOOT_ENV" ] && . "$BOOT_ENV"
 
-# Wi-Fi at boot, when it was left on and an adapter is plugged in, as on the
-# Brick: the supplicant rejoins a saved network by itself, and once it has,
-# the DHCP client, started exactly as src/wifi.c starts it (the same PID file,
-# no -q, so it stays and renews the lease), so TortOS finds it running rather
-# than starting a second. /etc/init.d/wpa_supplicant stops it with Wi-Fi.
+# Wi-Fi on, as the Brick does at boot, when it was left on and an adapter is
+# in (wifi_follow, below): the supplicant rejoins a saved network by itself,
+# and once it has, the DHCP client, started exactly as src/wifi.c starts it
+# (the same PID file, no -q, so it stays and renews the lease), so TortOS
+# finds it running rather than starting a second. /etc/init.d/wpa_supplicant
+# stops it with Wi-Fi.
 WPA_SOCK=/var/run/wpa_supplicant
 DHCP_PID=/var/run/udhcpc.wlan0.pid
 wifi_on() {
@@ -113,18 +114,38 @@ now_s() {
 start_resident
 [ -e /tmp/tortos_poweroff ] && rm -f /tmp/tortos_poweroff
 
-# Wi-Fi once the splash ends, as on the Brick, so the adapter's driver and the
-# supplicant starting stay out of TortOS's way to its first frame. Bounded: a
-# splash that never ends holds it 20 s at most.
-wifi_after_splash() {
+# Wi-Fi follows the adapter as it comes and goes: it isn't the Pixel's own, so
+# it can be plugged in or pulled at any time, a game included. Looked for every
+# 2 seconds with the shell's own test, no process started for it. When it
+# appears, and Wi-Fi was left on (boot.env, read again, as TortOS rewrites it
+# when the setting changes), the same as at boot; when it goes, the
+# supplicant and the DHCP client stop, so the next one starts clean. From when
+# the splash ends, as on the Brick, so the adapter's driver and the supplicant
+# stay out of TortOS's way to its first frame; a splash that never ends holds
+# it 20 s at most.
+wifi_follow() {
 	i=0
 	while [ $i -lt 200 ] && pidof splash > /dev/null; do
 		sleep 0.1
 		i=$((i + 1))
 	done
-	wifi_on
+	had=
+	while : ; do
+		if [ -d /sys/class/net/wlan0 ]; then
+			if [ -z "$had" ]; then
+				had=1
+				WIFI=0
+				[ -f "$BOOT_ENV" ] && . "$BOOT_ENV"
+				[ "$WIFI" = 1 ] && wifi_on &
+			fi
+		elif [ -n "$had" ]; then
+			had=
+			/etc/init.d/wpa_supplicant stop > /dev/null 2>&1
+		fi
+		sleep 2
+	done
 }
-[ "$WIFI" = 1 ] && wifi_after_splash &
+wifi_follow &
 
 # A Mac or PC leaves its own files on the card. Swept after the launcher is up,
 # as on the Brick, so it costs the boot nothing.
