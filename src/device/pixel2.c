@@ -811,11 +811,25 @@ bool plat_usb_audio_present(void)
  * computer one of its own (S40usbgadget), so the screen shows the same thing
  * every time, cable in or not. Whether a computer is there is left to the
  * screen's browser row: the USB controller went on saying "configured" with
- * the cable pulled (2026-10-05), and the row already says it. */
+ * the cable pulled (2026-10-05), and the row already says it.
+ *
+ * Not while the port is a host, which usbrole makes it for a Wi-Fi adapter or
+ * a DAC: the one port can't be on a computer's cable then. With an adapter,
+ * files go over the air instead, Over The Hare as on the Brick. One small
+ * read of the role switch, asked as menus are built. */
 #define CABLE_ADDR "10.42.0.1"
+#define USB_ROLE   "/sys/class/usb_role/ff300000.usb-role-switch/role"
 
 bool plat_cable_link(char *addr, size_t n)
 {
+	char role[16] = "";
+	int fd = open(USB_ROLE, O_RDONLY | O_CLOEXEC);
+
+	if (fd >= 0) {
+		if (read(fd, role, sizeof role - 1) < 0) role[0] = '\0';
+		close(fd);
+	}
+	if (!strncmp(role, "host", 4)) return false;
 	if (addr && n) snprintf(addr, n, "%s", CABLE_ADDR);
 	return true;
 }
@@ -888,9 +902,10 @@ void plat_brightness_set(int level)
 	levels_save();
 }
 
-/* No radio on the board. A USB dongle could change that one day; then these
- * would ask whether an adapter is there. */
-bool plat_has_wifi(void)      { return false; }
+/* No radio on the board. Wi-Fi is a USB adapter, there while one is plugged
+ * in: plastron loads its driver then (usbrole), and wlan0 is the sign. Asked
+ * as menus are built, and one access() is all it costs. No Bluetooth. */
+bool plat_has_wifi(void)      { return access("/sys/class/net/wlan0", F_OK) == 0; }
 bool plat_has_bluetooth(void) { return false; }
 
 /* FUNCTION with volume up or down (key_event). */

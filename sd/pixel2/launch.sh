@@ -2,11 +2,11 @@
 # TortOS on the GKD Pixel 2. plastron's init starts this once the card's
 # games partition is mounted at /mnt/SDCARD.
 #
-# The Brick's launch.sh, less everything that belongs to the Brick's stock
-# firmware - its LEDs, its input daemon, Wi-Fi and Bluetooth, the boot logo
-# and splash it patches. The Pixel's system is plastron, ours from the
-# kernel up, so there is nothing here to work around: start the emulator,
-# start the launcher, power off when it is done.
+# The Brick's launch.sh, less what the Pixel doesn't have: Bluetooth, and a
+# radio of its own (its Wi-Fi is a USB adapter, when one is plugged in). The
+# Pixel's system is plastron, ours from the kernel up, so there is nothing
+# here to work around: start the emulator, start the launcher, power off when
+# it is done.
 
 TORTOS_DIR=/mnt/SDCARD/TortOS
 SDCARD=/mnt/SDCARD
@@ -51,6 +51,39 @@ LOG=$LOGS_PATH/tortos.log
 	[ -f "$LOG.prev" ] && mv -f "$LOG.prev" "$LOG.1"
 ) &
 
+# The settings this script needs before TortOS runs, which TortOS writes out
+# for it, as on the Brick. The default is for a fresh card's first boot.
+WIFI=0
+BOOT_ENV=$USERDATA_PATH/boot.env
+[ -f "$BOOT_ENV" ] && . "$BOOT_ENV"
+
+# Wi-Fi at boot, when it was left on and an adapter is plugged in, as on the
+# Brick: the supplicant rejoins a saved network by itself, and once it has,
+# the DHCP client, started exactly as src/wifi.c starts it (the same PID file,
+# no -q, so it stays and renews the lease), so TortOS finds it running rather
+# than starting a second. /etc/init.d/wpa_supplicant stops it with Wi-Fi.
+WPA_SOCK=/var/run/wpa_supplicant
+DHCP_PID=/var/run/udhcpc.wlan0.pid
+wifi_on() {
+	/etc/init.d/wpa_supplicant start > /dev/null 2>&1 || {
+		echo "wifi: no adapter, or it did not come up" >> "$LOG"
+		return 1
+	}
+	i=0
+	while [ $i -lt 25 ]; do
+		if wpa_cli -p $WPA_SOCK -i wlan0 status 2> /dev/null |
+		   grep -q '^wpa_state=COMPLETED'; then
+			p=$(cat $DHCP_PID 2> /dev/null)
+			[ -n "$p" ] && [ -d "/proc/$p" ] && return 0
+			udhcpc -i wlan0 -S -t 5 -T 7 -b -p $DHCP_PID > /dev/null 2>&1
+			return 0
+		fi
+		sleep 1
+		i=$((i + 1))
+	done
+	echo "wifi: no saved network joined after ${i}s" >> "$LOG"
+}
+
 # Running already? By the pid file and /proc, rather than pidof's walk of
 # every process. A pid reused after a crash is caught by the name.
 diatom_running() {
@@ -79,6 +112,19 @@ now_s() {
 
 start_resident
 [ -e /tmp/tortos_poweroff ] && rm -f /tmp/tortos_poweroff
+
+# Wi-Fi once the splash ends, as on the Brick, so the adapter's driver and the
+# supplicant starting stay out of TortOS's way to its first frame. Bounded: a
+# splash that never ends holds it 20 s at most.
+wifi_after_splash() {
+	i=0
+	while [ $i -lt 200 ] && pidof splash > /dev/null; do
+		sleep 0.1
+		i=$((i + 1))
+	done
+	wifi_on
+}
+[ "$WIFI" = 1 ] && wifi_after_splash &
 
 # A Mac or PC leaves its own files on the card. Swept after the launcher is up,
 # as on the Brick, so it costs the boot nothing.
