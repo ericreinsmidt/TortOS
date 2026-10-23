@@ -22,48 +22,41 @@
 #include <time.h>
 #include <unistd.h>
 
-/* The front function keys report on the gamepad node as BTN_THUMBL/BTN_THUMBR
- * (317/318). SDL maps them to joystick buttons 9 and 10, which emulators call
- * L3/R3 -- which is why the in-game input map has to drop L3/R3, or every
- * brightness press also reaches the core. */
-#define CODE_FN_LEFT  317
-#define CODE_FN_RIGHT 318
-
-/* SDL joystick button indices on the Brick's "TRIMUI Player1" device.
- *
- * SDL numbers these in ascending evdev-code order and the device declares
- * 304 305 307 308 310 311 314 315 316 317 318, so index 2 is BTN_NORTH and
- * index 3 is BTN_WEST. The buttons printed on this shell are Y and X
- * respectively - crossed from the evdev names, as A and B already are.
- *
- * These were swapped here on 2026-08-29 and swapped straight back, because
- * the change was reasoned from the evdev names rather than tested, and Eric
- * pressing the buttons settled it in one try. The table below is correct;
- * this note exists so the next person to notice that JOY_Y sits at the index
- * called BTN_NORTH does not "fix" it again. */
-enum {
-	JOY_B = 0, JOY_A = 1, JOY_Y = 2, JOY_X = 3,
-	JOY_L1 = 4, JOY_R1 = 5, JOY_SELECT = 6, JOY_START = 7,
-	JOY_MENU = 8, JOY_L3 = 9, JOY_R3 = 10,
-	JOY_VOLDN = 13, JOY_VOLUP = 14,
-};
-
 static SDL_Window *win;
 static SDL_Renderer *ren;
-static SDL_Joystick *joy;
 
 #define BITS_PER_LONG   (8 * (int)sizeof(long))
 #define NLONGS(max)     (((max) + BITS_PER_LONG) / BITS_PER_LONG)
 #define BIT_IS_SET(a,b) (((a)[(b) / BITS_PER_LONG] >> ((b) % BITS_PER_LONG)) & 1UL)
 
-static int fd_pad = -1;     /* "Brick Gamepad": raw, for the front F1/F2 keys */
-static int fd_keys = -1;    /* "sunxi-keyboard": volume */
+static int fd_pad = -1;     /* "Brick Gamepad": every button, the volume keys too */
+static int fd_keys = -1;    /* "sunxi-keyboard": declares the volume keys, never sends them */
 static int fd_power = -1;   /* "axp2202-pek" */
 static int jack_fd = -1;    /* "audiocodec sunxi Audio Jack": the jack switch, for the settings */
 
-/* TORTOS_INPUT_DEBUG=1 logs raw evdev codes and SDL button indices, so one
- * press tells you exactly which device a control arrives on. */
+/* TORTOS_INPUT_DEBUG=1 logs raw evdev codes, so one press tells you exactly
+ * which device a control arrives on. */
 static int dbg_input;
+
+#ifdef __linux__
+/* Every button by its key code, as the Pixel 2 reads its own. brick-pad sends
+ * the Pixel's codes: A, B, X and Y as SOUTH, EAST, NORTH and WEST, named for
+ * their labels, and the d-pad as BTN_DPAD_*. Then the Brick's own: MENU, and
+ * the two front keys, which are brightness. L2 and R2 exist and TortOS has no
+ * use for them. */
+static const struct { int code; in_button b; } keymap[] = {
+	{ BTN_DPAD_UP, IN_UP },       { BTN_DPAD_DOWN, IN_DOWN },
+	{ BTN_DPAD_LEFT, IN_LEFT },   { BTN_DPAD_RIGHT, IN_RIGHT },
+	{ BTN_SOUTH, IN_ACCEPT },     { BTN_EAST, IN_BACK },
+	{ BTN_NORTH, IN_X },          { BTN_WEST, IN_Y },
+	{ BTN_TL, IN_L1 },            { BTN_TR, IN_R1 },
+	{ BTN_SELECT, IN_SELECT },    { BTN_START, IN_START },
+	{ BTN_MODE, IN_MENU },
+	{ BTN_THUMBL, IN_BRIGHTDN },  { BTN_THUMBR, IN_BRIGHTUP },
+	{ KEY_VOLUMEDOWN, IN_VOLDN }, { KEY_VOLUMEUP, IN_VOLUP },
+	{ KEY_POWER, IN_POWER },
+};
+#endif
 
 const char *P_ROOT = "/mnt/SDCARD/TortOS";
 const char *P_CARD = "/mnt/SDCARD";
@@ -198,18 +191,6 @@ void plat_video_quit(void)
 	SDL_QuitSubSystem(SDL_INIT_VIDEO);
 }
 
-static void open_joystick(void)
-{
-	for (int i = 0; i < SDL_NumJoysticks(); i++) {
-		SDL_Joystick *j = SDL_JoystickOpen(i);
-		if (!j) continue;
-		fprintf(stderr, "joystick %d: %s (%d buttons, %d hats, %d axes)\n",
-		        i, SDL_JoystickName(j), SDL_JoystickNumButtons(j),
-		        SDL_JoystickNumHats(j), SDL_JoystickNumAxes(j));
-		if (!joy) joy = j; /* the first is TRIMUI Player1 */
-	}
-}
-
 #ifdef __linux__
 /* Every input device this file wants, found by what each reports, not by
  * number, in one pass, as pixel2.c finds the Pixel 2's: there is no udev, and
@@ -245,12 +226,6 @@ bool plat_input_init(void)
 	char marker[512];
 	snprintf(marker, sizeof marker, "%s/.input_debug", P_ROOT);
 	dbg_input = getenv("TORTOS_INPUT_DEBUG") != NULL || access(marker, F_OK) == 0;
-	if (SDL_InitSubSystem(SDL_INIT_JOYSTICK) != 0) {
-		fprintf(stderr, "joystick init: %s\n", SDL_GetError());
-		return false;
-	}
-	SDL_JoystickEventState(SDL_ENABLE);
-	open_joystick();
 #ifdef __linux__
 	if (fd_pad < 0 || fd_keys < 0 || fd_power < 0) input_scan();
 	if (fd_pad < 0)   fprintf(stderr, "input: no gamepad found\n");
@@ -260,9 +235,7 @@ bool plat_input_init(void)
 	return true;
 }
 
-/* Throw away everything that queued up while a game owned the screen. The
- * joystick stayed open through the game, so SDL has been collecting presses
- * meant for it, and the raw descriptors have too. */
+/* Throw away everything that queued up while a game owned the screen. */
 void plat_input_flush(void)
 {
 	SDL_Event e;
@@ -280,59 +253,34 @@ void plat_input_flush(void)
 #endif
 }
 
-/* The input noise a Brick's boot produces - replayed wake presses, the bursts
- * its input devices emit as they come up - is waited out, 350 ms of polling
- * and discarding, before anything is honored. Moved here unchanged from the
- * launcher's startup when other devices turned out not to make any. */
+/* No wait, as on the Pixel 2: the keys are read straight from the kernel, and
+ * a boot on plastron makes no input noise (three recorded 2026-10-12: a plain
+ * one, power held, buttons pressed, had nothing but the presses themselves),
+ * so emptying the queues is enough. The 350 ms this replaces waited out
+ * TrimUI's input daemon. */
 void plat_input_settle(in_state *st)
 {
-	Uint32 grace = SDL_GetTicks() + 350;
-
-	while (SDL_GetTicks() < grace) { plat_input_poll(st); SDL_Delay(8); }
+	plat_input_flush();
 	memset(st, 0, sizeof *st);
 }
 
-void plat_input_quit(void)
-{
-	if (joy) { SDL_JoystickClose(joy); joy = NULL; }
-	SDL_QuitSubSystem(SDL_INIT_JOYSTICK);
-	/* keep the raw descriptors; they are display-independent */
-}
+/* The descriptors stay open: they are display-independent. */
+void plat_input_quit(void) { }
 
-static in_button map_joy_button(int jb)
-{
-	switch (jb) {
-	case JOY_A: return IN_ACCEPT;
-	case JOY_B: return IN_BACK;
-	case JOY_X: return IN_X;
-	case JOY_Y: return IN_Y;
-	case JOY_L1: return IN_L1;
-	case JOY_R1: return IN_R1;
-	case JOY_START: return IN_START;
-	case JOY_SELECT: return IN_SELECT;
-	case JOY_MENU: return IN_MENU;
-	case JOY_VOLUP: return IN_VOLUP;
-	case JOY_VOLDN: return IN_VOLDN;
-	default: return IN_NONE;
-	}
-}
-
-static void poll_raw_fd(int fd, in_state *st)
+static void poll_fd(int fd, in_state *st)
 {
 #ifdef __linux__
 	struct input_event ev;
+	size_t i;
+
 	while (fd >= 0 && read(fd, &ev, sizeof ev) == (ssize_t)sizeof ev) {
-		if (ev.type != EV_KEY) continue;
-		if (dbg_input)
-			fprintf(stderr, "[in] raw fd=%d code=%d val=%d\n", fd, ev.code, ev.value);
-		in_button b = IN_NONE;
-		if (ev.code == KEY_POWER) b = IN_POWER;
-		else if (ev.code == KEY_VOLUMEUP) b = IN_VOLUP;
-		else if (ev.code == KEY_VOLUMEDOWN) b = IN_VOLDN;
-		else if (ev.code == CODE_FN_RIGHT) b = IN_BRIGHTUP;
-		else if (ev.code == CODE_FN_LEFT) b = IN_BRIGHTDN;
-		if (b != IN_NONE && ev.value != 2)
-			plat_set_btn(st, b, ev.value == 1);
+		if (ev.type != EV_KEY || ev.value == 2) continue;
+		if (dbg_input) fprintf(stderr, "[in] fd=%d code=%d val=%d\n", fd, ev.code, ev.value);
+		for (i = 0; i < sizeof keymap / sizeof keymap[0]; i++)
+			if (keymap[i].code == ev.code) {
+				plat_set_btn(st, keymap[i].b, ev.value == 1);
+				break;
+			}
 	}
 #else
 	(void)fd; (void)st;
@@ -376,24 +324,6 @@ void plat_input_poll(in_state *st)
 		case SDL_QUIT:
 			st->quit_requested = true;
 			break;
-		case SDL_JOYBUTTONDOWN:
-		case SDL_JOYBUTTONUP:
-			if (dbg_input && e.type == SDL_JOYBUTTONDOWN)
-				fprintf(stderr, "[in] joy button=%d\n", e.jbutton.button);
-			plat_set_btn(st, map_joy_button(e.jbutton.button),
-			        e.type == SDL_JOYBUTTONDOWN);
-			break;
-		case SDL_JOYHATMOTION: {
-			Uint8 v = e.jhat.value;
-			plat_set_btn(st, IN_LEFT,  (v & SDL_HAT_LEFT)  != 0);
-			plat_set_btn(st, IN_RIGHT, (v & SDL_HAT_RIGHT) != 0);
-			plat_set_btn(st, IN_UP,    (v & SDL_HAT_UP)    != 0);
-			plat_set_btn(st, IN_DOWN,  (v & SDL_HAT_DOWN)  != 0);
-			break;
-		}
-		case SDL_JOYDEVICEADDED:
-			if (!joy) open_joystick();
-			break;
 		case SDL_KEYDOWN:
 		case SDL_KEYUP:
 			if (e.key.repeat) break;
@@ -403,9 +333,9 @@ void plat_input_poll(in_state *st)
 			break;
 		}
 	}
-	poll_raw_fd(fd_power, st);
-	poll_raw_fd(fd_keys, st);
-	poll_raw_fd(fd_pad, st);
+	poll_fd(fd_pad, st);
+	poll_fd(fd_keys, st);
+	poll_fd(fd_power, st);
 }
 
 /* The launcher and Diatom take turns on one framebuffer here, so there is
