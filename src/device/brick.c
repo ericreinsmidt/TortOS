@@ -733,13 +733,55 @@ bool plat_headphones_present(void) { return jack_present() != 0; }
  * hand risks supplying power into a charger: not worth a board. 2026-10-05. */
 bool plat_usb_audio_present(void) { return false; }
 
-/* Files go over Wi-Fi here, by Over The Hare. */
+/* Files over the USB cable while a computer has the Brick on it, Down To The
+ * Wire as on the Pixel 2, and over Wi-Fi by Over The Hare otherwise. A
+ * computer is one that has brought up the cable's network link (its carrier):
+ * a charger powers the cable but never does. The controller's own state is no
+ * use here, as it says "configured" from the first computer on, through
+ * unplugs and chargers; plastron's usbgadget drops the link whenever the
+ * cable loses power. plastron gives usb0 this address. Two small reads,
+ * asked as menus are built. */
+#define CABLE_ADDR "10.55.0.2"
+#define CABLE_UDC  "/sys/class/udc/5100000.udc-controller"
+
+static bool file_starts(const char *path, const char *word)
+{
+	char buf[32] = "";
+	int fd = open(path, O_RDONLY | O_CLOEXEC);
+
+	if (fd < 0) return false;
+	if (read(fd, buf, sizeof buf - 1) < 0) buf[0] = '\0';
+	close(fd);
+	return strncmp(buf, word, strlen(word)) == 0;
+}
+
 bool plat_cable_link(char *addr, size_t n)
 {
-	(void)addr; (void)n;
-	return false;
+	if (!file_starts("/sys/class/net/usb0/carrier", "1") ||
+	    !file_starts("/sys/class/power_supply/axp2202-usb/online", "1"))
+		return false;
+	if (addr && n) snprintf(addr, n, "%s", CABLE_ADDR);
+	return true;
 }
-void plat_cable_reconnect(void) { }
+
+/* The controller lets go of the cable and takes it again, so the computer
+ * sees the Brick plugged in afresh: the Pixel 2's computer once dropped it
+ * while the controller went on saying "configured" (2026-10-08). A third of a
+ * second apart, long enough for the computer to notice it went. */
+void plat_cable_reconnect(void)
+{
+	static const struct timespec gap = { 0, 300 * 1000000L };
+	int fd;
+
+	if ((fd = open(CABLE_UDC "/soft_connect", O_WRONLY | O_CLOEXEC)) < 0) return;
+	if (write(fd, "disconnect", 10) < 0) { /* left as it was */ }
+	close(fd);
+	nanosleep(&gap, NULL);
+	if ((fd = open(CABLE_UDC "/soft_connect", O_WRONLY | O_CLOEXEC)) < 0) return;
+	if (write(fd, "connect", 7) < 0) { /* the next screen tries again */ }
+	close(fd);
+	fprintf(stderr, "wire: the cable connection made fresh\n");
+}
 
 /* The switch, checked wherever the jack is and for the same reason: this is
  * the one thing every screen does once a frame.
