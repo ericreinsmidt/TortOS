@@ -2,17 +2,18 @@
 # Assemble TortOS's card payload: under out/sd/ for the TrimUI Brick, or
 # out/sd-pixel2/ with DEVICE=pixel2 for the GKD Pixel 2. plastron, the system
 # on both, builds it into its card image and copies it onto the card on first
-# boot, so its build sets where the binaries are, where the payload goes and
-# ZIP= for no zip:
+# boot, so its build sets where the binaries are and where the payload goes:
 #
 #   DEVICE=brick TORTOS_ELF=... MUSE_ELF=... DIATOM_ELF=... VENDOR_DIR=... \
-#       BTPLAYER_ELF=... OUT=... ZIP= mk/payload.sh
+#       BTPLAYER_ELF=... OUT=... mk/payload.sh
 #
 # BTPLAYER_ELF only for a device with Bluetooth: tools/btplayer.c, which
 # plastron's /etc/init.d/bluetooth runs from the card.
 #
 # TrimUI's own firmware is no longer supported, so there is one Brick payload,
-# plastron's. NATIVE=1, which used to choose it, is accepted and ignored.
+# plastron's. NATIVE=1, which used to choose it, is accepted and ignored. And
+# no release zip: it was the Brick's install for TrimUI's firmware, and both
+# devices now install from plastron's card image. ZIP= is ignored too.
 set -e
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DEVICE=${DEVICE:-brick}
@@ -122,14 +123,3 @@ done
 
 du -sh "$OUT"
 echo "payload ready: $OUT"
-
-VERSION=${VERSION:-1.0}
-if [ "$DEVICE" = brick ]; then
-	ZIP=${ZIP-$ROOT/out/TortOS-v$VERSION.zip}
-else
-	ZIP=${ZIP-$ROOT/out/TortOS-v$VERSION-$DEVICE.zip}
-fi
-[ -n "$ZIP" ] || exit 0
-rm -f "$ZIP"
-( cd "$OUT" && zip -qr "$ZIP" . -x '.DS_Store' '._*' )
-echo "release zip:  $ZIP  ($(du -h "$ZIP" | cut -f1))"
