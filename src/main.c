@@ -5635,6 +5635,8 @@ static void xfer_screen(app *a)
 		hare_set_art(NULL, NULL, NULL, NULL);
 		hare_set_albums(NULL, NULL);
 	}
+	/* The page wears the screen's name. */
+	hare_set_page(cable ? "wire.html" : NULL);
 	hare_set_after_write(xfer_after_write);
 	if (!hare_start(P_ROMS, P_CARD, P_SHARED, P_WEB)) {
 		menu_row row = { "Could not start", NULL, false };

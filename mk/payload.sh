@@ -67,12 +67,12 @@ cp "$ROOT/res/singles.png" "$P/"          # Muse's cover for Singles, the loose 
 # a browser asks for /web/menu.ttf.
 cp "$ROOT/res/web/"* "$P/res/web/"
 cp "$ROOT/res/fonts/menu.ttf" "$P/res/web/menu.ttf"
-# The Pixel's files go over its USB cable, so its page carries the cable name,
-# Down To The Wire (src/sys_menu.h). Only the page's own words: the browser
+# Over the USB cable the page carries the cable's name, Down To The Wire
+# (src/sys_menu.h), as wire.html, which the launcher serves instead of
+# index.html while a computer is on the cable (hare_set_page). Both devices
+# go both ways, Wi-Fi or the cable. Only the page's own words: the browser
 # code names nothing, and the server is the same.
-if [ "$DEVICE" = pixel2 ]; then
-	sed 's/Over The Hare/Down To The Wire/g' "$ROOT/res/web/index.html" > "$P/res/web/index.html"
-fi
+sed 's/Over The Hare/Down To The Wire/g' "$ROOT/res/web/index.html" > "$P/res/web/wire.html"
 # The device has curl and OpenSSL but nothing to trust - see res/ssl/README.md.
 # Without this, every HTTPS request fails verification and achievements never
 # arrive, with an error that reads like the network being down.

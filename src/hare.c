@@ -37,6 +37,7 @@ static unsigned now_ms(void)
 }
 
 static char     g_web[XFER_PATH_MAX];
+static const char *g_page = "index.html";   /* what "/" serves: hare_set_page */
 static char     g_pin[PIN_LEN + 1];
 static char     g_token[MAX_SESSIONS][TOKEN_LEN + 1];
 static int      g_ntoken;
@@ -380,6 +381,8 @@ void hare_set_albums(char *(*wanted)(size_t *len, char *why, size_t wn),
 }
 
 void hare_set_after_write(void (*fn)(const char *abs)) { g_after_write = fn; }
+
+void hare_set_page(const char *page) { g_page = page ? page : "index.html"; }
 
 /* A hook's JSON answer, or its reason as a 500. */
 static void reply_json(httpd_req *r, char *json, size_t len, const char *why,
@@ -809,7 +812,7 @@ static void on_request(httpd_req *r, bool done, void *ctx)
 	if (!done && !strcmp(m, "GET") &&
 	    (!strcmp(path, "/") || !strncmp(path, "/web/", 5))) {
 		char file[XFER_PATH_MAX];
-		const char *name = !strcmp(path, "/") ? "index.html" : path + 5;
+		const char *name = !strcmp(path, "/") ? g_page : path + 5;
 
 		/* From res/web on the card, so the page can be restyled without a
 		 * rebuild. The name is checked the same way a rename target is:

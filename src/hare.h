@@ -93,6 +93,11 @@ void hare_set_albums(char *(*wanted)(size_t *len, char *why, size_t wn),
                      char *(*pick)(int id, const char *json, size_t n,
                                    size_t *len, char *why, size_t wn));
 
+/* Which page in res/web "/" serves: index.html, Over The Hare's, or
+ * wire.html, the same page named Down To The Wire (mk/payload.sh), while the
+ * files go over the USB cable. NULL is index.html. */
+void hare_set_page(const char *page);
+
 /* Called with a file's absolute path once an upload of it is in place, so the
  * launcher can shrink a cover. Unset, nothing is told. */
 void hare_set_after_write(void (*fn)(const char *abs));
