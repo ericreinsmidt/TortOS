@@ -10151,6 +10151,154 @@ static void launch(app *a)
 	fprintf(stderr, "exit: back in %u ms\n", plat_now_ms() - t_back0);
 }
 
+/* ---------- a card from the systems row ----------------------------------- */
+
+/* Ten presses, the last in the lowest four bits, each an in_button. */
+#define SEQ_KEYS 0x2233010154ull
+#define SEQ_LEN  10
+
+/* The texts, base64: a header the build generates (mk/notes.sh). */
+#include "notes.h"
+#define SEQ_COUNT ((int)(sizeof SEQ_TEXT / sizeof SEQ_TEXT[0]))
+
+/* The last presses on the systems row, newest in the lowest four bits. 0xF
+ * is no button, so a fresh start matches nothing. */
+static unsigned long long g_seq_hist = ~0ull;
+
+/* Whether the newest k presses are the sequence's first k. */
+static bool seq_prefix(unsigned long long hist, int k)
+{
+	unsigned long long mask = (1ull << (4 * k)) - 1;
+
+	return (hist & mask) == ((SEQ_KEYS >> (4 * (SEQ_LEN - k))) & mask);
+}
+
+/* Feeds this frame's press. The sequence's last two, B and A, are taken from
+ * the shelf when the presses before them match, so A doesn't open a system;
+ * true when A completes it. */
+static bool seq_step(in_state *in)
+{
+	in_button got = IN_NONE;
+	bool done = false;
+	int b, n = 0;
+
+	for (b = IN_LEFT; b <= IN_MENU; b++)
+		if (in->pressed[b]) { got = (in_button)b; n++; }
+	if (n == 0) return false;
+	if (n > 1) { g_seq_hist = ~0ull; return false; }
+
+	if (got == IN_BACK && seq_prefix(g_seq_hist, SEQ_LEN - 2))
+		in->pressed[IN_BACK] = false;
+	if (got == IN_ACCEPT && seq_prefix(g_seq_hist, SEQ_LEN - 1)) {
+		in->pressed[IN_ACCEPT] = false;
+		done = true;
+	}
+	g_seq_hist = done ? ~0ull : (g_seq_hist << 4) | (unsigned)got;
+	return done;
+}
+
+/* Standard base64, no line breaks. */
+static void seq_decode(const char *src, char *out, size_t outn)
+{
+	static const char abc[] =
+		"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+	unsigned acc = 0;
+	int bits = 0;
+	size_t n = 0;
+
+	for (; *src && *src != '='; src++) {
+		const char *p = strchr(abc, *src);
+
+		if (!p) continue;
+		acc = (acc << 6) | (unsigned)(p - abc);
+		bits += 6;
+		if (bits >= 8) {
+			bits -= 8;
+			if (n + 1 < outn) out[n++] = (char)((acc >> bits) & 0xFF);
+		}
+	}
+	out[n] = '\0';
+}
+
+/* The next text, in a shuffled order that goes through them all before any
+ * comes round again, and never the same one twice running. Fresh each boot. */
+static const char *seq_next(void)
+{
+	static int order[SEQ_COUNT], at = SEQ_COUNT, last = -1;
+	int i;
+
+	if (at == SEQ_COUNT) {
+		srand((unsigned)time(NULL) ^ plat_now_ms());
+		for (i = 0; i < SEQ_COUNT; i++) order[i] = i;
+		for (i = SEQ_COUNT - 1; i > 0; i--) {
+			int j = rand() % (i + 1), t = order[i];
+
+			order[i] = order[j];
+			order[j] = t;
+		}
+		if (order[0] == last) {
+			int t = order[0];
+
+			order[0] = order[SEQ_COUNT - 1];
+			order[SEQ_COUNT - 1] = t;
+		}
+		at = 0;
+	}
+	last = order[at++];
+	return SEQ_TEXT[last];
+}
+
+/* The card: the text over the mark, faint, on the dimmed shelf. A or B
+ * closes it; MENU, power and Auto Off do what they do on the shelf. */
+static void seq_card(app *a)
+{
+	char text[256], lines[CHV_WRAP_LINES][CHV_WRAP_COLS];
+	TTF_Font *f = ui_font(UI_F_MENU);
+	int line = ui_font_line(UI_F_MENU), pad = menu_pad();
+	int w = menu_std_width(a), n, i, done = 0;
+	SDL_Rect panel;
+	float rad;
+
+	seq_decode(seq_next(), text, sizeof text);
+	n = wrap_text(f, text, w, lines, CHV_WRAP_LINES);
+
+	panel.w = w + pad * 2;
+	panel.h = n * line + pad * 4;
+	if (panel.h < TORTOS_SCREEN_H / 3) panel.h = TORTOS_SCREEN_H / 3;
+	panel.x = (TORTOS_SCREEN_W - panel.w) / 2;
+	panel.y = (TORTOS_SCREEN_H - panel.h) / 2;
+	/* The mark is five radii tall and about seven wide with its head. */
+	rad = panel.h * 0.75f / 5.0f;
+	if (rad > panel.w * 0.75f / 7.0f) rad = panel.w * 0.75f / 7.0f;
+
+	plat_input_flush();
+	memset(&a->in, 0, sizeof a->in);
+
+	while (!done && !want_quit) {
+		plat_input_poll(&a->in);
+
+		if (a->in.pressed[IN_BACK] || a->in.pressed[IN_ACCEPT]) done = 1;
+		if (a->in.pressed[IN_MENU]) done = 1;
+		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); break; }
+
+		chv_backdrop(a, NULL, true);
+		ui_glow(a->r, &panel, MENU_ACCENT, 60, 1.5f);
+		ui_panel(a->r, &panel, MENU_RADIUS, MENU_ACCENT);
+		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+		/* Centered on the whole mark, head included, not on its middle cell. */
+		draw_shell(a->r, panel.x + panel.w / 2 - 0.866f * rad,
+		           panel.y + panel.h / 2, rad, 1.0f, 0.0f, 30);
+		for (i = 0; i < n; i++)
+			ui_text(a->r, f, lines[i], panel.x + panel.w / 2,
+			        panel.y + (panel.h - n * line) / 2 + i * line, 0, UI_TEXT);
+		plat_present();
+		SDL_Delay(8);
+	}
+
+	plat_input_flush();
+	memset(&a->in, 0, sizeof a->in);
+}
+
 /* ---------- input --------------------------------------------------------- */
 
 static void enter_system(app *a)
@@ -12259,6 +12407,8 @@ int main(int argc, char *argv[])
 		if (CARD_DIRS[g_dir].both) {
 			update_both(&a);
 		} else {
+			if (a.screen != SCREEN_SYSTEMS) g_seq_hist = ~0ull;
+			else if (seq_step(&a.in)) { seq_card(&a); continue; }
 			if (a.in.pressed[IN_MENU]) { tortos_menu(&a); continue; }
 			if (a.screen == SCREEN_SYSTEMS) update_systems(&a);
 			else update_games(&a);

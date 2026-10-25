@@ -48,7 +48,15 @@ creds:
 	@cmp -s $(CREDS).new $(CREDS) 2>/dev/null || mv -f $(CREDS).new $(CREDS)
 	@rm -f $(CREDS).new
 
-$(BUILD)/tortos.elf: $(SRC) $(CREDS) $(wildcard src/*.h)
+# The texts of the systems row's card, a generated header too (mk/notes.sh).
+# Run every build, and the header replaced only when it changes.
+NOTES := $(BUILD)/notes.h
+.PHONY: FORCE
+FORCE:
+$(NOTES): FORCE
+	@sh mk/notes.sh $@
+
+$(BUILD)/tortos.elf: $(SRC) $(CREDS) $(NOTES) $(wildcard src/*.h)
 	mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(SRC) $(LDLIBS)
 
