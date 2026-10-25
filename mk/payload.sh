@@ -77,7 +77,10 @@ fi
 # Without this, every HTTPS request fails verification and achievements never
 # arrive, with an error that reads like the network being down.
 cp "$ROOT/res/ssl/cacert.pem" "$P/"
-cp "$ROOT/THIRD-PARTY-LICENSES.md" "$P/"  # notices for the redistributed software
+# The notices for what the card carries that isn't TortOS's, in a Licenses
+# folder of its own, where plastron puts its notices and Diatom's beside it
+mkdir -p "$OUT/Licenses"
+cp "$ROOT/THIRD-PARTY-LICENSES.md" "$OUT/Licenses/TortOS.md"
 cp "$DIATOM_ELF" "$P/diatom"
 cp "$VENDOR_DIR/cores/"*.so "$P/cores/"
 

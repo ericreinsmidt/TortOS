@@ -1,73 +1,82 @@
 # Third-party notices
 
-TortOS itself - everything under `src/`, `tools/`, `mk/`, and the configs,
-scripts and generated art written for this project - is licensed under the
-**GNU General Public License, version 3 or later**; see `LICENSE`. Releases up to
-v1.6.0 were MIT.
+TortOS itself - everything under `src/`, `tools/`, `mk/`, `sd/`, and the
+configs, scripts and art written for this project - is licensed under the
+**GNU General Public License, version 3 or later**; see `LICENSE`. Releases up
+to v1.6.0 were MIT.
 
-A built TortOS card (`out/sd/`) also redistributes third-party software that
-keeps its own license. This file lists those components and their terms, and is
-copied onto the card as `TortOS/THIRD-PARTY-LICENSES.md` by `mk/payload.sh`.
+A TortOS card also carries software and files that aren't TortOS's, which keep
+their own licenses. This file lists them, with where each comes from, and goes
+on the card as `Licenses/TortOS.md` (`mk/payload.sh`), beside the notices of
+Diatom and of plastron, the system TortOS runs on.
 
 ---
 
-## diatom (the in-game libretro host)
+## Diatom (the emulator games run in)
 
-- **Origin:** an independent frontend, built in its own repository and shipped
-  as `TortOS/diatom`. https://github.com/ericreinsmidt/diatom
+- **Origin:** its own project, built in its own repository and shipped as
+  `TortOS/diatom`. https://github.com/ericreinsmidt/diatom
 - **License:** **Mozilla Public License 2.0** (MIT up to 2026-10-25). Its
-  vendored `libretro.h` is MIT under the RetroArch team's own scoped notice.
-- TortOS's launcher runs it as a resident process and talks to it over a Unix
-  socket; it does not link against it. Diatom ships no cores of its own.
-
-## No third-party firmware components
-
-TortOS ships no launcher, emulator or settings library from another project.
-Volume and brightness are TortOS's own code against the device's ALSA control
-and display-engine interfaces, and the devices' builds use the cross-compiler
-plastron's Buildroot builds.
-
-The SDL2 libraries TortOS links against are the device's own, in
-`/usr/trimui/lib`, and are not redistributed on the card.
+  vendored `libretro.h` is MIT under the RetroArch team's own scoped notice,
+  and its vendored part of RetroAchievements' rcheevos is MIT.
+- TortOS runs it as a separate process and talks to it over a Unix socket; it
+  does not link against it.
 
 ---
 
 ## libretro cores (`vendor/cores/`, shipped as `TortOS/cores/`)
 
-| Core | System | License |
-|------|--------|---------|
-| `fceumm_libretro.so` | NES | GPL-2.0-or-later |
-| `mednafen_pce_fast_libretro.so` | TurboGrafx-16 / PC Engine | GPL-2.0-or-later (Mednafen-derived) |
-| `mgba_libretro.so` | Game Boy, Game Boy Color, Game Boy Advance | MPL-2.0 |
-| `snes9x2010_libretro.so` | SNES | **Non-commercial** |
-| `genesis_plus_gx_libretro.so` | Genesis, Master System, Game Gear | **Non-commercial** |
-| `mednafen_ngp_libretro.so` | Neo Geo Pocket, Neo Geo Pocket Color | GPL-2.0 (Beetle NeoPop, Mednafen-derived) |
+Each core is its authors' work, built by the libretro project's buildbot
+(https://buildbot.libretro.com) unless noted, pinned by sha256 in
+`mk/fetch-vendor.sh`. The commit is the one the binary names as its source.
+
+| Core | Systems | License | Source |
+|------|---------|---------|--------|
+| `fceumm_libretro.so` | NES | GPL-2.0-or-later | https://github.com/libretro/libretro-fceumm at 236ccdf |
+| `mednafen_pce_fast_libretro.so` | TurboGrafx-16 and CD | GPL-2.0 (Mednafen-derived) | https://github.com/libretro/beetle-pce-fast-libretro, version 1.31.0.0 (the binary names no commit) |
+| `mednafen_ngp_libretro.so` | Neo Geo Pocket and Color | GPL-2.0 (Mednafen-derived) | https://github.com/libretro/beetle-ngp-libretro at a50d5ac |
+| `mgba_libretro.so` | Game Boy, Color and Advance | MPL-2.0 | https://github.com/libretro/mgba at e31759b, with mGBA's own fix 543a197 from https://github.com/mgba-emu/mgba, built by `mk/build-mgba-bridge.sh` |
+| `snes9x2010_libretro.so` | SNES | **Non-commercial** | https://github.com/libretro/snes9x2010 at 7db129b |
+| `genesis_plus_gx_libretro.so` | Genesis, Master System, Game Gear | **Non-commercial** | https://github.com/libretro/Genesis-Plus-GX at b7e79b3 |
 
 **The last two carry a non-commercial restriction.** They are not open source
-under either the OSI or FSF definition and they restrict commercial
-redistribution outright, which constrains what a card carrying them may be
-sold as - hobby redistribution is what every firmware shipping them relies
-on. A card built without SNES and the Sega systems carries no such
+under either the OSI or FSF definition and they forbid commercial
+redistribution outright: a card carrying them can't be sold, or shipped with a
+device that is. Hobby redistribution is what every firmware shipping them
+relies on. A card without SNES and the Sega systems carries no such
 restriction.
-
-Core source: the libretro organization and each core's upstream repository
-(https://github.com/libretro).
 
 ---
 
 ## Runtime libraries
 
-None are redistributed. Measured 2026-08-26, the cores need only
-`libc`, `libm`, `librt`, `libstdc++`, `libgcc_s` and `ld-linux`, and the
-launcher needs those plus `libSDL2`, `libSDL2_image` and `libSDL2_ttf` - every
-one of which ships in the device's own firmware. The eight compression and
-codec libraries TortOS once carried were a previous emulator's dependencies and
-left with it.
+None are on the card. TortOS links against libraries plastron's system
+carries: SDL2, SDL2_image and SDL2_ttf (with FreeType, libpng and
+libjpeg-turbo beneath them), SQLite, libcurl with OpenSSL (RetroAchievements
+and box art), FFmpeg (Muse plays music and audiobooks through it), ALSA and
+glibc. Their versions and licenses are in plastron's package list,
+`Licenses/plastron-packages.md` on the card.
 
 ---
 
-## Fonts
+## Files TortOS carries
 
-- `res/fonts/menu.ttf` - **Josefin Sans**, SIL Open Font License 1.1. Full text
-  in `res/fonts/OFL.txt`. It is TortOS's UI face, the in-game menu's face, and
-  the face the boot animation and the system cards are lettered in.
+- `res/fonts/menu.ttf` and `res/fonts/wordmark.ttf` - **Josefin Sans** (regular,
+  and thin italic for the wordmark), by Santiago Orozco, SIL Open Font License
+  1.1; full text in `res/fonts/OFL.txt`. TortOS's UI face, the in-game menu's,
+  and the one the boot animation and the system cards are lettered in.
+- `res/ssl/cacert.pem`, shipped as `TortOS/cacert.pem` - **Mozilla's root
+  certificate list**, as the curl project publishes it
+  (https://curl.se/ca/cacert.pem), Mozilla Public License 2.0. It lets TortOS
+  check the servers it talks to over HTTPS; `res/ssl/README.md` says when it
+  was fetched.
+
+---
+
+## Services TortOS talks to
+
+Not software on the card, but TortOS wouldn't be what it is without them:
+
+- **RetroAchievements** (https://retroachievements.org): the achievements, and
+  the rcheevos library Diatom checks them with.
+- **ScreenScraper** (https://www.screenscraper.fr): box art and game names.
