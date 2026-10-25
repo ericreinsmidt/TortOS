@@ -6,45 +6,24 @@ every control, menu row and setting, and the reasons behind them.
 ## Installing
 
 The [TortOS Installer](https://github.com/ericreinsmidt/TortOS-Installer/releases/latest)
-does all of this for either device. By hand, the Brick's card is set up as
-below; the Pixel 2's is a disk image written over the whole card, as the
-[README](../README.md#install) says.
+does all of this for either device. By hand, each device's card is a disk
+image written over the whole card, as the [README](../README.md#install) says.
 
-**Format the card FAT32 or exFAT**, with a Master Boot Record partition scheme.
+The image is [plastron](https://github.com/ericreinsmidt/plastron), the small
+Linux both devices run TortOS on: a boot partition and the system itself,
+read-only, and on the Brick a small partition for what the system keeps, like
+the Bluetooth pairings. The first boot turns the rest of the card into TORTOS,
+an exFAT partition, and puts TortOS on it. That is where games, music, saves
+and settings go, and the part a computer opens.
 
-| | |
-|---|---|
-| **macOS** | Disk Utility, `View -> Show All Devices` so you get the whole card rather than just its volume, then `Erase`: format **ExFAT**, scheme **Master Boot Record**. |
-| **Linux** | `mkfs.exfat` on an MBR-partitioned card. |
-| **Windows** | Right-click the card, `Format`, **exFAT**. |
-
-Both work - the kernel has both - and nothing on the card comes near FAT32's
-4 GB limit on a file. The [TortOS Installer](https://github.com/ericreinsmidt/TortOS-Installer)
-formats FAT32. By hand, exFAT is what every formatter offers at the size of card
-anyone actually uses, Windows' own included, so it is the one the steps above
-name.
+Nothing is written to the device itself. The Brick starts from the card ahead
+of its own system, so **taking the card out is enough to get the stock system
+back**; [Undoing it](#undoing-it) has the rest.
 
 Copying from macOS leaves `._name` metadata files beside everything. They are
 harmless - the launcher skips every name beginning with a dot, so they never
-show up as games - and `dot_clean /Volumes/YOURCARD` removes them if they
+show up as games - and `dot_clean /Volumes/TORTOS` removes them if they
 bother you.
-
-The first boot is the one that installs: the stock firmware runs the card's
-installer, which sets `/usr/trimui/bin/runtrimui.sh` aside as
-`runtrimui-original.sh`, puts its own there, replaces the two splash images
-and then comes up in TortOS like every boot after it.
-
-That hook is what starts TortOS, and all it does is look for the card - no
-card, or a card without TortOS on it, and it hands straight back to the
-original. **Taking the card out is enough to get the stock system back**;
-[Undoing it](#undoing-it) has the rest.
-
-> **`.tmp_update` starts with a dot**, so Finder and most file managers hide
-> it and a drag of "everything" leaves it behind. A card missing it gets
-> through the installer and then powers straight off looking for the half that
-> is not there, and boots stock from then on. In Finder, `Cmd-Shift-.` shows
-> hidden files; from a terminal, `cp -R` the unzipped contents and it comes
-> along on its own.
 
 Building it yourself instead is in [building.md](building.md).
 
@@ -71,39 +50,16 @@ something in it.
 
 ### Undoing it
 
-TortOS replaces the boot splash and the loading splash on first boot, and backs
-both up beside itself (`bootlogo.stock.bmp`, `splash.stock.png`) along with the
-stock init script (`/etc/init.d/runtrimui.tortos-bak`). Removing the card is
-enough to boot stock again; `/usr/trimui/bin/runtrimui-original.sh` is the
-original hook.
+On the Brick, take the card out: TortOS writes nothing to the device, so its
+own system starts as it always did. On the Pixel 2 the card is the system, and
+another card with another system replaces it.
 
-What removing the card does **not** undo is anything written to the device
-itself. The stock root filesystem is read-only and everything writable is an
-overlay on the internal eMMC, so what TortOS puts there stays there:
-
-```
-/usr/trimui/bin/runtrimui.sh            the hook
-/usr/trimui/bin/runtrimui-original.sh   the stock hook, moved aside
-/usr/trimui/bin/setbright               brightness before the animation,
-/usr/trimui/bin/tortos-bootbright.sh    re-copied by launch.sh every boot
-/etc/init.d/runtrimui                   patched to call the line above
-/etc/init.d/runtrimui.tortos-bak        the version before that patch
-/etc/splash.png                         the pic2fb loading splash
-/mnt/boot/bootlogo.bmp                  the u-boot splash, on mmcblk0p1
-```
-
-Eight files, none of them a driver and none of them replacing anything the
-system needs to run. TortOS boots on top of the stock system rather than
-replacing it - which is also why **the Wi-Fi networks and their passwords
-survive** a reformatted card. They live in `/etc/wifi/wpa_supplicant.conf`,
-written by the stock `wpa_supplicant` that TortOS drives rather than replaces,
-on the eMMC and never on the card. Forget them from the Wi-Fi screen before the
-device goes to anyone else.
-
-The two splashes are the awkward pair: they are replaced on the device, and the
-originals are saved **to the card** as `bootlogo.stock.bmp` and
-`splash.stock.png`. Keep a copy of those somewhere else if the stock boot logo
-matters to you - a card is the one part of this that gets reformatted.
+Everything TortOS keeps is on the card: battery saves in `Saves/`; settings,
+states and achievements in `.userdata/`; the Wi-Fi networks and their
+passwords in `.userdata/brick/wifi/` (`pixel2` on the Pixel 2); and the
+Brick's Bluetooth pairings on its small system partition. Reformatting the
+card takes all of it with it, and nothing is left behind anywhere else, so a
+card is the thing to wipe before it goes to anyone else.
 
 ## Controls and menus
 
@@ -169,7 +125,7 @@ than any one console:
 | **Bluetooth** | the connected headset, or `not connected` - pair, connect and forget |
 | **Audio Output** | `Auto` or `Speaker`, and where Auto landed - see **Audio** below |
 | **Audio Channels** | `stereo`, `mono`, `mono left` or `mono right` - see **Audio** below |
-| **Over The Hare** | the file server; needs Wi-Fi and says so when there is none. On the Pixel 2 it is **Down To The Wire**, over the USB cable, always at `10.42.0.1` |
+| **Over The Hare** | the file server; needs Wi-Fi and says so when there is none. While a computer is on the USB cable it is **Down To The Wire** instead, always at `10.55.0.2` on the Brick and `10.42.0.1` on the Pixel 2 |
 | **Date & Time** | the clock and the time zone, set with left and right - see below |
 | **Auto Off** | how long without a button before the device powers itself down |
 | **UI Theme** | `Plain Jane` or `Fancy Pants` - which art the shelves wear |
@@ -180,16 +136,18 @@ than any one console:
 | **Controls** | every button and what it does, a page per place |
 | **About TortOS** | version, address, battery, uptime |
 
-On the Pixel 2, which has no radio, the rows that need one are not there at
-all: Wi-Fi, Bluetooth, Box Art, Cheevos and ScreenScraper here, Box Art in a
-console's menu, and Album Art in Muse's.
+On the Pixel 2, which has no radio of its own, the rows that need Wi-Fi are
+there only while a USB Wi-Fi adapter is plugged in: Wi-Fi, Box Art, Cheevos,
+ScreenScraper and Over The Hare here (Down To The Wire stays, with a computer
+on the cable), Box Art in a console's menu, and Album Art in Muse's. Bluetooth
+is never there.
 
 Date & Time has a row for each part of the clock and one for the time zone,
 each changed with left and right and set the moment it changes, so the time
 holds through a power-off. The zones are one or two cities per hour of offset,
-west to east. On the Brick, Wi-Fi sets the clock again whenever it connects,
-so there it is mostly for the zone; the Pixel 2 has no network to take the
-time from, so set it there once.
+west to east. Wi-Fi sets the clock again whenever it connects, so with it the
+screen is mostly for the zone; a Pixel 2 without an adapter has no network to
+take the time from, so set it there once.
 
 Over The Hare and Box Art need a network, and go quiet without one rather than
 disappearing - a row that vanishes teaches nobody why. Cheevos stays reachable
@@ -285,7 +243,7 @@ speaker.**
 
 The adapter is the Pixel 2's, whose USB-C port takes one the moment it is
 plugged in; the Brick's port does not. Bluetooth is the Brick's; the Pixel 2
-has no radio.
+has none.
 
 A cable wins outright, in every setting. Someone who physically plugged
 something in has said what they want more plainly than any menu can, and a

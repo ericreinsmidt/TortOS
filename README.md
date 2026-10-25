@@ -51,7 +51,7 @@ https://github.com/user-attachments/assets/09b52bf2-bdb6-4a93-8613-27059d825ebf
 
 **Everything happens on the handheld.** Join Wi-Fi, fetch box art, sign in to RetroAchievements, pair headphones and send games over from your phone, all on the Brick. You need a computer once, to set up the card.
 
-**Your Brick stays yours.** TortOS runs from the SD card. Take the card out and the Brick boots its own system again.
+**Your Brick stays yours.** TortOS runs from the SD card and changes nothing on the Brick itself. Take the card out and the Brick boots its own system again.
 
 ## Features
 
@@ -59,7 +59,7 @@ https://github.com/user-attachments/assets/09b52bf2-bdb6-4a93-8613-27059d825ebf
 - **Two looks:** Plain Jane cards, or Fancy Pants photos of each console.
 - **RetroAchievements:** sign in on the device. A game's achievements download once and then work offline, and anything you unlock offline is sent later.
 - **Box art the Brick finds itself,** from libretro's collection with no account, or from ScreenScraper with a free one, which brings each game's year, genre and synopsis too. Or add your own.
-- **Over The Hare:** move games, music, audiobooks, saves and covers on and off the card from any browser on your Wi-Fi, behind a PIN. On the Pixel 2, which has no Wi-Fi, the same goes over its USB cable, as Down To The Wire.
+- **Over The Hare:** move games, music, audiobooks, saves and covers on and off the card from any browser on your Wi-Fi, behind a PIN. Or over a USB cable from your computer, with no Wi-Fi at all, as Down To The Wire.
 - **Autosave and resume,** plus six save slots for when you want a checkpoint.
 - **Turbo buttons:** X and Y press A and B for you, on the nine consoles whose controllers had two face buttons. On Game Boy Advance, L2 and R2 do the same for L and R.
 - **Fast forward:** hold MENU and press R1 to run a game at 2x, 3x or 4x, and once more to go back.
@@ -94,38 +94,28 @@ You need a TrimUI Brick, Brick Hammer or GKD Pixel 2, a microSD card and, just t
 
 The [TortOS Installer](https://github.com/ericreinsmidt/TortOS-Installer/releases/latest), for macOS, Windows and Linux, sets up a card for either device: it downloads the latest TortOS and puts it on the card, or updates a card that already has it. The steps below also say how to do it by hand.
 
-### On the Brick
+### Setting up a card
 
-With the [TortOS Installer](https://github.com/ericreinsmidt/TortOS-Installer/releases/latest), choose **TrimUI Brick** and **Fresh install**, then go on from step 4. By hand, from the start:
+The card is the whole system on both devices: TortOS on [plastron](https://github.com/ericreinsmidt/plastron), a small Linux built for them.
 
-1. **Format the card as FAT32 or exFAT,** with a Master Boot Record partition scheme. Both work; the TortOS Installer uses FAT32. On a Mac, open Disk Utility, choose *View > Show All Devices*, and erase the card itself rather than its volume.
-2. **Download `TortOS-v1.6.0.zip`** from [Releases](https://github.com/ericreinsmidt/TortOS/releases/latest) and unzip it.
-3. **Copy everything inside it to the root of the card:** `TortOS/`, `.tmp_update/`, `trimui/`, `Roms/`, `Music/`, `Audiobooks/`, `Bios/` and `Saves/`.
-4. **Put the card in the Brick and turn it on.** The first boot installs TortOS, and every boot after that starts it.
-5. **Add games** to the folders in `Roms/`, from the computer now or over Wi-Fi later.
+With the TortOS Installer, choose your device and **Fresh install**, then go on from step 3. By hand, from the start:
 
-> [!IMPORTANT]
-> `.tmp_update` starts with a dot, so most computers hide it and it gets left behind. Without it the first boot powers off and the Brick keeps starting its stock system. On a Mac, press <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>.</kbd> in Finder to show hidden files before you copy.
-
-### On the GKD Pixel 2
-
-The Pixel 2 has no system of its own to run on, so the card is the whole system: TortOS on [plastron](https://github.com/ericreinsmidt/plastron), a small Linux built for it.
-
-With the TortOS Installer, choose **GKD Pixel 2** and **Fresh install**, then go on from step 3. By hand, from the start:
-
-1. **Download `TortOS-v1.6.0-pixel2.img.xz`** from [Releases](https://github.com/ericreinsmidt/TortOS/releases/latest).
+1. **Download your device's image** from [Releases](https://github.com/ericreinsmidt/TortOS/releases/latest): `TortOS-v2.0.0-brick.img.xz` for the Brick and Brick Hammer, `TortOS-v2.0.0-pixel2.img.xz` for the Pixel 2.
 2. **Write it to the card** with any program that writes disk images, like Raspberry Pi Imager. It erases everything on the card.
-3. **Put the card in the Pixel 2 and turn it on.** The first boot takes a few seconds longer while it turns the rest of the card into space for games, music and saves. Every boot after that comes straight up.
-4. **Set the clock** under **MENU > Date & Time**, with the time zone. The Pixel 2 has no network to take the time from, and keeps it once it is set.
-5. **Add games** to the folders in `Roms/`. Put the card back in the computer, where it shows up as TORTOS.
+3. **Put the card in the device and turn it on.** The first boot takes a bit longer while it turns the rest of the card into space for games, music and saves. Every boot after that comes straight up.
+4. **Set the time zone** under **MENU > Date & Time**. Wi-Fi sets the time whenever it connects; without it, set the time there too, and it keeps it.
+5. **Add games** to the folders in `Roms/`. Put the card back in the computer, where it shows up as TORTOS, or send them over later, with Wi-Fi or the USB cable.
 
-The Pixel 2 has no Wi-Fi or Bluetooth, so it has no box art fetched on the device and no RetroAchievements. Down To The Wire (below) fetches box art and album covers through your computer instead, and moves files on and off over the USB cable. Or add your own.
+> [!NOTE]
+> **Coming from TortOS 1.x on the Brick?** First copy your games, music and audiobooks off the card yourself: the installer erases them with the card and doesn't keep them. Then put the card in the computer and choose **TrimUI Brick** and **Fresh install** in the TortOS Installer. It copies your saves, settings and BIOS files to a folder in your Documents and erases the card. After the Brick's first start, put the card back in the computer and choose **Put them back** to restore those saves, settings and BIOS files. Then copy your games, music and audiobooks back onto the card.
+
+The Pixel 2 has no radio of its own. A USB Wi-Fi adapter in its USB-C port gives it Wi-Fi while it's plugged in, and with it box art, RetroAchievements and Over The Hare: one whose Realtek chip the Linux rtl8xxxu driver knows, like the TP-Link TL-WN725N on a USB-C adapter. Without one, Down To The Wire (below) moves files over the USB cable and fetches box art and album covers through your computer. Or add your own. There's no Bluetooth.
 
 ### Updating
 
-Put the card in the computer and choose **Update** in the TortOS Installer. The new TortOS goes on, and the games, music, saves and settings stay. On the Pixel 2 the first boot after takes a few seconds longer while it copies the new TortOS into place.
+Put the card in the computer and choose **Update** in the TortOS Installer. The new TortOS goes on, and the games, music, saves and settings stay. The first boot after takes a bit longer while it copies the new TortOS into place.
 
-By hand on the Brick, copy the new zip's `TortOS/`, `.tmp_update/` and `trimui/` over the card's, replacing what is there. On the Pixel 2 the installer is the only way that keeps the games: writing the image by hand erases the card.
+The installer is the only way that keeps them: writing the image by hand erases the card.
 
 ### Adding games over Wi-Fi
 
@@ -140,43 +130,20 @@ The PIN is new every time you open Over The Hare.
 
 <br clear="right">
 
-### Adding games over the USB cable (Pixel 2)
+### Adding games over the USB cable
 
-The same thing over a cable, called Down To The Wire. It works with a Mac, Linux, or Windows 11; Windows 10 has no driver for this kind of connection.
+The same thing over a cable, with no Wi-Fi, called Down To The Wire. It works with a Mac, Linux, or Windows 11; Windows 10 has no driver for this kind of connection.
 
-1. Plug the Pixel 2 into the computer with a USB cable.
-2. Open **MENU > Down To The Wire**. It shows `10.42.0.1` and a PIN.
-3. Open `http://10.42.0.1` in a browser on that computer, and type the PIN.
+1. Plug the device into the computer with a USB cable.
+2. Open **MENU > Down To The Wire**, which takes Over The Hare's place while a computer is on the cable. It shows an address and a PIN.
+3. Open that address in a browser on that computer, `http://10.55.0.2` on the Brick or `http://10.42.0.1` on the Pixel 2, and type the PIN.
 4. Drag games into their console's folder, albums into `Music` or books into `Audiobooks`. They're on the shelf when you leave the screen.
 
 ### Removing TortOS
 
-Take the card out. The Brick boots its own system again. On the Pixel 2 the card is the system, so another card with another system replaces it.
+Take the card out. The Brick boots its own system again, as it was. On the Pixel 2 the card is the system, so another card with another system replaces it.
 
-Before you reformat the card or give the Brick away:
-
-- **Copy `TortOS/bootlogo.stock.bmp` and `TortOS/splash.stock.png` somewhere safe.** They're the Brick's original boot pictures, and the card holds the only copy.
-- **Forget your Wi-Fi networks** with X on the Wi-Fi screen. Their passwords are stored on the Brick, not on the card.
-
-<details>
-<summary>What TortOS leaves on the Brick itself</summary>
-
-A boot hook that looks for the card, and hands back to the stock system when TortOS isn't on it:
-
-```
-/usr/trimui/bin/runtrimui.sh            the hook
-/usr/trimui/bin/runtrimui-original.sh   the stock hook, moved aside
-/usr/trimui/bin/setbright               brightness before the boot animation,
-/usr/trimui/bin/tortos-bootbright.sh    both copied again every boot
-/etc/init.d/runtrimui                   patched to call the line above
-/etc/init.d/runtrimui.tortos-bak        the version before that patch
-/etc/splash.png                         the loading splash
-/mnt/boot/bootlogo.bmp                  the boot logo
-```
-
-None of them is a driver, and none replaces anything the system needs to run.
-
-</details>
+Everything TortOS keeps is on the card, Wi-Fi passwords and Bluetooth pairings included, so reformat it before you give it away.
 
 ## Controls
 
@@ -214,7 +181,7 @@ Don't like a cover? Press X on the game and choose **Replace Box Art**. It looks
 <details>
 <summary><b>How do achievements work?</b></summary>
 
-Sign in to your RetroAchievements account under **MENU > Cheevos**. The first time you start a game, the Brick needs Wi-Fi to look it up and download its achievements. After that the game works offline, and anything you unlock offline is kept and sent to your account later.
+Sign in to your RetroAchievements account under **MENU > Cheevos**. The first time you start a game, the device needs Wi-Fi to look it up and download its achievements. After that the game works offline, and anything you unlock offline is kept and sent to your account later.
 
 </details>
 
@@ -232,7 +199,7 @@ The Pixel 2 has no Bluetooth: use wired headphones, or a USB-C headphone adapter
 <details>
 <summary><b>How do I add music?</b></summary>
 
-Put it in `Music/` on the card, from a computer, over Wi-Fi with Over The Hare, or over the Pixel 2's cable with Down To The Wire, a folder per artist and a folder inside that per album: `Music/Radiohead/The Bends/01 Planet Telex.mp3`. An album folder put straight into `Music/` is moved under its artist when its tags name one, and songs in no folder at all are moved into `Music/Singles/`, an album of their own. MP3, M4A, M4B, MP4, AAC, FLAC, Ogg, Opus and WAV all play. Muse appears on the shelf once there's music, and each album's cover comes from its own files, or a picture in the album's folder. **MENU > Album Art** on Muse's shelf fetches a sharper cover over Wi-Fi from [MusicBrainz](https://musicbrainz.org)'s Cover Art Archive for any album whose files carry none, or only a small one.
+Put it in `Music/` on the card, from a computer, over Wi-Fi with Over The Hare, or over the USB cable with Down To The Wire, a folder per artist and a folder inside that per album: `Music/Radiohead/The Bends/01 Planet Telex.mp3`. An album folder put straight into `Music/` is moved under its artist when its tags name one, and songs in no folder at all are moved into `Music/Singles/`, an album of their own. MP3, M4A, M4B, MP4, AAC, FLAC, Ogg, Opus and WAV all play. Muse appears on the shelf once there's music, and each album's cover comes from its own files, or a picture in the album's folder. **MENU > Album Art** on Muse's shelf fetches a sharper cover over Wi-Fi from [MusicBrainz](https://musicbrainz.org)'s Cover Art Archive for any album whose files carry none, or only a small one.
 
 </details>
 
@@ -253,7 +220,7 @@ Battery saves are `.srm` files in `Saves/`, named after the game. Save states, t
 <details>
 <summary><b>Something went wrong. How do I send the logs?</b></summary>
 
-Open **MENU > Over The Hare** (**Down To The Wire** on the Pixel 2), open its address in a browser, and click **Download logs** at the bottom of the first page. You get one `.tar.gz` file holding the last ten boots' logs and a short summary of the device, ready to send to whoever is helping you. Wi-Fi network, headset and account names are masked in it, and the logs on the card are left as they are. The logs themselves are on the card, in `.userdata/tg3040/logs/` on the Brick and `.userdata/pixel2/logs/` on the Pixel 2.
+Open **MENU > Over The Hare** (**Down To The Wire** over the USB cable), open its address in a browser, and click **Download logs** at the bottom of the first page. You get one `.tar.gz` file holding the last ten boots' logs and a short summary of the device, ready to send to whoever is helping you. Wi-Fi network, headset and account names are masked in it, and the logs on the card are left as they are. The logs themselves are on the card, in `.userdata/brick/logs/` on the Brick and `.userdata/pixel2/logs/` on the Pixel 2.
 
 </details>
 
