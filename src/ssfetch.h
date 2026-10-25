@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 #ifndef TORTOS_SSFETCH_H
 #define TORTOS_SSFETCH_H
 

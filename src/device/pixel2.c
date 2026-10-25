@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /* The GKD Pixel 2: a 640x480 panel that is physically 480x640 portrait and
  * mounted turned, buttons read straight from the kernel, the RK817 codec, a
  * sysfs backlight and battery, and no radio. Its system is plastron, our own

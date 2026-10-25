@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 #ifndef TORTOS_LOGPACK_H
 #define TORTOS_LOGPACK_H
 

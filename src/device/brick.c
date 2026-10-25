@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /* The TrimUI Brick (TG3040): the display, the buttons that arrive on three
  * different devices, the LEDs, the codec, the panel backlight, the battery,
  * and where things live on its card. Everything here is what makes a Brick a

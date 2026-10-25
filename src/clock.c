@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Date & Time's arithmetic and words. See clock.h. */
 #include "clock.h"
 

@@ -1,8 +1,9 @@
 # Third-party notices
 
 TortOS itself - everything under `src/`, `tools/`, `mk/`, and the configs,
-scripts and generated art written for this project - is licensed **MIT**; see
-`LICENSE`.
+scripts and generated art written for this project - is licensed under the
+**GNU General Public License, version 3 or later**; see `LICENSE`. Releases up to
+v1.6.0 were MIT.
 
 A built TortOS card (`out/sd/`) also redistributes third-party software that
 keeps its own license. This file lists those components and their terms, and is
@@ -14,8 +15,8 @@ copied onto the card as `TortOS/THIRD-PARTY-LICENSES.md` by `mk/payload.sh`.
 
 - **Origin:** an independent frontend, built in its own repository and shipped
   as `TortOS/diatom`. https://github.com/ericreinsmidt/diatom
-- **License:** **MIT.** Its vendored `libretro.h` is MIT under the RetroArch
-  team's own scoped notice.
+- **License:** **Mozilla Public License 2.0** (MIT up to 2026-10-25). Its
+  vendored `libretro.h` is MIT under the RetroArch team's own scoped notice.
 - TortOS's launcher runs it as a resident process and talks to it over a Unix
   socket; it does not link against it. Diatom ships no cores of its own.
 

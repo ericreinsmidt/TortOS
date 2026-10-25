@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /* See httpd.h for why none of this is allowed to block. */
 #include <errno.h>
 #include <fcntl.h>

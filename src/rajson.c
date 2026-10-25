@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /* See rajson.h. Everything here works on spans into the caller's buffer;
  * nothing is copied until js_str is asked for a string. */
 #include <stdlib.h>

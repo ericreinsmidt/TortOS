@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /* See controls.h. The pages, and nothing else. */
 #include "controls.h"
 

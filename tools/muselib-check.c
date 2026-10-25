@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Does Muse read the Music folder the way its header says?
  *
  *     make check-muselib

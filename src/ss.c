@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /* See ss.h for where the two credentials come from and why. */
 #include <stdio.h>
 #include <string.h>

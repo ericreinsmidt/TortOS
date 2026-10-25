@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Where the system's sound goes, as a decision rather than as a device.
  *
  * In Diatom, the launcher owns WHICH output and the port owns opening it. This

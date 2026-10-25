@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Whole scraper runs, against a stubbed network.
  *
  *     make check-artrun

@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Date & Time: the arithmetic and the words, with no SDL and no device.
  *
  * The GKD Pixel 2 has no network to take the time from, so its clock is

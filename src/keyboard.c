@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /* The on-screen keyboard.
  *
  * Typing a WPA2 key on a d-pad is the worst text entry a handheld ever asks

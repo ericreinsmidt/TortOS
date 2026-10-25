@@ -85,7 +85,7 @@ On the Pixel 2, copy the built files into `TortOS/` on the card.
 ## Layout
 
 ```
-src/            the launcher (MIT)
+src/            the launcher (GPL-3.0-or-later)
 docs/           the guide, and building
 mk/             the device build plastron runs, the payload, the cores
 tools/          the boot-animation and card generators, the achievement

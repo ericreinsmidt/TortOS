@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /* See texload.h for why this exists. */
 #include <stdio.h>
 #include <stdint.h>

@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Does the device's title matcher agree with the host tool's?
  *
  *     make check-artscrape

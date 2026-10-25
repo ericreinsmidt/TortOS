@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Muse: TortOS's audio player, the engine half.
  *
  * A daemon over a Unix socket - the Diatom relationship again, and for the

@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /* See musec.h. The protocol is src/muse/muse.c's. */
 #include "musec.h"
 

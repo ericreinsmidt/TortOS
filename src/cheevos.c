@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /* See cheevos.h for the division of labor with Diatom, and why the network
  * half of this is a host-side tool. */
 #include <stdio.h>

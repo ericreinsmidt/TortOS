@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /* See artscrape.h for where the rules came from and why they are these. */
 #include <ctype.h>
 #include <dirent.h>

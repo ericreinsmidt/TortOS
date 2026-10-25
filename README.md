@@ -265,7 +265,7 @@ TortOS is C and SDL2. Games run in [diatom](https://github.com/ericreinsmidt/dia
 
 ## License
 
-TortOS is MIT, and so is diatom. The cores keep their own licenses, two of them non-commercial. Full notices are in [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md).
+TortOS is free software under the GNU General Public License, version 3 or any later version ([LICENSE](LICENSE)): anyone may change it, share it and sell it, and whoever gets it, changed or not, gets its source and the same rights. Releases up to v1.6.0 were MIT, and stay so. Diatom, the emulator it runs games in, is under the Mozilla Public License 2.0. The cores keep their own licenses, two of them non-commercial. Full notices are in [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md).
 
 <p align="center">
   <a href="https://github.com/ericreinsmidt/TortOS/releases"><img src="https://img.shields.io/github/downloads/ericreinsmidt/TortOS/total?color=80B076" alt="Downloads"></a>

@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /* How long each game has been played.
  *
  * WALL CLOCK, from RUN to EXIT, and there is nothing to subtract: the device

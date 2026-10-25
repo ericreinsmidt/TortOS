@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /* See net.h for why this shells out to curl and why the request is a file. */
 #include <errno.h>
 #include <fcntl.h>

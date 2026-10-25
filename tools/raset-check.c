@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Convert a RetroAchievements patch response to a set file, with no network.
  *
  *     raset-check <gameid> <patch.json> <out.set>

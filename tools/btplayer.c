@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /* btplayer: a media player registered with BlueZ that plays nothing, so that
  * a headset's volume reaches the Brick.
  *

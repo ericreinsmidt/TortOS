@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Does Muse play the tracks it should, in the order it should?
  *
  *     make check-musequeue

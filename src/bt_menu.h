@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /* The Bluetooth screen, minus the screen.
  *
  * State and row building only. This file must never include SDL: a build

@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: GPL-3.0-or-later
  *
  * TortOS - a custom firmware for the TrimUI Brick that plays eleven
  * 8-, 16- and 32-bit consoles.

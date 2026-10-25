@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 #ifndef TORTOS_ARTSHRINK_H
 #define TORTOS_ARTSHRINK_H
 

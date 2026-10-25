@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Shrinking fetched box art to the size it is actually drawn at.
  *
  * Its own file rather than part of artscrape.c, for two reasons. artscrape is

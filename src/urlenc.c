@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Percent-encoding, declared in net.h and implemented HERE.
  *
  * Apart from net.c on purpose. It is a pure string function with no socket in

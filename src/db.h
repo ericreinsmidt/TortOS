@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /* One store for settings, replacing fourteen files that had drifted into
  * three different scopes and four different formats.
  *

@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /* See bt_menu.h. No SDL, deliberately. */
 #include "bt_menu.h"
 

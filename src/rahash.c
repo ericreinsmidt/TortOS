@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /* See rahash.h. Three pieces: MD5, enough zip to reach the ROM, and
  * RetroAchievements' per-console rule about how much of it counts. */
 #include <stdint.h>

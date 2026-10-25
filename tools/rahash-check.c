@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Print the RetroAchievements hash of each ROM given, so it can be diffed
  * against the same rules written in Python.
  *
