@@ -66,6 +66,11 @@ fetch_core snes9x2010        3933890f520abb9dbb0e5276460785b20ce54d25f552b369caf
 # official binary will contain exactly the change we are carrying.
 # mk/build-mgba-bridge.sh says what to re-verify when swapping back.
 fetch_core genesis_plus_gx   3673a22b906509461e23a5a118b1d1bec15cbda105f260cbcbc08a16b2124e48
+# Beetle PCE Fast's binary names no commit, unlike the others. It is
+# beetle-pce-fast-libretro bebe2b13a840fbfd45cb501f5cd0efe01bdb1735: rebuilt from
+# it on 2026-10-25 the way the buildbot built it (Ubuntu 20.04, GCC
+# 12.5.0-8ubuntu2~20~ppa3 from ppa:ubuntu-toolchain-r/test, make platform=unix,
+# then strip), it came out byte for byte this file
 fetch_core mednafen_pce_fast aca90a14b18108c86398da2267ef40d5145eaddbc1c1b310614d745b258552b1
 fetch_core mednafen_ngp      a2015668f9a9403b8bf6941b550fae2c618f37b79173e8ba27c95b95f96bdd99
 

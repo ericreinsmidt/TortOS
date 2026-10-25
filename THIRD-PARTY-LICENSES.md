@@ -28,12 +28,13 @@ Diatom and of plastron, the system TortOS runs on.
 
 Each core is its authors' work, built by the libretro project's buildbot
 (https://buildbot.libretro.com) unless noted, pinned by sha256 in
-`mk/fetch-vendor.sh`. The commit is the one the binary names as its source.
+`mk/fetch-vendor.sh`. The commit is the one the binary names as its source,
+or, for Beetle PCE Fast, the one it was rebuilt from identically.
 
 | Core | Systems | License | Source |
 |------|---------|---------|--------|
 | `fceumm_libretro.so` | NES | GPL-2.0-or-later | https://github.com/libretro/libretro-fceumm at 236ccdf |
-| `mednafen_pce_fast_libretro.so` | TurboGrafx-16 and CD | GPL-2.0 (Mednafen-derived) | https://github.com/libretro/beetle-pce-fast-libretro, version 1.31.0.0 (the binary names no commit) |
+| `mednafen_pce_fast_libretro.so` | TurboGrafx-16 and CD | GPL-2.0 (Mednafen-derived) | https://github.com/libretro/beetle-pce-fast-libretro at bebe2b1 (the binary names no commit; rebuilt from it byte for byte, see `mk/fetch-vendor.sh`) |
 | `mednafen_ngp_libretro.so` | Neo Geo Pocket and Color | GPL-2.0 (Mednafen-derived) | https://github.com/libretro/beetle-ngp-libretro at a50d5ac |
 | `mgba_libretro.so` | Game Boy, Color and Advance | MPL-2.0 | https://github.com/libretro/mgba at e31759b, with mGBA's own fix 543a197 from https://github.com/mgba-emu/mgba, built by `mk/build-mgba-bridge.sh` |
 | `snes9x2010_libretro.so` | SNES | **Non-commercial** | https://github.com/libretro/snes9x2010 at 7db129b |
