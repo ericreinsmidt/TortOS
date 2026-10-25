@@ -72,15 +72,12 @@ Build in plastron's checkout: `make brick BRICK_TARGET=tortos-rebuild` for the
 Brick, or `make` for the Pixel 2's whole card image. A full `make brick` also
 writes a card image.
 
-A plastron development build of the Brick has a shell on the USB cable: the
-Brick is 10.55.0.2, the computer is given 10.55.0.1, and `telnet 10.55.0.2`
-gets a shell, with no password. Files go over nc: on the Brick,
-`nc -l -p 5555 > /tmp/new-tortos.elf`, then on the computer
-`nc -N 10.55.0.2 5555 < tortos.elf`. Compare checksums on both ends before
-moving it into place in `/mnt/SDCARD/TortOS/`. Keep telnet commands short; long
-lines arrive cut off. The cable shell is never in a release.
-
-On the Pixel 2, copy the built files into `TortOS/` on the card.
+A plastron development build has SSH on the USB cable, with the key in
+plastron's `local/authorized_keys`: `ssh root@10.55.0.2` on the Brick, `ssh
+root@10.42.0.1` on the Pixel 2. Files go over `scp -O` (there is no SFTP
+server), to `/tmp` first: compare checksums on both ends before moving one
+into place in `/mnt/SDCARD/TortOS/`. A release has no key and starts no SSH
+server.
 
 ## Layout
 
