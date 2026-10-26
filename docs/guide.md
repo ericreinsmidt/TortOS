@@ -441,8 +441,7 @@ Two things about that are yours to choose, and they are independent.
 **UI Theme** picks the art. `Plain Jane` is a drawn card per system, with the
 name on it. `Fancy Pants` is a photograph of the console itself, background
 removed, and because a photograph does not name itself the shelf writes the
-name underneath. A theme is a directory under `res/cards/`, so adding one is
-dropping in a folder - no code and no configuration.
+name underneath.
 
 **UI Direction** picks how you move. `Horizontal` is the row above.
 
