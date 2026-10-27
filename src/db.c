@@ -63,6 +63,11 @@ static const db_default library_defaults[] = {
 	{ "coreopt..mgba_sgb_borders",  "OFF" },
 	{ "coreopt.GB.mgba_gb_model",   "Game Boy" },
 	{ "coreopt.GB.mgba_gb_colors",  "DMG Green" },
+	/* mGBA's frameskip, which Diatom drives: it skips only the frames fast
+	 * forward runs without showing, and none at 1x (Diatom's env.c). Fast
+	 * forward in a heavy GBA game reached 1.44x to 1.53x on the Pixel 2
+	 * without it, measured 2026-10-27. */
+	{ "coreopt..mgba_frameskip",    "auto" },
 };
 
 const db_default *db_defaults(db_scope scope, size_t *count)
