@@ -32,7 +32,7 @@ check:
 
 # One version number: plastron reads it from here for the card and the About
 # page (its package/tortos/tortos.mk).
-VERSION ?= 2.0.0
+VERSION ?= 2.0.1
 
 # The ScreenScraper developer pair, from .screenscraper.env in this directory
 # (gitignored, never committed). A value already in the environment wins, and
