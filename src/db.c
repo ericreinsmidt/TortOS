@@ -68,6 +68,10 @@ static const db_default library_defaults[] = {
 	 * forward in a heavy GBA game reached 1.44x to 1.53x on the Pixel 2
 	 * without it, measured 2026-10-27. */
 	{ "coreopt..mgba_frameskip",    "auto" },
+	/* The same for SNES and the Genesis, which fell as short on the Pixel 2:
+	 * Donkey Kong Country 1.55x to 1.63x and Sonic 2.05x at 3x and 4x. */
+	{ "coreopt..snes9x_2010_frameskip",     "auto" },
+	{ "coreopt..genesis_plus_gx_frameskip", "auto" },
 };
 
 const db_default *db_defaults(db_scope scope, size_t *count)
