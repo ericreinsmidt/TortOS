@@ -72,6 +72,7 @@ bool ra_sign_in(const char *user, const char *password, char *err, size_t errn)
 	char body[2048];
 	net_field f[3];
 	jsv root, v;
+	int http;
 
 	if (err && errn) err[0] = '\0';
 	if (!user || !*user || !password || !*password) {
@@ -86,8 +87,17 @@ bool ra_sign_in(const char *user, const char *password, char *err, size_t errn)
 	f[0].k = "r"; f[0].v = "login2";
 	f[1].k = "u"; f[1].v = user;
 	f[2].k = "p"; f[2].v = password;
-	if (net_post_buf(f, 3, body, sizeof body, 20) < 0) {
-		if (err) snprintf(err, errn, "could not reach retroachievements.org");
+	if (net_post_buf(f, 3, body, sizeof body, 20, &http) < 0) {
+		/* A 401 is RetroAchievements' answer to a wrong user name or
+		 * password; any other status is a refusal of another kind, and no
+		 * status at all is a server that never answered. */
+		if (!err) return false;
+		if (http == 401)
+			snprintf(err, errn, "wrong user name or password");
+		else if (http > 0)
+			snprintf(err, errn, "retroachievements.org refused (HTTP %d)", http);
+		else
+			snprintf(err, errn, "could not reach retroachievements.org");
 		return false;
 	}
 
@@ -408,7 +418,7 @@ int ra_submit_unlock_as(const char *user, const char *token,
 	if (rom_hash && *rom_hash) { f[n].k = "m"; f[n++].v = rom_hash; }
 	f[n].k = "v"; f[n++].v = v;
 
-	if (net_post_buf(f, n, body, sizeof body, 20) < 0) return -1;
+	if (net_post_buf(f, n, body, sizeof body, 20, NULL) < 0) return -1;
 
 	root = js_root(body, strlen(body));
 	if (js_member(root, "Success", &m) && js_is_true(m)) return 1;

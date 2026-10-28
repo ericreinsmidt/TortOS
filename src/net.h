@@ -40,10 +40,13 @@ void net_set_ca_path(const char *path);
 typedef struct { const char *k, *v; } net_field;
 
 /* Small replies - sign-in, and an unlock sent. Returns the body length, or
- * -1: no curl, no network, HTTP error, or a timeout. The distinction between
- * those is logged, not returned, because every caller does the same thing
- * with it - carry on without. */
-long net_post_buf(const net_field *f, int n, char *out, size_t outn, int timeout_s);
+ * -1: no curl, no network, HTTP error, or a timeout. `http`, when not NULL,
+ * gets the status the server answered with, or 0 when nothing answered.
+ * An unlock carries on without either way and passes NULL; sign-in can't,
+ * because RetroAchievements answers a wrong password with a 401, and under
+ * `fail` that read as a server it could not reach (TortOS#61). */
+long net_post_buf(const net_field *f, int n, char *out, size_t outn, int timeout_s,
+                  int *http);
 
 /* The same, as a GET to any URL, with the fields urlencoded onto the query
  * string. For a service that authenticates every call with parameters rather

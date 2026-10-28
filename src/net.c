@@ -117,7 +117,8 @@ static bool write_get_config(const char *path, const char *url,
  * would read them. One place knows about the trust store, the agent and the
  * quoting, and it stays one place. */
 static bool write_config(const char *path, const char *url, bool get,
-                         const net_field *fl, int n, int timeout_s)
+                         const net_field *fl, int n, int timeout_s,
+                         const char *body_path)
 {
 	FILE *f;
 	int fd, i;
@@ -148,6 +149,13 @@ static bool write_config(const char *path, const char *url, bool get,
 		fputc('\n', f);
 	}
 	if (get) fprintf(f, "get\n");
+	/* With a body_path, the status goes to stdout and the body to its own
+	 * file, as write_get_config does and for the same reason: a refusal has
+	 * no body under `fail`, and sign-in has to know which refusal it got. */
+	if (body_path) {
+		fprintf(f, "write-out = "); cfg_quote(f, "%{http_code}"); fputc('\n', f);
+		fprintf(f, "output = "); cfg_quote(f, body_path); fputc('\n', f);
+	}
 	fprintf(f, "url = "); cfg_quote(f, url); fputc('\n', f);
 	fclose(f);
 	return true;
@@ -205,32 +213,46 @@ static void tmp_config(char *out, size_t n)
 /* The two blocking calls differ only in where they go and how the fields
  * travel, so they are one body with the config written two ways. */
 static long request_buf(const char *url, bool get, const net_field *f, int n,
-                        char *out, size_t outn, int timeout_s)
+                        char *out, size_t outn, int timeout_s, int *http)
 {
-	char cfg[128], tmp[160];
-	int fd, rc;
+	char cfg[128], tmp[160], st[160], code[16];
+	int fd, sfd, rc, status = 0;
+	ssize_t r;
 	long got = -1;
 
+	if (http) *http = 0;
 	if (!out || outn == 0) return -1;
 	out[0] = '\0';
 	tmp_config(cfg, sizeof cfg);
 	snprintf(tmp, sizeof tmp, "%s.body", cfg);
-	if (!write_config(cfg, url, get, f, n, timeout_s)) return -1;
+	snprintf(st, sizeof st, "%s.http", cfg);
+	if (!write_config(cfg, url, get, f, n, timeout_s, tmp)) return -1;
 
+	/* Made here, 0600, before curl writes into it: a sign-in's reply
+	 * carries the account token, and curl would make it readable. */
 	fd = open(tmp, O_RDWR | O_CREAT | O_TRUNC, 0600);
 	if (fd < 0) { unlink(cfg); return -1; }
+	sfd = open(st, O_RDWR | O_CREAT | O_TRUNC, 0600);
+	if (sfd < 0) { close(fd); unlink(tmp); unlink(cfg); return -1; }
 
-	rc = run_curl(cfg, fd);
+	rc = run_curl(cfg, sfd);
 	unlink(cfg);
+	lseek(sfd, 0, SEEK_SET);
+	r = read(sfd, code, sizeof code - 1);
+	if (r > 0) { code[r] = '\0'; status = atoi(code); }
+	if (http) *http = status;
 	if (rc == 0) {
-		ssize_t r;
 		lseek(fd, 0, SEEK_SET);
 		r = read(fd, out, outn - 1);
 		if (r >= 0) { out[r] = '\0'; got = (long)r; }
+	} else if (status > 0) {
+		fprintf(stderr, "net: request failed (curl exit %d, HTTP %d)\n", rc, status);
 	} else {
 		fprintf(stderr, "net: request failed (curl exit %d)\n", rc);
 	}
+	close(sfd);
 	close(fd);
+	unlink(st);
 	unlink(tmp);
 	return got;
 }
@@ -238,12 +260,13 @@ static long request_buf(const char *url, bool get, const net_field *f, int n,
 long net_get_buf(const char *url, const net_field *f, int n, char *out,
                  size_t outn, int timeout_s)
 {
-	return request_buf(url, true, f, n, out, outn, timeout_s);
+	return request_buf(url, true, f, n, out, outn, timeout_s, NULL);
 }
 
-long net_post_buf(const net_field *f, int n, char *out, size_t outn, int timeout_s)
+long net_post_buf(const net_field *f, int n, char *out, size_t outn, int timeout_s,
+                  int *http)
 {
-	return request_buf(RA_URL, false, f, n, out, outn, timeout_s);
+	return request_buf(RA_URL, false, f, n, out, outn, timeout_s, http);
 }
 
 /* ---- the same thing, without waiting ------------------------------------ */
@@ -273,7 +296,7 @@ bool net_post_async(const net_field *f, int n, const char *path, int timeout_s)
 
 	snprintf(g_async_cfg, sizeof g_async_cfg, "/tmp/tortos-ra-async-%ld.curl",
 	         (long)getpid());
-	if (!write_config(g_async_cfg, RA_URL, false, f, n, timeout_s)) return false;
+	if (!write_config(g_async_cfg, RA_URL, false, f, n, timeout_s, NULL)) return false;
 
 	fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 	if (fd < 0) { unlink(g_async_cfg); return false; }
