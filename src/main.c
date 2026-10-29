@@ -938,8 +938,11 @@ static SDL_Texture *game_get_tex(void *ctx, int i, int *w, int *h, float *cb)
 		             art, sizeof art);
 		preview_path(a, o, &v->list.items[i], prev, sizeof prev);
 		/* Hand it to the worker and draw nothing this frame. Asking is cheap
-		 * and ignores a card already in hand, so callers ask every frame. */
-		if (!texload_want(s, i, art, prev)) {
+		 * and ignores a card already in hand, so callers ask every frame.
+		 * With the title and the accent, so that a game with neither file
+		 * gets its generated card drawn there too. */
+		if (!texload_want_card(s, i, art, prev, v->list.items[i].title,
+		                       a->sys.systems[o].accent, false)) {
 			/* No worker. Exactly what this did before, on the frame. */
 			v->tex[i] = load_image(a->r, art, &v->tw[i], &v->th[i], &v->cb[i]);
 			if (!v->tex[i])
@@ -965,9 +968,21 @@ static SDL_Texture *game_get_tex(void *ctx, int i, int *w, int *h, float *cb)
 
 static void faces_stale(void);
 
-/* Install everything the worker finished, on the thread that owns the
- * renderer. SDL_CreateTextureFromSurface is the only part that needs it and
- * costs 1-2ms; content_bottom is computed here too, because it stops at the
+/* How long one frame spends turning finished art into textures.
+ *
+ * It used to take everything waiting. A cover trickles in as each decode
+ * finishes, so that was rarely more than one or two, but a shelf of games with
+ * no art came back all at once - nothing to read, so nothing to wait for - and
+ * a frame took them all: 2 to 6 generated cards, 40-160ms, on the Pixel 2 on
+ * 2026-10-28. With the cards drawn on the workers that is an upload each,
+ * about 8ms for a full card there, still too many for one frame. So one at
+ * least, then as many as fit in this; the rest stay in the result ring,
+ * texload_ready keeps the loop drawing, and they land on the next frames. */
+#define DRAIN_BUDGET_MS 6
+
+/* Install what the workers finished, on the thread that owns the renderer,
+ * to DRAIN_BUDGET_MS a frame. SDL_CreateTextureFromSurface is the only part
+ * that needs it; content_bottom is computed here too, because it stops at the
  * first row with anything in it and so costs the padding, not the image.
  *
  * And the cube's two cached faces go stale when anything lands. They are
@@ -979,9 +994,12 @@ static void texload_drain(app *a)
 {
 	SDL_Surface *surf;
 	int s, i;
-	bool landed = false;
+	bool landed = false, generated;
+	const Uint64 start = SDL_GetPerformanceCounter();
+	const Uint64 budget = SDL_GetPerformanceFrequency() * DRAIN_BUDGET_MS / 1000;
 
-	while (texload_take(&s, &i, &surf)) {
+	while ((!landed || SDL_GetPerformanceCounter() - start < budget) &&
+	       texload_take(&s, &i, &surf, &generated)) {
 		sysview *v;
 
 		if (s == SYS_CARDS_SHELF) {
@@ -1007,6 +1025,19 @@ static void texload_drain(app *a)
 			if (surf) SDL_FreeSurface(surf);
 			continue;
 		}
+		/* A card the worker drew is what ui_make_card would have made: no
+		 * art to measure the foot of, and blended for its corners. */
+		if (surf && generated) {
+			v->tex[i] = SDL_CreateTextureFromSurface(a->r, surf);
+			if (v->tex[i]) {
+				SDL_SetTextureBlendMode(v->tex[i], SDL_BLENDMODE_BLEND);
+				v->tw[i] = surf->w;
+				v->th[i] = surf->h;
+			}
+			v->cb[i] = 1.0f;
+			SDL_FreeSurface(surf);
+			surf = NULL;
+		}
 		/* A cover is squared and given a card's corners, the way Now
 		 * Playing draws it, so one album looks the same in both places. */
 		if (surf && is_muse(&a->sys.systems[s])) cover_shape(&surf);
@@ -1018,9 +1049,9 @@ static void texload_drain(app *a)
 			SDL_FreeSurface(surf);
 		}
 		if (!v->tex[i]) {
-			/* Neither file was there, so the card is the generated slab - and
-			 * that needs the renderer, which is why it is made here and not
-			 * on the worker. */
+			/* Neither file was there and the worker drew no card - an album,
+			 * which Muse asks for without one, or a game asked for before the
+			 * workers' fonts were open - so the generated slab is made here. */
 			int o = shelf_owner(a, s, i);
 			v->tex[i] = is_muse(&a->sys.systems[s])
 			          ? ui_make_cover(a->r, v->list.items[i].title,
@@ -1164,7 +1195,11 @@ static void sys_cards_wait_visible(app *a, unsigned cap_ms)
 		bool all = true;
 		int n, i;
 
-		texload_drain(a);
+		/* Everything that is ready, not one budget's worth: there is no
+		 * frame on screen yet to keep smooth, and a system card costs more
+		 * than DRAIN_BUDGET_MS to upload, so a single drain installed one
+		 * card a pass and the rest each waited out the 4ms below. */
+		do texload_drain(a); while (texload_ready());
 		for (n = 0; sys_card_visible(a, n, &i); n++)
 			if (!a->sys_tex[i]) { all = false; break; }
 		if (all) return;
@@ -10045,6 +10080,7 @@ static void launch(app *a)
 		 * the display, so this side tears its own down first. */
 		anim_launch(a, 190);
 		free_all_textures(a);
+		texload_fonts(false);   /* the workers' fonts go before TTF_Quit */
 		ui_quit();
 		plat_input_quit();
 		plat_video_quit();
@@ -10090,6 +10126,7 @@ static void launch(app *a)
 		if (!plat_video_init() || !plat_input_init()) { a->running = false; return; }
 		a->r = plat_renderer();
 		ui_init(a->r, P_FONT);
+		texload_fonts(true);
 		a->menu_w = 0;   /* fonts reopened: remeasure the panel */
 		prime_sys_window(a);
 		prime_window(a, a->sys_cursor);
@@ -12206,6 +12243,7 @@ int main(int argc, char *argv[])
 	 * saved brightness does. Read before ui_init, which is when the scale is
 	 * applied. */
 	if (!ui_init(a.r, P_FONT)) fprintf(stderr, "font init failed\n");
+	texload_fonts(true);
 	t_mark("font+settings");
 
 	/* The system cards asked for before the display came up, installed so the

@@ -912,7 +912,8 @@ static int draw_wrapped(SDL_Surface *dst, TTF_Font *f, const char *title,
  * were three identical Cs with the titles that tell them apart set small
  * underneath. Bled off the corner it is what it always was, a texture in the
  * system's color, and the title can have the space. */
-static void draw_watermark(SDL_Surface *dst, const char *title, unsigned rgb)
+static void draw_watermark(SDL_Surface *dst, TTF_Font *mark, const char *title,
+                           unsigned rgb)
 {
 	char ch[2] = { 0, 0 };
 	const char *p = title;
@@ -922,12 +923,9 @@ static void draw_watermark(SDL_Surface *dst, const char *title, unsigned rgb)
 	if (!*p) return;
 	ch[0] = (*p >= 'a' && *p <= 'z') ? (char)(*p - 32) : *p;
 	if ((unsigned char)ch[0] > 127) return;   /* one glyph, and an ASCII one */
+	if (!mark) return;
 
-	if (!f_mark && font_path_kept[0])
-		f_mark = TTF_OpenFont(font_path_kept, 560);
-	if (!f_mark) return;
-
-	t = TTF_RenderUTF8_Blended(f_mark, ch, (SDL_Color){
+	t = TTF_RenderUTF8_Blended(mark, ch, (SDL_Color){
 		(Uint8)(rgb >> 16), (Uint8)(rgb >> 8), (Uint8)rgb, 55 });
 	if (!t) return;
 	SDL_SetSurfaceBlendMode(t, SDL_BLENDMODE_BLEND);
@@ -941,13 +939,17 @@ static void draw_watermark(SDL_Surface *dst, const char *title, unsigned rgb)
 /* The card at any size: ui_make_card is a game's, ui_make_cover an album's.
  * One recipe, so an album with no art reads as the same kind of thing as a
  * game with none - except the corners, which an album's does not round: it
- * stands among square sleeves, where a game's stands among cards. */
-static SDL_Texture *make_card(SDL_Renderer *r, const char *title, unsigned rgb,
-                              int cw, int ch, bool round, int *w, int *h)
+ * stands among square sleeves, where a game's stands among cards.
+ *
+ * Drawn into a surface with the fonts it is handed and nothing else, so the
+ * loader's workers can draw one with their own fonts (ui_card_surface) while
+ * the main thread goes on drawing the shelf with its. */
+static SDL_Surface *card_surface(TTF_Font *title_font, TTF_Font *mark,
+                                 const char *title, unsigned rgb,
+                                 int cw, int ch, bool round)
 {
 	SDL_Surface *s = SDL_CreateRGBSurfaceWithFormat(0, cw, ch, 32,
 	                                                SDL_PIXELFORMAT_ARGB8888);
-	SDL_Texture *t;
 	int y;
 	if (!s) return NULL;
 
@@ -961,7 +963,7 @@ static SDL_Texture *make_card(SDL_Renderer *r, const char *title, unsigned rgb,
 		                         (Uint8)(v * 1.20f), 255));
 	}
 
-	draw_watermark(s, title, rgb);
+	draw_watermark(s, mark, title, rgb);
 
 	/* The system's color as a band rather than a wash: a generated card
 	 * should read as "this system, no art" at a glance in the row. */
@@ -972,12 +974,12 @@ static SDL_Texture *make_card(SDL_Renderer *r, const char *title, unsigned rgb,
 	/* The title at the top and hard left, because that is the edge the eye
 	 * runs down when the row is moving. A rule under it rather than across
 	 * the card: it is the end of the name, not a divider between halves. */
-	if (fonts[UI_F_CARD]) {
+	if (title_font) {
 		/* Not at the top edge. Started at 76 it left the bottom half of the
 		 * card empty for the one-line titles that are most of a shelf, and the
 		 * bleed does not fill it - the face darkens toward the foot and takes
 		 * the letter's tail with it. Four lines still fit below this. */
-		int y = draw_wrapped(s, fonts[UI_F_CARD], title, cw - 96,
+		int y = draw_wrapped(s, title_font, title, cw - 96,
 		                     (int)(ch * 0.38f), 48);
 
 		SDL_FillRect(s, &(SDL_Rect){ 48, y + 12, 90, 3 },
@@ -986,6 +988,19 @@ static SDL_Texture *make_card(SDL_Renderer *r, const char *title, unsigned rgb,
 	}
 
 	if (round) round_corners(s, CARD_RADIUS);
+	return s;
+}
+
+static SDL_Texture *make_card(SDL_Renderer *r, const char *title, unsigned rgb,
+                              int cw, int ch, bool round, int *w, int *h)
+{
+	SDL_Surface *s;
+	SDL_Texture *t;
+
+	if (!f_mark && font_path_kept[0])
+		f_mark = TTF_OpenFont(font_path_kept, 560);
+	if (!(s = card_surface(fonts[UI_F_CARD], f_mark, title, rgb, cw, ch, round)))
+		return NULL;
 	t = SDL_CreateTextureFromSurface(r, s);
 	SDL_FreeSurface(s);
 	if (t) { *w = cw; *h = ch; SDL_SetTextureBlendMode(t, SDL_BLENDMODE_BLEND); }
@@ -1002,6 +1017,49 @@ SDL_Texture *ui_make_cover(SDL_Renderer *r, const char *title, unsigned rgb,
                            int *w, int *h)
 {
 	return make_card(r, title, rgb, CARD_W, CARD_W, false, w, h);
+}
+
+/* A worker's own two fonts, the card's title size and the 560 pt letter.
+ *
+ * A TTF_Font is not safe to use from two threads at once, so each worker gets
+ * its own pair rather than borrowing fonts[] from under the main thread.
+ * FreeType's rule for the one library SDL_ttf keeps is that faces are made and
+ * freed from one thread at a time; drawing with separate faces at once is
+ * allowed. So these are opened and closed on the main thread only, and only
+ * drawn with on the worker that holds them. */
+struct ui_card_fonts {
+	TTF_Font *title, *mark;
+};
+
+ui_card_fonts *ui_card_fonts_open(void)
+{
+	ui_card_fonts *f;
+
+	if (!font_path_kept[0] || !(f = calloc(1, sizeof *f))) return NULL;
+	f->title = TTF_OpenFont(font_path_kept,
+	                        (int)(FONT_BASE * font_mul[UI_F_CARD] + 0.5f));
+	f->mark = TTF_OpenFont(font_path_kept, 560);
+	if (!f->title) {
+		ui_card_fonts_close(f);
+		return NULL;
+	}
+	return f;
+}
+
+void ui_card_fonts_close(ui_card_fonts *f)
+{
+	if (!f) return;
+	if (f->title) TTF_CloseFont(f->title);
+	if (f->mark) TTF_CloseFont(f->mark);
+	free(f);
+}
+
+SDL_Surface *ui_card_surface(ui_card_fonts *f, const char *title, unsigned rgb,
+                             bool album)
+{
+	if (!f) return NULL;
+	return album ? card_surface(f->title, f->mark, title, rgb, CARD_W, CARD_W, false)
+	             : card_surface(f->title, f->mark, title, rgb, CARD_W, CARD_H, true);
 }
 
 

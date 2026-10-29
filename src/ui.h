@@ -229,6 +229,16 @@ SDL_Texture *ui_make_card(SDL_Renderer *r, const char *title, unsigned rgb,
 SDL_Texture *ui_make_cover(SDL_Renderer *r, const char *title, unsigned rgb,
                            int *w, int *h);
 
+/* The same cards as surfaces, for the loader's workers (src/texload.c) to draw
+ * off the main thread. Each worker draws with fonts of its own, opened after
+ * ui_init and closed before ui_quit, both on the main thread. `album` is
+ * ui_make_cover's shape, otherwise ui_make_card's. */
+typedef struct ui_card_fonts ui_card_fonts;
+ui_card_fonts *ui_card_fonts_open(void);
+void ui_card_fonts_close(ui_card_fonts *f);
+SDL_Surface *ui_card_surface(ui_card_fonts *f, const char *title, unsigned rgb,
+                             bool album);
+
 /* The play modes' marks, in the shapes everybody already reads: two arrows
  * chasing round a loop for repeat, the same with a 1 in it for repeat one, and
  * two crossing arrows for shuffle. Drawn here from a few lines of geometry

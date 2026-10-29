@@ -19,7 +19,15 @@
  *
  * The split is by what needs the renderer. IMG_Load and the format conversion
  * are pure CPU and happen on the worker; SDL_CreateTextureFromSurface needs
- * the renderer and stays on the main thread, where it costs 1-2ms.
+ * the renderer and stays on the main thread. That was written down as 1-2ms,
+ * and on the Pixel 2 it is about 8ms for a full 512x656 card (measured
+ * 2026-10-28), so the main thread takes finished cards to a budget rather than
+ * all at once (texload_drain).
+ *
+ * The generated card for a game with no art is drawn on the worker too, when
+ * it is asked for with texload_want_card. On the Pixel 2 one took 14-70ms on
+ * the main thread, and landing on a shelf of them made a shelf's worth in one
+ * frame: a 40-160ms stop, every boot, until each shelf had been passed once.
  *
  * The visible consequence is that a cold card is blank for a few frames rather
  * than freezing the shelf. It is not slower - the art lands at the same moment
@@ -51,16 +59,28 @@ void texload_forget(void);
  * asking being cheap. */
 bool texload_want(int sys, int idx, const char *first, const char *second);
 
+/* The same, and when neither file is there the worker draws the generated
+ * card for `title` in `rgb` - ui_make_cover's square one with `album` - so
+ * the main thread only has to upload it. */
+bool texload_want_card(int sys, int idx, const char *first, const char *second,
+                       const char *title, unsigned rgb, bool album);
+
+/* Open the workers' own fonts (after ui_init) or close them (before ui_quit).
+ * Main thread only. Until they are open a worker draws no card, and the
+ * caller makes it itself, as before. */
+void texload_fonts(bool open);
+
 /* One finished decode, or false if none is ready. The caller owns `surf` and
- * must free it; it is NULL when neither file could be read, which means the
- * caller should draw its own placeholder.
+ * must free it; it is NULL when neither file could be read and no card was
+ * drawn, which means the caller should draw its own placeholder. `generated`,
+ * if not NULL, says the surface is a card the worker drew rather than art.
  *
  * The surface is already ARGB8888, so the caller only has to make a texture
  * from it. Where the art stops is NOT computed here: content_bottom scans
  * trailing empty rows and stops at the first row with anything in it, so it
  * costs the padding rather than the image, and duplicating it out of main.c
  * to save that would be the worse trade. */
-bool texload_take(int *sys, int *idx, SDL_Surface **surf);
+bool texload_take(int *sys, int *idx, SDL_Surface **surf, bool *generated);
 
 /* Whether anything is waiting to be taken, without taking it.
  *

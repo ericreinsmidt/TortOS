@@ -6,6 +6,7 @@
 #include <SDL.h>
 #include <SDL_image.h>
 #include "texload.h"
+#include "ui.h"
 
 /* Slots each way. Comfortably more than the seven cards a shelf draws, so a
  * fast scroll queues ahead without the ring filling, and small enough that a
@@ -20,12 +21,18 @@ typedef struct {
 	int      sys, idx;
 	unsigned gen;
 	char     first[PATHN], second[PATHN];
+	/* The card to draw when neither file is there. Without `card` that is
+	 * left to the caller, as it always was. */
+	bool     card, album;
+	unsigned rgb;
+	char     title[256];
 } req;
 
 typedef struct {
 	int          sys, idx;
 	unsigned     gen;
 	SDL_Surface *surf;
+	bool         generated;
 } res;
 
 /* Two, on a four-core device, leaving a core for the render thread and one
@@ -71,6 +78,11 @@ static unsigned g_gen = 1;
  * until the stale decode finished and was thrown away. */
 static int      g_cur_sys[NWORKERS], g_cur_idx[NWORKERS];
 static unsigned g_cur_gen[NWORKERS];
+/* Each worker's fonts, behind a lock of its own: texload_fonts closes them
+ * from the main thread, and that must neither wait on g_lock while a card is
+ * being drawn nor stop the other worker. */
+static ui_card_fonts *g_fonts[NWORKERS];
+static SDL_mutex     *g_font_lock[NWORKERS];
 
 /* Called with the lock held. */
 static bool queued(int sys, int idx)
@@ -112,6 +124,7 @@ static int worker(void *arg)
 	for (;;) {
 		req          job;
 		SDL_Surface *s;
+		bool         generated = false;
 
 		SDL_LockMutex(g_lock);
 		while (g_running && g_rq_n == 0) SDL_CondWait(g_wake, g_lock);
@@ -130,6 +143,12 @@ static int worker(void *arg)
 
 		s = decode(job.first);
 		if (!s) s = decode(job.second);
+		if (!s && job.card && g_font_lock[me]) {
+			SDL_LockMutex(g_font_lock[me]);
+			s = ui_card_surface(g_fonts[me], job.title, job.rgb, job.album);
+			SDL_UnlockMutex(g_font_lock[me]);
+			generated = s != NULL;
+		}
 
 		SDL_LockMutex(g_lock);
 		g_cur_sys[me] = g_cur_idx[me] = -1;
@@ -142,6 +161,7 @@ static int worker(void *arg)
 			r->idx = job.idx;
 			r->gen = job.gen;
 			r->surf = s;
+			r->generated = generated;
 			g_rs_n++;
 		} else if (s) {
 			SDL_FreeSurface(s);
@@ -156,7 +176,10 @@ bool texload_start(void)
 	int k;
 
 	if (g_thread[0]) return true;
-	for (k = 0; k < NWORKERS; k++) g_cur_sys[k] = g_cur_idx[k] = -1;
+	for (k = 0; k < NWORKERS; k++) {
+		g_cur_sys[k] = g_cur_idx[k] = -1;
+		g_font_lock[k] = SDL_CreateMutex();
+	}
 	if (!(g_lock = SDL_CreateMutex())) return false;
 	if (!(g_wake = SDL_CreateCond())) {
 		SDL_DestroyMutex(g_lock);
@@ -196,6 +219,12 @@ void texload_stop(void)
 		g_thread[k] = NULL;
 	}
 	texload_bump();              /* frees whatever was still waiting */
+	texload_fonts(false);
+	for (k = 0; k < NWORKERS; k++)
+		if (g_font_lock[k]) {
+			SDL_DestroyMutex(g_font_lock[k]);
+			g_font_lock[k] = NULL;
+		}
 	SDL_DestroyCond(g_wake);     g_wake = NULL;
 	SDL_DestroyMutex(g_lock);    g_lock = NULL;
 }
@@ -228,7 +257,21 @@ void texload_forget(void)
 	SDL_UnlockMutex(g_lock);
 }
 
-bool texload_want(int sys, int idx, const char *first, const char *second)
+void texload_fonts(bool open)
+{
+	int k;
+
+	for (k = 0; k < NWORKERS; k++) {
+		if (!g_font_lock[k]) continue;
+		SDL_LockMutex(g_font_lock[k]);
+		ui_card_fonts_close(g_fonts[k]);
+		g_fonts[k] = open ? ui_card_fonts_open() : NULL;
+		SDL_UnlockMutex(g_font_lock[k]);
+	}
+}
+
+static bool want(int sys, int idx, const char *first, const char *second,
+                 const char *title, unsigned rgb, bool album)
 {
 	req *q;
 
@@ -252,13 +295,28 @@ bool texload_want(int sys, int idx, const char *first, const char *second)
 	q->gen = g_gen;
 	snprintf(q->first,  sizeof q->first,  "%s", first  ? first  : "");
 	snprintf(q->second, sizeof q->second, "%s", second ? second : "");
+	q->card = title != NULL;
+	q->album = album;
+	q->rgb = rgb;
+	snprintf(q->title, sizeof q->title, "%s", title ? title : "");
 	g_rq_n++;
 	SDL_CondSignal(g_wake);
 	SDL_UnlockMutex(g_lock);
 	return true;
 }
 
-bool texload_take(int *sys, int *idx, SDL_Surface **surf)
+bool texload_want(int sys, int idx, const char *first, const char *second)
+{
+	return want(sys, idx, first, second, NULL, 0, false);
+}
+
+bool texload_want_card(int sys, int idx, const char *first, const char *second,
+                       const char *title, unsigned rgb, bool album)
+{
+	return want(sys, idx, first, second, title, rgb, album);
+}
+
+bool texload_take(int *sys, int *idx, SDL_Surface **surf, bool *generated)
 {
 	res *r;
 
@@ -272,6 +330,7 @@ bool texload_take(int *sys, int *idx, SDL_Surface **surf)
 	*sys  = r->sys;
 	*idx  = r->idx;
 	*surf = r->surf;
+	if (generated) *generated = r->generated;
 	g_rs_head = (g_rs_head + 1) % QN;
 	g_rs_n--;
 	SDL_UnlockMutex(g_lock);
