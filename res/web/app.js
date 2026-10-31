@@ -566,8 +566,15 @@ function next() {
 	job.state = 'sending';
 	drawQueue();
 
+	/* Safari never hands XMLHttpRequest the answer to an upload whose length
+	 * is an exact multiple of 128 KiB when the server replies at once, as the
+	 * device does over the cable: the file lands whole, the 200 arrives, and
+	 * the page waits forever at 100%. fetch() gets the answer but leaves the
+	 * connection wedged, one of Safari's six to the device lost for good.
+	 * One byte more is never a multiple, and the device drops it again. */
+	const pad = job.file.size > 0 && job.file.size % 131072 === 0;
 	const xhr = new XMLHttpRequest();
-	xhr.open('PUT', '/api/file?p=' + enc(job.dir + '/' + job.file.name));
+	xhr.open('PUT', '/api/file?p=' + enc(job.dir + '/' + job.file.name) + (pad ? '&pad=1' : ''));
 	xhr.upload.onprogress = (ev) => {
 		if (!ev.lengthComputable) return;
 		job.pct = Math.round(ev.loaded / ev.total * 100);
@@ -588,7 +595,7 @@ function next() {
 		drawQueue();
 		next();
 	};
-	xhr.send(job.file);
+	xhr.send(pad ? new Blob([job.file, new Uint8Array(1)]) : job.file);
 }
 
 function drawQueue() {

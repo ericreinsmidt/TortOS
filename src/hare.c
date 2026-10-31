@@ -1071,6 +1071,21 @@ static void on_request(httpd_req *r, bool done, void *ctx)
 				httpd_reply_status(r, 500, "that name is too long");
 				return;
 			}
+			/* The page sends a file whose length is an exact multiple of 128
+			 * KiB with one byte more, because Safari hangs on that length
+			 * (app.js says why), and marks it pad=1. The byte comes off here,
+			 * before the rename, so the card only ever has the real file. */
+			char pad[4];
+			if (httpd_query(r, "pad", pad, sizeof pad)[0] == '1') {
+				struct stat st;
+				if (stat(part, &st) != 0 || st.st_size < 1 ||
+				    truncate(part, st.st_size - 1) != 0) {
+					remove(part);
+					httpd_reply_status(r, 500, "could not put that in place");
+					note("failed: %s", base_of(abs));
+					return;
+				}
+			}
 			if (rename(part, abs) != 0) {
 				remove(part);
 				httpd_reply_status(r, 500, "could not put that in place");
