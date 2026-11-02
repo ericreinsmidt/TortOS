@@ -466,7 +466,13 @@ function enqueue(files, dest) {
  * entries API walks it instead: every folder in it is made on the device, in
  * order, parents first, and every file queued into its own folder. Dot files
  * and folders are skipped - a Mac puts .DS_Store in every folder it has shown,
- * and ._ files beside every file it copied. */
+ * and ._ files beside every file it copied - except .media, where the shelf
+ * keeps a system's covers and a music folder its albums'. Safari never hands
+ * the page a dot name from inside a dropped or picked folder, so a system
+ * folder copied off a card arrives without its covers there however this is
+ * written; .media dragged in on its own does arrive, and is let through here
+ * so it lands rather than being dropped without a word (#70, 2026-11-01). */
+const skipName = (name) => name.startsWith('.') && name !== '.media';
 
 /* A tree from a drop: { dirs, files }, dirs in the order they must be made
  * and each file with the folder it belongs in, both relative to the drop.
@@ -483,7 +489,7 @@ function walkDrop(dt) {
 	return (async () => {
 		const dirs = [], files = [];
 		const walk = async (en, rel) => {
-			if (en.name.startsWith('.')) return;
+			if (skipName(en.name)) return;
 			if (en.isFile) {
 				files.push({ file: await new Promise((ok, no) => en.file(ok, no)), rel });
 			} else if (en.isDirectory) {
@@ -510,7 +516,7 @@ function picked(list) {
 	const dirs = [], files = [], seen = new Set();
 	for (const f of list) {
 		const parts = (f.webkitRelativePath || f.name).split('/');
-		if (parts.some((p) => p.startsWith('.'))) continue;
+		if (parts.some(skipName)) continue;
 		for (let i = 1; i < parts.length; i++) {
 			const d = parts.slice(0, i).join('/');
 			if (!seen.has(d)) { seen.add(d); dirs.push(d); }

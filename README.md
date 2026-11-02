@@ -174,6 +174,8 @@ Check the folder name against the table above, spelled exactly, and that the fil
 
 Some games aren't in either collection, like fan translations and homebrew. Add your own: a PNG named exactly like the game file, in `Roms/<console>/.media/`. `Black Castle.gb` wants `Black Castle.png`. Around 512 pixels on the long side is plenty.
 
+Over Down To The Wire or Over The Hare, covers go separately: a console's folder comes over without them. Drop the PNGs into its `.media` folder, or drag `.media` itself onto the console's folder (Finder shows it after Cmd-Shift-.).
+
 Don't like a cover? Press X on the game and choose **Replace Box Art**. It looks again, and if nothing turns up, you keep the one you had.
 
 </details>
