@@ -294,6 +294,20 @@ static void the_extras(void)
 	ck(stats_total_lost() == 1, "and counts as lost");
 }
 
+/* n days before now on the calendar, at noon. Subtracting 86400 * n seconds
+ * is n days only when no clock change falls between: back across the fall's,
+ * from 11 pm, it lands past midnight and the calendar says n - 1, which is
+ * what stats_ago rightly counts (#75, found the night the clocks went back). */
+static long days_before(long now, int n)
+{
+	time_t t = (time_t)now;
+	struct tm tm = *localtime(&t);
+
+	tm.tm_mday -= n;
+	tm.tm_hour = 12; tm.tm_min = tm.tm_sec = 0; tm.tm_isdst = -1;
+	return (long)mktime(&tm);
+}
+
 static void how_long_ago(void)
 {
 	long now = (long)time(NULL);
@@ -302,9 +316,9 @@ static void how_long_ago(void)
 	printf("how long ago it reads:\n");
 	stats_ago(0, now, b, sizeof b);       ck(!strcmp(b, "never"), "never played");
 	stats_ago(now, now, b, sizeof b);     ck(!strcmp(b, "today"), "today");
-	stats_ago(now - 86400 * 3, now, b, sizeof b);
+	stats_ago(days_before(now, 3), now, b, sizeof b);
 	ck(!strcmp(b, "3d ago"), "a few days");
-	stats_ago(now - 86400 * 21, now, b, sizeof b);
+	stats_ago(days_before(now, 21), now, b, sizeof b);
 	ck(!strcmp(b, "3w ago"), "a few weeks");
 }
 
