@@ -1,5 +1,6 @@
 #!/bin/sh
-# Populate vendor/cores with the libretro cores TortOS redistributes.
+# Populate vendor/cores with the libretro cores TortOS redistributes, and
+# vendor/xz-embedded with the .xz decoder the updater is built with.
 #
 # That is the whole of it. TortOS carries no third-party runtime libraries;
 # measurement says nothing needs them:
@@ -76,3 +77,49 @@ fetch_core mednafen_ngp      a2015668f9a9403b8bf6941b550fae2c618f37b79173e8ba27c
 
 echo "vendor/cores ready:"
 ls "$VENDOR/cores"
+
+# XZ Embedded, the small .xz decoder the Linux kernel unpacks itself with, for
+# the updater (tools/tortos-update/): it unpacks a release's card image as it
+# writes it, after the root it runs from is gone and no program is left to
+# do it. Its own license (COPYING), with no conditions. It has no release
+# files, only tags, so each file is taken at the tag's commit (v2024-12-30)
+# and pinned here; a tarball GitHub makes from a tag isn't the same bytes
+# from year to year. Only what a decoder needs: no BCJ filters, which the
+# card images don't use.
+XZ_COMMIT=ae63ae3a36ed01724674e8f3d750dc47bf125410
+XZ_RAW=https://raw.githubusercontent.com/tukaani-project/xz-embedded/$XZ_COMMIT
+mkdir -p "$VENDOR/xz-embedded"
+
+fetch_xz() { # path-in-repository sha256
+	f=$VENDOR/xz-embedded/${1##*/}
+	if [ -f "$f" ] && [ "$(shasum -a 256 "$f" | cut -d' ' -f1)" = "$2" ]; then
+		echo "  ok      ${1##*/}"
+		return
+	fi
+	curl -sSfL -o "$f" "$XZ_RAW/$1"
+	GOT=$(shasum -a 256 "$f" | cut -d' ' -f1)
+	if [ "$GOT" != "$2" ]; then
+		rm -f "$f"
+		echo "  MISMATCH ${1##*/}" >&2
+		echo "    want $2" >&2
+		echo "    got  $GOT" >&2
+		echo "  A file at a pinned commit changed, which git doesn't allow: find out" >&2
+		echo "  why before trusting it." >&2
+		exit 1
+	fi
+	echo "  fetched ${1##*/}"
+}
+
+fetch_xz COPYING                    d9ff4f089509582e7b197e86f3d2d66948b89169f27c1f2349eb0d1ed4459309
+fetch_xz linux/include/linux/xz.h   59196b9c8296815f6a029f26d202bcd404078e27fc6e9bc4077db5f6865664c7
+fetch_xz linux/lib/xz/xz_private.h  9d8d116354cca408ef17a10cd544a955ea5d26e8f9f50885e99adab9135917d5
+fetch_xz linux/lib/xz/xz_stream.h   89e80af27003ad39f3122ad447861ec574fa235a0c6339c26bb48a53c3d9e12b
+fetch_xz linux/lib/xz/xz_lzma2.h    5681cf01bdcfab8907c02194eeaf9d4415166b3b5d48b50a34df809276f63aa1
+fetch_xz linux/lib/xz/xz_crc32.c    e6373b6d1aa11535260e153d8d7c62485ce82fbcb1d9dd66e6d984025771eec6
+fetch_xz linux/lib/xz/xz_crc64.c    cc6d80bc48c3d0ae963c5b61ac85f21a26efc733bc2ae61cbb8f39f09f5e85f6
+fetch_xz linux/lib/xz/xz_dec_stream.c bb5d29c33bd29b7d7993ae6b1a60f1750c509b1935fe2d28d46dfd8c5f46e9ce
+fetch_xz linux/lib/xz/xz_dec_lzma2.c  248dcd23e186b179a3fd1f5150c70cde13670521251e62bc44b15c99241491c4
+fetch_xz userspace/xz_config.h      25fba71668254ba56709e9c176521a24a304b5521a9a337fb51d8334fa07e875
+
+echo "vendor/xz-embedded ready:"
+ls "$VENDOR/xz-embedded"

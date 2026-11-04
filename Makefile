@@ -8,7 +8,7 @@
 .PHONY: all clean native vendor boot checkmark \
         check check-cheevos check-hare check-httpd check-idle check-rahash \
         check-raset check-xfer check-menus check-artscrape check-artrun check-audioout \
-        check-db check-stats check-sort check-bt check-ss
+        check-db check-stats check-sort check-bt check-ss check-update
 
 all: check
 
@@ -20,7 +20,7 @@ CHECKS = check-cheevos check-hare check-httpd check-idle check-rahash \
          check-raset check-xfer check-menus check-artscrape check-artrun check-audioout \
          check-db check-stats check-sort check-bt check-ss \
          check-muselib check-musequeue check-museart check-controls check-logpack \
-         check-clock
+         check-clock check-update
 
 check:
 	@fail=0; for c in $(CHECKS); do \
@@ -164,6 +164,22 @@ build-native/clock-check: tools/clock-check.c src/clock.c src/clock.h FORCE
 	@mkdir -p build-native
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g \
 	      -o $@ tools/clock-check.c src/clock.c
+
+# The updater against the installer's rules: what an update writes on each
+# device's card, every card it refuses, writing and reading back a small card
+# in a file, and its SHA-256 against the standard's vectors - see
+# tools/update-check.c.
+check-update: build-native/update-check
+	@./build-native/update-check
+
+build-native/update-check: tools/update-check.c tools/tortos-update/plan.c \
+                           tools/tortos-update/plan.h tools/tortos-update/write.c \
+                           tools/tortos-update/write.h tools/tortos-update/sha256.c \
+                           tools/tortos-update/sha256.h FORCE
+	@mkdir -p build-native
+	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g -Itools \
+	      -o $@ tools/update-check.c tools/tortos-update/plan.c tools/tortos-update/write.c \
+	      tools/tortos-update/sha256.c
 
 # The device's title matcher against the host tool's. A drift here does not
 # fail, it just finds fewer games - see tools/artscrape-check.c.

@@ -74,6 +74,20 @@ glibc. Their versions and licenses are in plastron's package list,
 
 ---
 
+## Code built into the updater
+
+- **XZ Embedded**, by Lasse Collin and the XZ Embedded authors and
+  contributors (https://github.com/tukaani-project/xz-embedded), its own
+  license: permission to use, copy, modify and distribute for any purpose,
+  with or without fee, and no conditions. Compiled into `tortos-update`,
+  the program that writes a new TortOS release onto the card, to unpack the
+  release's card image. Taken at commit
+  ae63ae3a36ed01724674e8f3d750dc47bf125410 (tag v2024-12-30); each file is
+  pinned by its SHA-256 in `mk/fetch-vendor.sh`, which fetches them into
+  `vendor/xz-embedded/` with the license, `COPYING`.
+
+---
+
 ## Services TortOS talks to
 
 Not software on the card, but TortOS wouldn't be what it is without them:
