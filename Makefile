@@ -8,7 +8,7 @@
 .PHONY: all clean native vendor boot checkmark \
         check check-cheevos check-hare check-httpd check-idle check-rahash \
         check-raset check-xfer check-menus check-artscrape check-artrun check-audioout \
-        check-db check-stats check-sort check-bt check-ss check-update
+        check-db check-stats check-sort check-bt check-ss check-update check-asan
 
 all: check
 
@@ -29,6 +29,17 @@ check:
 	done; \
 	if [ $$fail -ne 0 ]; then printf '\nsome checks FAILED\n' >&2; exit 1; fi; \
 	printf '\nok: every check passed\n'
+
+# The same checks, built with AddressSanitizer and UndefinedBehaviorSanitizer,
+# so an overrun, a use after free or undefined behavior fails a check instead
+# of passing it. Not part of `check`: it takes about 20 s where `check` takes a
+# few. Run it before a release and after touching a parser. Leaks aren't
+# caught: macOS's AddressSanitizer has no leak detection. The binaries land in
+# build-native/ as usual, and the next `make check` rebuilds them plain.
+SANITIZE = -fsanitize=address,undefined -fno-omit-frame-pointer \
+           -fno-sanitize-recover=undefined
+check-asan:
+	@$(MAKE) --no-print-directory check CC="$(CC) $(SANITIZE)"
 
 # One version number: plastron reads it from here for the card and the About
 # page (its package/tortos/tortos.mk).
