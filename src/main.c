@@ -12350,6 +12350,23 @@ int main(int argc, char *argv[])
 	/* Straight back into the game, before the shelf is ever drawn. After the
 	 * input grace above, so a wake press replayed by the boot does not land in
 	 * the menu that is about to open. */
+	/* But not on an empty battery. A game draws far more than the shelf, and
+	 * a device that comes back on with nothing left - the Pixel 2's power chip
+	 * switches it on again as the cell recovers after a hard cut - resumed the
+	 * game and lost power within a second, mid-write to the card. One reading,
+	 * not battery_empty's two five seconds apart: this is the boot, and a wrong
+	 * low reading costs only the resume. The shelf comes up on the game
+	 * instead, .playing stays for the next boot, and battery_empty powers off
+	 * cleanly a few seconds later if the battery really is empty. */
+	if (a.resume_menu && a.running) {
+		int  pct;
+		bool charging;
+
+		if (plat_battery(&pct, &charging) && !charging && pct <= BATT_EMPTY_PCT) {
+			fprintf(stderr, "battery: %d%%, too low to resume; the shelf instead\n", pct);
+			a.resume_menu = false;
+		}
+	}
 	if (a.resume_menu && a.running) {
 		a.screen = SCREEN_GAMES;
 		launch(&a);
