@@ -243,9 +243,9 @@ build-native/ss-check: tools/ss-check.c src/ss.c src/ss.h src/ssfetch.c src/ssfe
 native:
 	$(MAKE) -f mk/native.mk VERSION=$(VERSION)
 
-# The libretro cores TortOS redistributes, hash-pinned from libretro's own
-# buildbot. Needed once, before the first payload. No runtime libraries: the
-# cores need only what the device's firmware already has.
+# The libretro cores TortOS redistributes, hash-pinned, from scutes
+# (github.com/ericreinsmidt/scutes). Needed once, before the first payload. No
+# runtime libraries: the cores need only what the device's firmware already has.
 vendor:
 	./mk/fetch-vendor.sh
 

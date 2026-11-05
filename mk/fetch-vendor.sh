@@ -12,60 +12,58 @@
 # TortOS's own code in src/device/, against each device's ALSA controls and
 # display.
 #
-# Cores come from libretro's own buildbot, pinned by sha256 - the same hashes
-# Diatom's CORES.md verifies, because they are the same binaries. The
-# buildbot path is unpinned; these hashes are the pin.
+# Cores come from scutes (github.com/ericreinsmidt/scutes), which keeps the
+# exact files on its v1 release, pinned by sha256 - the same hashes Diatom's
+# CORES.md verifies, because they are the same binaries. What each was built
+# from is in THIRD-PARTY-LICENSES.md here and in scutes' LICENSE.
+#
+# They don't change. A save state records the version of the core that wrote
+# it and Diatom refuses any other, so a new core would cost players every state
+# for that console. A core changes only to fix a bug players hit, as the same
+# source plus the fix, the way mGBA's was.
 #
 # Usage: mk/fetch-vendor.sh
 set -e
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 VENDOR=$ROOT/vendor
 DL=${1:-/tmp/tortos-vendor}
-BB=https://buildbot.libretro.com/nightly/linux/aarch64/latest
+SCUTES=https://github.com/ericreinsmidt/scutes/releases/download/v1
 
 command -v curl   > /dev/null || { echo "need curl" >&2; exit 1; }
-command -v unzip  > /dev/null || { echo "need unzip" >&2; exit 1; }
 command -v shasum > /dev/null || { echo "need shasum" >&2; exit 1; }
 
 mkdir -p "$DL" "$VENDOR/cores"
 
 fetch_core() { # name sha256
-	if [ -f "$VENDOR/cores/${1}_libretro.so" ] &&
-	   [ "$(shasum -a 256 "$VENDOR/cores/${1}_libretro.so" | cut -d' ' -f1)" = "$2" ]; then
+	f=${1}_libretro.so
+	if [ -f "$VENDOR/cores/$f" ] &&
+	   [ "$(shasum -a 256 "$VENDOR/cores/$f" | cut -d' ' -f1)" = "$2" ]; then
 		echo "  ok      $1"
 		return
 	fi
-	curl -sSfL -o "$DL/$1.zip" "$BB/${1}_libretro.so.zip"
-	unzip -o -j "$DL/$1.zip" -d "$VENDOR/cores" > /dev/null
-	GOT=$(shasum -a 256 "$VENDOR/cores/${1}_libretro.so" | cut -d' ' -f1)
+	curl -sSfL -o "$DL/$f" "$SCUTES/$f"
+	GOT=$(shasum -a 256 "$DL/$f" | cut -d' ' -f1)
 	if [ "$GOT" != "$2" ]; then
+		rm -f "$DL/$f"
 		echo "  MISMATCH $1" >&2
 		echo "    want $2" >&2
 		echo "    got  $GOT" >&2
-		echo "  The buildbot republished this core. Verify it, then update the" >&2
-		echo "  hash here and in Diatom's CORES.md together." >&2
+		echo "  scutes' v1 files can't change (its releases are immutable): find" >&2
+		echo "  out why before trusting it." >&2
 		exit 1
 	fi
+	mv "$DL/$f" "$VENDOR/cores/$f"
 	echo "  fetched $1"
 }
 
 fetch_core fceumm            1b13b00d4680394dad8000d5175f97be727107e0945bc9b412da91d70c07b267
 fetch_core snes9x2010        3933890f520abb9dbb0e5276460785b20ce54d25f552b369cafeca270b9dd44c
-# mgba IS NOT FETCHED, and that is the one exception here. Run
-# mk/build-mgba-bridge.sh instead; it builds this exact commit plus upstream's
-# own fix for a crash the buildbot core still has.
-#
-#   fetch_core mgba            abde7a0764f08fa0cc2c7d3d9a29b9d1245a9f3b7df0e7a594b74df642ee53c6
-#
-# Every MBC2 Game Boy cartridge segfaults on the buildbot core - Kirby's Pinball
-# Land, Wave Race, Golf, X, both Final Fantasy Legends. Regression in mgba
-# a1b2b23, reported as mgba-emu/mgba#3859, fixed upstream 543a1975 the same day,
-# and in no downloadable core because libretro builds from its own fork which
-# has not synced since 2026-08-06.
-#
-# RESTORE THE LINE ABOVE AND DELETE THE BRIDGE the day that fork syncs. The
-# official binary will contain exactly the change we are carrying.
-# mk/build-mgba-bridge.sh says what to re-verify when swapping back.
+# mGBA is our own build, not the buildbot's: mk/build-mgba-bridge.sh builds
+# libretro/mgba e31759b plus mGBA's own fix 543a1975, without which every MBC2
+# Game Boy cartridge segfaults (Kirby's Pinball Land, Wave Race, Golf, X, both
+# Final Fantasy Legends; mgba-emu/mgba#3859). The script stays as the record of
+# how this file was made.
+fetch_core mgba              1c180827774f1941565ac82a173633edf4553ac2809a4851c9eee627f2775ff9
 fetch_core genesis_plus_gx   3673a22b906509461e23a5a118b1d1bec15cbda105f260cbcbc08a16b2124e48
 # Beetle PCE Fast's binary names no commit, unlike the others. It is
 # beetle-pce-fast-libretro bebe2b13a840fbfd45cb501f5cd0efe01bdb1735: rebuilt from

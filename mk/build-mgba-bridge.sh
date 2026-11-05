@@ -1,9 +1,8 @@
 #!/bin/sh
-# Build the mGBA core TortOS ships UNTIL LIBRETRO SYNCS ITS FORK.
-#
-# THIS SCRIPT IS MEANT TO BE DELETED. Every core TortOS ships is an official
-# libretro buildbot binary, fetched and hash-pinned by mk/fetch-vendor.sh. This
-# is the one exception, and it exists for a reason with an expiry date:
+# How the mGBA core TortOS ships was built. Every core TortOS ships comes from
+# scutes (github.com/ericreinsmidt/scutes), fetched and hash-pinned by
+# mk/fetch-vendor.sh, and five of them are the libretro buildbot's own. This
+# made the sixth, the file on scutes, and stays as the record of how:
 #
 #   mGBA's buildbot core segfaults on the first read of cartridge RAM for every
 #   MBC2 Game Boy cartridge - Kirby's Pinball Land, Wave Race, Golf, X, both
@@ -17,16 +16,19 @@
 # applies only upstream's own one-hunk fix, and hardens it to match the official
 # build. No patch of ours is in it.
 #
-# WHEN LIBRETRO SYNCS: restore the `fetch_core mgba` line in fetch-vendor.sh,
-# delete this script, and verify a save state made on this core still loads on
-# the official one.
+# It stays, even once libretro syncs its fork. The cores don't change: a save
+# state records the version of the core that wrote it and Diatom refuses any
+# other, so libretro's build would cost every Game Boy, Game Boy Color and
+# Game Boy Advance state. Whether this rebuilds scutes' file byte for byte
+# hasn't been checked; it writes vendor/cores/mgba_libretro.so, and
+# mk/fetch-vendor.sh puts scutes' copy back if the two differ.
 #
 # Needs: docker. Its image is mk/mgba-bridge.Dockerfile, built here; after
 # the first time, Docker has it cached.
 set -e
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 SRC=${1:-/tmp/tortos-mgba-bridge}
-PIN=e31759b24e7a4e3899285ff720d7b573ac328ae7   # libretro/mgba, what CORES.md pins
+PIN=e31759b24e7a4e3899285ff720d7b573ac328ae7   # libretro/mgba, what the buildbot's core was built from
 FIX=543a197582c30364584d773a974d7f991892fa43   # mgba-emu/mgba, the upstream fix
 
 command -v docker >/dev/null || { echo "need docker" >&2; exit 1; }

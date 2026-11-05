@@ -9,22 +9,21 @@ mGBA core) and, for regenerating art, Python with Pillow, plus ffmpeg.
 
 ```sh
 make check      # every check below, offline, in a second or two (also plain `make`)
-make vendor     # five libretro cores     -> vendor/
-mk/build-mgba-bridge.sh  # the sixth      -> vendor/            (see below)
+make vendor     # the six libretro cores  -> vendor/
 make native     # host build of the launcher, for working on how it looks
 make boot       # regenerate the boot animation
 ```
 
-**mGBA is built rather than fetched, and is meant to stop being.** Every MBC2
-Game Boy cartridge segfaults on the buildbot core - Kirby's Pinball Land, Wave
-Race, Golf, X, both Final Fantasy Legends - a regression reported as
-mgba-emu/mgba#3859 and fixed upstream the same day, but in no downloadable core
-because libretro builds mGBA from a fork that has not synced.
-`mk/build-mgba-bridge.sh` builds that same pinned tree with only upstream's own
-fix applied, hardened to match the official build. Without it the payload
-refuses the card rather than shipping one whose Game Boy, Game Boy Color and
-Game Boy Advance shelves open onto nothing. Restore the fetch and delete the
-script the day that fork syncs.
+**The cores come from [scutes](https://github.com/ericreinsmidt/scutes)**,
+which keeps the exact files TortOS ships, and they don't change: a save state
+records the version of the core that wrote it, and Diatom refuses any other,
+so a new core would cost players their states. One of the six is our own
+build. Every MBC2 Game Boy cartridge segfaults on the buildbot's mGBA -
+Kirby's Pinball Land, Wave Race, Golf, X, both Final Fantasy Legends - a
+regression reported as mgba-emu/mgba#3859 and fixed upstream the same day, so
+`mk/build-mgba-bridge.sh` built libretro's pinned tree with only upstream's
+own fix applied, hardened to match the official build. That file is the one
+on scutes, and the script stays as the record of how it was made.
 
 `make check` runs before every commit. Each part can be run alone, and each
 exists because something once broke in a way nothing noticed:
@@ -91,6 +90,6 @@ res/            the boot animation, the system cards, the font, Over The
                 Hare's page, and the marks and screenshots the README shows
 config/         systems.cfg as shipped; the rest is compiled in
 sd/             each device's launch.sh, and bt-alsa.sh, as they land on the card
-vendor/         the libretro cores: five fetched and hash-pinned, mGBA
-                built by mk/build-mgba-bridge.sh
+vendor/         the libretro cores, hash-pinned from scutes, and XZ
+                Embedded for the updater
 ```

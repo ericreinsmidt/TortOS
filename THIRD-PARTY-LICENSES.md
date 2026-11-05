@@ -28,8 +28,10 @@ Diatom and of plastron, the system TortOS runs on.
 
 Each core is its authors' work, built by the libretro project's buildbot
 (https://buildbot.libretro.com) unless noted, pinned by sha256 in
-`mk/fetch-vendor.sh`. The commit is the one the binary names as its source,
-or, for Beetle PCE Fast, the one it was rebuilt from identically.
+`mk/fetch-vendor.sh`, which fetches them from scutes
+(https://github.com/ericreinsmidt/scutes), where the exact files are kept. The
+commit is the one the binary names as its source, or, for Beetle PCE Fast, the
+one it was rebuilt from identically.
 
 | Core | Systems | License | Source |
 |------|---------|---------|--------|
