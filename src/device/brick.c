@@ -1068,3 +1068,40 @@ bool plat_battery(int *pct, bool *charging)
 	return false;
 #endif
 }
+
+bool plat_battery_mv(int *mv)
+{
+	FILE *f = fopen("/tmp/tortos_fake_batt_mv", "r");
+	int v = -1;
+
+	if (f) {
+		if (fscanf(f, "%d", &v) != 1) v = -1;
+		fclose(f);
+		if (v > 0) {
+			if (mv) *mv = v;
+			return true;
+		}
+	}
+#ifdef __linux__
+	f = fopen("/sys/class/power_supply/axp2202-battery/voltage_now", "r");
+	if (!f) return false;
+	v = -1;
+	if (fscanf(f, "%d", &v) != 1) v = -1;
+	fclose(f);
+	if (v <= 0) return false;
+	if (mv) *mv = v / 1000;
+	return true;
+#else
+	(void)mv;
+	return false;
+#endif
+}
+
+/* By voltage, as the gauge reads 0% for the last 45 minutes or more before
+ * the power cut, falling from 25% in about 20. From two drains to the cut, Kirby
+ * at full brightness and music with the screen off: 3.31 V came 24 and 26
+ * minutes before it, 3.27 V 16 and 20. A heavier game sags more and leaves
+ * less; Kirby to music, a much bigger change in load, moved it only 3 to 5
+ * minutes. */
+int plat_battery_critical_mv(void) { return 3310; }
+int plat_battery_empty_mv(void)    { return 3270; }

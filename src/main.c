@@ -70,13 +70,13 @@
 #define BATT_LOW_PCT   10   /* show the low-battery dot at or below this */
 /* At or below this, off the charger, the dot blinks: the last minutes before
  * BATT_EMPTY_PCT ends the game and powers off, which a steady dot gave no
- * warning of. */
+ * warning of. A device with a voltage for it goes by that instead
+ * (plat_battery_critical_mv). */
 #define BATT_CRITICAL_PCT 5
 /* At or below this, off the charger, the device saves a running game and
  * powers off rather than let the PMIC cut it at its own limit, which loses the
- * game's progress since its last save and leaves the card dirty. A starting
- * point, short of measuring where each device's reading sits when it gives
- * out: both report 0% well before their PMIC's cutoff. */
+ * game's progress since its last save and leaves the card dirty. A device
+ * with a voltage for it goes by that instead (plat_battery_empty_mv). */
 #define BATT_EMPTY_PCT  2
 #define TEX_KEEP_NEAR   8   /* card textures kept around the cursor, in view  */
 #define TEX_KEEP_FAR    4   /* ...and around the cursor of a system you left  */
@@ -2671,6 +2671,16 @@ static void draw_shell(SDL_Renderer *r, float cx, float cy, float rad,
 	}
 }
 
+/* Whether a reading off the charger is at or below a point: by voltage where
+ * the device has one, by the gauge's level where it doesn't or where the
+ * voltage can't be read. The voltage it went by is left in *mv, 0 if none. */
+static bool battery_at_or_below(int pct, int pct_point, int mv_point, int *mv)
+{
+	*mv = 0;
+	if (mv_point > 0 && plat_battery_mv(mv)) return *mv <= mv_point;
+	return pct <= pct_point;
+}
+
 /* 0 when the battery is fine or charging, 1 when it is low, 2 when it is
  * critical. Read every five seconds. */
 static int battery_level(void)
@@ -2680,11 +2690,19 @@ static int battery_level(void)
 	Uint32 now = SDL_GetTicks();
 	if (next_check == 0 || now >= next_check) {
 		next_check = now + 5000;
-		int pct;
+		int pct, mv;
 		bool charging;
+		int was = level, point = plat_battery_critical_mv();
+
 		level = 0;
-		if (plat_battery(&pct, &charging) && !charging && pct <= BATT_LOW_PCT)
-			level = pct <= BATT_CRITICAL_PCT ? 2 : 1;
+		/* Once it blinks by voltage it goes on blinking: the voltage can come
+		 * back over the point for a reading as the load changes. */
+		if (plat_battery(&pct, &charging) && !charging) {
+			if ((was == 2 && point > 0) || battery_at_or_below(pct, BATT_CRITICAL_PCT, point, &mv))
+				level = 2;
+			else if (pct <= BATT_LOW_PCT)
+				level = 1;
+		}
 	}
 	return level;
 }
@@ -2703,16 +2721,19 @@ static bool battery_empty(void)
 	unsigned now = plat_now_ms();
 
 	if (!primed || now - last >= 5000) {
-		int  pct;
+		int  pct, mv = 0;
 		bool charging;
 
 		primed = true;
 		last = now;
-		if (plat_battery(&pct, &charging) && !charging && pct <= BATT_EMPTY_PCT)
+		if (plat_battery(&pct, &charging) && !charging &&
+		    battery_at_or_below(pct, BATT_EMPTY_PCT, plat_battery_empty_mv(), &mv))
 			seen++;
 		else
 			seen = 0;
-		if (seen == 2)
+		if (seen == 2 && mv > 0)
+			fprintf(stderr, "battery: %d mV, empty; powering off\n", mv);
+		else if (seen == 2)
 			fprintf(stderr, "battery: %d%%, empty; powering off\n", pct);
 	}
 	return seen >= 2;
@@ -12359,11 +12380,15 @@ int main(int argc, char *argv[])
 	 * instead, .playing stays for the next boot, and battery_empty powers off
 	 * cleanly a few seconds later if the battery really is empty. */
 	if (a.resume_menu && a.running) {
-		int  pct;
+		int  pct, mv;
 		bool charging;
 
-		if (plat_battery(&pct, &charging) && !charging && pct <= BATT_EMPTY_PCT) {
-			fprintf(stderr, "battery: %d%%, too low to resume; the shelf instead\n", pct);
+		if (plat_battery(&pct, &charging) && !charging &&
+		    battery_at_or_below(pct, BATT_EMPTY_PCT, plat_battery_empty_mv(), &mv)) {
+			if (mv > 0)
+				fprintf(stderr, "battery: %d mV, too low to resume; the shelf instead\n", mv);
+			else
+				fprintf(stderr, "battery: %d%%, too low to resume; the shelf instead\n", pct);
 			a.resume_menu = false;
 		}
 	}

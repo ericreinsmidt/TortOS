@@ -944,3 +944,23 @@ bool plat_battery(int *pct, bool *charging)
 	}
 	return true;
 }
+
+bool plat_battery_mv(int *mv)
+{
+	int v = read_int("/tmp/tortos_fake_batt_mv");
+
+	if (v <= 0) {
+		/* The RK817's gauge has no voltage_now, only this */
+		if ((v = read_int("/sys/class/power_supply/battery/voltage_avg")) <= 0) return false;
+		v /= 1000;
+	}
+	if (mv) *mv = v;
+	return true;
+}
+
+/* By the gauge's level: it counts the charge going out, so its percentage
+ * falls steadily to the end, and 2% came 22 minutes before the power cut
+ * under a game. Its voltage holds and then, under a game, drops off a cliff
+ * in the last 15, which leaves little to go by. */
+int plat_battery_critical_mv(void) { return 0; }
+int plat_battery_empty_mv(void)    { return 0; }

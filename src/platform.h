@@ -290,6 +290,18 @@ Uint32 plat_osd_until(void);
 
 bool plat_battery(int *pct, bool *charging);
 
+/* The battery's voltage in mV, false if it can't be read. A voltage written
+ * to /tmp/tortos_fake_batt_mv stands in for it, as /tmp/tortos_fake_batt does
+ * for the level. */
+bool plat_battery_mv(int *mv);
+
+/* The device's last minutes by voltage, in mV: the low-battery dot blinks at
+ * or below the first, and the device saves a running game and powers off at
+ * or below the second. 0 where the device goes by the gauge's level instead
+ * (BATT_CRITICAL_PCT, BATT_EMPTY_PCT in main.c). */
+int plat_battery_critical_mv(void);
+int plat_battery_empty_mv(void);
+
 /* Whether the device has a Wi-Fi or Bluetooth radio at all - not whether it
  * is on. A radio that is off is the player's to turn on; a device without one
  * hides everything that needs it (src/sys_menu.h). */
