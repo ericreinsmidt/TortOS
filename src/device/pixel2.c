@@ -865,6 +865,11 @@ void plat_cable_reconnect(void)
 	closedir(d);
 }
 
+/* Not needed here: the Pixel 2's data over the cable hasn't shown the
+ * Brick's trouble while charging, though it hasn't been tried charging hard
+ * from low either. */
+void plat_cable_slow_charge(bool on) { (void)on; }
+
 /* No mute switch on this device. */
 bool plat_mute_poll(bool own_volume) { (void)own_volume; return false; }
 bool plat_muted(void) { return false; }

@@ -276,6 +276,10 @@ bool plat_cable_link(char *addr, size_t n);
  * link while the device goes on believing it is up. Nothing on a device with
  * no cable link. */
 void plat_cable_reconnect(void);
+/* The charger held to a gentle rate while files move over that cable (on),
+ * and back to what it was (off): for a device whose data over the cable breaks
+ * while it charges hard (the Brick). Nothing elsewhere. */
+void plat_cable_slow_charge(bool on);
 /* kind: 1 = brightness, 2 = volume */
 void plat_osd_show(int kind, int val, int max);
 void plat_draw_osd(SDL_Renderer *r);

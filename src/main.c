@@ -5675,8 +5675,14 @@ static void xfer_screen(app *a)
 
 	g_logs_app = a;
 	/* A fresh link over the cable each time this opens: a computer can drop
-	 * it while the device believes it is still up (plat_cable_reconnect) */
-	if (cable) plat_cable_reconnect();
+	 * it while the device believes it is still up (plat_cable_reconnect).
+	 * Charging held back first, as the Brick's data over the cable breaks
+	 * while it charges hard (plat_cable_slow_charge); every way out puts it
+	 * back. */
+	if (cable) {
+		plat_cable_slow_charge(true);
+		plat_cable_reconnect();
+	}
 	hare_set_logs(pack_logs);
 	hare_set_before_delete(muse_before_delete);
 	hare_set_after_rename(muse_after_rename);
@@ -5702,6 +5708,7 @@ static void xfer_screen(app *a)
 		plat_draw_osd(a->r);
 		plat_present();
 		SDL_Delay(1800);
+		plat_cable_slow_charge(false);
 		plat_input_flush();
 		memset(&a->in, 0, sizeof a->in);
 		return;
@@ -5780,7 +5787,12 @@ static void xfer_screen(app *a)
 		hare_rows(rows, who, moved, st.last[0] ? st.last : "waiting");
 
 		plat_input_poll(&a->in);
-		if (a->in.quit_requested) { hare_stop(); a->running = false; return; }
+		if (a->in.quit_requested) {
+			hare_stop();
+			plat_cable_slow_charge(false);
+			a->running = false;
+			return;
+		}
 
 		/* Auto Off must not shut the device down in the middle of a 900MB
 		 * upload, and it also must not shut it down while somebody is reading
@@ -5793,6 +5805,7 @@ static void xfer_screen(app *a)
 
 		if (a->in.pressed[IN_POWER] || idle_due(a)) {
 			hare_stop();
+			plat_cable_slow_charge(false);   /* so charging while off isn't held */
 			power_off(a);
 			return;
 		}
@@ -5822,6 +5835,7 @@ static void xfer_screen(app *a)
 		bool changed = hare_shelf_changed();
 
 		hare_stop();
+		plat_cable_slow_charge(false);
 		/* The point of the whole feature is getting ROMs onto the card, and
 		 * the shelf is scanned once at startup - so without this the file
 		 * lands, the screen says it landed, and the game is not there. The
