@@ -20,7 +20,7 @@ CHECKS = check-cheevos check-hare check-httpd check-idle check-rahash \
          check-raset check-xfer check-menus check-artscrape check-artrun check-audioout \
          check-db check-stats check-sort check-bt check-ss \
          check-muselib check-musequeue check-museart check-controls check-logpack \
-         check-clock check-update
+         check-clock check-update check-release
 
 check:
 	@fail=0; for c in $(CHECKS); do \
@@ -191,6 +191,18 @@ build-native/update-check: tools/update-check.c tools/tortos-update/plan.c \
 	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g -Itools \
 	      -o $@ tools/update-check.c tools/tortos-update/plan.c tools/tortos-update/write.c \
 	      tools/tortos-update/sha256.c
+
+# TortOS's half of updating over Wi-Fi: reading GitHub's answer for the
+# latest release, the version rule, and the answer kept on the card, from
+# saved replies in tools/fixtures/release. No network.
+check-release: build-native/release-check
+	@./build-native/release-check
+
+build-native/release-check: tools/release-check.c src/update.c src/update.h src/rajson.c \
+                            src/net.c src/atomic.c FORCE
+	@mkdir -p build-native
+	$(CC) -std=gnu11 -Wall -Wextra -D_GNU_SOURCE -O1 -g -DTORTOS_VERSION='"check"' \
+	      -o $@ tools/release-check.c src/update.c src/rajson.c src/net.c src/atomic.c
 
 # The device's title matcher against the host tool's. A drift here does not
 # fail, it just finds fewer games - see tools/artscrape-check.c.
