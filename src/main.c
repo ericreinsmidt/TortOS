@@ -3552,26 +3552,6 @@ static void draw_games(app *a)
 /* The shelf, without presenting it: the options menu draws over a live one, so
  * the cards keep their tint easing behind the panel rather than freezing into
  * a still. */
-/* Nothing on the card at all.
- *
- * Hiding empty systems has an edge that hiding one system does not: if every
- * system is empty the shelf is simply blank, and a blank screen is what a
- * broken launcher looks like. Someone who has just written a card, or put the
- * ROMs one directory too deep, needs to be told where the games go rather
- * than left to conclude the device is dead. The path is named because that is
- * the actual question being asked. */
-static void draw_no_games(app *a)
-{
-	int cy = TORTOS_SCREEN_H / 2;
-
-	ui_text(a->r, ui_font(UI_F_TITLE), "No games found",
-	        TORTOS_SCREEN_W / 2, cy - 60, 0, UI_TEXT_SOFT);
-	ui_text(a->r, ui_font(UI_F_MENU), "Put ROMs in Roms/<System>/ on the card",
-	        TORTOS_SCREEN_W / 2, cy + 6, 0, UI_TEXT_DIM);
-	ui_text(a->r, ui_font(UI_F_META), "one folder per system, named as in systems.cfg",
-	        TORTOS_SCREEN_W / 2, cy + 56, 0, UI_TEXT_DIM);
-}
-
 static void draw_shelf(app *a)
 {
 	/* Install whatever the workers finished, before anything is drawn.
@@ -3595,16 +3575,22 @@ static void draw_shelf(app *a)
 			sys_get_tex(a, i, &w, &h, NULL);
 		}
 	draw_background(a);
-	if (a->sys.count <= 0) draw_no_games(a);
-	else if (a->screen == SCREEN_SYSTEMS) draw_systems(a);
-	else draw_games(a);
+	/* An empty card is only the background here: the welcome draws over it
+	 * from render, so a menu opened over it doesn't sit on a second panel. */
+	if (a->sys.count > 0) {
+		if (a->screen == SCREEN_SYSTEMS) draw_systems(a);
+		else draw_games(a);
+	}
 	draw_battery_dot(a->r);
 }
+
+static void welcome_draw(app *a);   /* with xfer_screen, below */
 
 static void render(app *a)
 {
 	g_redraw_at = REDRAW_NEVER;
 	draw_shelf(a);
+	if (a->sys.count <= 0) welcome_draw(a);
 	plat_draw_osd(a->r);
 	/* The tint lands exactly on its target now (see tick_tint), so this is a
 	 * test that ends rather than one that is true forever. */
@@ -5660,7 +5646,10 @@ static char *album_pick(int id, const char *json, size_t n, size_t *len,
                         char *why, size_t wn);
 static void  xfer_after_write(const char *abs);
 
-static void xfer_screen(app *a)
+/* Down To The Wire over the cable, or Over The Hare over Wi-Fi. MENU's row
+ * goes by whether a computer is on the cable (xfer_screen); the welcome on an
+ * empty card names both, so it says which. */
+static void xfer_screen_over(app *a, bool over_cable)
 {
 	char       ssid[WIFI_SSID_MAX], ip[64];
 	char       addr[96], pinbuf[32], who[64], moved[64], head[192];
@@ -5669,7 +5658,7 @@ static void xfer_screen(app *a)
 	unsigned long long total_in = 0, total_out = 0;
 	bool       done = false;
 	/* Over the USB cable or over the air, which is also the screen's name. */
-	const bool  cable = plat_cable_link(NULL, 0);
+	const bool  cable = over_cable;
 	const char *name  = cable ? XFER_NAME_CABLE : XFER_NAME_WIFI;
 	unsigned    cover_at = 0, cover_next = 0;   /* the embedded covers, below */
 
@@ -5851,6 +5840,104 @@ static void xfer_screen(app *a)
 	}
 	plat_input_flush();
 	memset(&a->in, 0, sizeof a->in);
+}
+
+static void xfer_screen(app *a)
+{
+	xfer_screen_over(a, plat_cable_link(NULL, 0));
+}
+
+/* The welcome on an empty card: no games and no music, as on a card fresh
+ * from the installer. A blank shelf is what a broken launcher looks like, so
+ * instead of naming folders it offers the two ways files come over from a
+ * computer, and opens either: Down To The Wire once a computer is on the
+ * cable, Over The Hare once Wi-Fi is joined, with the Wi-Fi row beside it
+ * until then. A device with no Wi-Fi at all (a Pixel 2 without an adapter)
+ * has only the cable. It goes when the shelf has anything on it, which
+ * leaving either screen sees to: they rescan when files landed. */
+enum { WELCOME_WIRE, WELCOME_HARE, WELCOME_WIFI };
+
+static int welcome_rows(menu_row *rows, int *kind)
+{
+	const bool radio = plat_has_wifi();
+	bool open = false;
+	int  n = 0;
+
+	if (radio) {
+		rows[n++] = MENU_NOTE("Add games and music");
+		rows[n++] = MENU_NOTE("from a computer:");
+	} else {
+		rows[n++] = MENU_NOTE("Add games and music from");
+		rows[n++] = MENU_NOTE("a computer, by USB cable:");
+	}
+	rows[n++] = MENU_HR;
+	kind[n] = WELCOME_WIRE;
+	rows[n++] = plat_cable_link(NULL, 0)
+	          ? (menu_row){ XFER_NAME_CABLE, "USB", true }
+	          : (menu_row){ XFER_NAME_CABLE, "no cable", false };
+	if (radio) {
+		wifi_state st = menu_wifi(NULL, 0);
+
+		kind[n] = WELCOME_HARE;
+		rows[n++] = st == WIFI_CONNECTED
+		          ? (menu_row){ XFER_NAME_WIFI, "Wi-Fi", true }
+		          : (menu_row){ XFER_NAME_WIFI, "needs Wi-Fi", false };
+		if (st != WIFI_CONNECTED) {
+			kind[n] = WELCOME_WIFI;
+			rows[n++] = (menu_row){ "Wi-Fi", st == WIFI_CONNECTING ? "connecting" :
+			                                 st == WIFI_IDLE ? "not connected" : "off", true };
+		}
+	}
+	/* The key only where there is something for it to open */
+	for (int i = 0; i < n; i++) open |= rows[i].live;
+	if (open) {
+		rows[n++] = MENU_RULE;
+		rows[n++] = MENU_NOTE("A: open");
+	}
+	return n;
+}
+
+/* The cursor, kept on a row that can be opened: rows come and go as the
+ * cable and Wi-Fi do, and it starts on the first one that is live. -1 while
+ * none is. */
+static int welcome_sel = -1;
+
+static int welcome_cursor(const menu_row *rows, int n)
+{
+	if (welcome_sel >= 0 && welcome_sel < n && rows[welcome_sel].live) return welcome_sel;
+	welcome_sel = menu_step_sel(rows, n, -1, +1);
+	if (welcome_sel < 0 || welcome_sel >= n || !rows[welcome_sel].live) welcome_sel = -1;
+	return welcome_sel;
+}
+
+static void welcome_draw(app *a)
+{
+	menu_row rows[12];
+	int      kind[12];
+	int      n = welcome_rows(rows, kind);
+
+	menu_draw(a, "Welcome to TortOS", rows, n, welcome_cursor(rows, n),
+	          menu_std_width(a), MENU_ACCENT);
+}
+
+/* The shelf's keys while the welcome is up. MENU and the power button are
+ * the main loop's, as on any shelf; B has nothing behind it to go back to. */
+static void welcome_update(app *a)
+{
+	menu_row rows[12];
+	int      kind[12];
+	int      n = welcome_rows(rows, kind), sel = welcome_cursor(rows, n);
+
+	if (sel < 0) return;
+	if (in_repeat(&a->in, IN_UP))   welcome_sel = menu_step_sel(rows, n, sel, -1);
+	if (in_repeat(&a->in, IN_DOWN)) welcome_sel = menu_step_sel(rows, n, sel, +1);
+	if (!a->in.pressed[IN_ACCEPT]) return;
+	switch (kind[sel]) {
+	case WELCOME_WIRE: xfer_screen_over(a, true);  break;
+	case WELCOME_HARE: xfer_screen_over(a, false); break;
+	case WELCOME_WIFI: wifi_screen(a);             break;
+	}
+	redraw_now();
 }
 
 /* Box art, from libretro. See artscrape.h for the matching rule and why it is
@@ -11565,6 +11652,12 @@ static void take_shot(app *a)
 	                                                  SDL_PIXELFORMAT_RGBA32);
 	muse_covers_settle();
 	draw_shelf(a);
+	/* An empty card's welcome, as render draws it, on its own: the device
+	 * shows it only on the shelf, never under another screen */
+	if (a->sys.count <= 0 && !shot_menu && !shot_slots && !shot_kb && !shot_wait &&
+	    !shot_info && shot_controls < 0 && shot_np < 0 && !shot_art && !shot_hare &&
+	    !shot_syn && !shot_cheevos)
+		welcome_draw(a);
 	if (shot_menu) tortos_menu_draw(a, shot_menu_sel);
 	if (shot_slots) shot_draw_slots(a);
 	if (shot_kb) kb_preview(a->r, shot_kb_title, shot_kb_text,
@@ -12501,7 +12594,11 @@ int main(int argc, char *argv[])
 		 * MENU opens in a game. It draws over the shelf and returns here.
 		 * Both handles its own, because there MENU and B mean two different
 		 * menus and the screen cannot say which. */
-		if (CARD_DIRS[g_dir].both) {
+		if (a.sys.count <= 0) {
+			/* An empty card: the welcome (welcome_update), under MENU */
+			if (a.in.pressed[IN_MENU]) { tortos_menu(&a); continue; }
+			welcome_update(&a);
+		} else if (CARD_DIRS[g_dir].both) {
 			update_both(&a);
 		} else {
 			if (a.screen != SCREEN_SYSTEMS) g_seq_hist = ~0ull;
