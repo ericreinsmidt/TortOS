@@ -3873,10 +3873,17 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 	 * panel's own pad on top of that, which read as the footer floating off the
 	 * bottom border. */
 	int rule_h = pad / 2 + 2;
+	/* A rule inside the body has that air on both sides of its bar. Drawn at
+	 * the foot of a rule_h, as the footer's is, the bar sat against whatever
+	 * came under it, so a row between it and the footer's rule rode high:
+	 * nothing above it and pad/2 below (the welcome and System Update both
+	 * put one there). */
+	int hr_h = pad + 2;
 	int gap = row_h;                 /* between the label and value columns */
 	int text_h = fm ? TTF_FontHeight(fm) : row_h;
 	int note_h = text_h + pad / 3;
-#define ROW_H(r) (!(r).label ? rule_h : (ROW_IS_NOTE(r) ? note_h : row_h))
+#define ROW_H(r) (ROW_IS_HR(r) ? hr_h : !(r).label ? rule_h \
+                  : (ROW_IS_NOTE(r) ? note_h : row_h))
 	/* Center the ink, not the em box. The box reserves a descender's depth
 	 * below the baseline that labels like "Wi-Fi" and "Bluetooth" never use,
 	 * so centering the box leaves the visible line riding high in its row and
@@ -4366,7 +4373,8 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 			SDL_SetRenderDrawColor(a->r, (Uint8)(accent >> 16),
 			                       (Uint8)(accent >> 8), (Uint8)accent, 70);
 			SDL_RenderFillRect(a->r, &(SDL_Rect){ content_x,
-			                                      y + rule_h - 2,
+			                                      y + (ROW_IS_HR(rows[i]) ? pad / 2
+			                                                              : rule_h - 2),
 			                                      content_w, 2 });
 			continue;
 		}

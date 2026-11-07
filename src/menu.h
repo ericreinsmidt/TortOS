@@ -46,8 +46,9 @@ typedef struct {
                         (r).value == MENU_BODY_MARK)
 
 /* A rule INSIDE a body, rather than the one that divides a list from its
- * footer. Drawn identically - same bar, same width - and it exists as its own
- * kind for one reason: MENU_RULE is what tells a scrolling card where its
+ * footer. The same bar and width, with air on both sides of it rather than
+ * only above, so whatever sits between it and the footer's rule is centered.
+ * It exists as its own kind for one more reason: MENU_RULE is what tells a scrolling card where its
  * pinned footer starts, so a rule used as punctuation in the middle of some
  * prose would pin everything after it.
  *
