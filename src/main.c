@@ -51,11 +51,14 @@
 #include "game_menu.h"
 #include "ui.h"
 #include "wifi_menu.h"
+#include "update.h"
+#include "../tools/tortos-update/sha256.h"
 
 #include <SDL.h>
 #include <SDL_image.h>
 #include <ctype.h>
 #include <dirent.h>
+#include <fcntl.h>
 #include <math.h>
 #include <signal.h>
 #include <stdio.h>
@@ -3857,6 +3860,11 @@ static int menu_notes_fit(void)
  * The caller passes it rather than this inferring it, because only the caller
  * knows the content is a repeat - and getting it wrong does not look like a
  * bug, it looks like a scroll that jumps. */
+/* How full the next panel's MENU_BAR is, 0 to 1 (src/menu.h). Set by the
+ * screen just before it draws, since a row carries no number. */
+static float g_menu_bar;
+static void menu_bar_fill(float f) { g_menu_bar = f < 0.0f ? 0.0f : f > 1.0f ? 1.0f : f; }
+
 static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
                          int n, int sel, int fixed_w, unsigned accent,
                          const unsigned *vcolors, bool visits_all, int loop_at)
@@ -4435,6 +4443,25 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 		 *
 		 * The VALUE yields first: labels are short and fixed ("File", "Size"),
 		 * values are whatever the card happens to hold. */
+		/* A bar across the text's whole width, in the shape of the
+		 * selection plate: a faint track, filled in the panel's color as
+		 * far as menu_bar_fill says. A sliver is drawn as a round end, so
+		 * a download that has started never looks as if it hasn't. */
+		if (ROW_IS_BAR(rows[i])) {
+			int bh = text_h / 3 > 6 ? text_h / 3 : 6;
+			SDL_Rect track = { content_x, y + (ROW_H(rows[i]) - bh) / 2, content_w, bh };
+			SDL_Rect fill = track;
+
+			fill.w = (int)((float)track.w * g_menu_bar + 0.5f);
+			if (fill.w > 0 && fill.w < bh) fill.w = bh;
+			SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+			ui_round_rect(a->r, &track, bh / 2, (SDL_Color){ 255, 255, 255, 34 });
+			if (fill.w > 0)
+				ui_round_rect(a->r, &fill, bh / 2,
+				              (SDL_Color){ (Uint8)(accent >> 16), (Uint8)(accent >> 8),
+				                           (Uint8)accent, 255 });
+			continue;
+		}
 		if (ROW_IS_NOTE(rows[i])) {
 			char note[192];
 
@@ -4671,6 +4698,49 @@ static wifi_state menu_wifi(char *ssid, int cap)
 	return st;
 }
 
+/* ---- System Update: what the last check said (src/update.h) ---------------
+ *
+ * Read from the card once, and again after every check: MENU's row asks every
+ * frame. The answer kept on the card is shown whatever its age, since "2.2.0
+ * available" stays true until a newer check says otherwise; the screen checks
+ * again once it is a day old. */
+static update_state   g_up_state = UPDATE_UNKNOWN;
+static update_release g_up_rel;
+static char           g_up_value[40];
+static bool           g_up_read;
+
+static void up_path(char *out, size_t n, const char *name)
+{
+	snprintf(out, n, "%s/.update%s%s", P_CARD, name[0] ? "/" : "", name);
+}
+
+static void up_cache_path(char *out, size_t n)
+{
+	snprintf(out, n, "%s/update-check", P_USERDATA);
+}
+
+static void up_set_value(void)
+{
+	if (g_up_state == UPDATE_WAITING)
+		snprintf(g_up_value, sizeof g_up_value, "%s available", g_up_rel.version);
+	else if (g_up_state == UPDATE_CURRENT)
+		snprintf(g_up_value, sizeof g_up_value, "up to date");
+	else
+		g_up_value[0] = '\0';
+}
+
+static void up_known(void)
+{
+	char path[CFG_STR * 2];
+
+	if (g_up_read) return;
+	g_up_read = true;
+	up_cache_path(path, sizeof path);
+	if (!update_cache_peek(path, TORTOS_VERSION, &g_up_state, &g_up_rel))
+		g_up_state = UPDATE_UNKNOWN;
+	up_set_value();
+}
+
 /* Gather what the device currently is, and hand it to sys_menu_build.
  *
  * The split: this half is allowed to fork wpa_cli and read the app, the other
@@ -4694,6 +4764,9 @@ static int menu_build(app *a, screen_id screen, int sys,
 	u.no_wifi = !plat_has_wifi();
 	u.no_bt   = !plat_has_bluetooth();
 	u.cable_xfer = plat_cable_link(NULL, 0);
+	up_known();
+	u.update_waiting = g_up_state == UPDATE_WAITING;
+	u.update_value   = g_up_value[0] ? g_up_value : NULL;
 
 	if (u.games) {
 		const system_cfg *sc = &a->sys.systems[sys];
@@ -6908,6 +6981,491 @@ static bool stats_screen(app *a)
 	return false;
 }
 
+/* ---- System Update: the screen (TortOS#69, src/update.h) --------------------
+ *
+ * What the last check said, and the way to the update: a confirm, then the
+ * release's SHA256SUMS, the image into .update/ on the card with a bar, its
+ * SHA-256 against both GitHub's digest and SHA256SUMS, the request, and init
+ * told to hand over to the updater (plat_update_handoff), which writes it
+ * after everything else has stopped. Every step is a little of each frame,
+ * so the power button and B always answer. */
+
+#define UP_FEED_TMP "/tmp/tortos-release.json"
+#define UP_SUMS_TMP "/tmp/tortos-SHA256SUMS"
+
+typedef enum {
+	UP_IDLE,          /* showing what is known */
+	UP_CHECKING,      /* asking the release feed */
+	UP_SUMS,          /* fetching SHA256SUMS, before the image */
+	UP_DOWNLOADING,   /* the image, into .update/ */
+	UP_VERIFYING,     /* its SHA-256, read back off the card */
+} up_phase;
+
+static long long up_file_size(const char *path)
+{
+	struct stat st;
+
+	return stat(path, &st) == 0 ? (long long)st.st_size : -1;
+}
+
+/* A small file whole and NUL terminated, or NULL if it isn't there or runs
+ * past max. */
+static char *up_slurp(const char *path, size_t max, size_t *len)
+{
+	FILE *f = fopen(path, "rb");
+	char *buf;
+	size_t n;
+
+	if (!f) return NULL;
+	buf = malloc(max + 1);
+	n = buf ? fread(buf, 1, max + 1, f) : 0;
+	fclose(f);
+	if (!buf || n > max) { free(buf); return NULL; }
+	buf[n] = '\0';
+	*len = n;
+	return buf;
+}
+
+/* Clear .update/ of everything but `keep`, the updater's log and its last
+ * result: an older release's image, a half download, a request nobody
+ * acted on. */
+static void up_tidy(const char *keep)
+{
+	char dir[CFG_STR * 2], path[CFG_STR * 3];
+	struct dirent *e;
+	DIR *d;
+
+	up_path(dir, sizeof dir, "");
+	if (!(d = opendir(dir))) return;
+	while ((e = readdir(d))) {
+		if (e->d_name[0] == '.' || !strcmp(e->d_name, "update.log") ||
+		    !strcmp(e->d_name, "result") || (keep && !strcmp(e->d_name, keep)))
+			continue;
+		snprintf(path, sizeof path, "%s/%s", dir, e->d_name);
+		unlink(path);
+	}
+	closedir(d);
+}
+
+/* What stands in the way of updating now, or NULL. */
+static const char *up_blocked(bool net, char *buf, size_t n)
+{
+	char path[CFG_STR * 3];
+	struct statvfs vf;
+	bool charging = false, readable;
+	int pct = 0;
+
+	if (!net) return "Needs Wi-Fi";
+	readable = plat_battery(&pct, &charging);
+	if (!update_battery_ok(readable, charging, pct)) {
+		snprintf(buf, n, "Plug in or charge above %d%%", UPDATE_BATTERY_MIN_PCT);
+		return buf;
+	}
+	up_path(path, sizeof path, g_up_rel.file);
+	if (up_file_size(path) != g_up_rel.size && statvfs(P_CARD, &vf) == 0 &&
+	    (long long)vf.f_bavail * (long long)vf.f_frsize < g_up_rel.size + (1 << 20)) {
+		snprintf(buf, n, "Needs %lld MB free on the card", (g_up_rel.size >> 20) + 1);
+		return buf;
+	}
+	return NULL;
+}
+
+static void up_draw(app *a, const char *heading, const menu_row *rows, int n, int sel)
+{
+	tick_tint(a);
+	draw_shelf(a);
+	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+	SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
+	SDL_RenderFillRect(a->r, NULL);
+	menu_draw(a, heading, rows, n, sel, menu_std_width(a), MENU_ACCENT);
+	plat_draw_osd(a->r);
+	plat_present();
+}
+
+/* The device downloads it, then restarts: asked once. It starts on "Not
+ * now", as every confirm here does (confirm_panel), so the press that opened
+ * it can't also answer it. */
+static bool up_confirm(app *a, const char *heading)
+{
+	menu_row rows[] = {
+		MENU_NOTE("The device downloads it,"),
+		MENU_NOTE("then restarts to update."),
+		MENU_NOTE("Games and saves stay."),
+		MENU_HR,
+		{ "Update now", NULL, true },
+		{ "Not now", NULL, true },
+	};
+	int sel = 5;
+
+	for (;;) {
+		plat_input_poll(&a->in);
+		if (a->in.quit_requested) { a->running = false; return false; }
+		if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); return false; }
+		if (menu_leaving(a)) return false;
+		if (in_repeat(&a->in, IN_UP) || in_repeat(&a->in, IN_DOWN)) sel = sel == 4 ? 5 : 4;
+		if (a->in.pressed[IN_ACCEPT]) return sel == 4;
+		up_draw(a, heading, rows, 6, sel);
+		SDL_Delay(8);
+	}
+}
+
+/* The request written, then init told. Init stops everything, this process
+ * with it, so returning at all means it didn't happen: the request goes, and
+ * the reason is left in note. */
+static void up_handoff(app *a, const char *heading, char *note, size_t n)
+{
+	menu_row rows[] = {
+		{ "Restarting to update...", NULL, false },
+		MENU_RULE,
+		MENU_NOTE("Don't turn the device off"),
+	};
+	char path[CFG_STR * 3];
+	bool charging = false, readable;
+	int pct = 0;
+	unsigned t0;
+
+	readable = plat_battery(&pct, &charging);
+	if (!update_battery_ok(readable, charging, pct)) {
+		snprintf(note, n, "Plug in or charge above %d%%", UPDATE_BATTERY_MIN_PCT);
+		return;
+	}
+	up_path(path, sizeof path, "request");
+	if (!update_request_write(path, plat_device_name(), &g_up_rel)) {
+		snprintf(note, n, "Couldn't write to the card");
+		return;
+	}
+	up_draw(a, heading, rows, 3, -1);
+	fprintf(stderr, "update: handing over to the updater for %s\n", g_up_rel.file);
+	if (!plat_update_handoff()) {
+		unlink(path);
+		fprintf(stderr, "update: no updater on this system\n");
+		snprintf(note, n, "This system can't update itself");
+		return;
+	}
+	for (t0 = plat_now_ms(); plat_now_ms() - t0 < 60000; ) {
+		up_draw(a, heading, rows, 3, -1);
+		SDL_Delay(100);
+	}
+	unlink(path);
+	fprintf(stderr, "update: init never stopped TortOS\n");
+	snprintf(note, n, "The restart didn't happen");
+}
+
+static void update_screen(app *a)
+{
+	static uint8_t chunk[1 << 20];
+	char head[48], latest[40], action[48], size[24], note[64] = "", blocked_buf[64];
+	char why[160], path[CFG_STR * 3], part[CFG_STR * 3 + 8], cache[CFG_STR * 2];
+	const char *device = plat_device_name();
+	up_phase phase = UP_IDLE;
+	bool asked = false, failed = false, done = false;
+	unsigned asked_at = 0;
+	long long hashed = 0;
+	int fd = -1;
+	sha256 h;
+
+	up_known();
+	up_cache_path(cache, sizeof cache);
+	{
+		update_state st;
+		update_release r;
+
+		/* No answer from the last day: ask, once Wi-Fi is up */
+		if (!update_cache_read(cache, time(NULL), TORTOS_VERSION, &st, &r)) phase = UP_CHECKING;
+	}
+
+	while (!done && !want_quit && a->running) {
+		unsigned now = plat_now_ms();
+		bool net = menu_wifi(NULL, 0) == WIFI_CONNECTED;
+		bool busy = phase == UP_SUMS || phase == UP_DOWNLOADING || phase == UP_VERIFYING;
+		menu_row rows[8];
+		const char *blocked = NULL;
+		int n = 0, sel = -1;
+
+		snprintf(head, sizeof head, "Update to %s", g_up_rel.version);
+		up_path(path, sizeof path, g_up_rel.file);
+		snprintf(part, sizeof part, "%s.part", path);
+
+		/* ---- the work, a step a frame ---- */
+		if (phase == UP_CHECKING) {
+			if (!net) {
+				phase = UP_IDLE;
+			} else if (!asked) {
+				/* One request at a time: box art may have the slot */
+				if (net_get_async(UPDATE_FEED, UP_FEED_TMP, 20)) asked = true;
+				else if (!asked_at) asked_at = now;
+				else if (now - asked_at > 10000) { phase = UP_IDLE; failed = true; }
+			} else {
+				int got = net_async_poll();
+
+				if (got != 0) {
+					update_release rel;
+					update_state st = UPDATE_UNKNOWN;
+					size_t len = 0;
+					char *reply = got == 1 ? up_slurp(UP_FEED_TMP, 256 * 1024, &len) : NULL;
+
+					snprintf(why, sizeof why, "no answer from the release feed");
+					if (reply)
+						st = update_answer(reply, len, device, TORTOS_VERSION, cache,
+						                   time(NULL), &rel, why, sizeof why);
+					free(reply);
+					unlink(UP_FEED_TMP);
+					fprintf(stderr, "update: checked: %s\n", why);
+					if (st != UPDATE_UNKNOWN) {
+						g_up_state = st;
+						if (st == UPDATE_WAITING) g_up_rel = rel;
+						up_set_value();
+					}
+					failed = st == UPDATE_UNKNOWN;
+					asked = false;
+					asked_at = 0;
+					phase = UP_IDLE;
+				}
+			}
+		} else if (phase == UP_SUMS || phase == UP_DOWNLOADING) {
+			int got = net_async_poll();
+
+			a->idle.since_ms = now;          /* Auto Off waits for a download */
+			if (got == -1) {
+				unlink(part);
+				fprintf(stderr, "update: the download stopped (curl %d, HTTP %d)\n",
+				        net_async_exit(), net_async_http());
+				snprintf(note, sizeof note, "The download stopped");
+				phase = UP_IDLE;
+			} else if (got == 1 && phase == UP_SUMS) {
+				size_t len = 0;
+				char *sums = up_slurp(UP_SUMS_TMP, 64 * 1024, &len);
+				char hex[65] = "";
+				uint8_t digest[32];
+
+				if (sums) {
+					sha256_start(&h);
+					sha256_add(&h, sums, len);
+					sha256_finish(&h, digest, hex);
+				}
+				unlink(UP_SUMS_TMP);
+				if (!sums || strcmp(hex, g_up_rel.sums_sha256) ||
+				    !update_sums_list(sums, len, g_up_rel.file, g_up_rel.sha256)) {
+					fprintf(stderr, "update: SHA256SUMS doesn't match the release\n");
+					snprintf(note, sizeof note, "The release's checksums don't match");
+					phase = UP_IDLE;
+				} else if (up_file_size(path) == g_up_rel.size) {
+					phase = UP_VERIFYING;    /* downloaded before: check it again */
+				} else if (net_get_async(g_up_rel.url, path, 3600)) {
+					phase = UP_DOWNLOADING;
+				} else {
+					snprintf(note, sizeof note, "The download couldn't start");
+					phase = UP_IDLE;
+				}
+				free(sums);
+				if (phase == UP_VERIFYING) {
+					fd = open(path, O_RDONLY | O_CLOEXEC);
+					sha256_start(&h);
+					hashed = 0;
+					if (fd < 0) { snprintf(note, sizeof note, "The download stopped"); phase = UP_IDLE; }
+				}
+			} else if (got == 1) {
+				fd = open(path, O_RDONLY | O_CLOEXEC);
+				sha256_start(&h);
+				hashed = 0;
+				phase = fd >= 0 ? UP_VERIFYING : UP_IDLE;
+				if (fd < 0) snprintf(note, sizeof note, "The download stopped");
+			}
+		} else if (phase == UP_VERIFYING) {
+			unsigned until = now + 25;
+			ssize_t got = 1;
+
+			a->idle.since_ms = now;
+			while (got > 0 && plat_now_ms() < until)
+				if ((got = read(fd, chunk, sizeof chunk)) > 0) {
+					sha256_add(&h, chunk, (size_t)got);
+					hashed += got;
+				}
+			if (got <= 0) {
+				uint8_t digest[32];
+				char hex[65];
+
+				close(fd);
+				fd = -1;
+				sha256_finish(&h, digest, hex);
+				if (got < 0 || hashed != g_up_rel.size || strcmp(hex, g_up_rel.sha256)) {
+					fprintf(stderr, "update: the download doesn't match: %lld bytes, %s\n",
+					        hashed, hex);
+					unlink(path);
+					snprintf(note, sizeof note, "The download didn't match");
+					phase = UP_IDLE;
+				} else {
+					fprintf(stderr, "update: %s matches both SHA-256s\n", g_up_rel.file);
+					phase = UP_IDLE;
+					up_handoff(a, head, note, sizeof note);
+				}
+			}
+		}
+		busy = phase == UP_SUMS || phase == UP_DOWNLOADING || phase == UP_VERIFYING;
+
+		/* ---- the rows ---- */
+		if (phase == UP_CHECKING) {
+			rows[n++] = (menu_row){ "Installed", TORTOS_VERSION, false };
+			rows[n++] = (menu_row){ "Latest", "checking...", false };
+		} else if (busy) {
+			long long have = phase == UP_DOWNLOADING ? up_file_size(part) : 0;
+
+			if (have < 0) have = 0;
+			if (phase == UP_VERIFYING) {
+				rows[n++] = (menu_row){ "Checking the download", "", false };
+				menu_bar_fill(1.0f);
+			} else {
+				snprintf(size, sizeof size, "%lld / %lld MB", (have + (1 << 19)) >> 20,
+				         (g_up_rel.size + (1 << 19)) >> 20);
+				rows[n++] = (menu_row){ "Downloading", size, false };
+				menu_bar_fill(g_up_rel.size > 0 ? (float)have / (float)g_up_rel.size : 0.0f);
+			}
+			rows[n++] = MENU_BAR;
+			rows[n++] = MENU_RULE;
+			rows[n++] = MENU_NOTE("B: cancel");
+		} else {
+			const char *say = note;
+
+			if (g_up_state == UPDATE_WAITING) {
+				snprintf(latest, sizeof latest, "%s", g_up_rel.version);
+				blocked = up_blocked(net, blocked_buf, sizeof blocked_buf);
+				snprintf(action, sizeof action, "Update to %s", g_up_rel.version);
+				snprintf(size, sizeof size, "%lld MB", (g_up_rel.size + (1 << 19)) >> 20);
+				if (!say[0]) say = blocked ? blocked : "A: update";
+			} else {
+				snprintf(latest, sizeof latest, "%s",
+				         g_up_state == UPDATE_CURRENT ? TORTOS_VERSION
+				         : failed ? "no answer" : net ? "not checked" : "needs Wi-Fi");
+				snprintf(action, sizeof action, "Check again");
+				if (!say[0])
+					say = g_up_state == UPDATE_CURRENT ? "Up to date"
+					    : failed ? "Couldn't reach GitHub" : !net ? "Needs Wi-Fi" : "";
+			}
+			rows[n++] = (menu_row){ "Installed", TORTOS_VERSION, false };
+			rows[n++] = (menu_row){ "Latest", latest, false };
+			rows[n++] = MENU_HR;
+			if (g_up_state == UPDATE_WAITING)
+				rows[n++] = (menu_row){ action, size, !blocked };
+			else
+				rows[n++] = (menu_row){ action, NULL, net };
+			if (rows[n - 1].live) sel = n - 1;
+			if (say[0]) {
+				rows[n++] = MENU_RULE;
+				rows[n++] = MENU_NOTE(say);
+			}
+		}
+
+		/* ---- the buttons ---- */
+		plat_input_poll(&a->in);
+		if (a->in.quit_requested || a->in.pressed[IN_POWER] || (!busy && idle_due(a)) ||
+		    (busy && (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]))) {
+			bool leave = !(busy && (a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]));
+
+			if (phase == UP_CHECKING || phase == UP_SUMS || phase == UP_DOWNLOADING)
+				net_async_abort();
+			if (fd >= 0) { close(fd); fd = -1; }
+			unlink(part);
+			if (busy) fprintf(stderr, "update: stopped by the player\n");
+			phase = UP_IDLE;
+			note[0] = '\0';
+			if (a->in.pressed[IN_MENU]) g_menu_closing = true;
+			if (a->in.quit_requested) { a->running = false; return; }
+			if (a->in.pressed[IN_POWER] || idle_due(a)) { power_off(a); return; }
+			if (leave || g_menu_closing) done = true;
+			continue;
+		}
+		if (!busy && menu_leaving(a)) {
+			if (phase == UP_CHECKING) net_async_abort();
+			done = true;
+		}
+		if (!busy && phase == UP_IDLE && sel >= 0 && a->in.pressed[IN_ACCEPT]) {
+			note[0] = '\0';
+			if (g_up_state != UPDATE_WAITING) {
+				phase = UP_CHECKING;
+				failed = false;
+			} else if (up_confirm(a, head) && a->running) {
+				fprintf(stderr, "update: TortOS %s: %s\n", g_up_rel.version, g_up_rel.file);
+				up_path(path, sizeof path, "");
+				mkdir(path, 0755);
+				up_tidy(g_up_rel.file);
+				if (net_get_async(g_up_rel.sums_url, UP_SUMS_TMP, 30)) phase = UP_SUMS;
+				else snprintf(note, sizeof note, "The download couldn't start");
+			}
+		}
+		if (in_repeat(&a->in, IN_VOLUP))    plat_volume_nudge(+1);
+		if (in_repeat(&a->in, IN_VOLDN))    plat_volume_nudge(-1);
+		if (in_repeat(&a->in, IN_BRIGHTUP)) plat_brightness_nudge(+1);
+		if (in_repeat(&a->in, IN_BRIGHTDN)) plat_brightness_nudge(-1);
+
+		up_draw(a, busy ? head : "System Update", rows, n, sel);
+		SDL_Delay(phase == UP_VERIFYING ? 1 : 8);
+	}
+}
+
+/* What the updater said, once, at the first start after it ran: done, or
+ * nothing written and why, or stopped while writing. The line comes off the
+ * card once shown; the updater's log stays. Half downloads from a run that
+ * was cut short go too. */
+static void update_after_start(app *a)
+{
+	char dir[CFG_STR * 2], path[CFG_STR * 3], line[512] = "", detail[256], now[64];
+	struct dirent *e;
+	update_result res;
+	DIR *d;
+	FILE *f;
+
+	up_path(dir, sizeof dir, "");
+	if ((d = opendir(dir))) {
+		while ((e = readdir(d))) {
+			size_t k = strlen(e->d_name);
+
+			if (k > 5 && !strcmp(e->d_name + k - 5, ".part")) {
+				snprintf(path, sizeof path, "%s/%s", dir, e->d_name);
+				unlink(path);
+			}
+		}
+		closedir(d);
+	}
+	up_path(path, sizeof path, "result");
+	if (!(f = fopen(path, "r"))) return;
+	if (!fgets(line, sizeof line, f)) line[0] = '\0';
+	fclose(f);
+	unlink(path);
+	res = update_result_parse(line, detail, sizeof detail);
+	if (res == UPDATE_RESULT_NONE) return;
+	fprintf(stderr, "update: the updater said: %s", line);
+
+	for (;;) {
+		menu_row rows[6];
+		int n = 0;
+		const char *heading = "The update didn't finish";
+
+		if (res == UPDATE_RESULT_DONE) {
+			heading = "Updated";
+			snprintf(now, sizeof now, "TortOS is now %s.", detail);
+			rows[n++] = MENU_NOTE(now);
+		} else if (res == UPDATE_RESULT_UNTOUCHED) {
+			rows[n++] = MENU_NOTE("Nothing was changed.");
+			rows[n++] = MENU_NOTE("Try again from System Update.");
+		} else {
+			rows[n++] = MENU_NOTE("It stopped while writing.");
+			rows[n++] = MENU_NOTE("If anything seems wrong,");
+			rows[n++] = MENU_NOTE("use TortOS Installer's Update.");
+		}
+		rows[n++] = MENU_RULE;
+		rows[n++] = MENU_NOTE("A: OK");
+
+		plat_input_poll(&a->in);
+		if (a->in.quit_requested) { a->running = false; return; }
+		if (a->in.pressed[IN_POWER]) { power_off(a); return; }
+		if (a->in.pressed[IN_ACCEPT] || a->in.pressed[IN_BACK] || a->in.pressed[IN_MENU]) break;
+		up_draw(a, heading, rows, n, -1);
+		SDL_Delay(8);
+	}
+	plat_input_flush();
+	memset(&a->in, 0, sizeof a->in);
+}
+
 static void about_screen(app *a)
 {
 	char ver[48], addr[80], batt[32], up[48];
@@ -7419,6 +7977,7 @@ static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
 	 * fewer of them, and the same list the build used says which is which. */
 	{
 		sys_ui dev = { .no_wifi = !plat_has_wifi(), .no_bt = !plat_has_bluetooth(),
+		               .update_waiting = (up_known(), g_up_state == UPDATE_WAITING),
 		               .cable_xfer = plat_cable_link(NULL, 0) };
 		pm_row ids[PM_ROWS];
 		int n = sys_menu_tortos_rows(&dev, ids);
@@ -7509,6 +8068,7 @@ static menu_result sysmenu_key(app *a, void *ctx, in_button key, int sel)
 	case PM_CLOCK:        clock_screen(a); break;
 	case PM_STATS:        if (stats_screen(a)) return MENU_DONE; break;
 	case PM_CONTROLS:     controls_screen(a); break;
+	case PM_UPDATE:       update_screen(a); break;
 	case PM_ABOUT:        about_screen(a); break;
 	default: break;
 	}
@@ -12536,6 +13096,9 @@ int main(int argc, char *argv[])
 	 * updating once a second, which is visibly wrong, rather than one that has
 	 * silently frozen. */
 	const Uint32 HEARTBEAT_MS = 1000;
+
+	/* What the updater said, if it ran since the last start */
+	update_after_start(&a);
 	Uint32 last_pass = 0, last_render = 0;
 
 	while (a.running) {

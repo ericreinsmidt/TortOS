@@ -8,7 +8,9 @@
  * missing the Brick's image or SHA256SUMS, with a digest cut short, served
  * over http, with an address too long to keep, or cut off partway. Then the version rule's edges, and the
  * answer kept on the card: fresh, stale, for another version, or tampered
- * with. No network: the fetch itself is net.c's, and is tried on the device.
+ * with. Then SHA256SUMS (the real one for 2.1.1), the request the updater
+ * reads, the line it leaves behind, and the battery rule. No network: the
+ * fetch itself is net.c's, and is tried on the device.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -171,6 +173,9 @@ static void check_cache(void)
 	CHECK(!update_cache_read(path, t + UPDATE_CHECK_EVERY_S, "2.1.1", &st, &back),
 	      "a day later, still kept");
 	CHECK(!update_cache_read(path, t - 60, "2.1.1", &st, &back), "the clock went back");
+	CHECK(update_cache_peek(path, "2.1.1", &st, &back) && st == UPDATE_WAITING &&
+	      !strcmp(back.version, "2.2.0"), "but peeked at, any age, it still says 2.2.0 waits");
+	CHECK(!update_cache_peek(path, "2.2.0", &st, &back), "and not for another version");
 	CHECK(!update_cache_read(path, t + 60, "2.2.0", &st, &back),
 	      "kept across an update to the version it offered");
 	CHECK(!update_cache_read(path, t + 60, "2.3.0", &st, &back), "kept for another version");
@@ -225,11 +230,87 @@ static void check_cache(void)
 	remove(path);
 }
 
+/* The second source for a download, the request the updater reads, the line
+ * it leaves behind, and the battery rule. */
+static void check_handoff(void)
+{
+	const char *brick = "8a06db6bb11c7f1920ea7369b4a33a081ba94c4d1bcc3245650ba11fc34dc14c";
+	const char *pixel = "2dc8272b633cc0902c46067116bcf9d1c3e3a027d18ca27c1f40fb4796e3db02";
+	const char *path = "build-native/release-check.request";
+	update_release r;
+	char why[160], detail[160], text[1024];
+	size_t len, n;
+	char *sums = slurp("SHA256SUMS-v2.1.1", &len);
+	FILE *f;
+
+	printf("SHA256SUMS\n");
+	CHECK(update_sums_list(sums, len, "TortOS-v2.1.1-brick.img.xz", brick), "the Brick's line");
+	CHECK(update_sums_list(sums, len, "TortOS-v2.1.1-pixel2.img.xz", pixel), "the Pixel's line");
+	CHECK(!update_sums_list(sums, len, "TortOS-v2.1.1-brick.img.xz", pixel),
+	      "the Brick's file under the Pixel's SHA-256");
+	CHECK(!update_sums_list(sums, len, "TortOS-v2.1.1-brick.img", brick),
+	      "a name that is only the start of one");
+	CHECK(!update_sums_list(sums, len, "brick.img.xz", brick), "a name that is only the end of one");
+	CHECK(!update_sums_list(sums, len, "TortOS-v2.2.0-brick.img.xz", brick), "a file it doesn't list");
+	CHECK(!update_sums_list(sums, len, "TortOS-v2.1.1-brick.img.xz", "8A06DB6BB11C7F1920EA7369B4A33A081BA94C4D1BCC3245650BA11FC34DC14C"),
+	      "a SHA-256 in capitals");
+	{
+		char two[512];
+
+		snprintf(two, sizeof two, "%s  TortOS-v2.1.1-brick.img.xz\r\n%s *TortOS-v2.1.1-brick.img.xz\n",
+		         brick, brick);
+		CHECK(update_sums_list(two, strlen(two), "TortOS-v2.1.1-brick.img.xz", brick),
+		      "Windows line ends, and the binary-mode star");
+		snprintf(two, sizeof two, "%s  TortOS-v2.1.1-brick.img.xz\n%s  TortOS-v2.1.1-brick.img.xz\n",
+		         brick, pixel);
+		CHECK(!update_sums_list(two, strlen(two), "TortOS-v2.1.1-brick.img.xz", brick),
+		      "a second line giving the file another SHA-256");
+	}
+	free(sums);
+
+	printf("the request\n");
+	if (!parse("v2.2.0.json", "brick", &r, why)) { printf("  FAIL: %s\n", why); failures++; return; }
+	remove(path);
+	CHECK(update_request_write(path, "brick", &r), "writing it");
+	f = fopen(path, "r");
+	n = f ? fread(text, 1, sizeof text - 1, f) : 0;
+	if (f) fclose(f);
+	text[n] = '\0';
+	snprintf(why, sizeof why, "file=TortOS-v2.2.0-brick.img.xz\nversion=2.2.0\ndevice=brick\n"
+	                          "size=40940100\nsha256=%.64s\n", r.sha256);
+	CHECK(!strcmp(text, why), "it reads, key by key, as the updater wants it:\n%s", text);
+	CHECK(!update_request_write(path, "../brick", &r), "a device name with a path");
+	snprintf(r.file, sizeof r.file, "../TortOS-v2.2.0-brick.img.xz");
+	CHECK(!update_request_write(path, "brick", &r), "a file outside .update/");
+	remove(path);
+
+	printf("the updater's last word\n");
+	CHECK(update_result_parse("updated to TortOS 2.2.0\n", detail, sizeof detail) == UPDATE_RESULT_DONE &&
+	      !strcmp(detail, "2.2.0"), "done, and to which version: %s", detail);
+	CHECK(update_result_parse("not updated, nothing written: the request names x, not y\n",
+	                          detail, sizeof detail) == UPDATE_RESULT_UNTOUCHED &&
+	      !strcmp(detail, "the request names x, not y"), "nothing written, and why: %s", detail);
+	CHECK(update_result_parse("FAILED after writing: reading back the root: Input/output error. "
+	                          "Use TortOS Installer's Update; games and saves are safe.",
+	                          detail, sizeof detail) == UPDATE_RESULT_FAILED, "failed after writing");
+	CHECK(update_result_parse("", detail, sizeof detail) == UPDATE_RESULT_NONE, "an empty file");
+	CHECK(update_result_parse("hello", detail, sizeof detail) == UPDATE_RESULT_NONE, "anything else");
+	CHECK(update_result_parse(NULL, detail, sizeof detail) == UPDATE_RESULT_NONE, "no file");
+
+	printf("the battery\n");
+	CHECK(update_battery_ok(true, true, 3), "on the charger at 3%%");
+	CHECK(update_battery_ok(true, false, 11), "off it at 11%%");
+	CHECK(!update_battery_ok(true, false, 10), "not at 10%%, where the dot shows");
+	CHECK(!update_battery_ok(true, false, 0), "not at 0%%");
+	CHECK(update_battery_ok(false, false, 0), "a device with no battery to read");
+}
+
 int main(void)
 {
 	check_parse();
 	check_versions();
 	check_cache();
+	check_handoff();
 	if (failures) {
 		printf("\n%d FAILED\n", failures);
 		return 1;

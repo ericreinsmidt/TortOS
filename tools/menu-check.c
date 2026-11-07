@@ -336,7 +336,54 @@ static void tortos_menu_online(void)
 	ck(!strcmp(rows[PM_CONTROLS].label, "Controls"), "it is there");
 	ck(rows[PM_CONTROLS].live, "and live with the radio down and nobody signed in");
 	ck(!rows[PM_CONTROLS].value, "and says nothing in the value column");
-	ck(PM_CONTROLS == PM_ABOUT - 1, "and sits just above About TortOS");
+	ck(PM_CONTROLS == PM_UPDATE - 1 && PM_UPDATE == PM_ABOUT - 1,
+	   "and sits just above System Update and About TortOS");
+}
+
+/* System Update: above About TortOS saying what the last check found, at the
+ * top of the menu while an update waits, and nowhere on a device that has
+ * no radio to download one with. */
+static bool has_label(const menu_row *rows, int n, const char *label);   /* below, with the radio-less checks */
+
+static void update_row(void)
+{
+	sys_ui u;
+	menu_bufs b;
+	menu_row rows[MENU_MAX_ROWS];
+	pm_row pm[PM_ROWS];
+	const char *heading;
+	int n, k;
+
+	memset(&u, 0, sizeof u);
+	u.wifi = WIFI_OFF;
+	n = sys_menu_build(&u, rows, &b, &heading);
+	printf("the System Update row:\n");
+	ck(!strcmp(rows[PM_UPDATE].label, "System Update"), "it is there, above About TortOS");
+	ck(rows[PM_UPDATE].live, "and live with the radio down");
+	ck(!strcmp(val(&rows[PM_UPDATE]), "needs Wi-Fi"), "saying so, with no answer yet");
+
+	u.wifi = WIFI_CONNECTED;
+	n = sys_menu_build(&u, rows, &b, &heading);
+	ck(!rows[PM_UPDATE].value, "and nothing once Wi-Fi is up, before a check");
+	u.update_value = "up to date";
+	n = sys_menu_build(&u, rows, &b, &heading);
+	ck(!strcmp(val(&rows[PM_UPDATE]), "up to date"), "then what the check said");
+
+	u.update_waiting = true;
+	u.update_value = "2.2.0 available";
+	n = sys_menu_build(&u, rows, &b, &heading);
+	k = sys_menu_tortos_rows(&u, pm);
+	ck(n == PM_ROWS && n == k, "an update waiting adds and drops nothing");
+	ck(pm[0] == PM_UPDATE && !strcmp(rows[0].label, "System Update") &&
+	   !strcmp(val(&rows[0]), "2.2.0 available"), "it moves to the top, saying which");
+	ck(pm[1] == PM_STATS && pm[n - 1] == PM_ABOUT && pm[n - 2] == PM_CONTROLS,
+	   "and everything else keeps its order below it");
+
+	u.no_wifi = true;
+	n = sys_menu_build(&u, rows, &b, &heading);
+	k = sys_menu_tortos_rows(&u, pm);
+	ck(!has_label(rows, n, "System Update") && n == k,
+	   "no radio, no row, even with an update waiting");
 }
 
 /* Connecting and idle are not the same as off, and the row must not flatten
@@ -647,7 +694,7 @@ static void radio_less(void)
 	n = sys_menu_build(&u, rows, &b, &heading);
 	k = sys_menu_tortos_rows(&u, pm);
 	printf("TortOS menu, no radio at all:\n");
-	ck(n == k && n == PM_ROWS - 6, "six rows fewer, and the build agrees with the list");
+	ck(n == k && n == PM_ROWS - 7, "seven rows fewer, and the build agrees with the list");
 	ck(!has_label(rows, n, "Wi-Fi") && !has_label(rows, n, "Bluetooth"),
 	   "no Wi-Fi, no Bluetooth");
 	ck(!has_label(rows, n, "Over The Hare") && !has_label(rows, n, "Box Art"),
@@ -667,7 +714,7 @@ static void radio_less(void)
 	n = sys_menu_build(&u, rows, &b, &heading);
 	k = sys_menu_tortos_rows(&u, pm);
 	printf("TortOS menu, no radio, files over the cable:\n");
-	ck(n == k && n == PM_ROWS - 5, "five rows fewer: the transfer row stays");
+	ck(n == k && n == PM_ROWS - 6, "six rows fewer: the transfer row stays");
 	for (i = 0; i < k && pm[i] != PM_XFER; i++) { }
 	ck(i < k && !strcmp(rows[i].label, "Down To The Wire"),
 	   "as Down To The Wire, where the list says it is");
@@ -1073,6 +1120,7 @@ int main(void)
 	respects_max();
 	tortos_menu_offline();
 	tortos_menu_online();
+	update_row();
 	wifi_row_wording();
 	system_menu();
 	auto_off_words();

@@ -9,6 +9,8 @@ BUILD := build-native
 # beside it: that is what this build has always run.
 DEVICE ?= brick
 SRC := $(wildcard src/*.c) src/device/$(DEVICE).c
+# The updater's SHA-256, for System Update to check a download the same way
+SRC += tools/tortos-update/sha256.c
 
 PKGS := sdl2 SDL2_image SDL2_ttf
 VERSION ?= 0.0

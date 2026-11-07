@@ -78,6 +78,12 @@ bool update_cache_write(const char *path, time_t when, const char *installed,
 bool update_cache_read(const char *path, time_t now, const char *installed,
                        update_state *state, update_release *r);
 
+/* The same answer whatever its age, for showing: "2.2.0 available" stays
+ * true until a newer check says otherwise. Still only for this installed
+ * version, and held to the same rules. */
+bool update_cache_peek(const char *path, const char *installed,
+                       update_state *state, update_release *r);
+
 /* The whole check: ask UPDATE_FEED, read the reply, decide, and keep the
  * answer in cache_path. Blocks for up to timeout_s, so it's for a worker or a
  * screen that says it is checking, never a frame loop. An UPDATE_UNKNOWN
@@ -86,5 +92,42 @@ bool update_cache_read(const char *path, time_t now, const char *installed,
 update_state update_check(const char *device, const char *installed,
                           const char *cache_path, time_t now, int timeout_s,
                           update_release *out, char *why, size_t whyn);
+
+/* Read a reply that has already arrived (the System Update screen fetches
+ * it without blocking), decide, and keep the answer, as update_check does
+ * after its fetch. */
+update_state update_answer(const char *json, size_t len, const char *device,
+                           const char *installed, const char *cache_path, time_t now,
+                           update_release *out, char *why, size_t whyn);
+
+/* Whether the release's SHA256SUMS gives `file` the SHA-256 `sha256`: one
+ * line of sha256sum's own form for it, "<64 hex>  <file>" (or " *<file>"),
+ * and no line giving it any other. The second source for a download, beside
+ * GitHub's digest. */
+bool update_sums_list(const char *sums, size_t len, const char *file, const char *sha256);
+
+/* .update/request for the updater (tools/tortos-update/update.c reads it):
+ * file, version, device, size and sha256 as key=value lines, replaced whole. */
+bool update_request_write(const char *path, const char *device, const update_release *r);
+
+/* The one line the updater leaves in .update/result. */
+typedef enum {
+	UPDATE_RESULT_NONE,        /* no line, or not one of the updater's */
+	UPDATE_RESULT_DONE,        /* "updated to TortOS <version>" */
+	UPDATE_RESULT_UNTOUCHED,   /* "not updated, nothing written: <why>" */
+	UPDATE_RESULT_FAILED,      /* "FAILED after writing: ..." */
+} update_result;
+
+/* Which outcome a line says, with its detail (the version, or why) in
+ * detail. */
+update_result update_result_parse(const char *line, char *detail, size_t n);
+
+/* Whether the battery will see an update through: on the charger, or above
+ * the point the low-battery dot shows at. The drain runs (2026-10-28) left 22
+ * minutes or more at 2% on both devices, and the writing takes 22 to 33 s. A
+ * device whose battery can't be read is let through: there is none to run
+ * out. */
+#define UPDATE_BATTERY_MIN_PCT 10
+bool update_battery_ok(bool readable, bool charging, int pct);
 
 #endif

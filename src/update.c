@@ -205,7 +205,22 @@ static void copy_value(char *out, size_t n, const char *v, bool *fits)
 	snprintf(out, n, "%s", v);
 }
 
+static bool cache_read(const char *path, bool aged, time_t now, const char *installed,
+                       update_state *state, update_release *r);
+
 bool update_cache_read(const char *path, time_t now, const char *installed,
+                       update_state *state, update_release *r)
+{
+	return cache_read(path, true, now, installed, state, r);
+}
+
+bool update_cache_peek(const char *path, const char *installed,
+                       update_state *state, update_release *r)
+{
+	return cache_read(path, false, 0, installed, state, r);
+}
+
+static bool cache_read(const char *path, bool aged, time_t now, const char *installed,
                        update_state *state, update_release *r)
 {
 	update_release c;
@@ -236,8 +251,8 @@ bool update_cache_read(const char *path, time_t now, const char *installed,
 			copy_value(c.sums_sha256, sizeof c.sums_sha256, v, &fits);
 	}
 	fclose(f);
-	if (!fits || checked < 0 || now < checked || now - checked >= UPDATE_CHECK_EVERY_S ||
-	    strcmp(have, installed))
+	if (!fits || checked < 0 || strcmp(have, installed) ||
+	    (aged && (now < checked || now - checked >= UPDATE_CHECK_EVERY_S)))
 		return false;
 	if (!strcmp(st, "current")) {
 		*state = UPDATE_CURRENT;
@@ -257,11 +272,25 @@ bool update_cache_read(const char *path, time_t now, const char *installed,
 	return true;
 }
 
+update_state update_answer(const char *json, size_t len, const char *device,
+                           const char *installed, const char *cache_path, time_t now,
+                           update_release *out, char *why, size_t whyn)
+{
+	update_release r;
+	update_state state;
+
+	if (!update_parse(json, len, device, &r, why, whyn)) return UPDATE_UNKNOWN;
+	state = update_is_newer(r.version, installed) ? UPDATE_WAITING : UPDATE_CURRENT;
+	if (state == UPDATE_WAITING) *out = r;
+	say(why, whyn, state == UPDATE_WAITING ? "a newer release" : "up to date");
+	update_cache_write(cache_path, now, installed, state, &r);
+	return state;
+}
+
 update_state update_check(const char *device, const char *installed,
                           const char *cache_path, time_t now, int timeout_s,
                           update_release *out, char *why, size_t whyn)
 {
-	update_release r;
 	update_state state;
 	char *reply = malloc(REPLY_MAX);
 	long len;
@@ -278,14 +307,79 @@ update_state update_check(const char *device, const char *installed,
 		say(why, whyn, "the release feed's reply was too long");
 		return UPDATE_UNKNOWN;
 	}
-	if (!update_parse(reply, (size_t)len, device, &r, why, whyn)) {
-		free(reply);
-		return UPDATE_UNKNOWN;
-	}
+	state = update_answer(reply, (size_t)len, device, installed, cache_path, now,
+	                      out, why, whyn);
 	free(reply);
-	state = update_is_newer(r.version, installed) ? UPDATE_WAITING : UPDATE_CURRENT;
-	if (state == UPDATE_WAITING) *out = r;
-	say(why, whyn, state == UPDATE_WAITING ? "a newer release" : "up to date");
-	update_cache_write(cache_path, now, installed, state, &r);
 	return state;
+}
+
+bool update_sums_list(const char *sums, size_t len, const char *file, const char *sha256)
+{
+	const char *p = sums, *end = sums + len;
+	size_t flen = strlen(file);
+	bool found = false;
+
+	if (!is_sha256(sha256) || !flen) return false;
+	while (p < end) {
+		const char *eol = memchr(p, '\n', (size_t)(end - p)), *name;
+		size_t n;
+		char hex[65];
+
+		if (!eol) eol = end;
+		n = (size_t)(eol - p);
+		if (n > 0 && p[n - 1] == '\r') n--;
+		/* 64 hex, a space, then a space or '*' (binary mode), then the name */
+		if (n > 66 && (p[64] == ' ') && (p[65] == ' ' || p[65] == '*')) {
+			name = p + 66;
+			if ((size_t)(n - 66) == flen && !memcmp(name, file, flen)) {
+				memcpy(hex, p, 64);
+				hex[64] = '\0';
+				if (!is_sha256(hex) || strcmp(hex, sha256)) return false;
+				found = true;
+			}
+		}
+		p = eol + 1;
+	}
+	return found;
+}
+
+bool update_request_write(const char *path, const char *device, const update_release *r)
+{
+	FILE *f;
+
+	if (!device_ok(device) || !is_sha256(r->sha256) || r->size <= 0 ||
+	    !r->file[0] || strchr(r->file, '/') || !(f = atomic_open(path, 0644)))
+		return false;
+	fprintf(f, "file=%s\nversion=%s\ndevice=%s\nsize=%lld\nsha256=%s\n",
+	        r->file, r->version, device, r->size, r->sha256);
+	return atomic_commit(f, path);
+}
+
+update_result update_result_parse(const char *line, char *detail, size_t n)
+{
+	static const struct { const char *start; update_result result; } said[] = {
+		{ "updated to TortOS ", UPDATE_RESULT_DONE },
+		{ "not updated, nothing written: ", UPDATE_RESULT_UNTOUCHED },
+		{ "FAILED after writing: ", UPDATE_RESULT_FAILED },
+	};
+
+	if (detail && n) detail[0] = '\0';
+	if (!line) return UPDATE_RESULT_NONE;
+	for (size_t i = 0; i < sizeof said / sizeof said[0]; i++) {
+		size_t k = strlen(said[i].start);
+
+		if (!strncmp(line, said[i].start, k)) {
+			if (detail && n) {
+				snprintf(detail, n, "%s", line + k);
+				detail[strcspn(detail, "\r\n")] = '\0';
+			}
+			return said[i].result;
+		}
+	}
+	return UPDATE_RESULT_NONE;
+}
+
+bool update_battery_ok(bool readable, bool charging, int pct)
+{
+	return !readable || charging || pct > UPDATE_BATTERY_MIN_PCT;
 }

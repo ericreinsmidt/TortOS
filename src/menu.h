@@ -42,8 +42,16 @@ typedef struct {
 #define MENU_NOTE(s)   ((menu_row){ (s), MENU_NOTE_MARK, false })
 #define MENU_BODY(s)   ((menu_row){ (s), MENU_BODY_MARK, false })
 #define ROW_IS_BODY(r) ((r).value == MENU_BODY_MARK)
+/* A progress bar across the panel, one note high: how far a download or a
+ * check has got (System Update). How full it is comes from menu_bar_fill,
+ * set before the panel is drawn, since a row carries no number. A note as
+ * far as the rest of the menu code is concerned, so nothing reads its value
+ * as text. */
+#define MENU_BAR_MARK ((const char *)4)
+#define MENU_BAR       ((menu_row){ "", MENU_BAR_MARK, false })
+#define ROW_IS_BAR(r)  ((r).value == MENU_BAR_MARK)
 #define ROW_IS_NOTE(r) ((r).value == MENU_NOTE_MARK || \
-                        (r).value == MENU_BODY_MARK)
+                        (r).value == MENU_BODY_MARK || (r).value == MENU_BAR_MARK)
 
 /* A rule INSIDE a body, rather than the one that divides a list from its
  * footer. The same bar and width, with air on both sides of it rather than

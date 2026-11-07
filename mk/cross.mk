@@ -5,6 +5,8 @@ BUILD := build
 # Every device shares src/*.c; DEVICE picks the one device file built with it.
 DEVICE ?= brick
 SRC := $(wildcard src/*.c) src/device/$(DEVICE).c
+# The updater's SHA-256, for System Update to check a download the same way
+SRC += tools/tortos-update/sha256.c
 CC ?= aarch64-linux-gnu-gcc
 
 VERSION ?= 0.0

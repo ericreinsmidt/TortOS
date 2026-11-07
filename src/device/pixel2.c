@@ -913,6 +913,18 @@ void plat_brightness_set(int level)
 bool plat_has_wifi(void)      { return access("/sys/class/net/wlan0", F_OK) == 0; }
 bool plat_has_bluetooth(void) { return false; }
 
+const char *plat_device_name(void) { return "pixel2"; }
+
+/* busybox init runs its ::shutdown: lines on SIGQUIT and then execs the
+ * ::restart: one, plastron's /usr/sbin/tortos-update. Only where that is on
+ * the root: a system from before the updater has no such line to run. */
+bool plat_update_handoff(void)
+{
+	if (access("/usr/sbin/tortos-update", X_OK) != 0) return false;
+	sync();
+	return kill(1, SIGQUIT) == 0;
+}
+
 /* FUNCTION with volume up or down (key_event). */
 bool plat_brightness_on_volume(void) { return true; }
 

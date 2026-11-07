@@ -22,7 +22,12 @@ int sys_menu_tortos_rows(const sys_ui *u, pm_row *out)
 {
 	int n = 0, r;
 
+	/* An update waiting is the first thing the menu says. A device with no
+	 * radio can't download one, so it has no row at all: it updates through
+	 * TortOS Installer, as before. */
+	if (u->update_waiting && !u->no_wifi) out[n++] = PM_UPDATE;
 	for (r = 0; r < PM_ROWS; r++) {
+		if (r == PM_UPDATE && (u->no_wifi || u->update_waiting)) continue;
 		/* Everything that needs the network, including both sign-ins: an
 		 * account nobody can reach is a row that can only fail. Audio Output
 		 * stays, since a cable and the speaker are still two places. */
@@ -230,6 +235,11 @@ int sys_menu_build(const sys_ui *u, menu_row *out, menu_bufs *b,
 	 * is the point: it is the page you reach when the thing you have forgotten
 	 * is which button opens Muse. See src/controls.h. */
 	full[PM_CONTROLS]     = (menu_row){ "Controls",    NULL,   true  };
+	/* Updating TortOS over Wi-Fi (src/update.h). Live whatever the radio is
+	 * doing: the screen says what the check found and what is in the way. */
+	full[PM_UPDATE]       = (menu_row){ "System Update",
+	                                   u->update_value ? u->update_value : NEEDS_WIFI(net),
+	                                   true };
 	full[PM_ABOUT]        = (menu_row){ "About TortOS", NULL,   true  };
 	{
 		pm_row ids[PM_ROWS];

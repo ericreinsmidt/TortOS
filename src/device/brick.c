@@ -838,6 +838,16 @@ void plat_cable_slow_charge(bool on)
 	}
 }
 
+/* busybox init runs its ::shutdown: lines on SIGQUIT and then execs the
+ * ::restart: one, plastron's /usr/sbin/tortos-update. Only where that is on
+ * the root: a system from before the updater has no such line to run. */
+bool plat_update_handoff(void)
+{
+	if (access("/usr/sbin/tortos-update", X_OK) != 0) return false;
+	sync();
+	return kill(1, SIGQUIT) == 0;
+}
+
 /* The switch, checked wherever the jack is and for the same reason: this is
  * the one thing every screen does once a frame.
  *
@@ -1012,6 +1022,7 @@ bool plat_cable_link(char *addr, size_t n)
 }
 void plat_cable_reconnect(void) { }
 void plat_cable_slow_charge(bool on) { (void)on; }
+bool plat_update_handoff(void) { return false; }
 static void jack_forget(void) { }
 static void mute_forget(void) { }
 void plat_backlight(bool on) { (void)on; }
@@ -1073,6 +1084,8 @@ void plat_brightness_set(int level)
  * Bluetooth. */
 bool plat_has_wifi(void)      { return true; }
 bool plat_has_bluetooth(void) { return true; }
+
+const char *plat_device_name(void) { return "brick"; }
 
 /* F1 and F2, the front function keys. */
 bool plat_brightness_on_volume(void) { return false; }

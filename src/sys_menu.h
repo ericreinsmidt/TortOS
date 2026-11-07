@@ -39,7 +39,7 @@ typedef enum {
 	PM_STATS,
 	PM_WIFI, PM_BT, PM_AUDIO, PM_CHANNELS, PM_XFER, PM_CLOCK,
 	PM_SLEEP, PM_THEME, PM_DIR, PM_SCRAPE, PM_ACHIEVEMENTS, PM_SS,
-	PM_CONTROLS, PM_ABOUT, PM_ROWS
+	PM_CONTROLS, PM_UPDATE, PM_ABOUT, PM_ROWS
 } pm_row;
 
 /* The system menu. Games and Core carry real values rather than invented ones,
@@ -88,7 +88,7 @@ typedef enum { SMM_COUNT, SMM_SHOW, SMM_SORT, SMM_LOCK, SMM_ART, SMM_RESCAN } sm
  * two cannot disagree about what row 2 is. */
 int sys_menu_muse_rows(bool books, bool both, bool no_wifi, sm_muse_row *out);
 
-#define MENU_MAX_ROWS 15
+#define MENU_MAX_ROWS 16
 
 /* The array every caller declares must hold every row a build can produce, and
  * on 2026-09-16 it stopped: PM_ROWS went to 13 against a cap of 12 when the
@@ -142,6 +142,13 @@ typedef struct {
 	/* Files move over the USB cable rather than Wi-Fi (plat_cable_link), so
 	 * the transfer row stays without a radio, under its cable name. */
 	bool        cable_xfer;
+
+	/* System Update, on a device with Wi-Fi: what the last check said. A
+	 * waiting update puts the row at the top of the menu, reading
+	 * "2.2.0 available"; otherwise it sits above About TortOS reading
+	 * "up to date", or nothing when there is no answer yet. */
+	bool        update_waiting;
+	const char *update_value;
 
 	wifi_state  wifi;        /* already cached by the caller; see menu_wifi */
 	const char *ssid;        /* the network's name when connected, else NULL */

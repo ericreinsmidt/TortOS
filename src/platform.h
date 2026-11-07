@@ -280,6 +280,16 @@ void plat_cable_reconnect(void);
  * and back to what it was (off): for a device whose data over the cable breaks
  * while it charges hard (the Brick). Nothing elsewhere. */
 void plat_cable_slow_charge(bool on);
+
+/* This device's name as TortOS's releases spell it in their file names:
+ * "brick", "pixel2". */
+const char *plat_device_name(void);
+
+/* Hand the device to the updater once .update/request is written: init runs
+ * the shutdown and then the updater in its place (tools/tortos-update). True
+ * once init has been told; false, with nothing done, where there is no
+ * updater to hand to (a system from before it, or the desktop build). */
+bool plat_update_handoff(void);
 /* kind: 1 = brightness, 2 = volume */
 void plat_osd_show(int kind, int val, int max);
 void plat_draw_osd(SDL_Renderer *r);
