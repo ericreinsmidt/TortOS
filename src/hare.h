@@ -6,6 +6,7 @@
 #include <stddef.h>
 
 #include "httpd.h"
+#include "update.h"
 
 /* Over The Hare: the routes, the PIN, and the file operations.
  *
@@ -101,6 +102,32 @@ void hare_set_page(const char *page);
 /* Called with a file's absolute path once an upload of it is in place, so the
  * launcher can shrink a cover. Unset, nothing is told. */
 void hare_set_after_write(void (*fn)(const char *abs));
+
+/* Updating over Down To The Wire (#69). The page downloads a release itself
+ * (from GitHub Pages: release downloads carry no CORS header) and sends it
+ * here with GitHub's size and SHA-256; the launcher checks it and asks on the
+ * device.
+ *
+ *   GET  /api/update  {"version", "device", "state", "why", "have"}: what this
+ *        device runs, how an update it was sent is going (hare_update_state),
+ *        and the version of an image already in the folder from before (kept
+ *        after Not now, or a download System Update didn't use), or ""
+ *   PUT  /api/update?file=&version=&size=&sha256=[&pad=1]  the image, into
+ *        the folder through a part-file, refused unless update_offer agrees
+ *        and the body is that size. The folder's other images and part-files
+ *        go first, so the card holds one
+ *   POST /api/update?file=&version=&size=&sha256=  the image already there,
+ *        as "have" said, without sending it again
+ *
+ * received is called with the offer once the image is in place, and the
+ * launcher reports how its checks go with hare_update_state. Unset (dir NULL),
+ * the routes answer 404 and the page shows nothing. */
+void hare_set_update(const char *dir, const char *version, const char *device,
+                     void (*received)(const update_release *offer));
+
+/* How it is going, for the page: "idle", "receiving", "checking", "asking",
+ * "notnow", "refused" with why, or "updating". */
+void hare_update_state(const char *state, const char *why);
 
 /* The most a delete takes at once, files and folders together. More than
  * this is almost certainly the wrong folder, and it is asked for in parts. */

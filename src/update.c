@@ -390,3 +390,46 @@ bool update_battery_ok(bool readable, bool charging, int pct)
 {
 	return !readable || charging || pct > UPDATE_BATTERY_MIN_PCT;
 }
+
+bool update_offer(const char *file, const char *version, const char *size,
+                  const char *sha256, const char *device, const char *installed,
+                  update_release *out, char *why, size_t whyn)
+{
+	update_release r;
+	char want[96];
+	long part[4];
+	int  parts;
+	char *end;
+
+	memset(&r, 0, sizeof r);
+	if (!device_ok(device)) { say(why, whyn, "no device name"); return false; }
+	if (!version || strlen(version) >= sizeof r.version ||
+	    !version_parts(version, part, &parts)) {
+		say(why, whyn, "not a version");
+		return false;
+	}
+	if (!update_is_newer(version, installed)) {
+		say(why, whyn, "not newer than this device's");
+		return false;
+	}
+	snprintf(want, sizeof want, "TortOS-v%s-%s.img.xz", version, device);
+	if (!file || strcmp(file, want)) {
+		say(why, whyn, "not this device's image");
+		return false;
+	}
+	if (!size || !*size || !isdigit((unsigned char)*size)) {
+		say(why, whyn, "no size");
+		return false;
+	}
+	r.size = strtoll(size, &end, 10);
+	if (*end || r.size <= 0 || r.size > IMAGE_MAX) {
+		say(why, whyn, "not an image's size");
+		return false;
+	}
+	if (!sha256 || !is_sha256(sha256)) { say(why, whyn, "no SHA-256"); return false; }
+	snprintf(r.version, sizeof r.version, "%s", version);
+	snprintf(r.file, sizeof r.file, "%s", want);
+	memcpy(r.sha256, sha256, 65);
+	*out = r;
+	return true;
+}

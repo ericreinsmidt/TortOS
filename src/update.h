@@ -106,6 +106,18 @@ update_state update_answer(const char *json, size_t len, const char *device,
  * GitHub's digest. */
 bool update_sums_list(const char *sums, size_t len, const char *file, const char *sha256);
 
+/* An update the Down To The Wire page offers (#69): it downloaded the
+ * release itself and names the image as GitHub does, with GitHub's size and
+ * SHA-256. True, with file, version, size and sha256 filled (no addresses),
+ * when file is exactly this device's image for that version
+ * (TortOS-v<version>-<device>.img.xz), the version is later than installed,
+ * size is a plausible image's and sha256 is 64 lowercase hex digits. False
+ * otherwise, with the reason in why. The image is still checked against the
+ * SHA-256 once it is on the card: this only decides what may be sent. */
+bool update_offer(const char *file, const char *version, const char *size,
+                  const char *sha256, const char *device, const char *installed,
+                  update_release *out, char *why, size_t whyn);
+
 /* .update/request for the updater (tools/tortos-update/update.c reads it):
  * file, version, device, size and sha256 as key=value lines, replaced whole. */
 bool update_request_write(const char *path, const char *device, const update_release *r);

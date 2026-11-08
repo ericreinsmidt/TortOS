@@ -60,6 +60,11 @@ static char *art_seen(const char *folder, const char *body, size_t *len,
 	} while (0)
 
 static char g_root[128], g_card[160], g_roms[160], g_web[160], g_shared[160];
+
+/* What the update hook was handed, for the update checks. */
+static int            g_up_calls;
+static update_release g_up_offer;
+static void up_received(const update_release *offer) { g_up_calls++; g_up_offer = *offer; }
 static char g_cookie[128];
 
 /* ---- the server on its own thread ------------------------------------ */
@@ -318,6 +323,12 @@ int main(void)
 		      "RENAMING NEEDED NO PIN");
 		CHECK(post("/api/mkdir?p=roms/NES/sub", NULL) == 401,
 		      "MAKING A FOLDER NEEDED NO PIN");
+		CHECK(get("/api/update", NULL) == 401, "asking about updates needed no PIN");
+		CHECK(req("PUT", "/api/update?file=TortOS-v2.3.0-brick.img.xz&version=2.3.0"
+		          "&size=1&sha256=x", NULL, "X", 1, NULL, 0) == 401,
+		      "SENDING AN UPDATE NEEDED NO PIN");
+		CHECK(post("/api/update?file=TortOS-v2.3.0-brick.img.xz", NULL) == 401,
+		      "STARTING AN UPDATE NEEDED NO PIN");
 		/* And the file is still there. */
 		{
 			char p[256];
@@ -555,6 +566,97 @@ int main(void)
 		      "a folder past the limit was deleted");
 		snprintf(p, sizeof p, "%s/Music/Big/0000.mp3", g_card);
 		CHECK(stat(p, &st) == 0, "a refused folder lost files");
+	}
+
+	printf("  updates over Down To The Wire:\n");
+	{
+		static const char sha[] =
+			"8a06db6bb11c7f1920ea7369b4a33a081ba94c4d1bcc3245650ba11fc34dc14c";
+		char dir[256], p[512], url[512], got[64];
+		struct stat st;
+		FILE *f;
+		size_t n;
+
+		CHECK(get("/api/update", g_cookie) == 404, "updates answered with no folder set");
+		snprintf(dir, sizeof dir, "%s/.update", g_card);
+		mkdir(dir, 0777);
+		snprintf(p, sizeof p, "%s/TortOS-v2.2.5-brick.img.xz", dir); mkfile(p, "old");
+		snprintf(p, sizeof p, "%s/update.log", dir);                mkfile(p, "log");
+		hare_set_update(dir, "2.2.0", "brick", up_received);
+
+		CHECK(req("GET", "/api/update", g_cookie, NULL, 0, body, sizeof body) == 200,
+		      "no answer about updates");
+		CHECK(json_ok(body), "the update answer isn't JSON: %s", body);
+		CHECK(strstr(body, "\"version\":\"2.2.0\"") && strstr(body, "\"device\":\"brick\"") &&
+		      strstr(body, "\"state\":\"idle\""), "the update answer: %s", body);
+		CHECK(strstr(body, "\"have\":\"2.2.5\""), "the image already there: %s", body);
+
+#define OFFER(file, ver, size) "/api/update?file=" file "&version=" ver "&size=" size "&sha256="
+		snprintf(url, sizeof url, OFFER("TortOS-v2.3.0-pixel2.img.xz", "2.3.0", "9") "%s", sha);
+		CHECK(req("PUT", url, g_cookie, "IMAGEDATA", 9, NULL, 0) == 400,
+		      "the Pixel's image was taken on the Brick");
+		snprintf(url, sizeof url, OFFER("TortOS-v2.1.0-brick.img.xz", "2.1.0", "9") "%s", sha);
+		CHECK(req("PUT", url, g_cookie, "IMAGEDATA", 9, NULL, 0) == 400,
+		      "an older version was taken");
+		snprintf(url, sizeof url, OFFER("../TortOS-v2.3.0-brick.img.xz", "2.3.0", "9") "%s", sha);
+		CHECK(req("PUT", url, g_cookie, "IMAGEDATA", 9, NULL, 0) == 400,
+		      "a name with a path in it was taken");
+		snprintf(url, sizeof url, OFFER("TortOS-v2.3.0-brick.img.xz", "2.3.0", "12") "%s", sha);
+		CHECK(req("PUT", url, g_cookie, "IMAGEDATA", 9, NULL, 0) == 400,
+		      "a body shorter than the size it gave was taken");
+		CHECK(g_up_calls == 0, "a refused update reached the launcher");
+		snprintf(p, sizeof p, "%s/TortOS-v2.2.5-brick.img.xz", dir);
+		CHECK(stat(p, &st) == 0, "a refused update cleared the folder");
+
+		snprintf(url, sizeof url, OFFER("TortOS-v2.3.0-brick.img.xz", "2.3.0", "9") "%s", sha);
+		CHECK(req("PUT", url, g_cookie, "IMAGEDATA", 9, NULL, 0) == 200, "a good update was refused");
+		snprintf(p, sizeof p, "%s/TortOS-v2.3.0-brick.img.xz", dir);
+		got[0] = '\0';
+		if ((f = fopen(p, "rb"))) { n = fread(got, 1, sizeof got - 1, f); got[n] = '\0'; fclose(f); }
+		CHECK(!strcmp(got, "IMAGEDATA"), "the update on the card is \"%s\"", got);
+		CHECK(g_up_calls == 1 && !strcmp(g_up_offer.version, "2.3.0") &&
+		      g_up_offer.size == 9 && !strcmp(g_up_offer.sha256, sha),
+		      "the launcher was told %d times, of %s", g_up_calls, g_up_offer.version);
+		snprintf(p, sizeof p, "%s/TortOS-v2.2.5-brick.img.xz", dir);
+		CHECK(stat(p, &st) != 0, "the older image is still there");
+		snprintf(p, sizeof p, "%s/update.log", dir);
+		CHECK(stat(p, &st) == 0, "the updater's log went");
+		snprintf(p, sizeof p, "%s/TortOS-v2.3.0-brick.img.xz.part", dir);
+		CHECK(stat(p, &st) != 0, "a part-file was left");
+
+		req("GET", "/api/update", g_cookie, NULL, 0, body, sizeof body);
+		CHECK(strstr(body, "\"state\":\"checking\""), "while checking: %s", body);
+		CHECK(req("PUT", url, g_cookie, "IMAGEDATA", 9, NULL, 0) == 409,
+		      "a second update was taken over one being checked");
+		snprintf(url, sizeof url, OFFER("TortOS-v2.3.0-brick.img.xz", "2.3.0", "9") "%s", sha);
+		CHECK(post(url, g_cookie) == 409, "the copy was used over one being checked");
+
+		hare_update_state("refused", "it didn't \"match\"");
+		req("GET", "/api/update", g_cookie, NULL, 0, body, sizeof body);
+		CHECK(json_ok(body) && strstr(body, "\"state\":\"refused\""),
+		      "a reason with quotes in it broke the answer: %s", body);
+		hare_update_state("notnow", NULL);
+		req("GET", "/api/update", g_cookie, NULL, 0, body, sizeof body);
+		CHECK(strstr(body, "\"state\":\"notnow\"") && strstr(body, "\"have\":\"2.3.0\""),
+		      "after Not now: %s", body);
+		CHECK(post(url, g_cookie) == 200, "the copy already there wasn't used");
+		CHECK(g_up_calls == 2, "the launcher was told %d times, wanted 2", g_up_calls);
+		hare_update_state("notnow", NULL);
+		snprintf(url, sizeof url, OFFER("TortOS-v2.3.0-brick.img.xz", "2.3.0", "10") "%s", sha);
+		CHECK(post(url, g_cookie) == 404, "a copy of another size was used");
+		CHECK(g_up_calls == 2, "a copy of another size reached the launcher");
+
+		/* Safari's pad byte comes off, as for any upload. */
+		snprintf(url, sizeof url, OFFER("TortOS-v2.3.1-brick.img.xz", "2.3.1", "9") "%s&pad=1", sha);
+		CHECK(req("PUT", url, g_cookie, "IMAGEDATA!", 10, NULL, 0) == 200, "a padded update");
+		snprintf(p, sizeof p, "%s/TortOS-v2.3.1-brick.img.xz", dir);
+		CHECK(stat(p, &st) == 0 && st.st_size == 9, "the padded update is %lld bytes",
+		      (long long)st.st_size);
+		snprintf(p, sizeof p, "%s/TortOS-v2.3.0-brick.img.xz", dir);
+		CHECK(stat(p, &st) != 0, "the earlier image wasn't cleared for the new one");
+#undef OFFER
+		hare_set_update(NULL, NULL, NULL, NULL);
+		CHECK(get("/api/update", g_cookie) == 404, "updates still answered once unset");
 	}
 
 	printf("  the lockout, which is what makes four digits a lock:\n");

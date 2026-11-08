@@ -305,12 +305,66 @@ static void check_handoff(void)
 	CHECK(update_battery_ok(false, false, 0), "a device with no battery to read");
 }
 
+/* What the Down To The Wire page may offer: this device's image, newer, with
+ * GitHub's size and SHA-256, and nothing that only looks like it. */
+static void check_offer(void)
+{
+	const char *sha = "8a06db6bb11c7f1920ea7369b4a33a081ba94c4d1bcc3245650ba11fc34dc14c";
+	update_release r;
+	char why[128];
+
+	printf("the Wire page's offer\n");
+	CHECK(update_offer("TortOS-v2.3.0-brick.img.xz", "2.3.0", "41428168", sha,
+	                   "brick", "2.2.0", &r, why, sizeof why), "a good offer: %s", why);
+	CHECK(!strcmp(r.version, "2.3.0") && !strcmp(r.file, "TortOS-v2.3.0-brick.img.xz") &&
+	      r.size == 41428168 && !strcmp(r.sha256, sha) && !r.url[0],
+	      "the offer as read: %s %s %lld", r.version, r.file, r.size);
+	CHECK(update_offer("TortOS-v2.10-pixel2.img.xz", "2.10", "1", sha,
+	                   "pixel2", "2.9.9", &r, why, sizeof why), "2.10 after 2.9.9: %s", why);
+	CHECK(!update_offer("TortOS-v2.2.0-brick.img.xz", "2.2.0", "41428168", sha,
+	                    "brick", "2.2.0", &r, why, sizeof why) && strstr(why, "newer"),
+	      "the installed version was taken");
+	CHECK(!update_offer("TortOS-v2.1.1-brick.img.xz", "2.1.1", "41428168", sha,
+	                    "brick", "2.2.0", &r, why, sizeof why), "an older version was taken");
+	CHECK(!update_offer("TortOS-v2.3.0-pixel2.img.xz", "2.3.0", "41428168", sha,
+	                    "brick", "2.2.0", &r, why, sizeof why) && strstr(why, "image"),
+	      "the Pixel's image was taken on the Brick");
+	CHECK(!update_offer("TortOS-v2.3.1-brick.img.xz", "2.3.0", "41428168", sha,
+	                    "brick", "2.2.0", &r, why, sizeof why), "a file for another version");
+	CHECK(!update_offer("../TortOS-v2.3.0-brick.img.xz", "2.3.0", "41428168", sha,
+	                    "brick", "2.2.0", &r, why, sizeof why), "a name with a path in it");
+	CHECK(!update_offer("TortOS-v2.3.0-brick.img.xz", "v2.3.0", "41428168", sha,
+	                    "brick", "2.2.0", &r, why, sizeof why), "a tag passed as a version");
+	CHECK(!update_offer("TortOS-v2.3.0-brick.img.xz", "2.3.0", "0", sha,
+	                    "brick", "2.2.0", &r, why, sizeof why), "a size of 0");
+	CHECK(!update_offer("TortOS-v2.3.0-brick.img.xz", "2.3.0", "-5", sha,
+	                    "brick", "2.2.0", &r, why, sizeof why), "a negative size");
+	CHECK(!update_offer("TortOS-v2.3.0-brick.img.xz", "2.3.0", "41428168x", sha,
+	                    "brick", "2.2.0", &r, why, sizeof why), "a size with more after it");
+	CHECK(!update_offer("TortOS-v2.3.0-brick.img.xz", "2.3.0", "99999999999999999999", sha,
+	                    "brick", "2.2.0", &r, why, sizeof why), "a size past any image");
+	CHECK(!update_offer("TortOS-v2.3.0-brick.img.xz", "2.3.0", "", sha,
+	                    "brick", "2.2.0", &r, why, sizeof why), "no size");
+	CHECK(!update_offer("TortOS-v2.3.0-brick.img.xz", "2.3.0", "41428168",
+	                    "8A06DB6BB11C7F1920EA7369B4A33A081BA94C4D1BCC3245650BA11FC34DC14C",
+	                    "brick", "2.2.0", &r, why, sizeof why), "a SHA-256 in capitals");
+	CHECK(!update_offer("TortOS-v2.3.0-brick.img.xz", "2.3.0", "41428168", "8a06db",
+	                    "brick", "2.2.0", &r, why, sizeof why), "a short SHA-256");
+	CHECK(!update_offer("TortOS-v2.3.0-brick.img.xz", "2.3.0", "41428168", sha,
+	                    "brick", "local", &r, why, sizeof why), "a development build was offered one");
+	CHECK(!update_offer(NULL, NULL, NULL, NULL, "brick", "2.2.0", &r, why, sizeof why),
+	      "nothing offered");
+	CHECK(!update_offer("TortOS-v2.3.0-Brick.img.xz", "2.3.0", "41428168", sha,
+	                    "Brick", "2.2.0", &r, why, sizeof why), "a device name in capitals");
+}
+
 int main(void)
 {
 	check_parse();
 	check_versions();
 	check_cache();
 	check_handoff();
+	check_offer();
 	if (failures) {
 		printf("\n%d FAILED\n", failures);
 		return 1;

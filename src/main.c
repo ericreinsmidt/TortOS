@@ -5746,6 +5746,22 @@ static void  xfer_after_write(const char *abs);
 /* Down To The Wire over the cable, or Over The Hare over Wi-Fi. MENU's row
  * goes by whether a computer is on the cable (xfer_screen); the welcome on an
  * empty card names both, so it says which. */
+/* An update the Down To The Wire page sent (#69): hare.c takes the image into
+ * .update/ and says so through wire_up_received; the screen's loop below
+ * checks it against GitHub's SHA-256 a slice at a time, so the page keeps
+ * getting answers, then asks on the device and makes System Update's
+ * handoff. */
+static void up_handoff(app *a, const char *heading, char *note, size_t n);   /* below */
+typedef enum { WU_NONE, WU_CHECK, WU_HASHING, WU_ASK } wire_up_phase;
+static wire_up_phase  g_wu;
+static update_release g_wu_offer;
+
+static void wire_up_received(const update_release *offer)
+{
+	g_wu_offer = *offer;
+	g_wu = WU_CHECK;
+}
+
 static void xfer_screen_over(app *a, bool over_cable)
 {
 	char       ssid[WIFI_SSID_MAX], ip[64];
@@ -5758,6 +5774,14 @@ static void xfer_screen_over(app *a, bool over_cable)
 	const bool  cable = over_cable;
 	const char *name  = cable ? XFER_NAME_CABLE : XFER_NAME_WIFI;
 	unsigned    cover_at = 0, cover_next = 0;   /* the embedded covers, below */
+	/* The update the page sent: its file being hashed, the confirm's row, and
+	 * what the Now row says in place of the server's last word until that
+	 * changes. */
+	static uint8_t wu_chunk[1 << 18];
+	char        wu_path[CFG_STR * 3], wu_now[64] = "", wu_last[128] = "";
+	int         wu_fd = -1, wu_sel = 6;
+	long long   wu_hashed = 0;
+	sha256      wu_h;
 
 	g_logs_app = a;
 	/* A fresh link over the cable each time this opens: a computer can drop
@@ -5786,6 +5810,15 @@ static void xfer_screen_over(app *a, bool over_cable)
 	/* The page wears the screen's name. */
 	hare_set_page(cable ? "wire.html" : NULL);
 	hare_set_after_write(xfer_after_write);
+	g_wu = WU_NONE;
+	if (cable) {
+		char dir[CFG_STR * 3];
+
+		up_path(dir, sizeof dir, "");
+		hare_set_update(dir, TORTOS_VERSION, plat_device_name(), wire_up_received);
+	} else {
+		hare_set_update(NULL, NULL, NULL, NULL);
+	}
 	if (!hare_start(P_ROMS, P_CARD, P_SHARED, P_WEB)) {
 		menu_row row = { "Could not start", NULL, false };
 
@@ -5814,6 +5847,58 @@ static void xfer_screen_over(app *a, bool over_cable)
 		hare_status(&st);
 		total_in  += st.in;
 		total_out += st.out;
+
+		/* The update the page sent: opened, hashed 25 ms a frame, then asked. */
+		if (g_wu == WU_CHECK) {
+			up_path(wu_path, sizeof wu_path, g_wu_offer.file);
+			wu_fd = open(wu_path, O_RDONLY | O_CLOEXEC);
+			sha256_start(&wu_h);
+			wu_hashed = 0;
+			g_wu = wu_fd >= 0 ? WU_HASHING : WU_NONE;
+			if (wu_fd < 0) hare_update_state("refused", "it couldn't be read");
+		} else if (g_wu == WU_HASHING) {
+			unsigned until = now + 25;
+			ssize_t got = 1;
+
+			while (got > 0 && plat_now_ms() < until)
+				if ((got = read(wu_fd, wu_chunk, sizeof wu_chunk)) > 0) {
+					sha256_add(&wu_h, wu_chunk, (size_t)got);
+					wu_hashed += got;
+				}
+			if (got <= 0) {
+				uint8_t digest[32];
+				char hex[65], why[64];
+				bool charging = false, readable;
+				int pct = 0;
+
+				close(wu_fd);
+				wu_fd = -1;
+				sha256_finish(&wu_h, digest, hex);
+				readable = plat_battery(&pct, &charging);
+				g_wu = WU_NONE;
+				if (got < 0 || wu_hashed != g_wu_offer.size || strcmp(hex, g_wu_offer.sha256)) {
+					fprintf(stderr, "update: what the page sent doesn't match: %lld bytes, %s\n",
+					        wu_hashed, hex);
+					unlink(wu_path);
+					hare_update_state("refused", "it didn't match GitHub's SHA-256");
+					snprintf(wu_now, sizeof wu_now, "update didn't match");
+				} else if (!update_battery_ok(readable, charging, pct)) {
+					snprintf(why, sizeof why, "Plug in or charge above %d%%",
+					         UPDATE_BATTERY_MIN_PCT);
+					hare_update_state("refused", why);
+					snprintf(wu_now, sizeof wu_now, "update needs charge");
+				} else {
+					fprintf(stderr, "update: %s from the page matches its SHA-256\n",
+					        g_wu_offer.file);
+					hare_update_state("asking", NULL);
+					wu_sel = 6;           /* Not now, as every confirm starts */
+					g_wu = WU_ASK;
+				}
+				if (wu_now[0]) snprintf(wu_last, sizeof wu_last, "%s", st.last);
+			}
+		}
+		/* The Now row goes back to the server's word once it has a new one. */
+		if (wu_now[0] && strcmp(wu_last, st.last)) wu_now[0] = '\0';
 
 		/* Every album's embedded cover copied out to .media, where the page
 		 * can show it and Album Art can judge it: an album the shelf never
@@ -5870,10 +5955,12 @@ static void xfer_screen_over(app *a, bool over_cable)
 		}
 
 		hare_head(head, sizeof head, addr, pinbuf);
-		hare_rows(rows, who, moved, st.last[0] ? st.last : "waiting");
+		hare_rows(rows, who, moved, wu_now[0] ? wu_now : st.last[0] ? st.last : "waiting");
 
 		plat_input_poll(&a->in);
 		if (a->in.quit_requested) {
+			if (wu_fd >= 0) close(wu_fd);
+			g_wu = WU_NONE;
 			hare_stop();
 			plat_cable_slow_charge(false);
 			a->running = false;
@@ -5887,15 +5974,50 @@ static void xfer_screen_over(app *a, bool over_cable)
 		 * which is the same claim a button press makes and no weaker for
 		 * arriving over a network. Neither suspends Auto Off - close the tab
 		 * and the countdown resumes. */
-		if (busy || st.clients > 0) a->idle.since_ms = now;
+		if (busy || st.clients > 0 || g_wu != WU_NONE) a->idle.since_ms = now;
 
 		if (a->in.pressed[IN_POWER] || idle_due(a)) {
+			if (wu_fd >= 0) close(wu_fd);
+			g_wu = WU_NONE;
 			hare_stop();
 			plat_cable_slow_charge(false);   /* so charging while off isn't held */
 			power_off(a);
 			return;
 		}
-		if (menu_leaving(a)) done = true;
+		if (g_wu == WU_ASK) {
+			/* The confirm: Update now hands over as System Update does; Not
+			 * now, B or MENU keeps the image for next time. */
+			bool leave = menu_leaving(a);
+
+			if (in_repeat(&a->in, IN_UP) || in_repeat(&a->in, IN_DOWN))
+				wu_sel = wu_sel == 5 ? 6 : 5;
+			if (a->in.pressed[IN_ACCEPT] && wu_sel == 5) {
+				update_release kept = g_up_rel;
+				char head2[48], note[64] = "";
+				unsigned t0;
+
+				g_wu = WU_NONE;
+				hare_update_state("updating", NULL);
+				/* A moment for the page to hear it before the server goes. */
+				for (t0 = plat_now_ms(); plat_now_ms() - t0 < 600; SDL_Delay(4))
+					hare_poll();
+				g_up_rel = g_wu_offer;
+				snprintf(head2, sizeof head2, "Update to %s", g_wu_offer.version);
+				up_handoff(a, head2, note, sizeof note);
+				/* Back here means it didn't happen; note says why. */
+				g_up_rel = kept;
+				hare_update_state("refused", note);
+				snprintf(wu_now, sizeof wu_now, "update didn't start");
+				snprintf(wu_last, sizeof wu_last, "%s", st.last);
+			} else if (leave || a->in.pressed[IN_ACCEPT]) {
+				g_wu = WU_NONE;
+				hare_update_state("notnow", NULL);
+				snprintf(wu_now, sizeof wu_now, "update kept for later");
+				snprintf(wu_last, sizeof wu_last, "%s", st.last);
+			}
+		} else if (menu_leaving(a)) {
+			done = true;
+		}
 
 		if (in_repeat(&a->in, IN_VOLUP))    plat_volume_nudge(+1);
 		if (in_repeat(&a->in, IN_VOLDN))    plat_volume_nudge(-1);
@@ -5907,13 +6029,36 @@ static void xfer_screen_over(app *a, bool over_cable)
 		SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
 		SDL_SetRenderDrawColor(a->r, 0, 0, 0, 120);
 		SDL_RenderFillRect(a->r, NULL);
-		menu_draw(a, head, rows, 3, -1, menu_std_width(a), MENU_ACCENT);
+		if (g_wu == WU_CHECK || g_wu == WU_HASHING) {
+			menu_row checking = { "Checking the update...", NULL, false };
+
+			menu_draw(a, name, &checking, 1, -1, 0, MENU_ACCENT);
+		} else if (g_wu == WU_ASK) {
+			char ask[48];
+			menu_row confirm[] = {
+				MENU_NOTE("The computer sent it."),
+				MENU_NOTE("The device restarts"),
+				MENU_NOTE("to update."),
+				MENU_NOTE("Games and saves stay."),
+				MENU_HR,
+				{ "Update now", NULL, true },
+				{ "Not now", NULL, true },
+			};
+
+			snprintf(ask, sizeof ask, "Update to %s?", g_wu_offer.version);
+			menu_draw(a, ask, confirm, 7, wu_sel, menu_std_width(a), MENU_ACCENT);
+		} else {
+			menu_draw(a, head, rows, 3, -1, menu_std_width(a), MENU_ACCENT);
+		}
 		plat_draw_osd(a->r);
 		plat_present();
 		/* Shorter than the usual 8ms: this loop is also the server's, and a
 		 * transfer moves POLL_BUDGET per pass. */
 		SDL_Delay(4);
 	}
+
+	if (wu_fd >= 0) close(wu_fd);
+	g_wu = WU_NONE;
 
 	/* Asked before hare_stop, which is what the screen owning the server
 	 * means: after it, there is nobody left to ask. */
