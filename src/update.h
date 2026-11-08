@@ -36,7 +36,7 @@
 #define UPDATE_CHECK_EVERY_S (24 * 60 * 60)
 
 typedef struct {
-	char      version[16];    /* "2.2.0": the release's tag, less its v */
+	char      version[24];    /* "2.2.0": the release's tag, less its v; up to 23 by the rule */
 	char      file[96];       /* TortOS-v2.2.0-brick.img.xz */
 	char      url[512];       /* where to download it */
 	long long size;           /* its size in bytes */

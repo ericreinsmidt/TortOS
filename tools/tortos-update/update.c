@@ -49,6 +49,7 @@
 
 #include "image.h"
 #include "plan.h"
+#include "screen.h"
 #include "sha256.h"
 #include "write.h"
 
@@ -73,6 +74,9 @@
 #define REQUEST DIR_ "/request"
 #define LOG DIR_ "/update.log"
 #define RESULT DIR_ "/result"
+
+/* The version being written, for the heading on screen */
+static char writing_version[32];
 
 static char log_text[32768];
 static size_t log_used;
@@ -127,6 +131,14 @@ static void finish(const char *result, int how)
 		close(log_fd);
 	umount("/games");
 	sync();
+	/* Stopped partway through writing: the device doesn't start again on a
+	 * half-written system, so the screen says what happened and why the
+	 * device is going off, and waits for the power button to be pressed,
+	 * up to ten minutes */
+	if (how == RB_POWER_OFF) {
+		screen_failed();
+		screen_wait_power(600);
+	}
 	reboot(how);
 	for (;;)
 		pause();
@@ -309,6 +321,8 @@ static void progress(void *ctx, int phase, uint64_t done, uint64_t total)
 {
 	int *last = ctx, tenth = (int)(done * 10 / total);
 
+	screen_progress(writing_version, phase == UP_WRITING ? 0 : 1, (int)(done * 100 / total));
+
 	if (tenth == last[phase])
 		return;
 	last[phase] = tenth;
@@ -340,6 +354,11 @@ static void update(void)
 	if (!read_request(&r, why, sizeof why) || !request_fits(&r, why, sizeof why))
 		goto untouched;
 	note("request: TortOS %s for the %s, %s", r.version, r.device, r.file);
+	snprintf(writing_version, sizeof writing_version, "%s", r.version);
+	/* On screen from here: Writing at 0% covers the image's check and the
+	 * plan, a few seconds, so the screen never sits on whatever TortOS left */
+	note(screen_open() ? "on screen" : "no screen to draw on; carrying on without it");
+	screen_progress(writing_version, 0, 0);
 	snprintf(path, sizeof path, DIR_ "/%s", r.file);
 	if (!file_matches(path, &r, why, sizeof why))
 		goto untouched;
@@ -396,6 +415,13 @@ static void update(void)
 	close(boot);
 	xz_image_close(image);
 	note("written and read back: %llu bytes changed", (unsigned long long)written.written);
+	{
+		int n;
+		double seconds;
+
+		screen_cost(&n, &seconds);
+		note("screen: %d redraws, %.1f s", n, seconds);
+	}
 	unlink(path);
 	unlink(REQUEST);
 	snprintf(result, sizeof result, "updated to TortOS %s", r.version);

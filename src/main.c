@@ -3865,6 +3865,11 @@ static int menu_notes_fit(void)
 static float g_menu_bar;
 static void menu_bar_fill(float f) { g_menu_bar = f < 0.0f ? 0.0f : f > 1.0f ? 1.0f : f; }
 
+/* Where the last panel drew its heading (centered on head_x), a row's value
+ * (right-aligned to value_x) and its bar: --updater-art hands these to the
+ * updater, which puts its own version, percentage and fill there. */
+static struct { int head_x, head_y, value_x, value_y, bar_x, bar_y, bar_w, bar_h; } g_menu_seen;
+
 static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
                          int n, int sel, int fixed_w, unsigned accent,
                          const unsigned *vcolors, bool visits_all, int loop_at)
@@ -4163,6 +4168,8 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 			int hw = ui_text_width(fh, head1);
 			unsigned ph = mq_phase(MQ_HEAD, (int)strlen(head1), content_w);
 
+			g_menu_seen.head_x = cx;
+			g_menu_seen.head_y = hy;
 			if (hw <= content_w) {
 				ui_fit_text(fh, head1, h1, sizeof h1, content_w);
 				ui_text(a->r, fh, h1, cx, hy, 0, UI_TEXT_SOFT);
@@ -4452,6 +4459,10 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 			SDL_Rect track = { content_x, y + (ROW_H(rows[i]) - bh) / 2, content_w, bh };
 			SDL_Rect fill = track;
 
+			g_menu_seen.bar_x = track.x;
+			g_menu_seen.bar_y = track.y;
+			g_menu_seen.bar_w = track.w;
+			g_menu_seen.bar_h = track.h;
 			fill.w = (int)((float)track.w * g_menu_bar + 0.5f);
 			if (fill.w > 0 && fill.w < bh) fill.w = bh;
 			SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
@@ -4526,6 +4537,11 @@ static void menu_draw_ex(app *a, const char *heading, const menu_row *rows,
 			 * it: the achievement list scrolled a title or cut it depending
 			 * on whether the player had earned it. */
 			bool moves = menu_row_moves(rows[i], i == sel, visits_all);
+
+			if (rows[i].value) {         /* for --updater-art */
+				g_menu_seen.value_x = content_x + content_w;
+				g_menu_seen.value_y = ty;
+			}
 
 			if (lw + (vw ? gap + vw : 0) <= content_w) {
 				ui_fit_text(fm, rows[i].label, lbl, sizeof lbl, content_w);
@@ -7154,7 +7170,7 @@ static void up_handoff(app *a, const char *heading, char *note, size_t n)
 static void update_screen(app *a)
 {
 	static uint8_t chunk[1 << 20];
-	char head[48], latest[40], action[48], size[24], note[64] = "", blocked_buf[64];
+	char head[48], latest[40], action[48], size[40], note[64] = "", blocked_buf[64];
 	char why[160], path[CFG_STR * 3], part[CFG_STR * 3 + 8], cache[CFG_STR * 2];
 	const char *device = plat_device_name();
 	up_phase phase = UP_IDLE;
@@ -7408,7 +7424,7 @@ static void update_screen(app *a)
  * was cut short go too. */
 static void update_after_start(app *a)
 {
-	char dir[CFG_STR * 2], path[CFG_STR * 3], line[512] = "", detail[256], now[64];
+	char dir[CFG_STR * 2], path[CFG_STR * 3], line[512] = "", detail[256], now[300];
 	struct dirent *e;
 	update_result res;
 	DIR *d;
@@ -12213,6 +12229,152 @@ static void muse_covers_settle(void)
 	}
 }
 
+/* --updater-art DIR: what the updater shows while it writes a release
+ * (tools/tortos-update/screen.c), drawn by this launcher's own panel code so
+ * the two match, since the updater has no font library of its own. The
+ * three screens on the plain background without the parts that change, the
+ * glyphs for those parts (the version in the heading, the percentage, the
+ * bar's fill), and where they go. tools/genupdater-art.py makes the
+ * updater's art.h from them; its comment says how to run both. */
+static const char *shot_updater_art;
+
+static void art_save(const char *dir, const char *name, const void *data, size_t n)
+{
+	char path[1024];
+	FILE *f;
+
+	snprintf(path, sizeof path, "%s/%s", dir, name);
+	if (!(f = fopen(path, "wb")) || fwrite(data, 1, n, f) != n) {
+		fprintf(stderr, "updater art: can't write %s\n", path);
+		exit(1);
+	}
+	fclose(f);
+}
+
+static void art_frame(app *a, const char *dir, const char *name, const char *heading,
+                      const menu_row *rows, int n)
+{
+	size_t bytes = (size_t)TORTOS_SCREEN_W * TORTOS_SCREEN_H * 4;
+	void *px = malloc(bytes);
+
+	SDL_SetRenderTarget(a->r, NULL);
+	draw_background(a);
+	menu_bar_fill(0.0f);
+	menu_draw(a, heading, rows, n, -1, menu_std_width(a), MENU_ACCENT);
+	SDL_RenderReadPixels(a->r, NULL, SDL_PIXELFORMAT_RGBA32, px, TORTOS_SCREEN_W * 4);
+	plat_present();
+	art_save(dir, name, px, bytes);
+	free(px);
+}
+
+/* One piece drawn on nothing, as it would be on the panel: its color times
+ * its coverage, and the coverage, which is what the updater blends with. */
+static void art_piece(app *a, FILE *index, FILE *bin, const char *key, int w, int h,
+                      void (*draw)(app *, const void *), const void *what)
+{
+	SDL_Texture *t = SDL_CreateTexture(a->r, SDL_PIXELFORMAT_RGBA32,
+	                                   SDL_TEXTUREACCESS_TARGET, w, h);
+	void *px = malloc((size_t)w * h * 4);
+
+	SDL_SetTextureBlendMode(t, SDL_BLENDMODE_BLEND);
+	SDL_SetRenderTarget(a->r, t);
+	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_NONE);
+	SDL_SetRenderDrawColor(a->r, 0, 0, 0, 0);
+	SDL_RenderClear(a->r);
+	SDL_SetRenderDrawBlendMode(a->r, SDL_BLENDMODE_BLEND);
+	draw(a, what);
+	SDL_RenderReadPixels(a->r, NULL, SDL_PIXELFORMAT_RGBA32, px, w * 4);
+	SDL_SetRenderTarget(a->r, NULL);
+	SDL_DestroyTexture(t);
+	fprintf(index, "%s %d %d %ld\n", key, w, h, ftell(bin));
+	fwrite(px, 1, (size_t)w * h * 4, bin);
+	free(px);
+}
+
+typedef struct { TTF_Font *f; const char *s; SDL_Color col; } art_text;
+static void art_draw_text(app *a, const void *what)
+{
+	const art_text *t = what;
+
+	ui_text(a->r, t->f, t->s, 0, 0, -1, t->col);
+}
+static void art_draw_bar(app *a, const void *what)
+{
+	const SDL_Rect *r = what;
+	SDL_Rect at = { 0, 0, r->w, r->h };
+
+	ui_round_rect(a->r, &at, r->h / 2, (SDL_Color){ (Uint8)(MENU_ACCENT >> 16),
+	              (Uint8)(MENU_ACCENT >> 8), (Uint8)MENU_ACCENT, 255 });
+}
+
+static void updater_art(app *a, const char *dir)
+{
+	TTF_Font *fh = ui_font(UI_F_LABEL), *fm = ui_font(UI_F_MENU);
+	const menu_row writing[] = {
+		{ "Writing", "", false }, MENU_BAR, MENU_RULE, MENU_NOTE("Don't turn the device off"),
+	};
+	const menu_row checking[] = {
+		{ "Checking", "", false }, MENU_BAR, MENU_RULE, MENU_NOTE("Don't turn the device off"),
+	};
+	const menu_row failed[] = {
+		MENU_NOTE("It stopped while writing."),
+		MENU_NOTE("Use TortOS Installer's Update;"),
+		MENU_NOTE("games and saves are safe."),
+		MENU_RULE,
+		MENU_NOTE("Power button: turn off"),
+	};
+	char path[1024], one[2] = "";
+	FILE *index, *bin, *layout;
+	SDL_Rect bar;
+	const char *c;
+
+	/* A space for a heading: the band stays, and the version goes in it */
+	art_frame(a, dir, "writing.rgba", " ", writing, 4);
+	art_frame(a, dir, "checking.rgba", " ", checking, 4);
+	bar = (SDL_Rect){ g_menu_seen.bar_x, g_menu_seen.bar_y, g_menu_seen.bar_w, g_menu_seen.bar_h };
+	snprintf(path, sizeof path, "%s/layout.txt", dir);
+	if (!(layout = fopen(path, "w"))) exit(1);
+	fprintf(layout, "screen %d %d\nhead %d %d\nvalue %d %d\nbar %d %d %d %d\n",
+	        TORTOS_SCREEN_W, TORTOS_SCREEN_H, g_menu_seen.head_x, g_menu_seen.head_y,
+	        g_menu_seen.value_x, g_menu_seen.value_y, bar.x, bar.y, bar.w, bar.h);
+	fclose(layout);
+	art_frame(a, dir, "failed.rgba", "The update didn't finish", failed, 5);
+
+	snprintf(path, sizeof path, "%s/pieces.txt", dir);
+	index = fopen(path, "w");
+	snprintf(path, sizeof path, "%s/pieces.bin", dir);
+	bin = fopen(path, "wb");
+	if (!index || !bin) exit(1);
+	{
+		art_text t = { fh, "Update to ", UI_TEXT_SOFT };
+
+		art_piece(a, index, bin, "head-prefix", ui_text_width(fh, t.s), TTF_FontHeight(fh),
+		          art_draw_text, &t);
+	}
+	for (c = "0123456789."; *c; c++) {
+		char key[16];
+		art_text t = { fh, one, UI_TEXT_SOFT };
+
+		one[0] = *c;
+		snprintf(key, sizeof key, "head-%c", *c);
+		art_piece(a, index, bin, key, ui_text_width(fh, one), TTF_FontHeight(fh),
+		          art_draw_text, &t);
+	}
+	for (c = "0123456789%"; *c; c++) {
+		char key[16];
+		art_text t = { fm, one, UI_TEXT_DIM };
+
+		one[0] = *c;
+		snprintf(key, sizeof key, "value-%c", *c);
+		art_piece(a, index, bin, key, ui_text_width(fm, one), TTF_FontHeight(fm),
+		          art_draw_text, &t);
+	}
+	art_piece(a, index, bin, "bar-fill", bar.w, bar.h, art_draw_bar, &bar);
+	fclose(index);
+	fclose(bin);
+	fprintf(stderr, "updater art: wrote %s\n", dir);
+}
+
 static void take_shot(app *a)
 {
 	SDL_Surface *out = SDL_CreateRGBSurfaceWithFormat(0, TORTOS_SCREEN_W,
@@ -12397,6 +12559,7 @@ int main(int argc, char *argv[])
 
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "--shot") && i + 1 < argc) shot_path = argv[++i];
+		else if (!strcmp(argv[i], "--updater-art") && i + 1 < argc) shot_updater_art = argv[++i];
 		else if (!strcmp(argv[i], "--screen") && i + 1 < argc)
 			shot_screen = strcmp(argv[++i], "games") == 0 ? SCREEN_GAMES
 			                                              : SCREEN_SYSTEMS;
@@ -12957,6 +13120,10 @@ int main(int argc, char *argv[])
 	a.running = true;
 	last_tint_ms = plat_now_ms();
 
+	if (shot_updater_art) {
+		updater_art(&a, shot_updater_art);
+		goto done;
+	}
 	if (shot_path) {
 		if (shot_screen >= 0) a.screen = (screen_id)shot_screen;
 		if (shot_jump) {

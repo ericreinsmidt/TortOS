@@ -87,6 +87,11 @@ glibc. Their versions and licenses are in plastron's package list,
   ae63ae3a36ed01724674e8f3d750dc47bf125410 (tag v2024-12-30); each file is
   pinned by its SHA-256 in `mk/fetch-vendor.sh`, which fetches them into
   `vendor/xz-embedded/` with the license, `COPYING`.
+- **Josefin Sans**, as above, SIL Open Font License 1.1: the words the
+  updater shows while it writes (Writing, Checking, and the screen it shows
+  if writing stops partway) are drawn ahead of time in it, by TortOS's own
+  menu code, and carried in `tortos-update` as pictures
+  (`tools/tortos-update/art.h`), since it runs with no font library.
 
 ---
 

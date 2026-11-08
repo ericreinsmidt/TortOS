@@ -192,6 +192,17 @@ build-native/update-check: tools/update-check.c tools/tortos-update/plan.c \
 	      -o $@ tools/update-check.c tools/tortos-update/plan.c tools/tortos-update/write.c \
 	      tools/tortos-update/sha256.c
 
+# The updater's own screens (tools/tortos-update/screen.c), as BMPs in
+# build-native/updater-shots, to look at beside their mockups. Not part of
+# check: it needs vendor/xz-embedded (make vendor).
+updater-shots:
+	@mkdir -p build-native/updater-shots
+	$(CC) -std=gnu11 -Wall -Wextra -O1 -g -Itools/tortos-update -Ivendor/xz-embedded \
+	      -o build-native/updater-shots-tool tools/updater-shots.c tools/tortos-update/screen.c \
+	      vendor/xz-embedded/xz_crc32.c vendor/xz-embedded/xz_dec_stream.c \
+	      vendor/xz-embedded/xz_dec_lzma2.c
+	@./build-native/updater-shots-tool build-native/updater-shots
+
 # TortOS's half of updating over Wi-Fi: reading GitHub's answer for the
 # latest release, the version rule, and the answer kept on the card, from
 # saved replies in tools/fixtures/release. No network.

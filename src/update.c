@@ -124,7 +124,8 @@ static bool asset(jsv a, char *url, size_t urln, long long *size, char *sha256,
 		say(why, whyn, msg);
 		return false;
 	}
-	snprintf(sha256, 65, "%s", digest + 7);
+	memcpy(sha256, digest + 7, 64);     /* exactly 64, as is_sha256 said */
+	sha256[64] = '\0';
 	return true;
 }
 
@@ -132,7 +133,7 @@ bool update_parse(const char *json, size_t len, const char *device,
                   update_release *out, char *why, size_t whyn)
 {
 	update_release r;
-	char tag[24], want[96], name[160];
+	char tag[32], want[96], name[160];
 	bool image = false, sums = false;
 	long long sums_size;
 	long part[4];
@@ -201,8 +202,14 @@ bool update_cache_write(const char *path, time_t when, const char *installed,
 
 static void copy_value(char *out, size_t n, const char *v, bool *fits)
 {
-	if (strlen(v) >= n) *fits = false;
-	snprintf(out, n, "%s", v);
+	size_t k = strlen(v);
+
+	if (k >= n) {
+		*fits = false;
+		k = n - 1;
+	}
+	memcpy(out, v, k);
+	out[k] = '\0';
 }
 
 static bool cache_read(const char *path, bool aged, time_t now, const char *installed,
