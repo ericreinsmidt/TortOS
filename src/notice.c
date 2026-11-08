@@ -71,7 +71,7 @@ bool notice_render(const char *heading, const char *body, const char *path)
 	 * obvious the moment it was rendered and looked at, and invisible while
 	 * it was only being reasoned about. UI_F_LABEL is 48 and UI_F_MENU 43. */
 	TTF_Font *fh = ui_font(UI_F_MENU), *fb = ui_font(UI_F_LABEL);
-	int padx, pady, w, h, x, y, corner, maxw;
+	int padx, pady, gap, w, h, x, y, corner, maxw;
 	char headfit[192], bodyfit[192];
 	uint8_t *px;
 	FILE *f;
@@ -94,6 +94,10 @@ bool notice_render(const char *heading, const char *body, const char *path)
 	 * trick menu_draw uses to stop its rows riding high. */
 	padx = ui_font_line(UI_F_MENU) / 3;
 	pady = ui_font_line(UI_F_MENU) / 6;
+	/* Between the two lines, as much again as above and below them. The
+	 * heading's line height alone left 3 px between a descender and a capital
+	 * under it, the p of "Update" all but touching the T of "TortOS". */
+	gap = pady;
 
 	/* A margin off the panel edge as well as off Diatom's hard limit: a
 	 * notice that runs the full width of the screen stops reading as a thing
@@ -116,7 +120,7 @@ bool notice_render(const char *heading, const char *body, const char *path)
 	x = ui_text_width(fh, heading);
 	if (x > w) w = x;
 	w += padx * 2;
-	h = ui_font_line(UI_F_MENU) + ui_font_line(UI_F_LABEL) + pady * 2
+	h = ui_font_line(UI_F_MENU) + gap + ui_font_line(UI_F_LABEL) + pady * 2
 	    + TTF_FontDescent(fb) / 3;
 	if (w > NOTICE_MAX_W) w = NOTICE_MAX_W;
 	if (h > NOTICE_MAX_H) h = NOTICE_MAX_H;
@@ -158,7 +162,7 @@ bool notice_render(const char *heading, const char *body, const char *path)
 	          (w - ui_text_width(fh, heading)) / 2, pady, DIM);
 	draw_text(px, w, h, fb, body,
 	          (w - ui_text_width(fb, body)) / 2,
-	          pady + ui_font_line(UI_F_MENU), WHITE);
+	          pady + ui_font_line(UI_F_MENU) + gap, WHITE);
 
 	f = fopen(path, "wb");
 	if (!f) { free(px); return false; }
