@@ -7603,7 +7603,7 @@ static void update_after_start(app *a)
 
 		if (res == UPDATE_RESULT_DONE) {
 			heading = "Updated";
-			snprintf(now, sizeof now, "TortOS is now %s.", detail);
+			snprintf(now, sizeof now, "TortOS is now %s", detail);
 			rows[n++] = MENU_NOTE(now);
 		} else if (res == UPDATE_RESULT_UNTOUCHED) {
 			rows[n++] = MENU_NOTE("Nothing was changed.");
