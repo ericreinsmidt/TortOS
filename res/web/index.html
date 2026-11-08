@@ -64,6 +64,11 @@
       <button id="tidygo" type="button">Rename all</button>
     </div>
   </section>
+  <!-- A TortOS update, on the first page, where the device takes one from this
+       page (Down To The Wire): app.js's updates section. Hidden where the
+       device says no, and while there is nothing newer. -->
+  <section id="upd" class="tidy upd" hidden></section>
+  <input id="updfile" type="file" accept=".xz" hidden>
   <ul id="list" class="list"></ul>
   <p id="empty" class="empty" hidden>Nothing here yet.</p>
 
@@ -83,6 +88,9 @@
     <a class="ghost" href="/api/logs" download>Download logs</a>
     <span>Network, headset and account names are masked.</span>
   </p>
+
+  <!-- The version the device runs, when nothing newer is out. -->
+  <p id="verline" class="logs verline" hidden></p>
 
   <!-- The frame only. The words live in the header, where they cover nothing. -->
   <div id="drop" class="drop" hidden></div>

@@ -590,6 +590,9 @@ int main(void)
 		CHECK(strstr(body, "\"version\":\"2.2.0\"") && strstr(body, "\"device\":\"brick\"") &&
 		      strstr(body, "\"state\":\"idle\""), "the update answer: %s", body);
 		CHECK(strstr(body, "\"have\":\"2.2.5\""), "the image already there: %s", body);
+		CHECK(strstr(body, "\"feed\":\"" UPDATE_FEED "\"") &&
+		      strstr(body, "\"files\":\"" UPDATE_FILES "\""),
+		      "where the page asks and downloads: %s", body);
 
 #define OFFER(file, ver, size) "/api/update?file=" file "&version=" ver "&size=" size "&sha256="
 		snprintf(url, sizeof url, OFFER("TortOS-v2.3.0-pixel2.img.xz", "2.3.0", "9") "%s", sha);

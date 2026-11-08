@@ -190,6 +190,7 @@ function draw() {
 	$('empty').hidden = entries.length > 0;
 	$('logs').hidden = cwd !== '';
 	drawArt();
+	drawUpdate();
 	/* A listing with any covers gives each row of that kind a cover's slot:
 	 * every game when a game has one, every album when an album has. Albums
 	 * only, not an artist's folder of them, which has no cover to show. */
@@ -695,6 +696,7 @@ addEventListener('drop', (e) => {
 	e.preventDefault();
 	dragDepth = 0;
 	dragUI(false);
+	if (updDropped(e.dataTransfer)) return;
 	dropped(e.dataTransfer);
 });
 
@@ -980,6 +982,262 @@ $('artgo').addEventListener('click', () => { if (!artBusy) getCovers(); });
 /* ---- toast ------------------------------------------------------------- */
 
 let toastTimer = 0;
+/* ---- updating TortOS (#69) ---------------------------------------------- */
+
+/* Down To The Wire only: the device behind the cable has no network, so this
+ * page asks GitHub about the latest release, downloads this device's image
+ * and sends it over; the device checks it against GitHub's SHA-256 and asks
+ * on its own screen (src/hare.h, /api/update). The image comes from GitHub
+ * Pages, as a release download can't be read by a web page (no CORS header);
+ * where both are asked is the device's to say, so a development build can
+ * point them at a computer on the desk. The page can't check a SHA-256 itself:
+ * over plain http the browser keeps that function from it. */
+let updDev = null;         /* the device's answer: version, device, state, have, feed, files */
+let updRel = null;         /* the latest release for this device, or null */
+let updRelAsked = false;   /* asked once a session: GitHub allows 60 an hour */
+let updBusy = false;       /* downloading, sending, or following the device */
+let updState = '';         /* what the panel shows */
+let updCancel = null;      /* stops the download or the send */
+
+/* The device's rule (update.c): one to four numbers of up to five digits. */
+function verParts(v) {
+	return /^\d{1,5}(\.\d{1,5}){0,3}$/.test(v || '') ? v.split('.').map(Number) : null;
+}
+function verNewer(a, b) {
+	const x = verParts(a), y = verParts(b);
+	if (!x || !y) return false;
+	for (let i = 0; i < 4; i++) {
+		const p = x[i] || 0, q = y[i] || 0;
+		if (p !== q) return p > q;
+	}
+	return false;
+}
+
+/* This device's image in the feed's answer, held to the device's own rules
+ * (update_parse), or null. */
+function readRelease(j, device) {
+	if (!j || j.draft || j.prerelease || typeof j.tag_name !== 'string' || j.tag_name[0] !== 'v')
+		return null;
+	const version = j.tag_name.slice(1);
+	if (!verParts(version)) return null;
+	const file = 'TortOS-v' + version + '-' + device + '.img.xz';
+	const a = (j.assets || []).find((x) => x && x.name === file);
+	if (!a || !(a.size > 0) || !/^sha256:[0-9a-f]{64}$/.test(a.digest || '')) return null;
+	return { version, file, size: a.size, sha256: a.digest.slice(7),
+	         notes: typeof j.html_url === 'string' ? j.html_url : '',
+	         direct: typeof a.browser_download_url === 'string' ? a.browser_download_url : '' };
+}
+
+const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const mb = (n) => (n / 1e6).toFixed(1);
+
+function updOffer() {
+	return '/api/update?file=' + enc(updRel.file) + '&version=' + enc(updRel.version) +
+	       '&size=' + updRel.size + '&sha256=' + updRel.sha256;
+}
+
+/* The panel, in the state named. A download or a send moving along only moves
+ * its bar and its numbers, so Cancel stays put under the pointer. */
+function updShow(state, a, b) {
+	const box = $('upd');
+	if (state === updState && (state === 'downloading' || state === 'sending') && b) {
+		const fill = box.querySelector('.bar span'), nums = box.querySelector('.line span:last-child');
+		if (fill && nums) {
+			fill.style.width = Math.round(a / b * 100) + '%';
+			nums.textContent = mb(a) + ' of ' + mb(b) + ' MB';
+			return;
+		}
+	}
+	const v = updRel ? esc(updRel.version) : '';
+	const notes = updRel && updRel.notes
+		? '<a class="ghost" href="' + esc(updRel.notes) + '" target="_blank" rel="noopener">What\'s new</a>' : '';
+	const progress = (what, have, total) =>
+		'<h2>Updating to TortOS ' + v + '</h2><div class="line"><span>' + what + '</span><span>' +
+		(total ? mb(have) + ' of ' + mb(total) + ' MB' : '') + '</span></div><div class="bar"><span style="width:' +
+		(total ? Math.round(have / total * 100) : 100) + '%"></span></div>';
+	const html = {
+		available: '<h2>TortOS ' + v + ' is available</h2><p>This device has ' + esc(updDev.version) +
+			'. Your games, saves and settings stay as they are.</p><div class="acts">' + notes +
+			'<button class="go" data-act="go">Update</button></div>',
+		downloading: progress('Downloading', a, b) + '<div class="acts"><button data-act="cancel">Cancel</button></div>',
+		sending: progress('Sending to the device', a, b) + '<div class="acts"><button data-act="cancel">Cancel</button></div>',
+		checking: progress('The device is checking it', 0, 0),
+		asking: '<h2>Confirm on the device</h2><p>The device is asking: Update to ' + v + '?</p>',
+		updating: '<h2>Updating</h2><p>The device is writing TortOS ' + v +
+			' and restarts when it\'s done, in about half a minute. Don\'t turn it off.</p>',
+		notnow: '<h2>TortOS ' + v + ' is available</h2><p>Not now was chosen on the device. The update stays on it for next time.</p><div class="acts">' +
+			notes + '<button class="go" data-act="go">Update</button></div>',
+		nodownload: '<h2>Couldn\'t download TortOS ' + v + '</h2><p>Download it from GitHub, then drop the file here or choose it.</p><div class="acts">' +
+			(updRel && updRel.direct ? '<a class="ghost" href="' + esc(updRel.direct) + '">Download from GitHub</a>' : '') +
+			'<button data-act="pick">Choose file</button></div>',
+		refused: '<h2>The device didn\'t take the update</h2><p>' +
+			esc(/SHA-256/.test(a || '') ? 'The file didn\'t match GitHub\'s checksum' : (a || 'It said no')) +
+			'. Nothing was changed.</p><div class="acts"><button data-act="go">Try again</button></div>',
+		noroom: '<h2>Not enough room on the card</h2><p>The update needs ' +
+			(updRel ? Math.ceil(updRel.size / 1e6) + 1 : '') + ' MB free. Make room and try again.</p>' +
+			'<div class="acts"><button data-act="go">Try again</button></div>',
+	}[state];
+	updState = state;
+	box.className = 'tidy upd' + (['nodownload', 'refused', 'noroom'].includes(state) ? ' bad' : '');
+	box.innerHTML = html;
+	box.hidden = cwd !== '';
+	$('verline').hidden = true;
+}
+
+$('upd').addEventListener('click', (e) => {
+	const act = e.target.dataset && e.target.dataset.act;
+	if (act === 'go') updStart();
+	else if (act === 'cancel' && updCancel) updCancel();
+	else if (act === 'pick') $('updfile').click();
+});
+$('updfile').addEventListener('change', () => {
+	const f = $('updfile').files[0];
+	$('updfile').value = '';
+	if (f) updFile(f);
+});
+
+/* What to show at the roots: asked of the device each time, of GitHub once. */
+async function drawUpdate() {
+	if (cwd !== '') { $('upd').hidden = true; $('verline').hidden = true; return; }
+	if (updBusy) { $('upd').hidden = false; return; }
+	try {
+		const r = await fetch('/api/update', { credentials: 'same-origin' });
+		if (!r.ok) { $('upd').hidden = true; $('verline').hidden = true; return; }
+		updDev = await r.json();
+	} catch (e) { return; }
+	if (!updRelAsked) {
+		updRelAsked = true;
+		try {
+			const f = await fetch(updDev.feed, { headers: { Accept: 'application/vnd.github+json' } });
+			if (f.ok) updRel = readRelease(await f.json(), updDev.device);
+		} catch (e) { /* offline: nothing to offer */ }
+	}
+	if (cwd !== '' || updBusy) return;
+	/* Opened again while the device is busy with one: follow it. */
+	if (updRel && ['receiving', 'checking', 'asking', 'updating'].includes(updDev.state)) {
+		updWatch();
+		return;
+	}
+	if (updRel && verNewer(updRel.version, updDev.version)) {
+		updShow(updDev.state === 'notnow' ? 'notnow' : 'available');
+		return;
+	}
+	$('upd').hidden = true;
+	$('verline').textContent = updRel ? 'TortOS ' + updDev.version + ', up to date' : '';
+	$('verline').hidden = !updRel;
+}
+
+/* Update, or Try again: the copy the device kept if it is this one, else a
+ * download and a send. */
+async function updStart() {
+	if (updBusy || !updRel) return;
+	updBusy = true;
+	if (updDev && updDev.have === updRel.version) {
+		try {
+			const r = await fetch(updOffer(), { method: 'POST', credentials: 'same-origin' });
+			if (r.ok || r.status === 409) { updWatch(); return; }
+		} catch (e) { /* send it after all */ }
+	}
+	const stop = new AbortController();
+	updCancel = () => stop.abort();
+	updShow('downloading', 0, updRel.size);
+	try {
+		const r = await fetch(updDev.files + updRel.file, { signal: stop.signal });
+		if (!r.ok || !r.body) throw new Error('download');
+		const reader = r.body.getReader(), parts = [];
+		let have = 0, shown = 0;
+		for (;;) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			parts.push(value);
+			have += value.length;
+			if (have - shown > 512 * 1024) { shown = have; updShow('downloading', have, updRel.size); }
+		}
+		if (have !== updRel.size) throw new Error('download');
+		updSend(new Blob(parts));
+	} catch (e) {
+		updBusy = false;
+		updCancel = null;
+		if (stop.signal.aborted) updShow('available');
+		else updShow('nodownload');
+	}
+}
+
+/* A file the player downloaded themselves, dropped or chosen: only this
+ * device's image for this release. */
+function updFile(f) {
+	if (!updRel || updBusy) return;
+	if (f.name !== updRel.file || f.size !== updRel.size) {
+		toast('That isn\'t ' + updRel.file, true);
+		return;
+	}
+	updBusy = true;
+	updSend(f);
+}
+
+function updDropped(dt) {
+	if (updState !== 'nodownload' || cwd !== '' || !dt || !dt.files || dt.files.length !== 1)
+		return false;
+	updFile(dt.files[0]);
+	return true;
+}
+
+/* To the device, padded as any upload is for Safari (see next()). */
+function updSend(blob) {
+	const pad = blob.size % 131072 === 0;
+	const xhr = new XMLHttpRequest();
+	updCancel = () => xhr.abort();
+	updShow('sending', 0, updRel.size);
+	xhr.open('PUT', updOffer() + (pad ? '&pad=1' : ''));
+	xhr.upload.onprogress = (ev) => {
+		if (ev.lengthComputable) updShow('sending', Math.min(ev.loaded, updRel.size), updRel.size);
+	};
+	xhr.onload = () => {
+		updCancel = null;
+		if (xhr.status === 200 || xhr.status === 409) { updWatch(); return; }
+		updBusy = false;
+		if (xhr.status === 507) updShow('noroom');
+		else updShow('refused', (xhr.responseText || '').split('\n')[1] || 'HTTP ' + xhr.status);
+	};
+	xhr.onerror = () => { updCancel = null; updBusy = false; updShow('refused', 'The device stopped answering'); };
+	xhr.onabort = () => { updCancel = null; updBusy = false; updShow('available'); };
+	xhr.send(pad ? new Blob([blob, new Uint8Array(1)]) : blob);
+}
+
+/* The device's side, twice a second, until it is settled one way or the
+ * other. Once it says it is updating, losing it is the restart. */
+async function updWatch() {
+	updBusy = true;
+	let last = '';
+	for (;;) {
+		let d;
+		try {
+			const r = await fetch('/api/update', { credentials: 'same-origin' });
+			if (!r.ok) throw new Error();
+			d = await r.json();
+		} catch (e) {
+			if (last === 'updating') updShow('updating');
+			updBusy = false;
+			return;
+		}
+		updDev = d;
+		if (d.state !== last) {
+			last = d.state;
+			if (d.state === 'receiving' || d.state === 'checking') updShow('checking');
+			else if (d.state === 'asking') updShow('asking');
+			else if (d.state === 'updating') updShow('updating');
+			else {
+				updBusy = false;
+				if (d.state === 'notnow') updShow('notnow');
+				else if (d.state === 'refused') updShow('refused', d.why);
+				else updShow('available');
+				return;
+			}
+		}
+		await new Promise((res) => setTimeout(res, 500));
+	}
+}
+
 function toast(msg, bad) {
 	const t = $('toast');
 	t.textContent = msg;

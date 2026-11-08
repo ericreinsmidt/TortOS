@@ -332,6 +332,22 @@ header {
 .tidy #tidygo { border-color: var(--accent); color: var(--accent); }
 .tidy #tidygo:disabled { opacity: 0.4; }
 
+/* A TortOS update: the tidy panel's frame, the upload queue's bar. Inset on a
+ * narrow window, where the panel would otherwise touch both edges. */
+.upd { max-width: min(var(--wrap), calc(100% - 32px)); }
+.upd h2 { margin: 0 0 10px; }
+.upd p { margin: 0; color: var(--soft); font-size: 15px; }
+.upd .line { display: flex; justify-content: space-between; gap: 10px; font-size: 15px; color: var(--soft); }
+.upd .line span:last-child { color: var(--dim); font-size: 14px; }
+.upd .bar { height: 4px; background: var(--line); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+.upd .bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .15s linear; }
+.upd.bad { border-color: var(--bad); }
+.upd.bad h2 { color: var(--bad); }
+.upd .acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.upd .acts a { text-decoration: none; }
+.upd .go { border-color: var(--accent); color: var(--accent); }
+.verline { font-size: 15px; }
+
 .empty { color: var(--dim); text-align: center; padding: 48px 16px;
          margin: 0 auto; max-width: var(--wrap); }
 

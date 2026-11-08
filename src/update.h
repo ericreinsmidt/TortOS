@@ -31,6 +31,16 @@
 #define UPDATE_FEED_IS_DEV 0
 #endif
 
+/* Where the Down To The Wire page downloads a release's images: GitHub
+ * Pages, which a workflow fills on each release, as a web page can't read a
+ * release download itself (no CORS header there). The page asks UPDATE_FEED
+ * which image and SHA-256, downloads it from here and sends it to the device,
+ * which checks it against that SHA-256: this only says where the bytes come
+ * from. A development build can point it elsewhere with UPDATE_FEED. */
+#ifndef UPDATE_FILES
+#define UPDATE_FILES "https://ericreinsmidt.github.io/TortOS/"
+#endif
+
 /* At most one check a day: a menu opened between checks shows the answer
  * kept on the card. */
 #define UPDATE_CHECK_EVERY_S (24 * 60 * 60)

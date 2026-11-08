@@ -108,10 +108,12 @@ void hare_set_after_write(void (*fn)(const char *abs));
  * here with GitHub's size and SHA-256; the launcher checks it and asks on the
  * device.
  *
- *   GET  /api/update  {"version", "device", "state", "why", "have"}: what this
- *        device runs, how an update it was sent is going (hare_update_state),
- *        and the version of an image already in the folder from before (kept
- *        after Not now, or a download System Update didn't use), or ""
+ *   GET  /api/update  {"version", "device", "state", "why", "have", "feed",
+ *        "files"}: what this device runs, how an update it was sent is going
+ *        (hare_update_state), the version of an image already in the folder
+ *        from before (kept after Not now, or a download System Update didn't
+ *        use) or "", and where the page asks about a release and downloads
+ *        it (UPDATE_FEED, UPDATE_FILES)
  *   PUT  /api/update?file=&version=&size=&sha256=[&pad=1]  the image, into
  *        the folder through a part-file, refused unless update_offer agrees
  *        and the body is that size. The folder's other images and part-files

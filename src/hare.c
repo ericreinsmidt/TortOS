@@ -499,14 +499,17 @@ static void route_update(httpd_req *r, bool done)
 		return;
 	}
 	if (!strcmp(m, "GET")) {
-		char json[512], have[32];
+		char json[1024], have[32];
 
 		if (!done) httpd_want_body(r, HTTPD_BODY_NONE, NULL);
 		update_have(have, sizeof have);
+		/* feed and files: where the page asks about a release and downloads
+		 * it, so a development build points both elsewhere (update.h). */
 		snprintf(json, sizeof json,
 		         "{\"version\":\"%s\",\"device\":\"%s\",\"state\":\"%s\","
-		         "\"why\":\"%s\",\"have\":\"%s\"}",
-		         g_up_version, g_up_device, g_up_state, g_up_why, have);
+		         "\"why\":\"%s\",\"have\":\"%s\",\"feed\":\"%s\",\"files\":\"%s\"}",
+		         g_up_version, g_up_device, g_up_state, g_up_why, have,
+		         UPDATE_FEED, UPDATE_FILES);
 		httpd_reply(r, 200, "application/json", json, strlen(json), NULL);
 		return;
 	}
