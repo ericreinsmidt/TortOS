@@ -1,0 +1,56 @@
+# Puts the latest release's images and SHA256SUMS on GitHub Pages, at
+# https://ericreinsmidt.github.io/TortOS/, where Down To The Wire's page
+# downloads an update (src/update.h, UPDATE_FILES). A web page can't read a
+# release download itself, as GitHub sends no CORS header with one; Pages
+# does. Nothing is committed: each run replaces the whole site with one
+# release's files, so the repository doesn't grow. The device checks the
+# image against the SHA-256 GitHub's API gives, never against this copy.
+#
+# Set up once, on GitHub:
+#   gh api -X POST repos/ericreinsmidt/TortOS/pages -f build_type=workflow
+#   gh api -X POST repos/ericreinsmidt/TortOS/environments/github-pages/deployment-branch-policies -f name='v*' -f type=tag
+# The second lets a release's tag deploy: by default only the main branch may.
+name: Release files to Pages
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # A prerelease stays off Pages: the page offers only the latest release.
+    if: ${{ github.event_name != 'release' || !github.event.release.prerelease }}
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Download the release's images and SHA256SUMS
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # The release that was published, or the latest when run by hand.
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          mkdir site
+          gh release download $TAG --repo "$GITHUB_REPOSITORY" --dir site \
+            --pattern 'TortOS-v*.img.xz' --pattern SHA256SUMS
+          ls -l site
+      - name: Check them against SHA256SUMS
+        working-directory: site
+        run: sha256sum --check --ignore-missing --strict SHA256SUMS
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v5
