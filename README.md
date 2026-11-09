@@ -113,9 +113,15 @@ The Pixel 2 has no radio of its own. A USB Wi-Fi adapter in its USB-C port gives
 
 ### Updating
 
-Put the card in the computer and choose **Update** in the TortOS Installer. The new TortOS goes on, and the games, music, saves and settings stay. The first boot after takes a bit longer while it copies the new TortOS into place.
+From 2.2.0 on, TortOS can update itself. Any of these keeps the games, music, saves and settings:
 
-The installer is the only way that keeps them: writing the image by hand erases the card.
+- **On the device, over Wi-Fi.** **MENU > System Update** downloads the new release, checks it and writes it. A notice on the shelf says when one is out.
+- **Over the cable.** Open **MENU > Down To The Wire**, then its page in a browser on your computer. When a newer release is out the page offers it, and you confirm on the device.
+- **With the TortOS Installer.** Put the card in the computer and choose **Update**. Coming from a version before 2.2.0, this is the way.
+
+Updating on the device needs the charger, or more than 10% battery. The first boot after an update takes a bit longer while it copies the new TortOS into place.
+
+Writing the image by hand erases the card.
 
 ### Adding games over Wi-Fi
 
