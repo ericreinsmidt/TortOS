@@ -152,4 +152,29 @@ update_result update_result_parse(const char *line, char *detail, size_t n);
 #define UPDATE_BATTERY_MIN_PCT 10
 bool update_battery_ok(bool readable, bool charging, int pct);
 
+/* ---- The shelf's own check, and its toast (#69 step 4) ----
+ *
+ * The shelf asks UPDATE_FEED by itself, so an update shows up without anyone
+ * opening System Update. Never more than once a day: what it checks against
+ * is the answer kept on the card, which update_cache_read calls stale after a
+ * day. These are the rules, apart from the shelf so check-release can step
+ * through them. */
+typedef struct {
+	bool wifi;    /* Wi-Fi was connected at the last pass */
+	bool armed;   /* a check may start; true from the launcher's start */
+} update_bg;
+
+/* One pass of the shelf. wifi: connected now. slot_free: nothing else holds
+ * the one network request (src/net.h). Armed at the start and again whenever
+ * Wi-Fi joins; the shelf also arms it after a game. True means look at the
+ * kept answer and ask if it is stale, and either way it disarms, so a check
+ * that fails or is given up waits for the next arming rather than asking
+ * again every pass. */
+bool update_bg_due(update_bg *bg, bool wifi, bool slot_free);
+
+/* Whether the shelf shows "Update available": one waiting, Wi-Fi connected
+ * (a device without it hears from the Wire page instead), and not shown
+ * already since this boot. */
+bool update_toast_due(update_state state, bool wifi, bool shown);
+
 #endif

@@ -62,7 +62,7 @@ static void draw_text(uint8_t *out, int ow, int oh, TTF_Font *f,
 	SDL_FreeSurface(t);
 }
 
-bool notice_render(const char *heading, const char *body, const char *path)
+uint8_t *notice_pixels(const char *heading, const char *body, int *wp, int *hp)
 {
 	/* The NAME is the line worth reading, so it gets the larger face and the
 	 * brighter ink; "Achievement unlocked" is context and sits above it,
@@ -74,12 +74,10 @@ bool notice_render(const char *heading, const char *body, const char *path)
 	int padx, pady, gap, w, h, x, y, corner, maxw;
 	char headfit[192], bodyfit[192];
 	uint8_t *px;
-	FILE *f;
-	unsigned char hdr[8];
 	const SDL_Color WHITE = { 235, 235, 240, 255 };
 	const SDL_Color DIM   = { 128, 168, 190, 255 };
 
-	if (!fb) return false;
+	if (!fb) return NULL;
 	if (!fh) fh = fb;
 
 	/* Tighter than square. A notice sits over someone's game for four
@@ -124,10 +122,10 @@ bool notice_render(const char *heading, const char *body, const char *path)
 	    + TTF_FontDescent(fb) / 3;
 	if (w > NOTICE_MAX_W) w = NOTICE_MAX_W;
 	if (h > NOTICE_MAX_H) h = NOTICE_MAX_H;
-	if (w <= 0 || h <= 0) return false;
+	if (w <= 0 || h <= 0) return NULL;
 
 	px = calloc((size_t)w * (size_t)h, 4);
-	if (!px) return false;
+	if (!px) return NULL;
 
 	/* A dark slab at 85%, rounded the way every menu panel in the launcher is
 	 * rounded. The first version chamfered the corners - one comparison per
@@ -164,6 +162,19 @@ bool notice_render(const char *heading, const char *body, const char *path)
 	          (w - ui_text_width(fb, body)) / 2,
 	          pady + ui_font_line(UI_F_MENU) + gap, WHITE);
 
+	*wp = w;
+	*hp = h;
+	return px;
+}
+
+bool notice_render(const char *heading, const char *body, const char *path)
+{
+	int w, h;
+	uint8_t *px = notice_pixels(heading, body, &w, &h);
+	FILE *f;
+	unsigned char hdr[8];
+
+	if (!px) return false;
 	f = fopen(path, "wb");
 	if (!f) { free(px); return false; }
 	memcpy(hdr, "DTOV", 4);

@@ -391,6 +391,20 @@ bool update_battery_ok(bool readable, bool charging, int pct)
 	return !readable || charging || pct > UPDATE_BATTERY_MIN_PCT;
 }
 
+bool update_bg_due(update_bg *bg, bool wifi, bool slot_free)
+{
+	if (wifi && !bg->wifi) bg->armed = true;     /* Wi-Fi just joined */
+	bg->wifi = wifi;
+	if (!bg->armed || !wifi || !slot_free) return false;
+	bg->armed = false;
+	return true;
+}
+
+bool update_toast_due(update_state state, bool wifi, bool shown)
+{
+	return state == UPDATE_WAITING && wifi && !shown;
+}
+
 bool update_offer(const char *file, const char *version, const char *size,
                   const char *sha256, const char *device, const char *installed,
                   update_release *out, char *why, size_t whyn)

@@ -1312,10 +1312,28 @@ static void muse_show(sysview *v, bool books)
 	cf_reset(&v->cf, 0);
 }
 
+/* ---- The update toast (#69 step 4) -----------------------------------------
+ *
+ * "Update available" over the shelf for as long as an achievement shows, the
+ * first time in a boot one is known to be waiting (upbg_poll decides). The
+ * panel a game's notices use, from notice_pixels, where Diatom puts them:
+ * drawn by the shelf itself, since no game is running to draw it. */
+#define TOAST_MS 4000            /* the achievement notice's OVERLAY ms */
+static SDL_Texture *g_toast;
+static int          g_toast_w, g_toast_h;
+static Uint32       g_toast_until;
+
+static void toast_end(void)
+{
+	if (g_toast) SDL_DestroyTexture(g_toast);
+	g_toast = NULL;
+}
+
 static void free_all_textures(app *a)
 {
 	/* Anything in flight was asked for against the shelf as it was. */
 	texload_bump();
+	toast_end();
 	for (int i = 0; i < 2; i++)
 		if (g_face[i]) { SDL_DestroyTexture(g_face[i]); g_face[i] = NULL; }
 	faces_stale();
@@ -1785,9 +1803,11 @@ static int sync_poll(void)
 
 /* Something else needs the one async slot now - a launch, the box art
  * scraper. The answer is dropped, and the next launch of that game asks
- * again. */
+ * again. The shelf's update check gives it up too (upbg_abandon). */
+static void upbg_abandon(void);
 static void sync_abandon(void)
 {
+	upbg_abandon();
 	if (g_sync_game) {
 		ra_sync_abandon();
 		g_sync_game = 0;
@@ -3589,11 +3609,26 @@ static void draw_shelf(app *a)
 
 static void welcome_draw(app *a);   /* with xfer_screen, below */
 
+/* The toast, while it lasts, and a redraw booked for when it goes. */
+static void toast_draw(app *a)
+{
+	SDL_Rect at;
+
+	if (!g_toast) return;
+	if (plat_now_ms() >= g_toast_until) { toast_end(); return; }
+	at = (SDL_Rect){ (TORTOS_SCREEN_W - g_toast_w) / 2,
+	                 TORTOS_SCREEN_H - g_toast_h - TORTOS_SCREEN_H / 24,
+	                 g_toast_w, g_toast_h };
+	SDL_RenderCopy(a->r, g_toast, NULL, &at);
+	redraw_at(g_toast_until);
+}
+
 static void render(app *a)
 {
 	g_redraw_at = REDRAW_NEVER;
 	draw_shelf(a);
 	if (a->sys.count <= 0) welcome_draw(a);
+	toast_draw(a);
 	plat_draw_osd(a->r);
 	/* The tint lands exactly on its target now (see tick_tint), so this is a
 	 * test that ends rather than one that is true forever. */
@@ -7187,6 +7222,118 @@ static char *up_slurp(const char *path, size_t max, size_t *len)
 	return buf;
 }
 
+/* ---- System Update: the shelf's own check, and the toast (#69 step 4) -------
+ *
+ * The shelf asks the release feed itself, so an update shows up without
+ * anyone opening System Update: at most once a day, by the answer kept on the
+ * card, and only with Wi-Fi up (update_bg_due has the rules). It takes the
+ * one network request only when nothing else holds it and lets it go to
+ * anything that wants it (upbg_abandon); a check given up or failed is asked
+ * again the next time Wi-Fi joins or a game ends. */
+#define UPBG_TMP "/tmp/tortos-release-bg.json"
+/* Once a boot, and the launcher can start more than once in one: this lives
+ * in /tmp, which every boot starts empty. */
+#define UPBG_TOAST_MARK "/tmp/tortos-update-toast"
+
+static update_bg g_upbg = { .armed = true };
+static bool      g_upbg_asking;
+static int       g_upbg_toasted = -1;   /* the mark: -1 not looked for yet */
+
+static void upbg_abandon(void)
+{
+	if (!g_upbg_asking) return;
+	net_async_abort();
+	unlink(UPBG_TMP);
+	g_upbg_asking = false;
+	fprintf(stderr, "update: gave up the background check for something else\n");
+}
+
+static void upbg_answer(int got)
+{
+	char cache[CFG_STR * 2], why[160] = "no answer from the release feed";
+	update_release rel;
+	update_state st = UPDATE_UNKNOWN;
+	size_t len = 0;
+	char *reply = got == 1 ? up_slurp(UPBG_TMP, 256 * 1024, &len) : NULL;
+
+	up_cache_path(cache, sizeof cache);
+	if (reply)
+		st = update_answer(reply, len, plat_device_name(), TORTOS_VERSION, cache,
+		                   time(NULL), &rel, why, sizeof why);
+	free(reply);
+	unlink(UPBG_TMP);
+	fprintf(stderr, "update: checked in the background: %s\n", why);
+	if (st == UPDATE_UNKNOWN) return;
+	g_up_state = st;
+	if (st == UPDATE_WAITING) g_up_rel = rel;
+	up_set_value();
+}
+
+static void upbg_toast(app *a)
+{
+	char body[64];
+	uint8_t *px;
+	int w, h;
+	FILE *f;
+
+	g_upbg_toasted = 1;
+	if ((f = fopen(UPBG_TOAST_MARK, "w"))) fclose(f);
+	snprintf(body, sizeof body, "TortOS %s", g_up_rel.version);
+	if (!(px = notice_pixels("Update available", body, &w, &h))) return;
+	toast_end();
+	g_toast = SDL_CreateTexture(a->r, SDL_PIXELFORMAT_ARGB8888,
+	                            SDL_TEXTUREACCESS_STATIC, w, h);
+	if (g_toast) {
+		SDL_UpdateTexture(g_toast, NULL, px, w * 4);
+		SDL_SetTextureBlendMode(g_toast, SDL_BLENDMODE_BLEND);
+		g_toast_w = w;
+		g_toast_h = h;
+		g_toast_until = plat_now_ms() + TOAST_MS;
+		redraw_now();
+		fprintf(stderr, "update: toast for TortOS %s\n", g_up_rel.version);
+	}
+	free(px);
+}
+
+/* Every pass of the shelf. Cheap when there is nothing to do: the Wi-Fi state
+ * is menu_wifi's, kept for 2 s, and the card is read only when a check may
+ * start. */
+static void upbg_poll(app *a)
+{
+	bool wifi;
+
+	if (!plat_has_wifi()) return;
+	if (g_upbg_asking) {
+		int got = net_async_poll();
+
+		if (got == 0) return;
+		g_upbg_asking = false;
+		upbg_answer(got);
+	}
+	wifi = menu_wifi(NULL, 0) == WIFI_CONNECTED;
+
+	/* Not while an achievement answer or set is out: net_get_async would
+	 * take over a slot whose request has finished but not been read. */
+	if (update_bg_due(&g_upbg, wifi, !g_sync_game && !g_pending_set[0])) {
+		char cache[CFG_STR * 2];
+		update_state st;
+		update_release r;
+
+		up_cache_path(cache, sizeof cache);
+		if (!update_cache_read(cache, time(NULL), TORTOS_VERSION, &st, &r) &&
+		    net_get_async(UPDATE_FEED, UPBG_TMP, 20)) {
+			g_upbg_asking = true;
+			return;
+		}
+	}
+
+	/* Not over the welcome on an empty card */
+	if (a->sys.count <= 0) return;
+	if (g_upbg_toasted < 0) g_upbg_toasted = access(UPBG_TOAST_MARK, F_OK) == 0;
+	up_known();
+	if (update_toast_due(g_up_state, wifi, g_upbg_toasted)) upbg_toast(a);
+}
+
 /* Clear .update/ of everything but `keep`, the updater's log and its last
  * result: an older release's image, a half download, a request nobody
  * acted on. */
@@ -7325,6 +7472,7 @@ static void update_screen(app *a)
 	int fd = -1;
 	sha256 h;
 
+	upbg_abandon();     /* the shelf's check, if it is asking: this screen asks */
 	up_known();
 	up_cache_path(cache, sizeof cache);
 	{
@@ -10910,6 +11058,9 @@ static void launch(app *a)
 				ra_flush_start(rom, s->tag, chv_game());
 			}
 
+			/* The shelf's update check may ask again, if a day has gone by */
+			g_upbg.armed = true;
+
 			/* RES_DEAD means it stopped answering -- it died, or the game
 			 * never started. Say so by falling through to the path that
 			 * runs it the slow way, rather than fading the shelf back up
@@ -13428,6 +13579,9 @@ int main(int argc, char *argv[])
 
 		/* Unlocks sent in the background: apply what the account answered. */
 		ra_flush_poll();
+
+		/* The release feed, asked in the background, and the toast */
+		upbg_poll(&a);
 
 		/* What Muse said since the last pass - including END, which is how
 		 * the next track of an album starts while nobody is on its screen -

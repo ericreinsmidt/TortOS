@@ -358,6 +358,42 @@ static void check_offer(void)
 	                    "Brick", "2.2.0", &r, why, sizeof why), "a device name in capitals");
 }
 
+/* The shelf's own check: when it may ask, and when the toast shows. */
+static void check_background(void)
+{
+	update_bg bg = { .armed = true };
+
+	printf("the shelf's own check\n");
+	CHECK(!update_bg_due(&bg, false, true), "asked with no Wi-Fi");
+	CHECK(!update_bg_due(&bg, true, false), "asked while the slot was taken");
+	CHECK(update_bg_due(&bg, true, true), "not asked once Wi-Fi and the slot were there");
+	CHECK(!update_bg_due(&bg, true, true), "asked a second time on the next pass");
+	CHECK(!update_bg_due(&bg, true, true), "asked again later, Wi-Fi never having dropped");
+	CHECK(!update_bg_due(&bg, false, true), "asked as Wi-Fi dropped");
+	CHECK(update_bg_due(&bg, true, true), "not asked when Wi-Fi joined again");
+
+	/* Wi-Fi joining while the slot is taken: the arming waits for it */
+	CHECK(!update_bg_due(&bg, false, true), "asked with Wi-Fi gone");
+	CHECK(!update_bg_due(&bg, true, false), "asked while the slot was taken");
+	CHECK(!update_bg_due(&bg, true, false), "asked while the slot was still taken");
+	CHECK(update_bg_due(&bg, true, true), "not asked once the slot came free");
+
+	/* After a game: armed again, still on Wi-Fi */
+	bg.armed = true;
+	CHECK(update_bg_due(&bg, true, true), "not asked after a game");
+
+	/* Never on a device that never has Wi-Fi */
+	bg = (update_bg){ .armed = true };
+	for (int i = 0; i < 5; i++)
+		CHECK(!update_bg_due(&bg, false, true), "asked with no Wi-Fi, pass %d", i);
+
+	CHECK(update_toast_due(UPDATE_WAITING, true, false), "no toast for a waiting update");
+	CHECK(!update_toast_due(UPDATE_WAITING, true, true), "a second toast in the same boot");
+	CHECK(!update_toast_due(UPDATE_WAITING, false, false), "a toast with no Wi-Fi");
+	CHECK(!update_toast_due(UPDATE_CURRENT, true, false), "a toast when up to date");
+	CHECK(!update_toast_due(UPDATE_UNKNOWN, true, false), "a toast with no answer");
+}
+
 int main(void)
 {
 	check_parse();
@@ -365,6 +401,7 @@ int main(void)
 	check_cache();
 	check_handoff();
 	check_offer();
+	check_background();
 	if (failures) {
 		printf("\n%d FAILED\n", failures);
 		return 1;

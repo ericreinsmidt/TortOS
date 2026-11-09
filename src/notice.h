@@ -3,6 +3,7 @@
 #define TORTOS_NOTICE_H
 
 #include <stdbool.h>
+#include <stdint.h>
 
 /* A line of text, rendered to the file Diatom composites over a running game.
  *
@@ -23,5 +24,11 @@
 /* Writes `path` in Diatom's overlay format: "DTOV", uint16 w, uint16 h, then
  * w*h BGRA rows. False if there is no font or the file cannot be written. */
 bool notice_render(const char *heading, const char *body, const char *path);
+
+/* The same notice as pixels, for the shelf, which draws its own (the update
+ * toast) because no game is running to draw it: w*h BGRA rows, as
+ * notice_render writes them, from malloc for the caller to free. NULL if
+ * there is no font. */
+uint8_t *notice_pixels(const char *heading, const char *body, int *w, int *h);
 
 #endif
