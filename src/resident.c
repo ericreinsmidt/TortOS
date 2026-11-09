@@ -318,13 +318,17 @@ bool plat_resident_send(const char *tag, const char *core, const char *rom,
 		 * first frame as soon as the load is done, and cannot while this
 		 * process holds it. */
 		device_display_release();
+		/* The zone Date & Time chose, which this process holds in TZ
+		 * (plat_clock_zone), for a game's clock. Ignored by an older Diatom. */
+		const char *zone = getenv("TZ");
+
 		if (!dsend("RUN\tcore=%s\trom=%s\ttag=%s"
 		           "\tresume=%s\texit_state=%s\tpreview=%s"
-		           "\tconsole=%d\tcheevos=%s",
+		           "\tconsole=%d\tcheevos=%s\ttz=%s",
 		           core, rom, tag,
 		           resume ? resume : "", exit_state ? exit_state : "",
 		           preview ? preview : "",
-		           console, cheevos ? cheevos : "")) {
+		           console, cheevos ? cheevos : "", zone ? zone : "")) {
 			device_display_take();      /* no game is coming */
 			return false;
 		}

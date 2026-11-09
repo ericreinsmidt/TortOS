@@ -13244,9 +13244,9 @@ int main(int argc, char *argv[])
 		 * card that lost it or never had one gets a correct one for free. */
 		db_write_boot_env();
 	}
-	/* Local time is the card's chosen zone, in this process, from here on:
-	 * the Brick's launch.sh points the system at it too, but the Pixel 2's
-	 * system has no other way to know it */
+	/* Local time is the card's chosen zone, in this process, from here on,
+	 * and Diatom's with each game (resident.c's RUN). The system stays on
+	 * UTC. */
 	{
 		char tz[64];
 
