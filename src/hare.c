@@ -453,8 +453,41 @@ static void update_have(char *out, size_t n)
 	closedir(d);
 }
 
-/* Everything in the folder but the updater's log and its last result, and
- * `keep`: an older image, a part-file, a request nobody acted on. */
+/* Whether update_tidy clears this: everything in the folder but the updater's
+ * log and its last result, and `keep`. An older image, a part-file, a request
+ * nobody acted on. */
+static bool update_clears(const char *name, const char *keep)
+{
+	return !(name[0] == '.' || !strcmp(name, "update.log") || !strcmp(name, "result") ||
+	         (keep && !strcmp(name, keep)));
+}
+
+/* The bytes an update has to go in: what is free where the folder is, or on
+ * the card under it before the first update has made it, and what update_tidy
+ * would clear first. -1 if the card can't say. */
+static long long update_room(void)
+{
+	char parent[XFER_PATH_MAX], path[XFER_PATH_MAX], *slash;
+	struct statvfs vfs;
+	struct dirent *e;
+	struct stat st;
+	long long room;
+	DIR *d;
+
+	snprintf(parent, sizeof parent, "%s", g_up_dir);
+	if ((slash = strrchr(parent, '/'))) *slash = '\0';
+	if (statvfs(g_up_dir, &vfs) != 0 && statvfs(parent, &vfs) != 0) return -1;
+	room = (long long)vfs.f_bavail * (long long)vfs.f_frsize;
+	if (!(d = opendir(g_up_dir))) return room;
+	while ((e = readdir(d)))
+		if (update_clears(e->d_name, NULL) &&
+		    snprintf(path, sizeof path, "%s/%s", g_up_dir, e->d_name) < (int)sizeof path &&
+		    stat(path, &st) == 0 && S_ISREG(st.st_mode))
+			room += st.st_size;
+	closedir(d);
+	return room;
+}
+
 static void update_tidy(const char *keep)
 {
 	char path[XFER_PATH_MAX];
@@ -463,10 +496,8 @@ static void update_tidy(const char *keep)
 
 	if (!(d = opendir(g_up_dir))) return;
 	while ((e = readdir(d))) {
-		if (e->d_name[0] == '.' || !strcmp(e->d_name, "update.log") ||
-		    !strcmp(e->d_name, "result") || (keep && !strcmp(e->d_name, keep)))
-			continue;
-		if (snprintf(path, sizeof path, "%s/%s", g_up_dir, e->d_name) < (int)sizeof path)
+		if (update_clears(e->d_name, keep) &&
+		    snprintf(path, sizeof path, "%s/%s", g_up_dir, e->d_name) < (int)sizeof path)
 			unlink(path);
 	}
 	closedir(d);
@@ -507,9 +538,10 @@ static void route_update(httpd_req *r, bool done)
 		 * it, so a development build points both elsewhere (update.h). */
 		snprintf(json, sizeof json,
 		         "{\"version\":\"%s\",\"device\":\"%s\",\"state\":\"%s\","
-		         "\"why\":\"%s\",\"have\":\"%s\",\"feed\":\"%s\",\"files\":\"%s\"}",
+		         "\"why\":\"%s\",\"have\":\"%s\",\"feed\":\"%s\",\"files\":\"%s\","
+		         "\"room\":%lld}",
 		         g_up_version, g_up_device, g_up_state, g_up_why, have,
-		         UPDATE_FEED, UPDATE_FILES);
+		         UPDATE_FEED, UPDATE_FILES, update_room());
 		httpd_reply(r, 200, "application/json", json, strlen(json), NULL);
 		return;
 	}

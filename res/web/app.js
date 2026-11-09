@@ -1127,6 +1127,19 @@ async function drawUpdate() {
 	$('verline').hidden = !updRel;
 }
 
+/* Whether the device has room for the image, asked now, since Try again comes
+ * after the player has made some. Asked before anything is sent because a PUT
+ * the device turns down at the start can't say why: it closes the connection
+ * on the body still coming, and the browser reports only a lost connection.
+ * The 1 MiB is hare.c's own margin. */
+async function updHasRoom() {
+	try {
+		const r = await fetch('/api/update', { credentials: 'same-origin' });
+		if (r.ok) updDev = await r.json();
+	} catch (e) { /* the send will find out */ }
+	return !(updDev.room >= 0) || updDev.room >= updRel.size + 1048576;
+}
+
 /* Update, or Try again: the copy the device kept if it is this one, else a
  * download and a send. */
 async function updStart() {
@@ -1138,6 +1151,7 @@ async function updStart() {
 			if (r.ok || r.status === 409) { updWatch(); return; }
 		} catch (e) { /* send it after all */ }
 	}
+	if (!await updHasRoom()) { updBusy = false; updShow('noroom'); return; }
 	const stop = new AbortController();
 	updCancel = () => stop.abort();
 	updShow('downloading', 0, updRel.size);
@@ -1165,13 +1179,14 @@ async function updStart() {
 
 /* A file the player downloaded themselves, dropped or chosen: only this
  * device's image for this release. */
-function updFile(f) {
+async function updFile(f) {
 	if (!updRel || updBusy) return;
 	if (f.name !== updRel.file || f.size !== updRel.size) {
 		toast('That isn\'t ' + updRel.file, true);
 		return;
 	}
 	updBusy = true;
+	if (!await updHasRoom()) { updBusy = false; updShow('noroom'); return; }
 	updSend(f);
 }
 

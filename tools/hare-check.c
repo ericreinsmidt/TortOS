@@ -594,6 +594,43 @@ int main(void)
 		      strstr(body, "\"files\":\"" UPDATE_FILES "\""),
 		      "where the page asks and downloads: %s", body);
 
+		/* The room: free space, plus what the PUT clears first. A hole of
+		 * 1 GiB counts as that size and takes no space, so the difference
+		 * stands out from whatever else this computer is writing. */
+		{
+			char *at = strstr(body, "\"room\":");
+			long long room = at ? strtoll(at + 7, NULL, 10) : -1, room2;
+			const long long GiB = 1LL << 30;
+
+			CHECK(room > 0, "the room for an update: %s", body);
+			snprintf(p, sizeof p, "%s/TortOS-v2.2.6-brick.img.xz.part", dir);
+			mkfile(p, "");
+			CHECK(truncate(p, GiB) == 0, "making a hole");
+			req("GET", "/api/update", g_cookie, NULL, 0, body, sizeof body);
+			at = strstr(body, "\"room\":");
+			room2 = at ? strtoll(at + 7, NULL, 10) : -1;
+			CHECK(room2 - room > GiB / 2 && room2 - room < GiB * 3 / 2,
+			      "a leftover the PUT clears wasn't counted: %lld then %lld", room, room2);
+			unlink(p);
+
+			snprintf(p, sizeof p, "%s/result", dir);
+			mkfile(p, "");
+			CHECK(truncate(p, GiB) == 0, "making a hole");
+			req("GET", "/api/update", g_cookie, NULL, 0, body, sizeof body);
+			at = strstr(body, "\"room\":");
+			room2 = at ? strtoll(at + 7, NULL, 10) : -1;
+			CHECK(room2 - room < GiB / 2, "the updater's result was counted as room");
+			unlink(p);
+
+			/* A card that has never had an update has no folder yet */
+			snprintf(p, sizeof p, "%s/not-made-yet", dir);
+			hare_set_update(p, "2.2.0", "brick", up_received);
+			req("GET", "/api/update", g_cookie, NULL, 0, body, sizeof body);
+			at = strstr(body, "\"room\":");
+			CHECK(at && strtoll(at + 7, NULL, 10) > 0, "no room with no folder: %s", body);
+			hare_set_update(dir, "2.2.0", "brick", up_received);
+		}
+
 #define OFFER(file, ver, size) "/api/update?file=" file "&version=" ver "&size=" size "&sha256="
 		snprintf(url, sizeof url, OFFER("TortOS-v2.3.0-pixel2.img.xz", "2.3.0", "9") "%s", sha);
 		CHECK(req("PUT", url, g_cookie, "IMAGEDATA", 9, NULL, 0) == 400,
