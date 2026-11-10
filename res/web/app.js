@@ -1168,6 +1168,9 @@ async function updStart() {
 			if (have - shown > 512 * 1024) { shown = have; updShow('downloading', have, updRel.size); }
 		}
 		if (have !== updRel.size) throw new Error('download');
+		/* Count this download with the release's others. Nothing waits on it. */
+		if (updRel.direct)
+			fetch(updRel.direct, { mode: 'no-cors', method: 'HEAD', referrerPolicy: 'no-referrer' }).catch(() => {});
 		updSend(new Blob(parts));
 	} catch (e) {
 		updBusy = false;
