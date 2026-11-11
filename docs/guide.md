@@ -16,14 +16,25 @@ the Bluetooth pairings. The first boot turns the rest of the card into TORTOS,
 an exFAT partition, and puts TortOS on it. That is where games, music, saves
 and settings go, and the part a computer opens.
 
+A card with nothing on it yet opens on a welcome rather than an empty shelf.
+It offers Down To The Wire and Over The Hare, the two ways to put games and
+music on the card without taking it out, each ready once it can work: a
+computer on the USB cable, or Wi-Fi joined. A Pixel 2 without a Wi-Fi adapter
+offers only the cable. It goes once the shelf has something on it.
+
 Nothing is written to the device itself. The Brick starts from the card ahead
 of its own system, so **taking the card out is enough to get the stock system
 back**; [Undoing it](#undoing-it) has the rest.
 
-Copying from macOS leaves `._name` metadata files beside everything. They are
-harmless - the launcher skips every name beginning with a dot, so they never
-show up as games - and `dot_clean /Volumes/TORTOS` removes them if they
-bother you.
+Copying from macOS leaves `._name` metadata files beside everything, and a Mac
+or a PC leaves a few files and folders of its own on any card it opens.
+TortOS clears them away a few seconds after every start: `._` files,
+`.DS_Store`, `Thumbs.db` and `desktop.ini` anywhere on the card, and
+`.Trashes`, `.Spotlight-V100`, `.fseventsd` and `.TemporaryItems` at its top.
+That includes a Mac's trash for the card, so a file moved to the Trash from
+the card is gone for good once the device starts. Until then they are
+harmless: the launcher skips every name beginning with a dot, so they never
+show up as games.
 
 Building it yourself instead is in [building.md](building.md).
 
@@ -60,6 +71,46 @@ passwords in `.userdata/brick/wifi/` (`pixel2` on the Pixel 2); and the
 Brick's Bluetooth pairings on its small system partition. Reformatting the
 card takes all of it with it, and nothing is left behind anywhere else, so a
 card is the thing to wipe before it goes to anyone else.
+
+## Updating
+
+From 2.2.0 on, TortOS updates itself. There are three ways, and every one of
+them keeps the games, music, saves and settings:
+
+| | |
+|---|---|
+| **MENU > System Update** | over Wi-Fi, on a device that has it |
+| **Down To The Wire** | over the USB cable: the page in your computer's browser downloads the release and sends it to the device |
+| **TortOS Installer** | the card in a computer, choosing **Update**, as before 2.2.0 |
+
+**System Update** says what the last check found: `up to date`, or the
+version that's out. The device asks GitHub about the latest release on its
+own, at most once a day, whenever Wi-Fi is joined and nothing else needs the
+network, and keeps the answer on the card. While an update waits, the row
+moves to the top of the menu, and the shelf says so at the bottom for a few
+seconds, once each time the device starts. Only a newer version is offered,
+never an older one.
+
+Updating asks first, starting on Not now. Then it downloads the release into
+`.update/` on the card with a progress bar, checks it against the checksums
+GitHub publishes for it, and hands over to the updater; B or MENU cancels
+until then. The updater waits for TortOS to stop and the card to be let go,
+writes the new system, reads it back to check it, and starts the new version.
+The writing takes about half a minute, and the next start says how it went.
+
+**Down To The Wire** does the same over the cable, for a Pixel 2 without a
+Wi-Fi adapter or anyone who would rather. Its page asks GitHub about the
+latest release and the device what it runs, and when there is a newer one for
+this device it shows `TortOS <version> is available`, with What's new and
+Update. The page downloads the release and sends it, and the device checks it
+and asks before it writes anything, starting on Not now. Not now keeps the
+copy on the card, so next time the page doesn't download it again.
+
+An update needs the charger or more than 10% battery, and room on the card for
+the download; the device says which is missing. If the writing stops partway,
+the device says so and waits for the power button. The updater only ever
+writes the system, never the part of the card with your games, so the
+installer's **Update** puts the system back with everything else kept.
 
 ## Controls and menus
 
@@ -134,20 +185,23 @@ than any one console:
 | **Cheevos** | the RetroAchievements account, or `sign in` |
 | **ScreenScraper** | the account that brings covers with each game's year, genre and synopsis, `sign in`, or `not in this build` |
 | **Controls** | every button and what it does, a page per place |
+| **System Update** | `up to date`, or the version that's out - see [Updating](#updating). At the top of the menu while an update waits |
 | **About TortOS** | version, address, battery, uptime |
 
 On the Pixel 2, which has no radio of its own, the rows that need Wi-Fi are
 there only while a USB Wi-Fi adapter is plugged in: Wi-Fi, Box Art, Cheevos,
-ScreenScraper and Over The Hare here (Down To The Wire stays, with a computer
-on the cable), Box Art in a console's menu, and Album Art in Muse's. Bluetooth
-is never there.
+ScreenScraper, System Update and Over The Hare here (Down To The Wire stays,
+with a computer on the cable, and updates TortOS too), Box Art in a console's
+menu, and Album Art in Muse's. Bluetooth is never there.
 
 Date & Time has a row for each part of the clock and one for the time zone,
 each changed with left and right and set the moment it changes, so the time
 holds through a power-off. The zones are one or two cities per hour of offset,
 west to east. Wi-Fi sets the clock again whenever it connects, so with it the
 screen is mostly for the zone; a Pixel 2 without an adapter has no network to
-take the time from, so set it there once.
+take the time from, so set it there once. Games with a clock of their own in
+the cartridge run on the zone chosen here, and a change reaches the next game
+you start, with no restart.
 
 Over The Hare and Box Art need a network, and go quiet without one rather than
 disappearing - a row that vanishes teaches nobody why. Cheevos stays reachable
@@ -220,19 +274,52 @@ Advance; on Game Boy and Game Boy Color, which have no L and R, they do nothing.
 
 **Fast forward** is MENU+R1 in a game. Each press steps the speed to 2x, 3x,
 4x and back to normal, and says so at the bottom of the screen. The game is
-silent while it's fast, and the picture moves in steps rather than smoothly,
-because the Brick draws every other frame to give the game more time. Each
-game starts at normal speed, and the speed stays where you left it through the
-in-game menu.
+silent while it's fast, and the picture moves in steps rather than smoothly:
+the screen is drawn once every two refreshes, which leaves the game more of
+the time. In Game Boy Advance, SNES and Genesis games the frames in between
+are run without being drawn at all, and the CPU runs at full speed while it's
+fast, 1512 MHz on the Pixel 2. Each game starts at normal speed, and the speed
+stays where you left it through the in-game menu.
 
 The speed is as fast as the game can go, up to the step. NES games reach it,
-and Genesis comes close. A heavy SNES or Game Boy Advance game tops out at
-about 2.5x, so there 3x and 4x both mean as fast as that game can go.
+and Genesis comes close. A heavy SNES or Game Boy Advance game may not, and
+then 3x and 4x both mean as fast as that game can go. How fast that is depends
+on the game, the scene and the device: the Brick's faster CPU gets further.
 
 Volume and brightness draw the same thin line across the top of the screen in
 the launcher, in a game, and in the in-game menu. One firmware, one piece of
 feedback - tinted by which of the two it is, warm for brightness and cyan for
 volume, so the line says what it is without a glyph or a number on it.
+
+### Battery
+
+A red dot in the top right corner says the battery is low: steady at 10% and
+below, and blinking near the end, on the shelf and over a game. Then the
+device saves a running game and powers off by itself, before the battery cuts
+it, so the game loses nothing and the card is left clean. The Pixel 2's side
+lights show the battery too, above.
+
+| | Brick | Pixel 2 |
+|---|---|---|
+| **the dot blinks** | from 3.31 V | from 5% |
+| **saves and powers off** | at 3.27 V | at 2% |
+
+The two go by different readings because their batteries report differently.
+The Brick's gauge reads 0% for the last 45 minutes or more, so it goes by the
+voltage: 3.27 V came 16 to 20 minutes before the cut, in a game and under
+music. Once its dot blinks it keeps blinking until the charger goes on, since
+a lighter moment can lift the voltage back over the point. The Pixel 2's gauge
+counts the charge going out and falls steadily to the end, while its voltage
+holds and then drops off a cliff, so it goes by the percentage: 2% came 22
+minutes before the cut in a game.
+
+A game isn't resumed at power-on with an empty battery. The shelf comes up
+instead and powers off a few seconds later, and the game is still there to
+continue once the device has charge.
+
+On the Brick, Down To The Wire charges at 1 A at most while its screen is open,
+and the usual rate comes back when you leave: charging any harder from a low
+battery breaks its data over the cable.
 
 ## Audio
 
@@ -327,7 +414,7 @@ in all three layouts, with the other axis jumping from one initial to the
 next. A on an
 album opens its tracks. MENU, anywhere in Muse, has the album count, Show,
 Sort By, Album Art (below), and Rescan Folder for music copied on while the
-Brick was running.
+device was running.
 
 **Show** switches the shelf between music and audiobooks, and is there only
 when the card has both. Muse opens on whichever you left it on, except that
@@ -364,23 +451,24 @@ with a folder per book, or a book's folder on its own. A book is one M4B or a
 folder of files, which play in name order. A on a book goes straight to Now
 Playing and carries on where you left it: its place is kept every thirty
 seconds while it plays, whenever it pauses or moves to the next file, and when
-the Brick turns off. B from there is the book's files, and A on one starts it
+the device turns off. B from there is the book's files, and A on one starts it
 from its beginning. A book played to its end says Finished under its cover,
 and A on it starts it over. Books always play in order, so on their Now
 Playing Y changes the speed instead of the play mode, and on books Sort By is
 by author or by title and there is no Album Art. A book's cover is the one its files carry, or the picture in its
 folder: one named cover or folder, or the only one there.
 
-**Lock Screen**, for the Brick in a pocket: hold **F1+F2** together for a
-second anywhere in Muse while music is playing - the two front function keys,
-which some other firmwares call L3 and R3 - or pick Lock Screen in Muse's
-menu. The screen goes dark, which on a book playing measured about 6 hours of
-listening becoming 10, and every button is ignored except the volume keys,
-power, and a Bluetooth headset's play, pause and skip. Hold F1+F2 again to
+**Lock Screen**, for a device in a pocket: on the Brick, hold **F1+F2**
+together for a second anywhere in Muse while music is playing - the two front
+function keys, which some other firmwares call L3 and R3 - or pick Lock Screen
+in Muse's menu. The screen goes dark, which on the Brick with a book playing
+measured about 6 hours of listening becoming 10, and every button is ignored
+except the volume keys, power, and a Bluetooth headset's play, pause and
+skip. Hold F1+F2 again to
 unlock. On the Pixel 2, which has no F1 or F2, it is FUNCTION with both volume
-keys, held for a second, to lock and to unlock. Power still turns the Brick
+keys, held for a second, to lock and to unlock. Power still turns the device
 off, with a book's place saved, and if the music stays paused past Auto Off
-the Brick turns itself off the same way.
+the device turns itself off the same way.
 
 With something playing or paused, SELECT goes straight to **Now Playing**: the
 cover, the track, where in it you are, and what comes next.
@@ -500,5 +588,11 @@ that is already there, and Replace only swaps yours out when ScreenScraper or
 libretro has a cover to put in its place. Keep it near 512 pixels on the long
 side: a cover you add is drawn as it is and never resized, so a 2000-pixel scan
 is decoded at full size whenever its card comes into view.
+
+A whole set of covers can go at once, over Down To The Wire or Over The Hare:
+drag the `.media` folder itself onto the console's folder (Finder shows it
+after Cmd-Shift-.). In Safari, a console's folder dragged whole arrives
+without its covers, since Safari leaves names beginning with a dot out of a
+dropped folder, so there `.media` goes separately.
 
 Pressing A on a game with an autosave does not start it, it continues it.
