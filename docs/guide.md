@@ -458,6 +458,17 @@ Playing Y changes the speed instead of the play mode, and on books Sort By is
 by author or by title and there is no Album Art. A book's cover is the one its files carry, or the picture in its
 folder: one named cover or folder, or the only one there.
 
+**Tidy names** puts the names the shelf shows on the card itself. It is a
+button on Down To The Wire's and Over The Hare's page, in any folder inside
+`Music/` or `Audiobooks/`. Dots and underscores between words become spaces,
+so `03.Used.To.Be.mp3` becomes `03 Used To Be.mp3`, and the folder's own name
+loses an artist's name at its front, a release year and anything after it,
+and words like FLAC, WEB or 320kbps. Every rename is listed first, the old name
+above the new, and nothing changes until you press Rename all. A name that
+would land on one already there is skipped, never overwritten. An album keeps
+its cover and a book its place. It doesn't shorten a long name: one too long
+for the screen scrolls there instead.
+
 **Lock Screen**, for a device in a pocket: on the Brick, hold **F1+F2**
 together for a second anywhere in Muse while music is playing - the two front
 function keys, which some other firmwares call L3 and R3 - or pick Lock Screen
