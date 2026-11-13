@@ -22,9 +22,14 @@
 #define MAX_TRIES      5
 #define LOCKOUT_MS 30000u
 
-/* One page of listing. A ROM folder of 500 entries is ordinary and the whole
- * thing has to fit in one reply, because there is no paging in the client. */
-#define JSON_MAX (256 * 1024)
+/* One page of listing. The whole folder has to fit in one reply, because
+ * there is no paging in the client. 256 KB was too small (Reddit,
+ * 2026-11-13): a game with a cover takes about 180 bytes, so a full SNES set
+ * of 3,500 games with covers is about 640 KB, and the Music folder's artist
+ * with four album covers about 290. 2 MB holds about 11,000 such games or
+ * 7,000 such artists. Linux only commits the pages written, so a small
+ * folder's listing costs a few KB of it, not 2 MB. */
+#define JSON_MAX (2 * 1024 * 1024)
 
 /* Its own clock, for the same reason httpd.c has one: the lockout is about
  * wall time and has nothing to do with frames. */

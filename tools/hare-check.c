@@ -114,7 +114,11 @@ static int req(const char *method, const char *path, const char *cookie,
 {
 	struct sockaddr_in a;
 	struct timeval tv = { 3, 0 };
-	char head[1024], resp[65536];
+	/* Room for the biggest listing the device sends (JSON_MAX, 2 MB), and
+	 * static, as that is no size for a stack. The server is on its own
+	 * thread, but only this one ever reads it. */
+	static char resp[4 * 1024 * 1024];
+	char head[1024];
 	size_t got = 0, sent = 0;
 	int fd, n, status = 0;
 
@@ -514,6 +518,94 @@ int main(void)
 		for (i = sizeof DIRS / sizeof DIRS[0]; i-- > 1; ) {
 			snprintf(p, sizeof p, "%s/%s", g_card, DIRS[i]);
 			rmdir(p);
+		}
+	}
+
+	/* A folder as big as real ones get, whole. The listing was one 256 KB
+	 * reply, and a folder past that would not open: a full SNES set with
+	 * covers on Reddit, 2026-11-13. A game with a cover is about 180 bytes and
+	 * an artist with four albums' covers about 290, so both of these are well
+	 * past the old limit: 3,500 games, a full No-Intro SNES set, and 1,500
+	 * artists. Each must be listed once, with its cover. */
+	printf("  a full set of games, and a big Music folder, list whole:\n");
+	{
+		enum { GAMES = 3500, ARTISTS = 1500, ALBUMS = 4 };
+		static unsigned char seen[GAMES > ARTISTS ? GAMES : ARTISTS];
+		const size_t bodyn = 4 * 1024 * 1024;
+		char *body = malloc(bodyn), p[512], want[1024], *at;
+		int i, k, n, once;
+
+		snprintf(p, sizeof p, "%s/SNES", g_roms);         mkdir(p, 0777);
+		snprintf(p, sizeof p, "%s/SNES/.media", g_roms);  mkdir(p, 0777);
+		for (i = 0; i < GAMES; i++) {
+			snprintf(p, sizeof p, "%s/SNES/Super Test Game %04d (USA).sfc", g_roms, i);
+			mkfile(p, "X");
+			snprintf(p, sizeof p, "%s/SNES/.media/Super Test Game %04d (USA).png", g_roms, i);
+			mkfile(p, "X");
+		}
+		CHECK(body && req("GET", "/api/list?p=roms/SNES", g_cookie, NULL, 0,
+		                  body, bodyn) == 200, "listing %d games failed", GAMES);
+		CHECK(body && strlen(body) > 256 * 1024,
+		      "the games listing is %zu bytes, not past the old 256 KB",
+		      body ? strlen(body) : 0);
+		CHECK(body && json_ok(body), "the games listing is not valid JSON");
+		memset(seen, 0, sizeof seen);
+		for (at = body; at && (at = strstr(at, "{\"name\":\"Super Test Game ")); at++) {
+			if (sscanf(at, "{\"name\":\"Super Test Game %d", &k) != 1 ||
+			    k < 0 || k >= GAMES) continue;
+			n = snprintf(want, sizeof want,
+			             "{\"name\":\"Super Test Game %04d (USA).sfc\","
+			             "\"path\":\"roms/SNES/Super Test Game %04d (USA).sfc\","
+			             "\"cover\":\"roms/SNES/.media/Super Test Game %04d (USA).png\","
+			             "\"dir\":false,", k, k, k);
+			if (!strncmp(at, want, (size_t)n) && seen[k] < 255) seen[k]++;
+		}
+		for (i = 0, once = 0; i < GAMES; i++) once += seen[i] == 1;
+		CHECK(once == GAMES, "%d of %d games were listed once with their cover",
+		      once, GAMES);
+
+		snprintf(p, sizeof p, "%s/Music", g_card);  mkdir(p, 0777);
+		for (i = 0; i < ARTISTS; i++) {
+			snprintf(p, sizeof p, "%s/Music/Test Artist %04d", g_card, i);
+			mkdir(p, 0777);
+			snprintf(p, sizeof p, "%s/Music/Test Artist %04d/.media", g_card, i);
+			mkdir(p, 0777);
+			for (k = 1; k <= ALBUMS; k++) {
+				snprintf(p, sizeof p, "%s/Music/Test Artist %04d/Album %d", g_card, i, k);
+				mkdir(p, 0777);
+				snprintf(p, sizeof p, "%s/Music/Test Artist %04d/.media/Album %d.jpg",
+				         g_card, i, k);
+				mkfile(p, "X");
+			}
+		}
+		CHECK(body && req("GET", "/api/list?p=music", g_cookie, NULL, 0,
+		                  body, bodyn) == 200, "listing %d artists failed", ARTISTS);
+		CHECK(body && strlen(body) > 256 * 1024,
+		      "the Music listing is %zu bytes, not past the old 256 KB",
+		      body ? strlen(body) : 0);
+		CHECK(body && json_ok(body), "the Music listing is not valid JSON");
+		memset(seen, 0, sizeof seen);
+		for (at = body; at && (at = strstr(at, "{\"name\":\"Test Artist ")); at++) {
+			if (sscanf(at, "{\"name\":\"Test Artist %d", &k) != 1 ||
+			    k < 0 || k >= ARTISTS) continue;
+			n = snprintf(want, sizeof want,
+			             "{\"name\":\"Test Artist %04d\",\"path\":\"music/Test Artist %04d\","
+			             "\"covers\":[\"music/Test Artist %04d/.media/Album 1.jpg\","
+			             "\"music/Test Artist %04d/.media/Album 2.jpg\","
+			             "\"music/Test Artist %04d/.media/Album 3.jpg\","
+			             "\"music/Test Artist %04d/.media/Album 4.jpg\"],\"dir\":true,",
+			             k, k, k, k, k, k);
+			if (!strncmp(at, want, (size_t)n) && seen[k] < 255) seen[k]++;
+		}
+		for (i = 0, once = 0; i < ARTISTS; i++) once += seen[i] == 1;
+		CHECK(once == ARTISTS,
+		      "%d of %d artists were listed once with their four covers", once, ARTISTS);
+
+		free(body);
+		snprintf(p, sizeof p, "%s/SNES", g_roms);  rmtree(p);
+		for (i = 0; i < ARTISTS; i++) {
+			snprintf(p, sizeof p, "%s/Music/Test Artist %04d", g_card, i);
+			rmtree(p);
 		}
 	}
 

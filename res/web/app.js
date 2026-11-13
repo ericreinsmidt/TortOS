@@ -96,7 +96,7 @@ function crumbs() {
 		}
 		const b = document.createElement('button');
 		b.textContent = label;
-		b.onclick = () => go(path);
+		b.onclick = () => openFolder(path);
 		nav.append(b);
 		const sep = document.createElement('span');
 		sep.className = 'sep';
@@ -145,6 +145,16 @@ async function go(path, hist) {
 	const url = '#' + enc(cwd);
 	if (hist === 'replace') history.replaceState({ path: cwd }, '', url);
 	else if (hist !== 'none') history.pushState({ path: cwd }, '', url);
+}
+
+/* A click on a folder or a crumb. A folder the device won't list says why,
+ * as every other action does: left to go(), the refusal went nowhere and the
+ * click did nothing (Reddit, 2026-11-13, a SNES folder past the listing's
+ * limit). An ended session has already raised the PIN gate. */
+function openFolder(path) {
+	go(path).catch((err) => {
+		if (err.message !== 'unauthorized') toast(err.message, true);
+	});
 }
 
 /* Back and forward. Always 'none': the browser has already moved its own
@@ -280,7 +290,7 @@ function draw() {
 			const b = document.createElement('button');
 			b.className = 'name';
 			b.textContent = e.name;
-			b.onclick = () => go(e.path);
+			b.onclick = () => openFolder(e.path);
 			li.append(b);
 		} else {
 			const s = document.createElement('span');
